@@ -1,0 +1,10 @@
+base_url = "https://hakula.xyz"
+title = "HAKULA†CHANNEL"
+description = "Hakula's personal site"
+language = "zh-CN"
+output_dir = "public"
+
+[author]
+name = "Hakula"
+email = "i@hakula.xyz"
+link = "https://hakula.xyz"

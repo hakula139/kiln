@@ -1,0 +1,19 @@
+# Build output
+/target/
+/public/
+
+# OS files
+.DS_Store
+
+# Environment
+.env
+.env.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Claude Code
+.claude/settings.local.json
