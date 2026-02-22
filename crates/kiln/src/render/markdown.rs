@@ -106,7 +106,6 @@ fn push_heading_text(buf: &mut String, event: &Event) {
         Event::Text(t) | Event::Code(t) | Event::InlineMath(t) | Event::DisplayMath(t) => {
             buf.push_str(t);
         }
-        Event::SoftBreak | Event::HardBreak => buf.push(' '),
         _ => {}
     }
 }
