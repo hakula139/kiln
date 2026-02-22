@@ -354,7 +354,7 @@ mod tests {
         let html = render_toc_html(&entries);
         assert!(
             html.contains("Vec&lt;T&gt; &amp; Friends"),
-            "should escape HTML in titles"
+            "should escape HTML in titles, html:\n{html}"
         );
     }
 
@@ -368,7 +368,7 @@ mod tests {
         let html = render_toc_html(&entries);
         assert!(
             html.contains("href=\"#foo&amp;bar\""),
-            "should escape HTML in href, html: {html}"
+            "should escape HTML in href, html:\n{html}"
         );
     }
 }

@@ -4,7 +4,7 @@
 
 kiln is a custom static site generator (SSG) written in Rust, replacing a Hugo + LoveIt theme stack for [hakula.xyz](https://hakula.xyz).
 
-**Status**: workspace scaffold + CLI + TOML config + content model + markdown rendering.
+**Status**: workspace scaffold + CLI + TOML config + content model + markdown rendering + syntax highlighting + image rendering.
 
 ### CLI
 
@@ -27,9 +27,10 @@ public/          # Build output (configurable via output_dir)
   - `frontmatter` — TOML frontmatter parsing (`+++` delimited), `Frontmatter` struct with jiff timestamps
   - `page` — `Page` struct, slug derivation, summary extraction, output path computation
   - `discovery` — recursive content directory walking with draft / `_`-prefix exclusion
-- `render/` — markdown rendering pipeline
-  - `escape` — shared HTML escape utilities (`escape_text` for element content, `escape_attr` for attributes)
-  - `markdown` — pulldown-cmark rendering with GFM extensions, CJK-aware heading ID generation, KaTeX math output
+- `render/` — markdown rendering pipeline (shared `escape_html` utility in `render.rs`)
+  - `highlight` — syntect CSS-class syntax highlighting with line numbers, canonical language labels
+  - `image` — block (`<figure>`) and inline (`<img>`) image rendering with lazy loading
+  - `markdown` — pulldown-cmark rendering with GFM extensions, CJK-aware heading ID generation, KaTeX math, syntax highlighting, block / inline image detection
   - `toc` — `TocEntry` struct, nested `<nav>` table of contents HTML generation
 
 ## Coding Conventions
@@ -76,5 +77,5 @@ Run before committing:
 cargo build
 cargo clippy --all-targets -- -D warnings  # zero warnings (pedantic lints)
 cargo test
-cargo llvm-cov  # check test coverage
+cargo llvm-cov --ignore-filename-regex 'main\.rs'  # check test coverage
 ```

@@ -21,7 +21,18 @@ indoc = "2"
 jiff = { version = "0.2", features = ["serde"] }
 pulldown-cmark = "0.13"
 serde = { version = "1", features = ["derive"] }
+syntect = { version = "5", default-features = false, features = [
+  "default-syntaxes",
+  "html",
+  "regex-onig",
+] }
 toml = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = [
+  "fmt",
+  "env-filter",
+  "ansi",
+] }
 walkdir = "2"
 
 [profile.release]

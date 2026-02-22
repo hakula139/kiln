@@ -6,12 +6,14 @@ hakula
 indoc
 jiff
 katex
+onig
 pulldown
 rfind
 serde
-slugified
 slugification
+slugified
 slugify
 swatinem
 syntect
+tracing
 walkdir

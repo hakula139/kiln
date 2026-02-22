@@ -1,3 +1,5 @@
+pub mod highlight;
+pub mod image;
 pub mod markdown;
 pub mod toc;
 
