@@ -75,6 +75,8 @@ fn default_output_dir() -> String {
 
 #[cfg(test)]
 mod tests {
+    use indoc::indoc;
+
     use super::*;
 
     #[test]
@@ -89,7 +91,7 @@ mod tests {
 
     #[test]
     fn overrides_from_toml() {
-        let toml_str = r#"
+        let toml_str = indoc! {r#"
             base_url = "https://example.com"
             title = "Test Site"
             description = "Test Description"
@@ -100,8 +102,7 @@ mod tests {
             name = "Alice"
             email = "alice@example.com"
             link = "https://alice.example.com"
-        "#;
-
+        "#};
         let config: Config = toml::from_str(toml_str).unwrap();
         assert_eq!(config.base_url, "https://example.com");
         assert_eq!(config.title, "Test Site");
@@ -119,10 +120,10 @@ mod tests {
         let config_path = dir.path().join("config.toml");
         fs::write(
             &config_path,
-            r#"
+            indoc! {r#"
                 base_url = "https://hakula.xyz"
                 title = "HAKULA†CHANNEL"
-            "#,
+            "#},
         )
         .unwrap();
 
@@ -142,7 +143,7 @@ mod tests {
     fn load_invalid_toml_returns_error() {
         let dir = tempfile::tempdir().unwrap();
         let config_path = dir.path().join("config.toml");
-        fs::write(&config_path, "Invalid TOML").unwrap();
+        fs::write(&config_path, "{{invalid toml").unwrap();
 
         let result = Config::load(dir.path());
         assert!(result.is_err());
