@@ -4,7 +4,7 @@
 
 kiln is a custom static site generator (SSG) written in Rust, replacing a Hugo + LoveIt theme stack for [hakula.xyz](https://hakula.xyz).
 
-**Status**: workspace scaffold + CLI + TOML config loading. No content processing yet.
+**Status**: workspace scaffold + CLI + TOML config + content model (frontmatter, page, discovery).
 
 ### CLI
 
@@ -23,6 +23,10 @@ public/          # Build output (configurable via output_dir)
 ### Crate Structure (`crates/kiln/src/`)
 
 - `config` — TOML site configuration loading + defaults
+- `content/` — content model
+  - `frontmatter` — TOML frontmatter parsing (`+++` delimited), `Frontmatter` struct with jiff timestamps
+  - `page` — `Page` struct, slug derivation, summary extraction, output path computation
+  - `discovery` — recursive content directory walking with draft / `_`-prefix exclusion
 
 ## Coding Conventions
 
@@ -66,7 +70,7 @@ Run before committing:
 
 ```bash
 cargo build
-cargo clippy --all-targets  # zero warnings (pedantic lints)
+cargo clippy --all-targets -- -D warnings  # zero warnings (pedantic lints)
 cargo test
-cargo llvm-cov              # check test coverage
+cargo llvm-cov  # check test coverage
 ```

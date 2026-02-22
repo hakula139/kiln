@@ -11,5 +11,5 @@
     }
   ],
   "dictionaries": ["project-words"],
-  "ignorePaths": ["Cargo.lock", "flake.lock"]
+  "ignorePaths": ["Cargo.lock"]
 }

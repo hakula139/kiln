@@ -1,4 +1,5 @@
 pub mod config;
+pub mod content;
 
 use std::path::Path;
 

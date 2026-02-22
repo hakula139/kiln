@@ -1,3 +1,12 @@
 clippy
+dtolnay
+feff
 hakula
+indoc
+jiff
+pulldown
 serde
+slugify
+swatinem
+syntect
+walkdir
