@@ -1,11 +1,16 @@
 clippy
+cmark
 dtolnay
 feff
 hakula
 indoc
 jiff
+katex
 pulldown
+rfind
 serde
+slugified
+slugification
 slugify
 swatinem
 syntect

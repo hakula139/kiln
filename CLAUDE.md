@@ -4,7 +4,7 @@
 
 kiln is a custom static site generator (SSG) written in Rust, replacing a Hugo + LoveIt theme stack for [hakula.xyz](https://hakula.xyz).
 
-**Status**: workspace scaffold + CLI + TOML config + content model (frontmatter, page, discovery).
+**Status**: workspace scaffold + CLI + TOML config + content model + markdown rendering.
 
 ### CLI
 
@@ -27,6 +27,10 @@ public/          # Build output (configurable via output_dir)
   - `frontmatter` — TOML frontmatter parsing (`+++` delimited), `Frontmatter` struct with jiff timestamps
   - `page` — `Page` struct, slug derivation, summary extraction, output path computation
   - `discovery` — recursive content directory walking with draft / `_`-prefix exclusion
+- `render/` — markdown rendering pipeline
+  - `escape` — shared HTML escape utilities (`escape_text` for element content, `escape_attr` for attributes)
+  - `markdown` — pulldown-cmark rendering with GFM extensions, CJK-aware heading ID generation, KaTeX math output
+  - `toc` — `TocEntry` struct, nested `<nav>` table of contents HTML generation
 
 ## Coding Conventions
 
