@@ -9,9 +9,10 @@ katex
 pulldown
 rfind
 serde
-slugified
 slugification
+slugified
 slugify
 swatinem
 syntect
+tracing
 walkdir
