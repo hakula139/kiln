@@ -17,8 +17,11 @@ pedantic = { level = "warn", priority = -1 }
 [workspace.dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
+indoc = "2"
+jiff = { version = "0.2", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
-toml = "0.8"
+toml = "1"
+walkdir = "2"
 
 [profile.release]
 lto = true
