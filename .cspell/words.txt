@@ -6,6 +6,7 @@ hakula
 indoc
 jiff
 katex
+onig
 pulldown
 rfind
 serde
