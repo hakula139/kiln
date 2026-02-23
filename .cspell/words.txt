@@ -3,10 +3,13 @@ cmark
 dtolnay
 feff
 hakula
+impls
 indoc
+infty
 jiff
 katex
 onig
+println
 pulldown
 rfind
 serde
