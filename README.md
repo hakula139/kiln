@@ -49,6 +49,10 @@ static/              # Static assets (copied to output as-is)
 public/              # Build output (configurable via output_dir)
 ```
 
+## Syntax Reference
+
+See [docs/syntax.md](docs/syntax.md) for the full list of supported Markdown extensions, frontmatter fields, and directive syntax.
+
 ## Building from Source
 
 Requires [Rust](https://www.rust-lang.org/tools/install) 1.85+ (edition 2024).
