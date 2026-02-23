@@ -1,5 +1,6 @@
 pub mod config;
 pub mod content;
+pub mod directive;
 pub mod render;
 
 use std::path::Path;
