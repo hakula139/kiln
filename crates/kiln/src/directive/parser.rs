@@ -129,19 +129,33 @@ fn is_closing_code_fence(line: &str, fence_char: u8, min_count: usize) -> bool {
 /// Splits the text after the colons into a directive name and remaining
 /// attributes. Supports both Pandoc attribute form (`{.name key=value}`) and
 /// simple form (`name key=value`).
+///
+/// In the Pandoc form, `.class` may appear after `#id` tokens (e.g.,
+/// `{#custom-id .note title="X"}`). Tokens before the `.class` are skipped.
 fn parse_directive_head(text: &str) -> (&str, &str) {
     let text = text.trim();
 
-    // Pandoc attribute form: {.name key=value ...}
+    // Pandoc attribute form: {... .name key=value ...}
     if let Some(inner) = text.strip_prefix('{').and_then(|s| s.strip_suffix('}')) {
-        let inner = inner.trim();
-        if let Some(after_dot) = inner.strip_prefix('.') {
-            return match after_dot.find(char::is_whitespace) {
-                Some(pos) => (&after_dot[..pos], after_dot[pos..].trim()),
-                None => (after_dot, ""),
-            };
+        let mut scan = inner.trim();
+
+        while !scan.is_empty() {
+            if let Some(after_dot) = scan.strip_prefix('.') {
+                return match after_dot.find(char::is_whitespace) {
+                    Some(pos) => (&after_dot[..pos], after_dot[pos..].trim()),
+                    None => (after_dot, ""),
+                };
+            }
+            // Skip #id tokens before the .class.
+            if scan.starts_with('#') {
+                let end = scan.find(char::is_whitespace).unwrap_or(scan.len());
+                scan = scan[end..].trim_start();
+                continue;
+            }
+            // Non-#id, non-.class token — not valid Pandoc attribute syntax.
+            break;
         }
-        // Braces without leading dot — not valid Pandoc syntax, skip.
+
         return ("", "");
     }
 
@@ -333,6 +347,25 @@ mod tests {
             DirectiveKind::Unknown {
                 name: "table".into(),
                 args: "cols=3".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn pandoc_attrs_id_before_class() {
+        let input = indoc! {r#"
+            ::: {#custom-id .note title="My Title"}
+            Body
+            :::
+        "#};
+        let blocks = parse_directives(input);
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(
+            blocks[0].kind,
+            DirectiveKind::Admonition {
+                kind: AdmonitionKind::Note,
+                title: Some("My Title".into()),
+                open: true,
             }
         );
     }
@@ -611,6 +644,22 @@ mod tests {
         let blocks = parse_directives(input);
         assert_eq!(blocks.len(), 1);
         assert_eq!(blocks[0].body, "Body");
+    }
+
+    #[test]
+    fn utf8_body_and_range() {
+        // Multi-byte UTF-8 content before and inside a directive.
+        let prefix = "前言：世界\n";
+        let directive = "::: note\n你好世界\n:::\n";
+        let input = format!("{prefix}{directive}");
+        let blocks = parse_directives(&input);
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].body, "你好世界");
+        assert_eq!(
+            blocks[0].range,
+            prefix.len()..input.len(),
+            "range should account for multi-byte prefix"
+        );
     }
 
     #[test]
