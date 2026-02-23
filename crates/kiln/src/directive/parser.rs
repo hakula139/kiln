@@ -587,6 +587,43 @@ mod tests {
     }
 
     #[test]
+    fn over_indented_fence_not_recognized() {
+        // 4 spaces of indentation — not a valid code fence per CommonMark.
+        let input = "    ```\n::: note\nBody\n:::\n";
+        let blocks = parse_directives(input);
+        assert_eq!(
+            blocks.len(),
+            1,
+            "over-indented fence should not suppress directives"
+        );
+        assert_eq!(blocks[0].body, "Body");
+    }
+
+    #[test]
+    fn over_indented_closing_fence_not_recognized() {
+        // 4 spaces on closing fence — fence stays open, directive is suppressed.
+        let input = "```\n::: note\nBody\n:::\n    ```\n";
+        let blocks = parse_directives(input);
+        assert!(
+            blocks.is_empty(),
+            "over-indented closing fence should not close the code block"
+        );
+    }
+
+    #[test]
+    fn short_backtick_run_not_a_code_fence() {
+        // Two backticks are not a code fence.
+        let input = "``\n::: note\nBody\n:::\n";
+        let blocks = parse_directives(input);
+        assert_eq!(
+            blocks.len(),
+            1,
+            "two backticks should not suppress directives"
+        );
+        assert_eq!(blocks[0].body, "Body");
+    }
+
+    #[test]
     fn mismatched_code_fence_chars_not_closed() {
         // ~~~ cannot close a ``` fence — directives remain suppressed.
         let input = indoc! {"

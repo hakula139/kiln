@@ -258,11 +258,26 @@ mod tests {
             attrs(r#"title="path\\to""#),
             vec![pair("title", r"path\to")]
         );
-        // Unknown escape sequences are preserved as-is.
+        // Unrecognized escape alone — no escapes detected, takes borrowed path.
         assert_eq!(
             attrs(r#"title="foo\nbar""#),
             vec![pair("title", r"foo\nbar")]
         );
+        // Mixed recognized and unknown escapes — unknown sequences preserved as-is.
+        assert_eq!(
+            attrs(r#"title="a\"b\nc""#),
+            vec![pair("title", r#"a"b\nc"#)]
+        );
+    }
+
+    #[test]
+    fn parse_attrs_unclosed_quote() {
+        assert_eq!(
+            attrs(r#"key="no closing quote"#),
+            vec![pair("key", "no closing quote")]
+        );
+        // Trailing backslash in unclosed quote.
+        assert_eq!(attrs(r#"key="a\"b\"#), vec![pair("key", r#"a"b\"#)]);
     }
 
     #[test]

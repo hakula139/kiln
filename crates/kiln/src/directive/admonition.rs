@@ -190,4 +190,12 @@ mod tests {
     fn parse_args_empty_title_treated_as_none() {
         assert_eq!(parse_args(r#"title="""#), (None, true));
     }
+
+    #[test]
+    fn parse_args_ignores_unknown_keys() {
+        assert_eq!(
+            parse_args(r#"title="Hello" unknown="x" open=false"#),
+            (Some("Hello".into()), false)
+        );
+    }
 }
