@@ -29,13 +29,14 @@ pub fn render_admonition(
 /// Parses admonition parameters from Pandoc-style key-value attributes.
 ///
 /// Recognized keys: `title`, `open`.
+#[must_use]
 pub(super) fn parse_args(args: &str) -> (Option<String>, bool) {
     let mut title = None;
     let mut open = true;
 
     for (key, value) in parse_attrs(args) {
         match key {
-            "title" => title = (!value.is_empty()).then(|| value.to_string()),
+            "title" => title = (!value.is_empty()).then(|| value.into_owned()),
             "open" => open = !value.eq_ignore_ascii_case("false"),
             _ => {}
         }

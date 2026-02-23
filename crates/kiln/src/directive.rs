@@ -1,6 +1,7 @@
 pub mod admonition;
 pub mod parser;
 
+use std::borrow::Cow;
 use std::fmt;
 use std::ops::Range;
 
@@ -73,7 +74,11 @@ impl DirectiveKind {
 ///
 /// Handles `key=value` and `key="quoted value"` pairs.
 /// Skips `.class` and `#id` tokens.
-pub(super) fn parse_attrs(input: &str) -> Vec<(&str, &str)> {
+///
+/// Quoted values support `\"` and `\\` escape sequences. Unclosed quotes
+/// consume the rest of the input as the value.
+#[must_use]
+fn parse_attrs(input: &str) -> Vec<(&str, Cow<'_, str>)> {
     let mut pairs = Vec::new();
     let mut rest = input.trim();
 
@@ -98,17 +103,66 @@ pub(super) fn parse_attrs(input: &str) -> Vec<(&str, &str)> {
         let after_eq = &rest[eq + 1..];
 
         if let Some(after_quote) = after_eq.strip_prefix('"') {
-            let close = after_quote.find('"').unwrap_or(after_quote.len());
-            pairs.push((key, &after_quote[..close]));
-            rest = after_quote.get(close + 1..).unwrap_or("").trim_start();
+            let (end, has_escapes) = scan_quoted_value(after_quote);
+            let raw = &after_quote[..end];
+            let value = if has_escapes {
+                Cow::Owned(unescape_quoted(raw))
+            } else {
+                Cow::Borrowed(raw)
+            };
+            pairs.push((key, value));
+            rest = after_quote.get(end + 1..).unwrap_or("").trim_start();
         } else {
             let end = after_eq.find(char::is_whitespace).unwrap_or(after_eq.len());
-            pairs.push((key, &after_eq[..end]));
+            pairs.push((key, Cow::Borrowed(&after_eq[..end])));
             rest = after_eq[end..].trim_start();
         }
     }
 
     pairs
+}
+
+/// Scans a quoted value for the closing `"`, respecting `\"` and `\\` escapes.
+/// Returns `(end_offset, has_escapes)` where `end_offset` is the byte position
+/// of the closing quote (or end of string if unclosed).
+fn scan_quoted_value(s: &str) -> (usize, bool) {
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    let mut has_escapes = false;
+
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\\' if i + 1 < bytes.len() && matches!(bytes[i + 1], b'"' | b'\\') => {
+                has_escapes = true;
+                i += 2;
+            }
+            b'"' => return (i, has_escapes),
+            _ => i += 1,
+        }
+    }
+
+    (s.len(), has_escapes)
+}
+
+/// Unescapes `\"` → `"` and `\\` → `\` in a quoted attribute value.
+fn unescape_quoted(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.next() {
+                Some(c @ ('"' | '\\')) => result.push(c),
+                Some(other) => {
+                    result.push('\\');
+                    result.push(other);
+                }
+                None => result.push('\\'),
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    result
 }
 
 /// A single `:::`-fenced directive block extracted from content.
@@ -163,6 +217,18 @@ mod tests {
 
     // -- parse_attrs --
 
+    /// Helper to compare `parse_attrs` output without `Cow` noise.
+    fn attrs(input: &str) -> Vec<(&str, String)> {
+        parse_attrs(input)
+            .into_iter()
+            .map(|(k, v)| (k, v.into_owned()))
+            .collect()
+    }
+
+    fn pair<'a>(k: &'a str, v: &str) -> (&'a str, String) {
+        (k, v.to_string())
+    }
+
     #[test]
     fn parse_attrs_empty() {
         assert!(parse_attrs("").is_empty());
@@ -170,38 +236,50 @@ mod tests {
 
     #[test]
     fn parse_attrs_unquoted_value() {
-        assert_eq!(parse_attrs("key=value"), vec![("key", "value")]);
+        assert_eq!(attrs("key=value"), vec![pair("key", "value")]);
     }
 
     #[test]
     fn parse_attrs_quoted_value() {
         assert_eq!(
-            parse_attrs(r#"key="hello world""#),
-            vec![("key", "hello world")]
+            attrs(r#"key="hello world""#),
+            vec![pair("key", "hello world")]
+        );
+    }
+
+    #[test]
+    fn parse_attrs_escaped_quotes() {
+        assert_eq!(
+            attrs(r#"title="He said \"hi\"""#),
+            vec![pair("title", r#"He said "hi""#)]
+        );
+        // Escaped backslash.
+        assert_eq!(
+            attrs(r#"title="path\\to""#),
+            vec![pair("title", r"path\to")]
+        );
+        // Unknown escape sequences are preserved as-is.
+        assert_eq!(
+            attrs(r#"title="foo\nbar""#),
+            vec![pair("title", r"foo\nbar")]
         );
     }
 
     #[test]
     fn parse_attrs_multiple_pairs() {
         assert_eq!(
-            parse_attrs(r#"title="Title" open=false"#),
-            vec![("title", "Title"), ("open", "false")]
+            attrs(r#"title="Title" open=false"#),
+            vec![pair("title", "Title"), pair("open", "false")]
         );
     }
 
     #[test]
     fn parse_attrs_skips_class_and_id() {
-        assert_eq!(
-            parse_attrs(".class #id open=false"),
-            vec![("open", "false")]
-        );
+        assert_eq!(attrs(".class #id open=false"), vec![pair("open", "false")]);
     }
 
     #[test]
     fn parse_attrs_skips_bare_words() {
-        assert_eq!(
-            parse_attrs(r#"bare title="Title""#),
-            vec![("title", "Title")]
-        );
+        assert_eq!(attrs(r#"bare title="Title""#), vec![pair("title", "Title")]);
     }
 }
