@@ -1,6 +1,7 @@
 use syntect::parsing::SyntaxSet;
 
-use crate::directive::admonition::render_admonition;
+use crate::directive::callout::render_callout;
+use crate::directive::div::render_div;
 use crate::directive::parser::parse_directives;
 use crate::directive::{DirectiveBlock, DirectiveKind};
 use crate::render::markdown::render_markdown;
@@ -50,10 +51,15 @@ fn render_directives(content: &str, syntax_set: &SyntaxSet) -> String {
     for block in top_level.into_iter().rev() {
         let inner = render_directives(&block.body, syntax_set);
         let md_output = render_markdown(&inner, syntax_set);
-        let html = render_directive_block(&block.kind, &md_output.html);
+        let html = render_directive_block(
+            &block.kind,
+            block.id.as_deref(),
+            &block.classes,
+            &md_output.html,
+        );
 
-        // Blank-line padding: <details> is a CommonMark type 6 HTML block
-        // which cannot interrupt paragraphs. Safe because the directive
+        // Blank-line padding: <details> / <div> are CommonMark type 6 HTML
+        // blocks which cannot interrupt paragraphs. Safe because the directive
         // parser only matches column-0 fences (never indented contexts).
         let padded = format!("\n{html}\n");
         result.replace_range(block.range.clone(), &padded);
@@ -80,12 +86,17 @@ fn top_level_blocks(blocks: &[DirectiveBlock]) -> Vec<&DirectiveBlock> {
 }
 
 /// Dispatches a directive block to its renderer.
-fn render_directive_block(kind: &DirectiveKind, body_html: &str) -> String {
+fn render_directive_block(
+    kind: &DirectiveKind,
+    id: Option<&str>,
+    classes: &[String],
+    body_html: &str,
+) -> String {
     match kind {
-        DirectiveKind::Admonition { kind, title, open } => {
-            render_admonition(*kind, title.as_deref(), *open, body_html)
+        DirectiveKind::Callout { kind, title, open } => {
+            render_callout(*kind, title.as_deref(), *open, id, classes, body_html)
         }
-        DirectiveKind::Unknown { .. } => body_html.to_owned(),
+        DirectiveKind::Unknown { name, .. } => render_div(name, id, classes, body_html),
     }
 }
 
@@ -103,7 +114,11 @@ mod tests {
 
     #[test]
     fn render_no_directives() {
-        let input = "# Hello\n\nSome text.\n";
+        let input = indoc! {"
+            # Hello
+
+            Some text.
+        "};
         let page = render_page(input, &SYNTAX_SET);
         assert!(
             page.content_html.contains("<p>Some text.</p>"),
@@ -117,86 +132,21 @@ mod tests {
     }
 
     #[test]
-    fn render_single_admonition() {
+    fn render_single_callout() {
         let input = indoc! {"
-            ::: note
+            ::: callout
             Hello **world**.
             :::
         "};
         let page = render_page(input, &SYNTAX_SET);
         assert!(
-            page.content_html.contains(r#"class="admonition note""#),
-            "should have admonition wrapper, html:\n{}",
+            page.content_html.contains(r#"class="callout note""#),
+            "should have callout wrapper, html:\n{}",
             page.content_html
         );
         assert!(
             page.content_html.contains("<strong>world</strong>"),
             "body markdown should be rendered, html:\n{}",
-            page.content_html
-        );
-    }
-
-    #[test]
-    fn render_multiple_sequential_directives() {
-        let input = indoc! {"
-            ::: note
-            First.
-            :::
-
-            Some text between.
-
-            ::: warning
-            Second.
-            :::
-        "};
-        let page = render_page(input, &SYNTAX_SET);
-        assert!(
-            page.content_html.contains(r#"class="admonition note""#),
-            "first admonition, html:\n{}",
-            page.content_html
-        );
-        assert!(
-            page.content_html.contains(r#"class="admonition warning""#),
-            "second admonition, html:\n{}",
-            page.content_html
-        );
-        assert!(
-            page.content_html.contains("<p>Some text between.</p>"),
-            "text between directives preserved, html:\n{}",
-            page.content_html
-        );
-    }
-
-    #[test]
-    fn render_nested_admonitions() {
-        let input = indoc! {"
-            :::: warning
-            Outer text.
-
-            ::: tip
-            Inner text.
-            :::
-            ::::
-        "};
-        let page = render_page(input, &SYNTAX_SET);
-        assert!(
-            page.content_html.contains(r#"class="admonition warning""#),
-            "outer admonition, html:\n{}",
-            page.content_html
-        );
-        assert!(
-            page.content_html.contains("<p>Outer text.</p>"),
-            "outer body rendered, html:\n{}",
-            page.content_html
-        );
-        assert!(
-            page.content_html.contains(r#"class="admonition tip""#),
-            "inner admonition, html:\n{}",
-            page.content_html
-        );
-        assert!(
-            page.content_html.contains("<p>Inner text.</p>"),
-            "inner body rendered, html:\n{}",
             page.content_html
         );
     }
@@ -210,13 +160,121 @@ mod tests {
         "};
         let page = render_page(input, &SYNTAX_SET);
         assert!(
+            page.content_html.contains(r#"class="custom""#),
+            "unknown directive should be wrapped in div with name as class, html:\n{}",
+            page.content_html
+        );
+        assert!(
             page.content_html.contains("<p>Some body.</p>"),
             "unknown directive body rendered as markdown, html:\n{}",
             page.content_html
         );
+    }
+
+    #[test]
+    fn render_anonymous_div() {
+        let input = indoc! {"
+            ::: {.compact-table}
+            | A | B |
+            |---|---|
+            | 1 | 2 |
+            :::
+        "};
+        let page = render_page(input, &SYNTAX_SET);
         assert!(
-            !page.content_html.contains("admonition"),
-            "should not have admonition wrapper, html:\n{}",
+            page.content_html.contains(r#"class="compact-table""#),
+            "anonymous div should have class, html:\n{}",
+            page.content_html
+        );
+        assert!(
+            page.content_html.contains("<table>"),
+            "table should be rendered inside div, html:\n{}",
+            page.content_html
+        );
+    }
+
+    #[test]
+    fn render_callout_with_id_and_classes() {
+        let input = indoc! {"
+            ::: callout {#my-note .highlight type=tip}
+            Body text.
+            :::
+        "};
+        let page = render_page(input, &SYNTAX_SET);
+        assert!(
+            page.content_html.contains(r#"id="my-note""#),
+            "id should be propagated, html:\n{}",
+            page.content_html
+        );
+        assert!(
+            page.content_html
+                .contains(r#"class="callout tip highlight""#),
+            "classes should be propagated, html:\n{}",
+            page.content_html
+        );
+    }
+
+    #[test]
+    fn render_multiple_sequential_directives() {
+        let input = indoc! {"
+            ::: callout
+            First.
+            :::
+
+            Some text between.
+
+            ::: callout {type=warning}
+            Second.
+            :::
+        "};
+        let page = render_page(input, &SYNTAX_SET);
+        assert!(
+            page.content_html.contains(r#"class="callout note""#),
+            "first callout, html:\n{}",
+            page.content_html
+        );
+        assert!(
+            page.content_html.contains(r#"class="callout warning""#),
+            "second callout, html:\n{}",
+            page.content_html
+        );
+        assert!(
+            page.content_html.contains("<p>Some text between.</p>"),
+            "text between directives preserved, html:\n{}",
+            page.content_html
+        );
+    }
+
+    #[test]
+    fn render_nested_callouts() {
+        let input = indoc! {"
+            :::: callout {type=warning}
+            Outer text.
+
+            ::: callout {type=tip}
+            Inner text.
+            :::
+            ::::
+        "};
+        let page = render_page(input, &SYNTAX_SET);
+        assert!(
+            page.content_html.contains(r#"class="callout warning""#),
+            "outer callout, html:\n{}",
+            page.content_html
+        );
+        assert!(
+            page.content_html.contains("<p>Outer text.</p>"),
+            "outer body rendered, html:\n{}",
+            page.content_html
+        );
+        assert!(
+            page.content_html.contains(r#"class="callout tip""#),
+            "inner callout, html:\n{}",
+            page.content_html
+        );
+        assert!(
+            page.content_html.contains("<p>Inner text.</p>"),
+            "inner body rendered, html:\n{}",
             page.content_html
         );
     }
@@ -224,7 +282,7 @@ mod tests {
     #[test]
     fn render_directive_with_code_and_math() {
         let input = indoc! {"
-            ::: note
+            ::: callout
             Inline $x^2$ math.
 
             ```rust
