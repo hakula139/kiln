@@ -69,9 +69,11 @@ impl Page {
     /// Computes the output path relative to the build output directory.
     ///
     /// Strips the `content/` prefix and the `posts/` segment to match a
-    /// site-specific permalink layout (Hugo `:sections[2:]`).
+    /// site-specific permalink layout (Hugo `:sections[2:]`). Standalone
+    /// files get pretty URLs (`slug/index.html` instead of `slug.html`).
     ///
     /// - `content/posts/foo/bar/index.md` → `foo/bar/index.html`
+    /// - `content/posts/hello-world.md` → `hello-world/index.html`
     /// - `content/example/index.md` → `example/index.html`
     ///
     /// TODO: Make this configurable via `[permalinks]` in `config.toml`.
@@ -92,7 +94,15 @@ impl Page {
             })?;
 
         let stripped = strip_posts_prefix(relative);
-        Ok(stripped.with_extension("html"))
+
+        // Page bundles (index.md) keep their directory structure.
+        // Standalone files get pretty URLs: slug.md → slug/index.html.
+        let stem = stripped.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+        if stem == "index" {
+            Ok(stripped.with_extension("html"))
+        } else {
+            Ok(stripped.with_extension("").join("index.html"))
+        }
     }
 }
 
@@ -347,6 +357,19 @@ mod tests {
         };
         let out = page.output_path(Path::new("/site/content")).unwrap();
         assert_eq!(out, PathBuf::from("example/index.html"));
+    }
+
+    #[test]
+    fn output_path_standalone_pretty_url() {
+        let page = Page {
+            frontmatter: Frontmatter::default(),
+            raw_content: String::new(),
+            slug: "hello-world".into(),
+            summary: None,
+            source_path: PathBuf::from("/site/content/posts/hello-world.md"),
+        };
+        let out = page.output_path(Path::new("/site/content")).unwrap();
+        assert_eq!(out, PathBuf::from("hello-world/index.html"));
     }
 
     #[test]
