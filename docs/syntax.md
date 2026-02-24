@@ -164,17 +164,25 @@ Directives use `:::` fenced blocks (similar to [Pandoc fenced divs](https://pand
 
 ### Basic Syntax
 
-A directive block starts with three or more colons followed by a type name, and ends with a matching (or longer) colon fence:
+A directive block starts with three or more colons followed by an optional directive name, and ends with a matching (or longer) colon fence:
 
 ```markdown
-::: note
+::: callout
 This is a note.
 :::
 ```
 
-### Admonitions
+Pandoc-style attributes (`#id`, `.class`, `key=value`) are specified inside curly braces after the directive name:
 
-Admonitions are styled callout blocks. kiln supports 12 types:
+```markdown
+::: callout {#my-id .custom-class type=tip title="Read This"}
+Content here.
+:::
+```
+
+### Callouts
+
+Callouts are styled content blocks. The `callout` directive supports 12 types:
 
 | Type       | Default Title |
 | ---------- | ------------- |
@@ -191,62 +199,90 @@ Admonitions are styled callout blocks. kiln supports 12 types:
 | `tip`      | Tip           |
 | `warning`  | Warning       |
 
-Type names are case-insensitive (`NOTE`, `Note`, and `note` all work).
-
-Each admonition renders as a collapsible `<details>` element:
+Each callout renders as a collapsible `<details>` element:
 
 ```html
-<details class="admonition note" open>
-  <summary class="admonition-title">Note</summary>
-  <div class="admonition-body">...</div>
+<details class="callout note" open>
+  <summary class="callout-title">Note</summary>
+  <div class="callout-body">...</div>
 </details>
 ```
 
-#### Titles and Options
+#### Type and Options
 
-Custom titles and collapse behavior are set via Pandoc-style key-value attributes in curly braces:
+The callout type defaults to `note`. Use `type=` to specify a different type. Custom titles and collapse behavior are set via Pandoc-style key-value attributes:
 
 ```markdown
-::: {.note title="Custom Title"}
-This note has a custom title.
-:::
-
-::: {.warning title="Careful" open=false}
+::: callout {type=warning title="Careful" open=false}
 This warning starts collapsed.
 :::
 ```
-
-The `.type` class specifies the admonition type (e.g., `.note`, `.warning`).
 
 Recognized attributes:
 
 | Attribute | Values           | Default | Description                              |
 | --------- | ---------------- | ------- | ---------------------------------------- |
+| `type`    | see table above  | `note`  | Callout type (determines icon and style) |
 | `title`   | any string       | none    | Overrides the default title              |
 | `open`    | `true` / `false` | `true`  | Controls whether the `<details>` is open |
 
-The simple form (`::: note`) uses the default title and is open by default. Key-value attributes also work in the simple form without curly braces:
+`::: callout` without attributes uses the default type (`note`), default title, and is open by default. Attributes always require `{…}` braces.
+
+#### Pandoc Attributes
+
+Callouts support `#id` and `.class` attributes inside `{...}`:
 
 ```markdown
-::: note title="Read This" open=false
-Collapsed note with a custom title.
+::: callout {#important .highlight type=tip}
+This tip has a custom id and extra CSS class.
 :::
 ```
 
-The `.type` dot prefix is only needed inside `{...}`. Bare words after the type name (without `=`) are ignored.
+- `#id` sets the HTML `id` attribute on the `<details>` element; the first `#id` wins if duplicates are specified.
+- `.class` appends extra CSS classes after `callout <type>`; multiple `.class` tokens are allowed.
 
 #### Body Content
 
-The body of an admonition is standard Markdown. It is rendered to HTML before being placed inside the admonition wrapper, so all Markdown features (formatting, code blocks, images, etc.) work inside admonitions.
+The body of a callout is standard Markdown. It is rendered to HTML before being placed inside the callout wrapper, so all Markdown features (formatting, code blocks, images, etc.) work inside callouts.
+
+### Fenced Divs
+
+Directives using only Pandoc attributes (no directive name) render as `<div>` wrappers:
+
+```markdown
+::: {.compact-table}
+| A   | B   |
+| --- | --- |
+| 1   | 2   |
+:::
+```
+
+Renders as:
+
+```html
+<div class="compact-table">
+  <table>...</table>
+</div>
+```
+
+This follows the [Pandoc fenced div](https://pandoc.org/MANUAL.html#divs-and-spans) convention and is useful for applying CSS classes to content blocks without semantic meaning.
+
+Both `#id` and `.class` attributes are supported:
+
+```markdown
+::: {#results .wide .striped}
+Content here.
+:::
+```
 
 ### Nesting
 
 Directives can be nested by using more colons for the outer fence:
 
 ```markdown
-:::: warning
-::: note
-This note is inside a warning.
+:::: callout {type=warning}
+::: callout {type=tip}
+This tip is inside a warning.
 :::
 More warning content.
 ::::
@@ -259,7 +295,7 @@ The closing fence must have at least as many colons as the opening fence it clos
 Fenced code blocks inside directives work normally — the parser is aware of code fences and will not interpret `:::` inside a code block as a directive boundary:
 
 ````markdown
-::: note
+::: callout
 Here is an example:
 
 ```python
@@ -270,10 +306,18 @@ print("Hello")
 
 ### Unknown Directives
 
-Unrecognized directive types are parsed but passed through without special rendering. This allows for future extension:
+Unrecognized directive names are rendered as `<div>` elements with the name as a CSS class:
 
 ```markdown
-::: custom-type args
-Body content
+::: custom-type
+Body content.
 :::
+```
+
+Renders as:
+
+```html
+<div class="custom-type">
+  <p>Body content.</p>
+</div>
 ```

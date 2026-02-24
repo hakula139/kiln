@@ -9,7 +9,7 @@ kiln is a custom static site generator (SSG) written in Rust, replacing a Hugo +
 - [x] Workspace scaffold + CLI
 - [x] TOML configuration + content model (frontmatter, pages, discovery)
 - [x] Markdown rendering (GFM, syntax highlighting, KaTeX math, images)
-- [x] Directive parser + admonition renderer
+- [x] Directive parser + callout renderer + fenced divs
 - [x] Render pipeline (directive processing → markdown → ToC)
 - [x] MiniJinja template engine (OG / Twitter Card / SEO meta)
 - [x] Single-page build pipeline
@@ -49,8 +49,9 @@ public/          # Build output (configurable via output_dir)
   - `page` — `Page` struct, slug derivation, summary extraction, output path computation, co-located asset discovery
   - `discovery` — recursive content directory walking with draft / `_`-prefix exclusion
 - `directive/` — `:::`-fenced directive parsing + rendering (shared types in `directive.rs`)
-  - `parser` — line-based stack parser with nesting + code block awareness
-  - `admonition` — HTML renderer for 12 admonition types
+  - `parser` — line-based stack parser with nesting, code block awareness, Pandoc `{#id .class key=value}` attribute extraction
+  - `callout` — HTML renderer for 12 callout types (`<details>` with id / class propagation)
+  - `div` — HTML renderer for fenced divs and unknown directives (`<div>` with id / class propagation)
 - `output` — file output, static file copying, output directory cleaning
 - `render/` — markdown rendering pipeline (shared `escape_html` utility in `render.rs`)
   - `highlight` — syntect CSS-class syntax highlighting with line numbers, canonical language labels
@@ -102,6 +103,7 @@ public/          # Build output (configurable via output_dir)
 - Unit tests in the same file as the code they test (`#[cfg(test)]` module).
 - Integration tests in `tests/` directory for cross-module behavior.
 - Group tests by function under `// -- function_name --` section headers. Within each section, order: happy path → variants → error cases.
+- Use `indoc!` for multi-line test inputs whenever possible.
 
 ## Verification
 
