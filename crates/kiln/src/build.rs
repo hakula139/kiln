@@ -348,4 +348,29 @@ mod tests {
             "stale output should be removed"
         );
     }
+
+    #[test]
+    fn build_invalid_config_returns_error() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("config.toml"), "{{invalid toml").unwrap();
+
+        let err = build(root.path()).unwrap_err().to_string();
+        assert!(
+            err.contains("failed to load config"),
+            "should report config failure, got: {err}"
+        );
+    }
+
+    #[test]
+    fn build_missing_templates_returns_error() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("config.toml"), "").unwrap();
+        // No templates directory created.
+
+        let err = build(root.path()).unwrap_err().to_string();
+        assert!(
+            err.contains("failed to initialize template engine"),
+            "should report template engine failure, got: {err}"
+        );
+    }
 }
