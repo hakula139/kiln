@@ -18,6 +18,8 @@ pub fn write_output(path: &Path, content: &str) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use std::os::unix::fs::PermissionsExt;
+
     use super::*;
 
     #[test]
@@ -39,5 +41,37 @@ mod tests {
         write_output(&path, "second").unwrap();
 
         assert_eq!(fs::read_to_string(&path).unwrap(), "second");
+    }
+
+    #[test]
+    fn create_dir_permission_denied_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let readonly = dir.path().join("readonly");
+        fs::create_dir(&readonly).unwrap();
+        fs::set_permissions(&readonly, fs::Permissions::from_mode(0o444)).unwrap();
+
+        let err = write_output(&readonly.join("sub").join("file.html"), "content")
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("failed to create directory"),
+            "should report directory creation failure, got: {err}"
+        );
+    }
+
+    #[test]
+    fn write_permission_denied_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let readonly = dir.path().join("readonly");
+        fs::create_dir(&readonly).unwrap();
+        fs::set_permissions(&readonly, fs::Permissions::from_mode(0o444)).unwrap();
+
+        let err = write_output(&readonly.join("file.html"), "content")
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("failed to write"),
+            "should report write failure, got: {err}"
+        );
     }
 }
