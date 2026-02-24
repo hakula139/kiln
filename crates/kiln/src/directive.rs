@@ -210,7 +210,7 @@ mod tests {
     }
 
     #[test]
-    fn from_str_unknown_returns_err() {
+    fn from_str_unknown_returns_error() {
         assert!("foobar".parse::<AdmonitionKind>().is_err());
         assert!("".parse::<AdmonitionKind>().is_err());
     }

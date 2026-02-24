@@ -159,6 +159,8 @@ mod tests {
 
     use super::*;
 
+    // -- split_frontmatter --
+
     #[test]
     fn split_basic() {
         let input = indoc! {r#"
@@ -215,8 +217,8 @@ mod tests {
     }
 
     #[test]
-    fn split_delimiter_not_on_own_line() {
-        // `+++` appears mid-line, should not be treated as closing delimiter.
+    fn split_closing_delimiter_inside_value_ignored() {
+        // `+++` appears mid-line in a value, should not be treated as closing delimiter.
         let input = indoc! {r#"
             +++
             foo = "+++ not a delimiter"
@@ -229,23 +231,61 @@ mod tests {
     }
 
     #[test]
-    fn split_missing_opening_delimiter() {
+    fn split_closing_delimiter_must_end_line() {
+        // `+++not_end` should not be treated as a closing delimiter.
+        let input = indoc! {r#"
+            +++
+            title = "test"
+            +++not_end
+            +++
+            Body
+        "#};
+        let (fm, body) = split_frontmatter(input).unwrap();
+        assert_eq!(fm, "title = \"test\"\n+++not_end\n");
+        assert_eq!(body, "Body\n");
+    }
+
+    #[test]
+    fn split_opening_delimiter_not_on_own_line_returns_error() {
+        let input = indoc! {"
+            +++extra
+            +++
+        "};
+        let err = split_frontmatter(input).unwrap_err().to_string();
+        assert!(
+            err.contains("must be on its own line"),
+            "should reject opening delimiter with trailing content, got: {err}"
+        );
+    }
+
+    #[test]
+    fn split_missing_opening_delimiter_returns_error() {
         let input = indoc! {r#"
             title = "Hello"
             +++
             Body
         "#};
-        assert!(split_frontmatter(input).is_err());
+        let err = split_frontmatter(input).unwrap_err().to_string();
+        assert!(
+            err.contains("missing opening `+++` delimiter"),
+            "should report missing opening delimiter, got: {err}"
+        );
     }
 
     #[test]
-    fn split_missing_closing_delimiter() {
+    fn split_missing_closing_delimiter_returns_error() {
         let input = indoc! {r#"
             +++
             title = "Hello"
         "#};
-        assert!(split_frontmatter(input).is_err());
+        let err = split_frontmatter(input).unwrap_err().to_string();
+        assert!(
+            err.contains("missing closing `+++` delimiter"),
+            "should report missing closing delimiter, got: {err}"
+        );
     }
+
+    // -- parse --
 
     #[test]
     fn parse_minimal() {
@@ -295,7 +335,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_invalid_toml() {
+    fn parse_invalid_toml_returns_error() {
         let input = indoc! {r"
             +++
             {{invalid toml
@@ -306,7 +346,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_unknown_field_errors() {
+    fn parse_unknown_field_returns_error() {
         let input = indoc! {r"
             +++
             daft = true
@@ -321,7 +361,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_wrong_type_for_date_errors() {
+    fn parse_wrong_type_for_date_returns_error() {
         let input = indoc! {r"
             +++
             date = 42
@@ -335,7 +375,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_local_datetime_without_offset_errors() {
+    fn parse_local_datetime_without_offset_returns_error() {
         let input = indoc! {"
             +++
             date = 2024-06-15T10:30:00

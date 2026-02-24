@@ -440,8 +440,8 @@ mod tests {
             out.html
         );
         assert_eq!(out.headings.len(), 1);
-        assert_eq!(out.headings[0].id, "introduction");
         assert_eq!(out.headings[0].level, HeadingLevel::H2);
+        assert_eq!(out.headings[0].id, "introduction");
         assert_eq!(out.headings[0].title, "Introduction");
     }
 
@@ -468,7 +468,7 @@ mod tests {
     }
 
     #[test]
-    fn render_heading_with_math() {
+    fn render_heading_with_inline_math() {
         let out = render_markdown("## The $x^2$ equation", &SYNTAX_SET);
         assert!(
             out.html
@@ -481,10 +481,23 @@ mod tests {
     }
 
     #[test]
+    fn render_heading_with_display_math() {
+        let out = render_markdown("## Sum $$\\sum_{i=1}^n$$", &SYNTAX_SET);
+        assert!(
+            out.html
+                .contains(r#"<span class="math math-display">\[\sum_{i=1}^n\]</span>"#),
+            "should contain KaTeX HTML in heading, html:\n{}",
+            out.html
+        );
+        assert_eq!(out.headings[0].id, "sum-sum-i-1-n");
+        assert_eq!(out.headings[0].title, "Sum \\sum_{i=1}^n");
+    }
+
+    #[test]
     fn render_heading_with_link() {
         let out = render_markdown("## See [example](https://example.com)", &SYNTAX_SET);
-        assert_eq!(out.headings[0].title, "See example");
         assert_eq!(out.headings[0].id, "see-example");
+        assert_eq!(out.headings[0].title, "See example");
         assert!(
             out.html.contains(r#"href="https://example.com""#),
             "link should be preserved in HTML, html:\n{}",
@@ -516,12 +529,12 @@ mod tests {
         "};
         let out = render_markdown(md, &SYNTAX_SET);
         assert_eq!(out.headings.len(), 3);
-        assert_eq!(out.headings[0].title, "First");
         assert_eq!(out.headings[0].level, HeadingLevel::H2);
-        assert_eq!(out.headings[1].title, "Second");
+        assert_eq!(out.headings[0].title, "First");
         assert_eq!(out.headings[1].level, HeadingLevel::H3);
-        assert_eq!(out.headings[2].title, "Third");
+        assert_eq!(out.headings[1].title, "Second");
         assert_eq!(out.headings[2].level, HeadingLevel::H2);
+        assert_eq!(out.headings[2].title, "Third");
     }
 
     #[test]
@@ -893,6 +906,22 @@ mod tests {
         assert!(
             out.html.contains(r#"alt="icon""#),
             "should have alt attribute, html:\n{}",
+            out.html
+        );
+    }
+
+    #[test]
+    fn render_image_with_trailing_text_stays_inline() {
+        let md = "![icon](icon.png) followed by text\n";
+        let out = render_markdown(md, &SYNTAX_SET);
+        assert!(
+            !out.html.contains("<figure>"),
+            "image with trailing text should not become a figure, html:\n{}",
+            out.html
+        );
+        assert!(
+            out.html.contains("<img "),
+            "should have img tag, html:\n{}",
             out.html
         );
     }
