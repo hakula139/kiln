@@ -2,6 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
+use walkdir::WalkDir;
 
 use crate::content::frontmatter::{self, Frontmatter};
 
@@ -13,6 +14,9 @@ pub struct Page {
     pub slug: String,
     pub summary: Option<String>,
     pub source_path: PathBuf,
+    /// Co-located non-markdown files for page bundles (e.g., images).
+    /// Empty for standalone pages and pages created via `from_content`.
+    pub assets: Vec<PathBuf>,
 }
 
 /// Summary separator used in markdown content.
@@ -28,8 +32,18 @@ impl Page {
     pub fn from_file(path: &Path) -> Result<Self> {
         let content = fs::read_to_string(path)
             .with_context(|| format!("failed to read {}", path.display()))?;
-        Self::from_content(&content, path)
-            .with_context(|| format!("failed to parse {}", path.display()))
+        let mut page = Self::from_content(&content, path)
+            .with_context(|| format!("failed to parse {}", path.display()))?;
+
+        // Discover co-located assets for page bundles.
+        if is_page_bundle(path)
+            && let Some(dir) = path.parent()
+        {
+            page.assets = discover_assets(dir)
+                .with_context(|| format!("failed to read assets in {}", dir.display()))?;
+        }
+
+        Ok(page)
     }
 
     /// Parses a page from its raw content string and source path.
@@ -63,15 +77,18 @@ impl Page {
             slug,
             summary,
             source_path: path.to_owned(),
+            assets: Vec::new(),
         })
     }
 
     /// Computes the output path relative to the build output directory.
     ///
     /// Strips the `content/` prefix and the `posts/` segment to match a
-    /// site-specific permalink layout (Hugo `:sections[2:]`).
+    /// site-specific permalink layout (Hugo `:sections[2:]`). Standalone
+    /// files get pretty URLs (`slug/index.html` instead of `slug.html`).
     ///
     /// - `content/posts/foo/bar/index.md` → `foo/bar/index.html`
+    /// - `content/posts/hello-world.md` → `hello-world/index.html`
     /// - `content/example/index.md` → `example/index.html`
     ///
     /// TODO: Make this configurable via `[permalinks]` in `config.toml`.
@@ -92,8 +109,40 @@ impl Page {
             })?;
 
         let stripped = strip_posts_prefix(relative);
-        Ok(stripped.with_extension("html"))
+
+        // Page bundles (index.md) keep their directory structure.
+        // Standalone files get pretty URLs: slug.md → slug/index.html.
+        let stem = stripped.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+        if stem == "index" {
+            Ok(stripped.with_extension("html"))
+        } else {
+            Ok(stripped.with_extension("").join("index.html"))
+        }
     }
+}
+
+/// Returns `true` if the file is a page bundle entry point (`index.md`).
+fn is_page_bundle(path: &Path) -> bool {
+    path.file_stem().and_then(|s| s.to_str()) == Some("index")
+}
+
+/// Recursively discovers co-located non-markdown files in a page bundle directory.
+///
+/// Returns sorted absolute paths for deterministic output.
+fn discover_assets(dir: &Path) -> Result<Vec<PathBuf>> {
+    let mut assets = Vec::new();
+    for entry in WalkDir::new(dir).follow_links(false) {
+        let entry = entry.with_context(|| format!("failed to read entry in {}", dir.display()))?;
+        if !entry.file_type().is_file() {
+            continue;
+        }
+        let path = entry.into_path();
+        if path.extension().is_none_or(|ext| ext != "md") {
+            assets.push(path);
+        }
+    }
+    assets.sort();
+    Ok(assets)
 }
 
 /// Derives the page slug from its file path.
@@ -146,6 +195,7 @@ mod tests {
     use indoc::indoc;
 
     use super::*;
+    use crate::test_utils::PermissionGuard;
 
     // -- derive_slug --
 
@@ -261,7 +311,7 @@ mod tests {
         );
     }
 
-    // -- from_file --
+    // -- from_file: basic --
 
     #[test]
     fn from_file_basic() {
@@ -321,6 +371,145 @@ mod tests {
         );
     }
 
+    // -- from_file: asset discovery --
+
+    #[test]
+    fn from_file_page_bundle_discovers_assets_recursively() {
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = dir.path().join("content").join("posts").join("hello");
+        let assets_dir = bundle.join("assets");
+        fs::create_dir_all(&assets_dir).unwrap();
+        fs::write(
+            bundle.join("index.md"),
+            indoc! {r#"
+                +++
+                title = "Hello"
+                +++
+                Body
+            "#},
+        )
+        .unwrap();
+        fs::write(bundle.join("cover.webp"), "fake-webp").unwrap();
+        fs::write(assets_dir.join("screenshot.webp"), "fake-webp").unwrap();
+        fs::write(assets_dir.join("data.json"), "{}").unwrap();
+
+        let page = Page::from_file(&bundle.join("index.md")).unwrap();
+        let relative_paths: Vec<_> = page
+            .assets
+            .iter()
+            .map(|p| p.strip_prefix(&bundle).unwrap().to_str().unwrap())
+            .collect();
+        assert_eq!(
+            relative_paths,
+            vec!["assets/data.json", "assets/screenshot.webp", "cover.webp"]
+        );
+    }
+
+    #[test]
+    fn from_file_page_bundle_excludes_markdown() {
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = dir.path().join("hello");
+        fs::create_dir_all(&bundle).unwrap();
+        fs::write(
+            bundle.join("index.md"),
+            indoc! {r#"
+                +++
+                title = "Hello"
+                +++
+                Body
+            "#},
+        )
+        .unwrap();
+        fs::write(bundle.join("notes.md"), "other markdown").unwrap();
+        fs::write(bundle.join("image.png"), "fake-png").unwrap();
+
+        let page = Page::from_file(&bundle.join("index.md")).unwrap();
+        let relative_paths: Vec<_> = page
+            .assets
+            .iter()
+            .map(|p| p.strip_prefix(&bundle).unwrap().to_str().unwrap())
+            .collect();
+        assert_eq!(relative_paths, vec!["image.png"]);
+    }
+
+    #[test]
+    fn from_file_standalone_has_no_assets() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("standalone.md");
+        fs::write(
+            &file,
+            indoc! {r#"
+                +++
+                title = "Standalone"
+                +++
+                Body
+            "#},
+        )
+        .unwrap();
+        fs::write(dir.path().join("image.png"), "fake-png").unwrap();
+
+        let page = Page::from_file(&file).unwrap();
+        assert!(page.assets.is_empty());
+    }
+
+    #[test]
+    fn from_file_unreadable_bundle_dir_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = dir.path().join("hello");
+        fs::create_dir_all(&bundle).unwrap();
+        fs::write(
+            bundle.join("index.md"),
+            indoc! {r#"
+                +++
+                title = "Hello"
+                +++
+                Body
+            "#},
+        )
+        .unwrap();
+
+        // Remove read permission but keep execute so the file can still be read by path.
+        let _guard = PermissionGuard::restrict(&bundle, 0o111);
+
+        let err = Page::from_file(&bundle.join("index.md"))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("failed to read assets"),
+            "should report asset discovery failure, got: {err}"
+        );
+    }
+
+    #[test]
+    fn from_file_unreadable_subdir_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = dir.path().join("hello");
+        let subdir = bundle.join("broken");
+        fs::create_dir_all(&subdir).unwrap();
+        fs::write(
+            bundle.join("index.md"),
+            indoc! {r#"
+                +++
+                title = "Hello"
+                +++
+                Body
+            "#},
+        )
+        .unwrap();
+        fs::write(subdir.join("file.txt"), "content").unwrap();
+
+        // Make the subdirectory unreadable so WalkDir yields an error entry.
+        let _guard = PermissionGuard::restrict(&subdir, 0o000);
+
+        let err = Page::from_file(&bundle.join("index.md"))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("failed to read"),
+            "should report entry read failure, got: {err}"
+        );
+    }
+
     // -- output_path --
 
     #[test]
@@ -331,6 +520,7 @@ mod tests {
             slug: "bar".into(),
             summary: None,
             source_path: PathBuf::from("/site/content/posts/foo/bar/index.md"),
+            assets: Vec::new(),
         };
         let out = page.output_path(Path::new("/site/content")).unwrap();
         assert_eq!(out, PathBuf::from("foo/bar/index.html"));
@@ -344,9 +534,24 @@ mod tests {
             slug: "example".into(),
             summary: None,
             source_path: PathBuf::from("/site/content/example/index.md"),
+            assets: Vec::new(),
         };
         let out = page.output_path(Path::new("/site/content")).unwrap();
         assert_eq!(out, PathBuf::from("example/index.html"));
+    }
+
+    #[test]
+    fn output_path_standalone_pretty_url() {
+        let page = Page {
+            frontmatter: Frontmatter::default(),
+            raw_content: String::new(),
+            slug: "hello-world".into(),
+            summary: None,
+            source_path: PathBuf::from("/site/content/posts/hello-world.md"),
+            assets: Vec::new(),
+        };
+        let out = page.output_path(Path::new("/site/content")).unwrap();
+        assert_eq!(out, PathBuf::from("hello-world/index.html"));
     }
 
     #[test]
@@ -357,6 +562,7 @@ mod tests {
             slug: "test".into(),
             summary: None,
             source_path: PathBuf::from("/other/dir/test.md"),
+            assets: Vec::new(),
         };
         assert!(page.output_path(Path::new("/site/content")).is_err());
     }
