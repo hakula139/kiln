@@ -20,8 +20,12 @@ kiln is purpose-built to support the specific needs of hakula.xyz — CJK conten
 - [x] CJK-aware heading ID generation and table of contents
 - [x] [MiniJinja](https://github.com/mitsuhiko/minijinja) templates with Open Graph / Twitter Card / SEO meta
 - [x] Single-page build pipeline
-- [ ] Static asset pipeline + dark theme with [Tailwind CSS](https://tailwindcss.com)
+- [ ] Multi-page builds + static file copying
+- [ ] Additional directives (styled blocks, embeds, link cards)
+- [ ] Hugo content migration tool (`kiln convert`)
 - [ ] Taxonomy support (tags, categories) with pagination
+- [ ] Home page, section pages, and special pages
+- [ ] Dark theme with [Tailwind CSS](https://tailwindcss.com)
 - [ ] RSS feed + sitemap
 - [ ] Full-text search via [Pagefind](https://pagefind.app)
 

@@ -13,10 +13,15 @@ kiln is a custom static site generator (SSG) written in Rust, replacing a Hugo +
 - [x] Render pipeline (directive processing → markdown → ToC)
 - [x] MiniJinja template engine (OG / Twitter Card / SEO meta)
 - [x] Single-page build pipeline
-- [ ] Static asset pipeline + Tailwind CSS theming
+- [ ] Multi-page builds + static file copying + pretty URLs
+- [ ] Hugo → kiln content converter (`kiln convert`)
+- [ ] Remaining directive renderers (style, embed, site, score-table)
 - [ ] Taxonomy support (tags, categories) with pagination
+- [ ] Home page + section pages + special pages
+- [ ] Tailwind CSS + dark theme
 - [ ] RSS feed + sitemap
 - [ ] Full-text search (Pagefind)
+- [ ] 404 page + final polish
 
 ### CLI
 
