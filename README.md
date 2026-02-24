@@ -6,24 +6,24 @@
 
 A custom static site generator (SSG) written in Rust, replacing a [Hugo](https://gohugo.io) + [LoveIt](https://github.com/dillonzq/LoveIt) stack for [hakula.xyz](https://hakula.xyz).
 
-> **Status**: Work in progress. Core content model and CLI are functional; rendering pipeline and templates are under active development.
-
 ## Overview
 
 kiln is purpose-built to support the specific needs of hakula.xyz — CJK content, KaTeX math, custom directive-based shortcodes, and full control over the rendering pipeline. Rather than fighting a general-purpose SSG's assumptions, kiln implements exactly what's needed with no more complexity than necessary.
 
-### Planned Features
+## Roadmap
 
-- TOML configuration and frontmatter (`+++` delimited)
-- Markdown with GFM extensions (tables, strikethrough, autolinks)
-- KaTeX math support (`$...$` / `$$...$$`)
-- Syntax highlighting via [syntect](https://github.com/trishume/syntect) (CSS classes, no JS runtime)
-- `:::` fenced directive system (admonitions, styled blocks, embeds)
-- CJK-aware heading ID generation and table of contents
-- Taxonomy support (tags, categories) with pagination
-- RSS feed, sitemap, and SEO meta tags
-- Dark theme with [Tailwind CSS](https://tailwindcss.com)
-- Full-text search via [Pagefind](https://pagefind.app)
+- [x] TOML configuration and frontmatter (`+++` delimited)
+- [x] Markdown with GFM extensions (tables, strikethrough, autolinks, footnotes)
+- [x] KaTeX math support (`$...$` / `$$...$$`)
+- [x] Syntax highlighting via [syntect](https://github.com/trishume/syntect) (CSS classes, no JS runtime)
+- [x] `:::` fenced directive system with nested admonitions
+- [x] CJK-aware heading ID generation and table of contents
+- [x] [MiniJinja](https://github.com/mitsuhiko/minijinja) templates with Open Graph / Twitter Card / SEO meta
+- [x] Single-page build pipeline
+- [ ] Static asset pipeline + dark theme with [Tailwind CSS](https://tailwindcss.com)
+- [ ] Taxonomy support (tags, categories) with pagination
+- [ ] RSS feed + sitemap
+- [ ] Full-text search via [Pagefind](https://pagefind.app)
 
 ## Usage
 
