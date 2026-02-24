@@ -2,6 +2,7 @@ pub mod config;
 pub mod content;
 pub mod directive;
 pub mod render;
+pub mod template;
 
 use std::path::Path;
 
