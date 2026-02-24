@@ -129,13 +129,7 @@ mod tests {
     use super::*;
 
     fn copy_templates(dest: &Path) {
-        fs::create_dir_all(dest).unwrap();
-        for entry in fs::read_dir(crate::test_utils::template_dir()).unwrap() {
-            let entry = entry.unwrap();
-            if entry.file_type().unwrap().is_file() {
-                fs::copy(entry.path(), dest.join(entry.file_name())).unwrap();
-            }
-        }
+        copy_static(&crate::test_utils::template_dir(), dest).unwrap();
     }
 
     // -- page_url --
