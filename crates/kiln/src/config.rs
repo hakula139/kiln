@@ -2,10 +2,10 @@ use std::fs;
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// Site-wide configuration loaded from `config.toml`.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Config {
     #[serde(default = "default_base_url")]
     pub base_url: String,
@@ -26,7 +26,7 @@ pub struct Config {
     pub author: Author,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 pub struct Author {
     #[serde(default)]
     pub name: String,
