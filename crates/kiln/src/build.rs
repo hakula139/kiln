@@ -6,7 +6,7 @@ use syntect::parsing::SyntaxSet;
 use crate::config::Config;
 use crate::content::discovery::discover_content;
 use crate::content::page::Page;
-use crate::output::write_output;
+use crate::output::{clean_output_dir, copy_file, copy_static, write_output};
 use crate::render::pipeline::render_page;
 use crate::template::{PostTemplateVars, TemplateEngine};
 
@@ -37,6 +37,9 @@ pub fn build(root: &Path) -> Result<()> {
 
     let content = discover_content(root)?;
     let output_dir = root.join(&ctx.config.output_dir);
+
+    clean_output_dir(&output_dir).context("failed to clean output directory")?;
+    copy_static(&root.join("static"), &output_dir).context("failed to copy static files")?;
 
     for page in &content.pages {
         build_page(&ctx, page, &content.content_dir, &output_dir)?;
@@ -79,7 +82,26 @@ fn build_page(
         .with_context(|| format!("failed to render {}", page.source_path.display()))?;
 
     let dest = output_dir.join(&output_path);
-    write_output(&dest, &html).with_context(|| format!("failed to write {}", dest.display()))
+    write_output(&dest, &html).with_context(|| format!("failed to write {}", dest.display()))?;
+
+    // Copy co-located assets (images, etc.) alongside the rendered page.
+    if let Some(bundle_dir) = page.source_path.parent() {
+        let asset_output_dir = dest.parent().expect("output file should have a parent");
+        for asset in &page.assets {
+            let relative = asset.strip_prefix(bundle_dir).with_context(|| {
+                format!(
+                    "asset {} is not under {}",
+                    asset.display(),
+                    bundle_dir.display()
+                )
+            })?;
+            let asset_dest = asset_output_dir.join(relative);
+            copy_file(asset, &asset_dest)
+                .with_context(|| format!("failed to copy asset {}", asset.display()))?;
+        }
+    }
+
+    Ok(())
 }
 
 /// Computes the canonical URL for a page from its output path.
@@ -155,10 +177,12 @@ mod tests {
 
         build(root.path()).unwrap();
 
-        // Output directory should not be created when there are no pages
+        // Output directory exists (created by clean_output_dir) but is empty
+        let output_dir = root.path().join("public");
+        assert!(output_dir.exists(), "output directory should exist");
         assert!(
-            !root.path().join("public").exists(),
-            "output directory should not exist for empty site"
+            fs::read_dir(&output_dir).unwrap().next().is_none(),
+            "output directory should be empty for site with no content"
         );
     }
 
@@ -242,6 +266,86 @@ mod tests {
         assert!(
             html.contains("<p>This is a test <strong>post</strong>.</p>"),
             "should have rendered content, html:\n{html}"
+        );
+    }
+
+    #[test]
+    fn build_copies_static_files() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("config.toml"), "").unwrap();
+        copy_templates(&root.path().join("templates"));
+
+        // Create static files
+        let static_dir = root.path().join("static");
+        fs::create_dir_all(static_dir.join("images")).unwrap();
+        fs::write(static_dir.join("favicon.ico"), "icon").unwrap();
+        fs::write(static_dir.join("images").join("logo.png"), "logo").unwrap();
+
+        build(root.path()).unwrap();
+
+        let output_dir = root.path().join("public");
+        assert_eq!(
+            fs::read_to_string(output_dir.join("favicon.ico")).unwrap(),
+            "icon"
+        );
+        assert_eq!(
+            fs::read_to_string(output_dir.join("images").join("logo.png")).unwrap(),
+            "logo"
+        );
+    }
+
+    #[test]
+    fn build_copies_colocated_assets() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("config.toml"), "").unwrap();
+        copy_templates(&root.path().join("templates"));
+
+        // Page bundle with co-located assets
+        let bundle = root.path().join("content").join("posts").join("hello");
+        let assets_dir = bundle.join("assets");
+        fs::create_dir_all(&assets_dir).unwrap();
+        fs::write(
+            bundle.join("index.md"),
+            indoc! {r#"
+                +++
+                title = "Hello"
+                +++
+                Body
+            "#},
+        )
+        .unwrap();
+        fs::write(bundle.join("cover.webp"), "cover-data").unwrap();
+        fs::write(assets_dir.join("diagram.svg"), "svg-data").unwrap();
+
+        build(root.path()).unwrap();
+
+        let output_dir = root.path().join("public").join("hello");
+        assert_eq!(
+            fs::read_to_string(output_dir.join("cover.webp")).unwrap(),
+            "cover-data"
+        );
+        assert_eq!(
+            fs::read_to_string(output_dir.join("assets").join("diagram.svg")).unwrap(),
+            "svg-data"
+        );
+    }
+
+    #[test]
+    fn build_cleans_stale_output() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("config.toml"), "").unwrap();
+        copy_templates(&root.path().join("templates"));
+
+        // Pre-existing stale output
+        let output_dir = root.path().join("public");
+        fs::create_dir_all(output_dir.join("old")).unwrap();
+        fs::write(output_dir.join("old").join("stale.html"), "stale").unwrap();
+
+        build(root.path()).unwrap();
+
+        assert!(
+            !output_dir.join("old").exists(),
+            "stale output should be removed"
         );
     }
 }
