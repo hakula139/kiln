@@ -1,4 +1,5 @@
-pub mod admonition;
+pub mod callout;
+pub mod div;
 pub mod parser;
 
 use std::borrow::Cow;
@@ -7,14 +8,14 @@ use std::ops::Range;
 
 use strum::{AsRefStr, EnumIter, EnumString};
 
-/// Known admonition types.
+/// Known callout types.
 ///
 /// - `AsRefStr` yields the lowercase identifier (e.g., `"note"`).
 /// - `EnumString` provides case-insensitive [`FromStr`](std::str::FromStr).
 /// - `Display` yields the titlecase form (e.g., `"Note"`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, AsRefStr, EnumString, EnumIter)]
 #[strum(serialize_all = "lowercase", ascii_case_insensitive)]
-pub enum AdmonitionKind {
+pub enum CalloutKind {
     Abstract,
     Bug,
     Danger,
@@ -29,7 +30,7 @@ pub enum AdmonitionKind {
     Warning,
 }
 
-impl fmt::Display for AdmonitionKind {
+impl fmt::Display for CalloutKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut chars = self.as_ref().chars();
         if let Some(c) = chars.next() {
@@ -40,32 +41,29 @@ impl fmt::Display for AdmonitionKind {
     }
 }
 
-/// Parsed directive type — either a known admonition or an unrecognized name
-/// preserved for future extension.
+/// Parsed directive type — either a callout or an unrecognized name preserved
+/// for future extension.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DirectiveKind {
-    Admonition {
-        kind: AdmonitionKind,
+    Callout {
+        kind: CalloutKind,
         title: Option<String>,
         open: bool,
     },
-    /// Unrecognized type — callers pass through body as-is.
+    /// Unrecognized type — rendered as a `<div>` or passed through as-is.
     Unknown { name: String, args: String },
 }
 
 impl DirectiveKind {
     /// Parses a directive name and raw arguments into the appropriate variant.
-    /// Each variant owns its argument grammar.
     fn from_name(name: &str, args: &str) -> Self {
-        match name.parse::<AdmonitionKind>() {
-            Ok(kind) => {
-                let (title, open) = admonition::parse_args(args);
-                Self::Admonition { kind, title, open }
-            }
-            Err(_) => Self::Unknown {
-                name: name.to_string(),
-                args: args.to_string(),
-            },
+        if name.eq_ignore_ascii_case("callout") {
+            let (kind, title, open) = callout::parse_args(args);
+            return Self::Callout { kind, title, open };
+        }
+        Self::Unknown {
+            name: name.to_string(),
+            args: args.to_string(),
         }
     }
 }
@@ -169,6 +167,10 @@ fn unescape_quoted(s: &str) -> String {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DirectiveBlock {
     pub kind: DirectiveKind,
+    /// Pandoc `#id` attribute (first one wins if multiple specified).
+    pub id: Option<String>,
+    /// Extra CSS classes from Pandoc `.class` tokens (excluding the directive name).
+    pub classes: Vec<String>,
     /// Body text between the opening and closing fences.
     ///
     /// For nested directives, the outer block's body contains the inner directive
@@ -185,18 +187,18 @@ mod tests {
 
     use super::*;
 
-    // -- AdmonitionKind --
+    // -- CalloutKind --
 
     #[test]
     fn all_variants_round_trip() {
-        for kind in AdmonitionKind::iter() {
+        for kind in CalloutKind::iter() {
             let s: &str = kind.as_ref();
 
             // Round-trip through FromStr.
-            assert_eq!(s.parse::<AdmonitionKind>().unwrap(), kind);
+            assert_eq!(s.parse::<CalloutKind>().unwrap(), kind);
 
             // Case-insensitive.
-            assert_eq!(s.to_uppercase().parse::<AdmonitionKind>().unwrap(), kind);
+            assert_eq!(s.to_uppercase().parse::<CalloutKind>().unwrap(), kind);
 
             // Display is titlecase of as_ref.
             let mut expected = String::new();
@@ -211,8 +213,8 @@ mod tests {
 
     #[test]
     fn from_str_unknown_returns_error() {
-        assert!("foobar".parse::<AdmonitionKind>().is_err());
-        assert!("".parse::<AdmonitionKind>().is_err());
+        assert!("foobar".parse::<CalloutKind>().is_err());
+        assert!("".parse::<CalloutKind>().is_err());
     }
 
     // -- parse_attrs --
