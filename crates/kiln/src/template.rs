@@ -65,17 +65,7 @@ pub struct PostTemplateVars<'a> {
 mod tests {
     use super::*;
 
-    fn test_engine() -> TemplateEngine {
-        let template_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("..")
-            .join("templates");
-        TemplateEngine::new(&template_dir).unwrap()
-    }
-
-    fn test_config() -> Config {
-        toml::from_str("").unwrap()
-    }
+    use crate::test_utils::{test_config, test_engine};
 
     // -- new --
 
