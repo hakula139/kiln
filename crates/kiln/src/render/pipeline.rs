@@ -96,6 +96,7 @@ fn render_directive_block(
         DirectiveKind::Callout { kind, title, open } => {
             render_callout(*kind, title.as_deref(), *open, id, classes, body_html)
         }
+        // args intentionally unused until directive-specific renderers exist.
         DirectiveKind::Unknown { name, .. } => render_div(name, id, classes, body_html),
     }
 }
