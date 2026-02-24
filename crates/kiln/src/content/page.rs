@@ -223,7 +223,7 @@ mod tests {
         );
     }
 
-    // -- from_content / from_file --
+    // -- from_content --
 
     #[test]
     fn from_content_basic() {
@@ -243,6 +243,25 @@ mod tests {
         assert_eq!(page.slug, "test");
         assert_eq!(page.summary.unwrap(), "Summary here.");
     }
+
+    #[test]
+    fn from_content_bare_index_no_slug_returns_error() {
+        let content = indoc! {r#"
+            +++
+            title = "Test"
+            +++
+            Body
+        "#};
+        let err = Page::from_content(content, Path::new("index.md"))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("cannot derive slug"),
+            "should report slug derivation failure, got: {err}"
+        );
+    }
+
+    // -- from_file --
 
     #[test]
     fn from_file_integration() {
@@ -268,6 +287,38 @@ mod tests {
         assert_eq!(page.frontmatter.title, "Test");
         assert_eq!(page.slug, "test");
         assert_eq!(page.summary.unwrap(), "Summary here.");
+    }
+
+    #[test]
+    fn from_file_nonexistent_returns_error() {
+        let err = Page::from_file(Path::new("/nonexistent/test.md"))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("failed to read"),
+            "should report read failure, got: {err}"
+        );
+    }
+
+    #[test]
+    fn from_file_invalid_frontmatter_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("bad.md");
+        fs::write(
+            &file,
+            indoc! {"
+                +++
+                not valid {{{
+                +++
+            "},
+        )
+        .unwrap();
+
+        let err = Page::from_file(&file).unwrap_err().to_string();
+        assert!(
+            err.contains("failed to parse"),
+            "should report parse failure, got: {err}"
+        );
     }
 
     // -- output_path --
