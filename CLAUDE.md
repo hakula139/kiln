@@ -13,7 +13,7 @@ kiln is a custom static site generator (SSG) written in Rust, replacing a Hugo +
 - [x] Render pipeline (directive processing → markdown → ToC)
 - [x] MiniJinja template engine (OG / Twitter Card / SEO meta)
 - [x] Single-page build pipeline
-- [ ] Multi-page builds + static file copying + pretty URLs
+- [x] Multi-page builds + static file copying + pretty URLs + co-located assets
 - [ ] Hugo → kiln content converter (`kiln convert`)
 - [ ] Remaining directive renderers (style, embed, site, score-table)
 - [ ] Taxonomy support (tags, categories) with pagination
@@ -34,6 +34,7 @@ kiln build [--root <dir>]   # Build the site (default root: cwd)
 ```text
 config.toml      # Site configuration (TOML)
 content/         # Markdown content (posts, standalone pages)
+static/          # Static files copied to output root (favicons, images)
 templates/       # MiniJinja templates (base.html, post.html)
 crates/kiln/     # SSG engine — library (lib.rs) + CLI binary (main.rs)
 public/          # Build output (configurable via output_dir)
@@ -41,16 +42,16 @@ public/          # Build output (configurable via output_dir)
 
 ### Crate Structure (`crates/kiln/src/`)
 
-- `build` — build orchestration: `BuildContext`, per-page rendering, canonical URL computation
+- `build` — build orchestration: `BuildContext`, per-page rendering, canonical URL computation, static file + co-located asset copying
 - `config` — TOML site configuration loading + defaults
 - `content/` — content model
   - `frontmatter` — TOML frontmatter parsing (`+++` delimited), `Frontmatter` struct with jiff timestamps
-  - `page` — `Page` struct, slug derivation, summary extraction, output path computation
+  - `page` — `Page` struct, slug derivation, summary extraction, output path computation, co-located asset discovery
   - `discovery` — recursive content directory walking with draft / `_`-prefix exclusion
 - `directive/` — `:::`-fenced directive parsing + rendering (shared types in `directive.rs`)
   - `parser` — line-based stack parser with nesting + code block awareness
   - `admonition` — HTML renderer for 12 admonition types
-- `output` — file output utility with parent directory creation
+- `output` — file output, static file copying, output directory cleaning
 - `render/` — markdown rendering pipeline (shared `escape_html` utility in `render.rs`)
   - `highlight` — syntect CSS-class syntax highlighting with line numbers, canonical language labels
   - `image` — block (`<figure>`) and inline (`<img>`) image rendering with lazy loading
@@ -75,6 +76,7 @@ public/          # Build output (configurable via output_dir)
 - New-style module paths: `foo.rs` alongside `foo/` directory, not `foo/mod.rs`.
 - Keep files focused: one primary type or concern per file.
 - Avoid deep `pub use` re-export chains that obscure where items are defined.
+- Order helper functions by their caller.
 
 ### Enum String Mappings
 
@@ -99,6 +101,7 @@ public/          # Build output (configurable via output_dir)
 
 - Unit tests in the same file as the code they test (`#[cfg(test)]` module).
 - Integration tests in `tests/` directory for cross-module behavior.
+- Group tests by function under `// -- function_name --` section headers. Within each section, order: happy path → variants → error cases.
 
 ## Verification
 
