@@ -18,9 +18,8 @@ pub fn write_output(path: &Path, content: &str) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use std::os::unix::fs::PermissionsExt;
-
     use super::*;
+    use crate::test_utils::PermissionGuard;
 
     #[test]
     fn creates_parent_dirs_and_writes() {
@@ -48,7 +47,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let readonly = dir.path().join("readonly");
         fs::create_dir(&readonly).unwrap();
-        fs::set_permissions(&readonly, fs::Permissions::from_mode(0o444)).unwrap();
+        let _guard = PermissionGuard::restrict(&readonly, 0o444);
 
         let err = write_output(&readonly.join("sub").join("file.html"), "content")
             .unwrap_err()
@@ -64,7 +63,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let readonly = dir.path().join("readonly");
         fs::create_dir(&readonly).unwrap();
-        fs::set_permissions(&readonly, fs::Permissions::from_mode(0o444)).unwrap();
+        let _guard = PermissionGuard::restrict(&readonly, 0o444);
 
         let err = write_output(&readonly.join("file.html"), "content")
             .unwrap_err()
