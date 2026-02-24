@@ -38,8 +38,8 @@ pub fn build(root: &Path) -> Result<()> {
     let content = discover_content(root)?;
     let output_dir = root.join(&ctx.config.output_dir);
 
-    clean_output_dir(&output_dir).context("failed to clean output directory")?;
-    copy_static(&root.join("static"), &output_dir).context("failed to copy static files")?;
+    clean_output_dir(&output_dir)?;
+    copy_static(&root.join("static"), &output_dir)?;
 
     for page in &content.pages {
         build_page(&ctx, page, &content.content_dir, &output_dir)?;

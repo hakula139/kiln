@@ -248,7 +248,7 @@ mod tests {
     // -- write_output --
 
     #[test]
-    fn creates_parent_dirs_and_writes() {
+    fn write_output_creates_parent_dirs() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("a").join("b").join("test.html");
 
@@ -258,7 +258,7 @@ mod tests {
     }
 
     #[test]
-    fn overwrites_existing_file() {
+    fn write_output_overwrites_existing_file() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test.html");
 
@@ -269,7 +269,7 @@ mod tests {
     }
 
     #[test]
-    fn create_dir_permission_denied_returns_error() {
+    fn write_output_create_dir_permission_denied_returns_error() {
         let dir = tempfile::tempdir().unwrap();
         let readonly = dir.path().join("readonly");
         fs::create_dir(&readonly).unwrap();
@@ -285,7 +285,7 @@ mod tests {
     }
 
     #[test]
-    fn write_permission_denied_returns_error() {
+    fn write_output_permission_denied_returns_error() {
         let dir = tempfile::tempdir().unwrap();
         let readonly = dir.path().join("readonly");
         fs::create_dir(&readonly).unwrap();
