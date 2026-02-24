@@ -1,6 +1,7 @@
 pub mod highlight;
 pub mod image;
 pub mod markdown;
+pub mod pipeline;
 pub mod toc;
 
 /// Escapes characters that are special in HTML.

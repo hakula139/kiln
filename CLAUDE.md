@@ -4,7 +4,24 @@
 
 kiln is a custom static site generator (SSG) written in Rust, replacing a Hugo + LoveIt theme stack for [hakula.xyz](https://hakula.xyz).
 
-**Status**: workspace scaffold + CLI + TOML config + content model + markdown rendering + syntax highlighting + image rendering + directive parser + admonition renderer.
+**Status**:
+
+- [x] Workspace scaffold + CLI
+- [x] TOML configuration + content model (frontmatter, pages, discovery)
+- [x] Markdown rendering (GFM, syntax highlighting, KaTeX math, images)
+- [x] Directive parser + admonition renderer
+- [x] Render pipeline (directive processing → markdown → ToC)
+- [x] MiniJinja template engine (OG / Twitter Card / SEO meta)
+- [x] Single-page build pipeline
+- [ ] Multi-page builds + static file copying + pretty URLs
+- [ ] Hugo → kiln content converter (`kiln convert`)
+- [ ] Remaining directive renderers (style, embed, site, score-table)
+- [ ] Taxonomy support (tags, categories) with pagination
+- [ ] Home page + section pages + special pages
+- [ ] Tailwind CSS + dark theme
+- [ ] RSS feed + sitemap
+- [ ] Full-text search (Pagefind)
+- [ ] 404 page + final polish
 
 ### CLI
 
@@ -16,12 +33,15 @@ kiln build [--root <dir>]   # Build the site (default root: cwd)
 
 ```text
 config.toml      # Site configuration (TOML)
+content/         # Markdown content (posts, standalone pages)
+templates/       # MiniJinja templates (base.html, post.html)
 crates/kiln/     # SSG engine — library (lib.rs) + CLI binary (main.rs)
 public/          # Build output (configurable via output_dir)
 ```
 
 ### Crate Structure (`crates/kiln/src/`)
 
+- `build` — build orchestration: `BuildContext`, per-page rendering, canonical URL computation
 - `config` — TOML site configuration loading + defaults
 - `content/` — content model
   - `frontmatter` — TOML frontmatter parsing (`+++` delimited), `Frontmatter` struct with jiff timestamps
@@ -30,11 +50,14 @@ public/          # Build output (configurable via output_dir)
 - `directive/` — `:::`-fenced directive parsing + rendering (shared types in `directive.rs`)
   - `parser` — line-based stack parser with nesting + code block awareness
   - `admonition` — HTML renderer for 12 admonition types
+- `output` — file output utility with parent directory creation
 - `render/` — markdown rendering pipeline (shared `escape_html` utility in `render.rs`)
   - `highlight` — syntect CSS-class syntax highlighting with line numbers, canonical language labels
   - `image` — block (`<figure>`) and inline (`<img>`) image rendering with lazy loading
   - `markdown` — pulldown-cmark rendering with GFM extensions, CJK-aware heading ID generation, KaTeX math, syntax highlighting, block / inline image detection
+  - `pipeline` — full render pipeline: directive processing → markdown rendering → ToC generation
   - `toc` — `TocEntry` struct, nested `<nav>` table of contents HTML generation
+- `template` — MiniJinja template engine with `PostTemplateVars` view model
 
 ## Coding Conventions
 

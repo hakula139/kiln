@@ -1,22 +1,35 @@
+pub mod build;
 pub mod config;
 pub mod content;
 pub mod directive;
+pub mod output;
 pub mod render;
+pub mod template;
 
-use std::path::Path;
+pub use build::build;
 
-use anyhow::{Context, Result};
+#[cfg(test)]
+pub(crate) mod test_utils {
+    use std::path::PathBuf;
 
-use crate::config::Config;
+    use crate::config::Config;
+    use crate::template::TemplateEngine;
 
-/// Build the site from the given project root directory.
-///
-/// # Errors
-///
-/// Returns an error if configuration loading or page rendering fails.
-pub fn build(root: &Path) -> Result<()> {
-    let _config = Config::load(root).context("failed to load config")?;
+    /// Returns the path to the workspace `templates/` directory.
+    pub fn template_dir() -> PathBuf {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("templates")
+    }
 
-    println!("Build complete.");
-    Ok(())
+    /// Creates a `TemplateEngine` using the workspace templates.
+    pub fn test_engine() -> TemplateEngine {
+        TemplateEngine::new(&template_dir()).unwrap()
+    }
+
+    /// Creates a `Config` with all defaults.
+    pub fn test_config() -> Config {
+        toml::from_str("").unwrap()
+    }
 }

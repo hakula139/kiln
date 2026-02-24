@@ -166,23 +166,10 @@ mod tests {
         assert!(derive_slug(Path::new("index.md")).is_none());
     }
 
-    #[test]
-    fn slug_explicit_overrides_filename() {
-        let content = indoc! {r#"
-            +++
-            title = "My Post"
-            slug = "custom-slug"
-            +++
-            Body
-        "#};
-        let page = Page::from_content(content, Path::new("content/posts/foobar/index.md")).unwrap();
-        assert_eq!(page.slug, "custom-slug");
-    }
-
     // -- extract_summary --
 
     #[test]
-    fn summary_extraction() {
+    fn extract_summary_basic() {
         let body = indoc! {r"
             This is the summary.
 
@@ -194,13 +181,13 @@ mod tests {
     }
 
     #[test]
-    fn summary_absent() {
+    fn extract_summary_no_separator() {
         let body = "No summary separator in this content.";
         assert!(extract_summary(body).is_none());
     }
 
     #[test]
-    fn summary_empty_before_separator() {
+    fn extract_summary_empty_before_separator() {
         let body = "<!--more-->\nContent after.";
         assert!(extract_summary(body).is_none());
     }
@@ -208,7 +195,7 @@ mod tests {
     // -- strip_posts_prefix --
 
     #[test]
-    fn strip_posts() {
+    fn strip_posts_prefix_basic() {
         assert_eq!(
             strip_posts_prefix(Path::new("posts/foo/bar/index.md")),
             PathBuf::from("foo/bar/index.md")
@@ -216,14 +203,14 @@ mod tests {
     }
 
     #[test]
-    fn strip_posts_non_post() {
+    fn strip_posts_prefix_non_post() {
         assert_eq!(
             strip_posts_prefix(Path::new("example/index.md")),
             PathBuf::from("example/index.md")
         );
     }
 
-    // -- from_content / from_file --
+    // -- from_content --
 
     #[test]
     fn from_content_basic() {
@@ -245,7 +232,39 @@ mod tests {
     }
 
     #[test]
-    fn from_file_integration() {
+    fn from_content_explicit_slug_overrides_filename() {
+        let content = indoc! {r#"
+            +++
+            title = "My Post"
+            slug = "custom-slug"
+            +++
+            Body
+        "#};
+        let page = Page::from_content(content, Path::new("content/posts/foobar/index.md")).unwrap();
+        assert_eq!(page.slug, "custom-slug");
+    }
+
+    #[test]
+    fn from_content_bare_index_no_slug_returns_error() {
+        let content = indoc! {r#"
+            +++
+            title = "Test"
+            +++
+            Body
+        "#};
+        let err = Page::from_content(content, Path::new("index.md"))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("cannot derive slug"),
+            "should report slug derivation failure, got: {err}"
+        );
+    }
+
+    // -- from_file --
+
+    #[test]
+    fn from_file_basic() {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("test.md");
         fs::write(
@@ -268,6 +287,38 @@ mod tests {
         assert_eq!(page.frontmatter.title, "Test");
         assert_eq!(page.slug, "test");
         assert_eq!(page.summary.unwrap(), "Summary here.");
+    }
+
+    #[test]
+    fn from_file_nonexistent_returns_error() {
+        let err = Page::from_file(Path::new("/nonexistent/test.md"))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("failed to read"),
+            "should report read failure, got: {err}"
+        );
+    }
+
+    #[test]
+    fn from_file_invalid_frontmatter_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("bad.md");
+        fs::write(
+            &file,
+            indoc! {"
+                +++
+                not valid {{{
+                +++
+            "},
+        )
+        .unwrap();
+
+        let err = Page::from_file(&file).unwrap_err().to_string();
+        assert!(
+            err.contains("failed to parse"),
+            "should report parse failure, got: {err}"
+        );
     }
 
     // -- output_path --
@@ -299,7 +350,7 @@ mod tests {
     }
 
     #[test]
-    fn output_path_outside_content_dir_errors() {
+    fn output_path_outside_content_dir_returns_error() {
         let page = Page {
             frontmatter: Frontmatter::default(),
             raw_content: String::new(),

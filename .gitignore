@@ -9,12 +9,6 @@
 .env
 .env.local
 
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-
 # Claude Code
 .claude/plans/
 .claude/settings.local.json
