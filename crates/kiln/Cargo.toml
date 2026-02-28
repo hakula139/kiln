@@ -15,6 +15,7 @@ clap = { workspace = true }
 jiff = { workspace = true }
 minijinja = { workspace = true }
 pulldown-cmark = { workspace = true }
+regex = { workspace = true }
 serde = { workspace = true }
 strum = { workspace = true }
 syntect = { workspace = true }

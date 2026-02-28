@@ -21,6 +21,7 @@ indoc = "2"
 jiff = { version = "0.2", features = ["serde"] }
 minijinja = { version = "2", features = ["loader"] }
 pulldown-cmark = "0.13"
+regex = "1"
 serde = { version = "1", features = ["derive"] }
 strum = { version = "0.28", features = ["derive"] }
 syntect = { version = "5", default-features = false, features = [
