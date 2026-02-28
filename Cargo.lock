@@ -343,6 +343,7 @@ dependencies = [
  "minijinja",
  "pulldown-cmark",
  "regex",
+ "semver",
  "serde",
  "strum",
  "syntect",
