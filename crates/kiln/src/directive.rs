@@ -6,6 +6,7 @@ use std::borrow::Cow;
 use std::fmt;
 use std::ops::Range;
 
+use serde::Serialize;
 use strum::{AsRefStr, EnumIter, EnumString};
 
 /// Known callout types.
@@ -68,6 +69,21 @@ impl DirectiveKind {
     }
 }
 
+/// Serializable context passed to directive templates.
+///
+/// Templates receive all directive metadata so they can render accordingly.
+/// `body_html` is the markdown-rendered body; `body_raw` is the unprocessed
+/// source for templates that need to parse structured content (e.g., CSV).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct DirectiveContext {
+    pub name: String,
+    pub args: String,
+    pub id: Option<String>,
+    pub classes: Vec<String>,
+    pub body_html: String,
+    pub body_raw: String,
+}
+
 /// Parses Pandoc-style key-value attributes.
 ///
 /// Handles `key=value` and `key="quoted value"` pairs.
@@ -76,7 +92,7 @@ impl DirectiveKind {
 /// Quoted values support `\"` and `\\` escape sequences. Unclosed quotes
 /// consume the rest of the input as the value.
 #[must_use]
-fn parse_attrs(input: &str) -> Vec<(&str, Cow<'_, str>)> {
+pub(crate) fn parse_attrs(input: &str) -> Vec<(&str, Cow<'_, str>)> {
     let mut pairs = Vec::new();
     let mut rest = input.trim();
 

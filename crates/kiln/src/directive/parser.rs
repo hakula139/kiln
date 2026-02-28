@@ -1,4 +1,5 @@
 use super::{DirectiveBlock, DirectiveKind};
+use crate::markdown::{detect_opening_code_fence, is_closing_code_fence};
 
 struct StackEntry {
     colon_count: usize,
@@ -98,46 +99,6 @@ pub fn parse_directives(content: &str) -> Vec<DirectiveBlock> {
 fn count_leading_colons(line: &str) -> Option<usize> {
     let count = line.bytes().take_while(|&b| b == b':').count();
     (count >= 3).then_some(count)
-}
-
-/// Detects an opening code fence (three or more `` ` `` or `~` characters).
-/// Handles up to 3 spaces of leading indentation.
-fn detect_opening_code_fence(line: &str) -> Option<(u8, usize)> {
-    let indent = line.bytes().take_while(|&b| b == b' ').count();
-    if indent > 3 {
-        return None;
-    }
-
-    let rest = &line[indent..];
-    let &ch = rest.as_bytes().first()?;
-    if ch != b'`' && ch != b'~' {
-        return None;
-    }
-
-    let count = rest.bytes().take_while(|&b| b == ch).count();
-    if count < 3 {
-        return None;
-    }
-
-    // CommonMark: backtick fence info strings must not contain backticks.
-    if ch == b'`' && rest[count..].contains('`') {
-        return None;
-    }
-
-    Some((ch, count))
-}
-
-/// Checks whether `line` closes a code fence opened with `fence_char` repeated
-/// `min_count` times. Handles up to 3 spaces of leading indentation.
-fn is_closing_code_fence(line: &str, fence_char: u8, min_count: usize) -> bool {
-    let indent = line.bytes().take_while(|&b| b == b' ').count();
-    if indent > 3 {
-        return false;
-    }
-
-    let rest = &line[indent..];
-    let count = rest.bytes().take_while(|&b| b == fence_char).count();
-    count >= min_count && rest[count..].trim().is_empty()
 }
 
 /// Splits the text after the colons into a directive name and Pandoc
