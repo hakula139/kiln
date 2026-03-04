@@ -1,5 +1,7 @@
 pub mod highlight;
+pub mod icon;
 pub mod image;
+pub mod image_attrs;
 pub mod markdown;
 pub mod pipeline;
 pub mod toc;

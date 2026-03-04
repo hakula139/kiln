@@ -119,7 +119,7 @@ fn parse_directive_head(text: &str) -> DirectiveHead<'_> {
 
     // Parse {#id .class key=value} if present.
     if let Some(inner) = rest.strip_prefix('{').and_then(|s| s.strip_suffix('}')) {
-        let mut head = parse_pandoc_attrs(inner.trim());
+        let mut head = parse_raw_attrs(inner.trim());
         head.name = name;
         return head;
     }
@@ -139,7 +139,7 @@ fn parse_directive_head(text: &str) -> DirectiveHead<'_> {
 /// `#id` and `.class` tokens are extracted regardless of position — they can
 /// be interleaved with key=value pairs. The first `#id` wins; duplicates are
 /// silently ignored. Everything else is collected into the args string.
-fn parse_pandoc_attrs(input: &str) -> DirectiveHead<'_> {
+fn parse_raw_attrs(input: &str) -> DirectiveHead<'_> {
     let mut id: Option<&str> = None;
     let mut classes = Vec::new();
     let mut args = String::new();

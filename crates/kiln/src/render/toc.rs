@@ -65,7 +65,7 @@ pub fn render_toc_html(entries: &[TocEntry]) -> String {
 
         // Emit entry.
         indent(&mut html, depth * 2);
-        let _ = writeln!(
+        _ = writeln!(
             html,
             "<li><a href=\"#{}\">{}</a>",
             escape_html(&entry.id),

@@ -1,4 +1,4 @@
-use super::{CalloutKind, parse_attrs};
+use super::{CalloutKind, parse_pandoc_attrs};
 use crate::render::escape_html;
 
 /// Renders a callout to HTML as a collapsible `<details>` element.
@@ -47,7 +47,7 @@ pub(super) fn parse_args(args: &str) -> (CalloutKind, Option<String>, bool) {
     let mut title = None;
     let mut open = true;
 
-    for (key, value) in parse_attrs(args) {
+    for (key, value) in parse_pandoc_attrs(args).kvs {
         match key {
             "type" => {
                 if let Ok(k) = value.parse::<CalloutKind>() {

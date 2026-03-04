@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use syntect::parsing::SyntaxSet;
@@ -6,6 +6,7 @@ use syntect::parsing::SyntaxSet;
 use super::escape_html;
 use super::highlight::highlight_code;
 use super::image::{render_block_image, render_inline_image};
+use super::image_attrs::ImageAttrs;
 use super::toc::TocEntry;
 
 /// The result of rendering markdown content.
@@ -27,26 +28,32 @@ pub struct MarkdownOutput {
 /// - Fenced code blocks with a language tag receive syntect CSS-class
 ///   highlighting with line numbers.
 /// - Block images (sole image in a paragraph) are wrapped in `<figure>`
-///   elements.
+///   elements. Optional `image_attrs` from Pandoc `{...}` preprocessing
+///   are applied (width, height, classes).
 #[must_use]
-pub fn render_markdown(content: &str, syntax_set: &SyntaxSet) -> MarkdownOutput {
+pub(crate) fn render_markdown(
+    content: &str,
+    syntax_set: &SyntaxSet,
+    image_attrs: &HashMap<usize, ImageAttrs>,
+    code_max_lines: Option<usize>,
+) -> MarkdownOutput {
     let options = markdown_options();
 
     // Pass 1: collect heading metadata (text, level, IDs).
     let headings = collect_headings(content, options);
 
     // Pass 2: transform events through a manual loop for N:1 buffering.
-    let parser = Parser::new_ext(content, options);
+    let parser = Parser::new_ext(content, options).into_offset_iter();
     let mut output_events: Vec<Event<'_>> = Vec::new();
 
     let mut heading_index: usize = 0;
     let mut in_code_block = false;
     let mut code_lang: Option<String> = None;
     let mut code_buf = String::new();
-    let mut para_buf: Vec<Event<'_>> = Vec::new();
+    let mut para_buf: Vec<(Event<'_>, std::ops::Range<usize>)> = Vec::new();
     let mut in_para = false;
 
-    for event in parser {
+    for (event, range) in parser {
         match event {
             // -- Headings --
             Event::Start(Tag::Heading { .. }) => {
@@ -78,7 +85,7 @@ pub fn render_markdown(content: &str, syntax_set: &SyntaxSet) -> MarkdownOutput 
             Event::End(TagEnd::CodeBlock) => {
                 in_code_block = false;
                 let lang = code_lang.take().unwrap_or_default();
-                let html = highlight_code(syntax_set, &lang, &code_buf);
+                let html = highlight_code(syntax_set, &lang, &code_buf, code_max_lines);
                 output_events.push(Event::Html(html.into()));
                 code_buf.clear();
             }
@@ -93,17 +100,17 @@ pub fn render_markdown(content: &str, syntax_set: &SyntaxSet) -> MarkdownOutput 
             }
             Event::End(TagEnd::Paragraph) => {
                 in_para = false;
-                if let Some(html) = try_render_block_image(&para_buf) {
+                if let Some(html) = try_render_block_image(&para_buf, image_attrs) {
                     output_events.push(Event::Html(html.into()));
                 } else {
                     output_events.push(Event::Html("<p>".into()));
-                    flush_paragraph(&para_buf, &mut output_events);
+                    flush_paragraph(&para_buf, image_attrs, &mut output_events);
                     output_events.push(Event::Html("</p>\n".into()));
                 }
                 para_buf.clear();
             }
             _ if in_para => {
-                para_buf.push(event);
+                para_buf.push((event, range));
             }
 
             // -- Everything else (math, etc.) --
@@ -123,22 +130,29 @@ pub fn render_markdown(content: &str, syntax_set: &SyntaxSet) -> MarkdownOutput 
 ///
 /// Pattern: `Start(Image)`, any inner events (alt text, formatting), `End(Image)`,
 /// with no other images in the paragraph.
-fn try_render_block_image(events: &[Event<'_>]) -> Option<String> {
-    let (src, title) = match events.first()? {
+fn try_render_block_image(
+    events: &[(Event<'_>, std::ops::Range<usize>)],
+    image_attrs: &HashMap<usize, ImageAttrs>,
+) -> Option<String> {
+    let (src, title, byte_offset) = match &events.first()?.0 {
         Event::Start(Tag::Image {
             dest_url, title, ..
-        }) => (dest_url.to_string(), title.to_string()),
+        }) => (
+            dest_url.to_string(),
+            title.to_string(),
+            events.first()?.1.start,
+        ),
         _ => return None,
     };
 
-    if !matches!(events.last()?, Event::End(TagEnd::Image)) {
+    if !matches!(&events.last()?.0, Event::End(TagEnd::Image)) {
         return None;
     }
 
     let inner = &events[1..events.len() - 1];
 
     // Reject multiple images in the same paragraph.
-    if inner.iter().any(|ev| {
+    if inner.iter().any(|(ev, _)| {
         matches!(
             ev,
             Event::Start(Tag::Image { .. }) | Event::End(TagEnd::Image)
@@ -148,25 +162,31 @@ fn try_render_block_image(events: &[Event<'_>]) -> Option<String> {
     }
 
     let alt = extract_alt_text(inner);
-    Some(render_block_image(&src, &alt, &title))
+    let attrs = image_attrs.get(&byte_offset);
+    Some(render_block_image(&src, &alt, &title, attrs))
 }
 
 /// Flushes buffered paragraph events, replacing inline image sequences with
 /// `render_inline_image()` output while passing other events through.
-fn flush_paragraph<'a>(events: &[Event<'a>], output: &mut Vec<Event<'a>>) {
+fn flush_paragraph<'a>(
+    events: &[(Event<'a>, std::ops::Range<usize>)],
+    image_attrs: &HashMap<usize, ImageAttrs>,
+    output: &mut Vec<Event<'a>>,
+) {
     let mut i = 0;
     while i < events.len() {
         if let Event::Start(Tag::Image {
             dest_url, title, ..
-        }) = &events[i]
+        }) = &events[i].0
         {
             let src = dest_url.to_string();
             let title = title.to_string();
+            let byte_offset = events[i].1.start;
 
             // Collect inner events up to End(Image) for alt text extraction.
             let inner_start = i + 1;
             i = inner_start;
-            while i < events.len() && !matches!(events[i], Event::End(TagEnd::Image)) {
+            while i < events.len() && !matches!(events[i].0, Event::End(TagEnd::Image)) {
                 i += 1;
             }
             let alt = extract_alt_text(&events[inner_start..i]);
@@ -174,9 +194,12 @@ fn flush_paragraph<'a>(events: &[Event<'a>], output: &mut Vec<Event<'a>>) {
                 i += 1; // skip End(Image)
             }
 
-            output.push(Event::Html(render_inline_image(&src, &alt, &title).into()));
+            let attrs = image_attrs.get(&byte_offset);
+            output.push(Event::Html(
+                render_inline_image(&src, &alt, &title, attrs).into(),
+            ));
         } else {
-            output.push(transform_math(events[i].clone()));
+            output.push(transform_math(events[i].0.clone()));
             i += 1;
         }
     }
@@ -186,9 +209,9 @@ fn flush_paragraph<'a>(events: &[Event<'a>], output: &mut Vec<Event<'a>>) {
 ///
 /// Collects text content while skipping inline formatting containers
 /// (emphasis, strong, etc.), since alt text is plain text.
-fn extract_alt_text(events: &[Event<'_>]) -> String {
+fn extract_alt_text(events: &[(Event<'_>, std::ops::Range<usize>)]) -> String {
     let mut alt = String::new();
-    for ev in events {
+    for (ev, _) in events {
         push_plain_text(&mut alt, ev);
     }
     alt
@@ -341,6 +364,10 @@ mod tests {
 
     static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(SyntaxSet::load_defaults_newlines);
 
+    fn render(content: &str) -> MarkdownOutput {
+        render_markdown(content, &SYNTAX_SET, &HashMap::new(), None)
+    }
+
     // -- slugify --
 
     #[test]
@@ -424,7 +451,7 @@ mod tests {
 
     #[test]
     fn render_paragraph() {
-        let out = render_markdown("Hello, world!", &SYNTAX_SET);
+        let out = render("Hello, world!");
         assert_eq!(out.html.trim(), "<p>Hello, world!</p>");
         assert!(out.headings.is_empty());
     }
@@ -433,7 +460,7 @@ mod tests {
 
     #[test]
     fn render_heading_with_id() {
-        let out = render_markdown("## Introduction", &SYNTAX_SET);
+        let out = render("## Introduction");
         assert!(
             out.html.contains(r#"<h2 id="introduction">"#),
             "html:\n{}",
@@ -447,7 +474,7 @@ mod tests {
 
     #[test]
     fn render_heading_with_explicit_id() {
-        let out = render_markdown("## Introduction {#custom-id}", &SYNTAX_SET);
+        let out = render("## Introduction {#custom-id}");
         assert!(
             out.html.contains(r#"id="custom-id""#),
             "should use explicit ID, html:\n{}",
@@ -458,7 +485,7 @@ mod tests {
 
     #[test]
     fn render_heading_with_inline_code() {
-        let out = render_markdown("## The `foo` function", &SYNTAX_SET);
+        let out = render("## The `foo` function");
         assert!(
             out.html.contains("<code>foo</code>"),
             "should preserve inline formatting, html:\n{}",
@@ -469,7 +496,7 @@ mod tests {
 
     #[test]
     fn render_heading_with_inline_math() {
-        let out = render_markdown("## The $x^2$ equation", &SYNTAX_SET);
+        let out = render("## The $x^2$ equation");
         assert!(
             out.html
                 .contains(r#"<span class="math math-inline">\(x^2\)</span>"#),
@@ -482,7 +509,7 @@ mod tests {
 
     #[test]
     fn render_heading_with_display_math() {
-        let out = render_markdown("## Sum $$\\sum_{i=1}^n$$", &SYNTAX_SET);
+        let out = render("## Sum $$\\sum_{i=1}^n$$");
         assert!(
             out.html
                 .contains(r#"<span class="math math-display">\[\sum_{i=1}^n\]</span>"#),
@@ -495,7 +522,7 @@ mod tests {
 
     #[test]
     fn render_heading_with_link() {
-        let out = render_markdown("## See [example](https://example.com)", &SYNTAX_SET);
+        let out = render("## See [example](https://example.com)");
         assert_eq!(out.headings[0].id, "see-example");
         assert_eq!(out.headings[0].title, "See example");
         assert!(
@@ -507,14 +534,14 @@ mod tests {
 
     #[test]
     fn render_cjk_heading() {
-        let out = render_markdown("## 测试文本", &SYNTAX_SET);
+        let out = render("## 测试文本");
         assert_eq!(out.headings[0].id, "测试文本");
         assert!(out.html.contains(r#"id="测试文本""#), "html:\n{}", out.html);
     }
 
     #[test]
     fn render_empty_heading_gets_fallback_id() {
-        let out = render_markdown("##  \n", &SYNTAX_SET);
+        let out = render("##  \n");
         assert_eq!(out.headings[0].id, "section");
     }
 
@@ -527,7 +554,7 @@ mod tests {
 
             ## Third
         "};
-        let out = render_markdown(md, &SYNTAX_SET);
+        let out = render(md);
         assert_eq!(out.headings.len(), 3);
         assert_eq!(out.headings[0].level, HeadingLevel::H2);
         assert_eq!(out.headings[0].title, "First");
@@ -546,7 +573,7 @@ mod tests {
 
             ## Foo
         "};
-        let out = render_markdown(md, &SYNTAX_SET);
+        let out = render(md);
         assert_eq!(out.headings[0].id, "foo");
         assert_eq!(out.headings[1].id, "foo-1");
         assert_eq!(out.headings[2].id, "foo-2");
@@ -561,7 +588,7 @@ mod tests {
             |---|---|
             | 1 | 2 |
         "};
-        let out = render_markdown(md, &SYNTAX_SET);
+        let out = render(md);
         assert!(
             out.html.contains("<table>"),
             "should have table, html:\n{}",
@@ -586,7 +613,7 @@ mod tests {
 
     #[test]
     fn render_strikethrough() {
-        let out = render_markdown("~~deleted~~", &SYNTAX_SET);
+        let out = render("~~deleted~~");
         assert!(
             out.html.contains("<del>deleted</del>"),
             "html:\n{}",
@@ -600,7 +627,7 @@ mod tests {
             - [x] Done
             - [ ] Todo
         "};
-        let out = render_markdown(md, &SYNTAX_SET);
+        let out = render(md);
 
         let input_before = |label: &str| -> String {
             let pos = out
@@ -632,7 +659,7 @@ mod tests {
 
             [^1]: Footnote content.
         "};
-        let out = render_markdown(md, &SYNTAX_SET);
+        let out = render(md);
         assert!(
             out.html.contains(r##"<a href="#1">"##),
             "should link to footnote definition, html:\n{}",
@@ -655,7 +682,7 @@ mod tests {
 
     #[test]
     fn render_inline_math() {
-        let out = render_markdown("$x^2$", &SYNTAX_SET);
+        let out = render("$x^2$");
         assert!(
             out.html
                 .contains(r#"<span class="math math-inline">\(x^2\)</span>"#),
@@ -666,7 +693,7 @@ mod tests {
 
     #[test]
     fn render_display_math() {
-        let out = render_markdown("$$E=mc^2$$", &SYNTAX_SET);
+        let out = render("$$E=mc^2$$");
         assert!(
             out.html
                 .contains(r#"<span class="math math-display">\[E=mc^2\]</span>"#),
@@ -677,7 +704,7 @@ mod tests {
 
     #[test]
     fn render_math_with_html_chars() {
-        let out = render_markdown("$x < y$", &SYNTAX_SET);
+        let out = render("$x < y$");
         assert!(
             out.html.contains("\\(x &lt; y\\)"),
             "math content should be HTML-escaped, html:\n{}",
@@ -687,7 +714,7 @@ mod tests {
 
     #[test]
     fn render_inline_math_with_underscores() {
-        let out = render_markdown("The matrix $a_{ij}$ is symmetric.", &SYNTAX_SET);
+        let out = render("The matrix $a_{ij}$ is symmetric.");
         assert!(
             out.html.contains("a_{ij}"),
             "underscores in inline math preserved, html:\n{}",
@@ -697,7 +724,7 @@ mod tests {
 
     #[test]
     fn render_display_math_with_underscores() {
-        let out = render_markdown("$$a_{ij} + b_{ij}$$", &SYNTAX_SET);
+        let out = render("$$a_{ij} + b_{ij}$$");
         assert!(
             out.html.contains("a_{ij} + b_{ij}"),
             "underscores in math should not become emphasis, html:\n{}",
@@ -719,7 +746,7 @@ mod tests {
             fn main() {}
             ```
         "};
-        let out = render_markdown(md, &SYNTAX_SET);
+        let out = render(md);
         assert!(
             out.html.contains(r#"class="highlight""#),
             "no-lang code block should still have highlight wrapper, html:\n{}",
@@ -739,7 +766,7 @@ mod tests {
             fn main() {}
             ```
         "};
-        let out = render_markdown(md, &SYNTAX_SET);
+        let out = render(md);
         assert!(
             out.html.contains(r#"class="highlight""#),
             "should have highlight wrapper, html:\n{}",
@@ -764,7 +791,7 @@ mod tests {
             fn main() {}
             ```
         "};
-        let out = render_markdown(md, &SYNTAX_SET);
+        let out = render(md);
         assert!(
             out.html.contains(r#"data-lang="rust""#),
             "should extract language from info string, html:\n{}",
@@ -785,7 +812,7 @@ mod tests {
     #[test]
     fn render_indented_code_block() {
         let md = "    fn main() {}\n";
-        let out = render_markdown(md, &SYNTAX_SET);
+        let out = render(md);
         assert!(
             out.html.contains(r#"class="highlight""#),
             "indented code block should have highlight wrapper, html:\n{}",
@@ -803,7 +830,7 @@ mod tests {
     #[test]
     fn render_block_image() {
         let md = "![A photo](img.png)\n";
-        let out = render_markdown(md, &SYNTAX_SET);
+        let out = render(md);
         assert!(
             out.html.contains("<figure>"),
             "should become a figure, html:\n{}",
@@ -824,7 +851,7 @@ mod tests {
     #[test]
     fn render_block_image_with_title() {
         let md = "![alt text](img.png \"My Title\")\n";
-        let out = render_markdown(md, &SYNTAX_SET);
+        let out = render(md);
         assert!(
             out.html.contains("<figure>"),
             "should become a figure, html:\n{}",
@@ -850,7 +877,7 @@ mod tests {
     #[test]
     fn render_block_image_with_formatted_alt() {
         let md = "![*bold* alt](img.png)\n";
-        let out = render_markdown(md, &SYNTAX_SET);
+        let out = render(md);
         assert!(
             out.html.contains("<figure>"),
             "should become a figure, html:\n{}",
@@ -871,7 +898,7 @@ mod tests {
     #[test]
     fn render_block_image_with_soft_break_in_alt() {
         let md = "![line1\nline2](img.png)\n";
-        let out = render_markdown(md, &SYNTAX_SET);
+        let out = render(md);
         assert!(
             out.html.contains("<figure>"),
             "should become a figure, html:\n{}",
@@ -892,7 +919,7 @@ mod tests {
     #[test]
     fn render_inline_image() {
         let md = "Text ![icon](icon.png) more text\n";
-        let out = render_markdown(md, &SYNTAX_SET);
+        let out = render(md);
         assert!(
             !out.html.contains("<figure>"),
             "should not become a figure, html:\n{}",
@@ -913,7 +940,7 @@ mod tests {
     #[test]
     fn render_image_with_trailing_text_stays_inline() {
         let md = "![icon](icon.png) followed by text\n";
-        let out = render_markdown(md, &SYNTAX_SET);
+        let out = render(md);
         assert!(
             !out.html.contains("<figure>"),
             "image with trailing text should not become a figure, html:\n{}",
@@ -929,7 +956,7 @@ mod tests {
     #[test]
     fn render_multiple_images_stay_inline() {
         let md = "![a](a.png) ![b](b.png)\n";
-        let out = render_markdown(md, &SYNTAX_SET);
+        let out = render(md);
         assert!(
             !out.html.contains("<figure>"),
             "multiple images should not become figures, html:\n{}",
