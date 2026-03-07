@@ -32,21 +32,25 @@ fn replace_icons_in_line(line: &str, output: &mut String) {
             let (end, span) = scan_code_span(line, i);
             output.push_str(span);
             i = end;
-        } else if bytes[i] == b':'
+            continue;
+        }
+
+        if bytes[i] == b':'
             && let Some(caps) = ICON_RE.captures(&line[i..])
             && caps.get(0).unwrap().start() == 0
         {
             _ = write!(
                 output,
-                "<i class=\"{}\" aria-hidden=\"true\"></i>",
+                r#"<i class="{}" aria-hidden="true"></i>"#,
                 escape_html(&caps[1])
             );
             i += caps[0].len();
-        } else {
-            let ch = line[i..].chars().next().unwrap();
-            output.push(ch);
-            i += ch.len_utf8();
+            continue;
         }
+
+        let ch = line[i..].chars().next().unwrap();
+        output.push(ch);
+        i += ch.len_utf8();
     }
 }
 

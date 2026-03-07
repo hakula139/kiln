@@ -1,3 +1,4 @@
+pub mod emoji;
 pub mod highlight;
 pub mod icon;
 pub mod image;
