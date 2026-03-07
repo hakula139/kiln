@@ -15,8 +15,9 @@ pub struct Frontmatter {
     #[serde(default)]
     pub description: Option<String>,
 
+    /// Explicit slug override. When set, takes priority over the filename-derived slug.
     #[serde(default)]
-    pub featured_image: Option<String>,
+    pub slug: Option<String>,
 
     #[serde(default, deserialize_with = "toml_timestamp::deserialize_option")]
     pub date: Option<Timestamp>,
@@ -25,7 +26,7 @@ pub struct Frontmatter {
     pub updated: Option<Timestamp>,
 
     #[serde(default)]
-    pub draft: bool,
+    pub featured_image: Option<String>,
 
     #[serde(default)]
     pub tags: Vec<String>,
@@ -33,9 +34,14 @@ pub struct Frontmatter {
     #[serde(default)]
     pub categories: Vec<String>,
 
-    /// Explicit slug override. When set, takes priority over the filename-derived slug.
     #[serde(default)]
-    pub slug: Option<String>,
+    pub draft: bool,
+
+    #[serde(default)]
+    pub weight: Option<i64>,
+
+    #[serde(default)]
+    pub license: Option<String>,
 }
 
 /// Handles deserialization of `jiff::Timestamp` from both quoted strings and
@@ -305,20 +311,22 @@ mod tests {
             +++
             title = "My Post"
             description = "A test post"
-            featured_image = "/images/example.webp"
+            slug = "my-post"
             date = "2024-06-15T12:34:56+08:00"
             updated = 2025-07-01T23:59:59Z
-            draft = true
+            featured_image = "/images/example.webp"
             tags = ["rust", "ssg"]
             categories = ["tutorial"]
-            slug = "my-post"
+            draft = true
+            weight = 10
+            license = "CC BY-NC-SA 4.0"
             +++
             Content here.
         "#};
         let (fm, body) = parse(input).unwrap();
         assert_eq!(fm.title, "My Post");
         assert_eq!(fm.description.as_deref(), Some("A test post"));
-        assert_eq!(fm.featured_image.as_deref(), Some("/images/example.webp"));
+        assert_eq!(fm.slug.as_deref(), Some("my-post"));
         assert_eq!(
             fm.date.unwrap(),
             "2024-06-15T04:34:56Z".parse::<Timestamp>().unwrap()
@@ -327,10 +335,12 @@ mod tests {
             fm.updated.unwrap(),
             "2025-07-01T23:59:59Z".parse::<Timestamp>().unwrap()
         );
-        assert!(fm.draft);
+        assert_eq!(fm.featured_image.as_deref(), Some("/images/example.webp"));
         assert_eq!(fm.tags, vec!["rust", "ssg"]);
         assert_eq!(fm.categories, vec!["tutorial"]);
-        assert_eq!(fm.slug.as_deref(), Some("my-post"));
+        assert!(fm.draft);
+        assert_eq!(fm.weight, Some(10));
+        assert_eq!(fm.license.as_deref(), Some("CC BY-NC-SA 4.0"));
         assert_eq!(body, "Content here.\n");
     }
 
