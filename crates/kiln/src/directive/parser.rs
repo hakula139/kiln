@@ -105,7 +105,7 @@ fn count_leading_colons(line: &str) -> Option<usize> {
 /// attributes (`#id`, `.class`, `key=value`).
 ///
 /// Accepts `name {attrs}`, bare `name`, or `{attrs}` alone. Attributes always
-/// require `{…}` braces.
+/// require `{...}` braces.
 fn parse_directive_head(text: &str) -> DirectiveHead<'_> {
     let text = text.trim();
 
@@ -134,7 +134,7 @@ fn parse_directive_head(text: &str) -> DirectiveHead<'_> {
 }
 
 /// Extracts `#id`, `.class`, and remaining key=value args from the interior
-/// of a `{…}` Pandoc attribute block.
+/// of a `{...}` Pandoc attribute block.
 ///
 /// `#id` and `.class` tokens are extracted regardless of position — they can
 /// be interleaved with key=value pairs. The first `#id` wins; duplicates are

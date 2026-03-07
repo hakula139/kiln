@@ -14,6 +14,9 @@ kiln is a custom static site generator (SSG) written in Rust, replacing a Hugo +
 - [x] MiniJinja template engine (OG / Twitter Card / SEO meta)
 - [x] Single-page build pipeline
 - [x] Multi-page builds + static file copying + pretty URLs + co-located assets
+- [x] Theme system (layered templates, static files, param merging)
+- [x] Pre-processors (image attrs, icon shortcodes, emoji shortcodes)
+- [x] Code block wrapper with header, language label, and max-lines
 - [ ] Hugo → kiln content converter (`kiln convert`)
 - [ ] Remaining directive renderers (style, embed, site, score-table)
 - [ ] Taxonomy support (tags, categories) with pagination
@@ -26,40 +29,51 @@ kiln is a custom static site generator (SSG) written in Rust, replacing a Hugo +
 ### CLI
 
 ```bash
-kiln build [--root <dir>]   # Build the site (default root: cwd)
+kiln build [--root <dir>]        # Build the site (default root: cwd)
+kiln init-theme <name> [--root]  # Scaffold a new theme under themes/<name>/
 ```
 
 ### Project Layout
 
 ```text
-config.toml      # Site configuration (TOML)
-content/         # Markdown content (posts, standalone pages)
-static/          # Static files copied to output root (favicons, images)
-templates/       # MiniJinja templates (base.html, post.html)
-crates/kiln/     # SSG engine — library (lib.rs) + CLI binary (main.rs)
-public/          # Build output (configurable via output_dir)
+.
+├── config.toml   # Site configuration (TOML)
+├── content/      # Markdown content (posts, standalone pages)
+├── static/       # Static files copied to output root (favicons, images)
+├── templates/    # MiniJinja templates (site overrides theme)
+├── themes/       # Themes (git submodules), each with templates/ + static/
+├── crates/kiln/  # SSG engine — library (lib.rs) + CLI binary (main.rs)
+└── public/       # Build output (configurable via output_dir)
 ```
 
 ### Crate Structure (`crates/kiln/src/`)
 
-- `build` — build orchestration: `BuildContext`, per-page rendering, canonical URL computation, static file + co-located asset copying
-- `config` — TOML site configuration loading + defaults
-- `content/` — content model
-  - `frontmatter` — TOML frontmatter parsing (`+++` delimited), `Frontmatter` struct with jiff timestamps
-  - `page` — `Page` struct, slug derivation, summary extraction, output path computation, co-located asset discovery
-  - `discovery` — recursive content directory walking with draft / `_`-prefix exclusion
-- `directive/` — `:::`-fenced directive parsing + rendering (shared types in `directive.rs`)
-  - `parser` — line-based stack parser with nesting, code block awareness, Pandoc `{#id .class key=value}` attribute extraction
-  - `callout` — HTML renderer for 12 callout types (`<details>` with id / class propagation)
-  - `div` — HTML renderer for fenced divs and unknown directives (`<div>` with id / class propagation)
-- `output` — file output, static file copying, output directory cleaning
-- `render/` — markdown rendering pipeline (shared `escape_html` utility in `render.rs`)
-  - `highlight` — syntect CSS-class syntax highlighting with line numbers, canonical language labels
-  - `image` — block (`<figure>`) and inline (`<img>`) image rendering with lazy loading
-  - `markdown` — pulldown-cmark rendering with GFM extensions, CJK-aware heading ID generation, KaTeX math, syntax highlighting, block / inline image detection
-  - `pipeline` — full render pipeline: directive processing → markdown rendering → ToC generation
-  - `toc` — `TocEntry` struct, nested `<nav>` table of contents HTML generation
-- `template` — MiniJinja template engine with `PostTemplateVars` view model
+```text
+.
+├── build.rs            # BuildContext, per-page rendering, canonical URLs, static / asset copying
+├── config.rs           # TOML site configuration loading, theme resolution, param merging
+├── init.rs             # Theme scaffolding (kiln init-theme)
+├── content/
+│   ├── frontmatter.rs  # TOML frontmatter parsing (+++), Frontmatter with jiff timestamps
+│   ├── page.rs         # Page struct, slug derivation, summary, output paths, co-located assets
+│   └── discovery.rs    # Recursive content walking with draft / _-prefix exclusion
+├── markdown.rs         # Shared raw-markdown text utilities (code fence detection, code span scanning)
+├── directive/          # :::-fenced directive parsing + rendering (shared types in directive.rs)
+│   ├── parser.rs       # Line-based stack parser, nesting, Pandoc {#id .class key=val} attrs
+│   ├── callout.rs      # 12 callout types (<details> with id / class propagation)
+│   └── div.rs          # Fenced divs and unknown directives (<div> with id / class propagation)
+├── output.rs           # File output, static file copying, output directory cleaning
+├── render/             # Markdown rendering pipeline (RenderOptions + escape_html in render.rs)
+│   ├── emoji.rs        # GitHub-style :shortcode: → Unicode emoji replacement
+│   ├── highlight.rs    # syntect CSS-class highlighting with line numbers, code-block wrapper
+│   ├── icon.rs         # :(class): → <i> FontAwesome icon shortcode replacement
+│   ├── image.rs        # Block (<figure>) and inline (<img>) image rendering, lazy loading
+│   ├── image_attrs.rs  # Pandoc-style {#id .class width=N} extraction for images
+│   ├── markdown.rs     # pulldown-cmark, GFM, CJK heading IDs, KaTeX, block / inline images
+│   ├── pipeline.rs     # Full pipeline: directives → pre-processors → markdown → ToC
+│   └── toc.rs          # TocEntry struct, nested <nav> table of contents generation
+└── template.rs         # MiniJinja layered template engine with directive rendering
+```
 
 ## Coding Conventions
 
@@ -76,8 +90,13 @@ public/          # Build output (configurable via output_dir)
 
 - New-style module paths: `foo.rs` alongside `foo/` directory, not `foo/mod.rs`.
 - Keep files focused: one primary type or concern per file.
+- Place functions and types in the module that reflects their conceptual domain — import paths should not mislead about what the item does. Create new modules when needed for clean organization.
 - Avoid deep `pub use` re-export chains that obscure where items are defined.
 - Order helper functions by their caller.
+
+### String Literals
+
+- Prefer raw strings (`r#"..."#`) when the string contains characters that would need escaping (e.g., `"`, `\`). Avoid unnecessary backslash escapes.
 
 ### Enum String Mappings
 
@@ -103,6 +122,8 @@ public/          # Build output (configurable via output_dir)
 - Unit tests in the same file as the code they test (`#[cfg(test)]` module).
 - Integration tests in `tests/` directory for cross-module behavior.
 - Group tests by function under `// -- function_name --` section headers. Within each section, order: happy path → variants → error cases.
+- Test name prefixes should match the section's function name (or a clear shortening).
+- Error-case test names use a return-type suffix: `_returns_error` (`Result`), `_returns_none` (`Option`), `_returns_false` (`bool`).
 - Use `indoc!` for multi-line test inputs whenever possible.
 
 ## Verification
