@@ -38,8 +38,6 @@ pub struct Config {
 /// Theme metadata loaded from `themes/<name>/theme.toml`.
 #[derive(Debug, Deserialize)]
 struct ThemeMeta {
-    name: String,
-
     #[serde(default)]
     min_kiln_version: Option<String>,
 
@@ -81,8 +79,8 @@ impl Config {
         if let Some(ref theme_name) = config.theme {
             let theme_toml = root.join("themes").join(theme_name).join("theme.toml");
             let theme = ThemeMeta::load(&theme_toml)?;
-            theme.check_min_kiln_version()?;
-            tracing::info!("using theme: {}", theme.name);
+            theme.check_min_kiln_version(theme_name)?;
+            tracing::info!("using theme: {theme_name}");
             merge_params(&mut config.params, &theme.params)?;
         }
 
@@ -108,7 +106,7 @@ impl ThemeMeta {
         toml::from_str(&contents).context("failed to parse theme.toml")
     }
 
-    fn check_min_kiln_version(&self) -> Result<()> {
+    fn check_min_kiln_version(&self, theme_name: &str) -> Result<()> {
         let Some(ref required) = self.min_kiln_version else {
             return Ok(());
         };
@@ -120,8 +118,7 @@ impl ThemeMeta {
             .expect("CARGO_PKG_VERSION is always valid semver");
         if current < required {
             bail!(
-                "theme `{name}` requires kiln >= {required}, but this is kiln {current}",
-                name = self.name
+                "theme `{theme_name}` requires kiln >= {required}, but this is kiln {current}"
             );
         }
         Ok(())
@@ -437,31 +434,6 @@ mod tests {
         assert!(
             err.contains("failed to read theme.toml"),
             "should report missing theme.toml, got: {err}"
-        );
-    }
-
-    #[test]
-    fn load_theme_missing_name_returns_error() {
-        let dir = tempfile::tempdir().unwrap();
-        fs::write(
-            dir.path().join("config.toml"),
-            indoc! {r#"
-                theme = "test-theme"
-            "#},
-        )
-        .unwrap();
-        setup_theme(
-            dir.path(),
-            indoc! {r"
-                [params]
-                foo = true
-            "},
-        );
-
-        let err = Config::load(dir.path()).unwrap_err().to_string();
-        assert!(
-            err.contains("failed to parse theme.toml"),
-            "should report parse error, got: {err}"
         );
     }
 

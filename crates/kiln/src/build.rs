@@ -151,7 +151,7 @@ fn page_url(base_url: &str, output_path: &Path) -> String {
 mod tests {
     use std::fs;
 
-    use indoc::{formatdoc, indoc};
+    use indoc::indoc;
 
     use super::*;
 
@@ -376,13 +376,7 @@ mod tests {
         let tmpl_dir = theme_dir.join("templates");
         fs::create_dir_all(&tmpl_dir).unwrap();
         copy_templates(&tmpl_dir);
-        fs::write(
-            theme_dir.join("theme.toml"),
-            formatdoc! {r#"
-                name = "{theme_name}"
-            "#},
-        )
-        .unwrap();
+        fs::write(theme_dir.join("theme.toml"), "").unwrap();
     }
 
     #[test]
