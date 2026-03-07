@@ -303,21 +303,21 @@ mod tests {
                 name = "test-theme"
 
                 [params]
+                code_max_lines = 40
                 fontawesome = false
-                max_lines = 40
             "#},
         );
 
         let config = Config::load(dir.path()).unwrap();
         assert_eq!(
+            config.params.get("code_max_lines"),
+            Some(&toml::Value::Integer(40)),
+            "should fill in missing site params from theme"
+        );
+        assert_eq!(
             config.params.get("fontawesome"),
             Some(&toml::Value::Boolean(true)),
             "should override theme defaults"
-        );
-        assert_eq!(
-            config.params.get("max_lines"),
-            Some(&toml::Value::Integer(40)),
-            "should fill in missing site params from theme"
         );
     }
 
