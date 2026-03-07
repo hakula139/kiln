@@ -26,8 +26,30 @@ pub(crate) fn escape_html(input: &str) -> String {
     output
 }
 
+/// Appends `level` × 2 spaces of indentation to an HTML string.
+pub(crate) fn indent(html: &mut String, level: u8) {
+    for _ in 0..level {
+        html.push_str("  ");
+    }
+}
+
+/// Appends indentation, writes formatted content, and adds a newline.
+///
+/// Equivalent to `indent` + `writeln!`, suppressing the infallible `fmt::Result`.
+macro_rules! writeln_indented {
+    ($html:expr, $level:expr, $($arg:tt)*) => {{
+        use ::std::fmt::Write as _;
+        $crate::render::indent($html, $level);
+        _ = ::std::writeln!($html, $($arg)*);
+    }};
+}
+
+pub(crate) use writeln_indented;
+
 #[cfg(test)]
 mod tests {
+    use indoc::indoc;
+
     use super::*;
 
     #[test]
@@ -46,5 +68,62 @@ mod tests {
     #[test]
     fn escape_html_empty() {
         assert_eq!(escape_html(""), "");
+    }
+
+    // -- indent --
+
+    #[test]
+    fn indent_zero_level() {
+        let mut html = String::from("<p>");
+        indent(&mut html, 0);
+        assert_eq!(html, "<p>");
+    }
+
+    #[test]
+    fn indent_multiple_levels() {
+        let mut html = String::from("<p>");
+        indent(&mut html, 3);
+        assert_eq!(html, "<p>      ");
+    }
+
+    // -- writeln_indented --
+
+    #[test]
+    fn writeln_indented_static() {
+        let mut html = String::from("<p>\n");
+        writeln_indented!(&mut html, 2, "<div>");
+        assert_eq!(
+            html,
+            indoc! {"
+                <p>
+                    <div>
+            "}
+        );
+    }
+
+    #[test]
+    fn writeln_indented_formatted() {
+        let mut html = String::from("<p>\n");
+        writeln_indented!(&mut html, 1, "<span>{}</span>", "hi");
+        assert_eq!(
+            html,
+            indoc! {"
+                <p>
+                  <span>hi</span>
+            "}
+        );
+    }
+
+    #[test]
+    fn writeln_indented_zero_level() {
+        let mut html = String::from("<p>\n");
+        writeln_indented!(&mut html, 0, "<br />");
+        assert_eq!(
+            html,
+            indoc! {"
+                <p>
+                <br />
+            "}
+        );
     }
 }

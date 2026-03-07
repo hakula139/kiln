@@ -1,7 +1,16 @@
 use super::{CalloutKind, parse_pandoc_attrs};
-use crate::render::escape_html;
+use crate::render::{escape_html, writeln_indented};
 
 /// Renders a callout to HTML as a collapsible `<details>` element.
+///
+/// Output structure:
+///
+/// ```html
+/// <details class="callout note" open>
+///   <summary class="callout-title">Title</summary>
+///   <div class="callout-body">...</div>
+/// </details>
+/// ```
 ///
 /// - `title`: when `None`, the kind's display name is used.
 /// - `open`: maps to the HTML `open` attribute on `<details>`.
@@ -21,7 +30,7 @@ pub fn render_callout(
     let open_attr = if open { " open" } else { "" };
 
     let id_attr = id
-        .map(|v| format!(" id=\"{}\"", escape_html(v)))
+        .map(|v| format!(r#" id="{}""#, escape_html(v)))
         .unwrap_or_default();
 
     let mut class_val = format!("callout {}", kind.as_ref());
@@ -30,12 +39,24 @@ pub fn render_callout(
         class_val.push_str(&escape_html(class));
     }
 
-    format!(
-        "<details{id_attr} class=\"{class_val}\"{open_attr}>\n\
-         <summary class=\"callout-title\">{display_title}</summary>\n\
-         <div class=\"callout-body\">{body_html}</div>\n\
-         </details>\n"
-    )
+    let mut html = String::new();
+    writeln_indented!(
+        &mut html,
+        0,
+        r#"<details{id_attr} class="{class_val}"{open_attr}>"#
+    );
+    writeln_indented!(
+        &mut html,
+        1,
+        r#"<summary class="callout-title">{display_title}</summary>"#
+    );
+    writeln_indented!(
+        &mut html,
+        1,
+        r#"<div class="callout-body">{body_html}</div>"#
+    );
+    writeln_indented!(&mut html, 0, "</details>");
+    html
 }
 
 /// Parses callout parameters from Pandoc-style key-value attributes.
@@ -78,8 +99,8 @@ mod tests {
             html,
             indoc! {r#"
                 <details class="callout info" open>
-                <summary class="callout-title">Info</summary>
-                <div class="callout-body"></div>
+                  <summary class="callout-title">Info</summary>
+                  <div class="callout-body"></div>
                 </details>
             "#}
         );
@@ -113,8 +134,8 @@ mod tests {
             html,
             indoc! {r#"
                 <details class="callout note" open>
-                <summary class="callout-title">Read This</summary>
-                <div class="callout-body"><p>Hello</p>
+                  <summary class="callout-title">Read This</summary>
+                  <div class="callout-body"><p>Hello</p>
                 </div>
                 </details>
             "#}
@@ -135,8 +156,8 @@ mod tests {
             html,
             indoc! {r#"
                 <details class="callout tip">
-                <summary class="callout-title">Hint</summary>
-                <div class="callout-body"><p>Hidden content</p>
+                  <summary class="callout-title">Hint</summary>
+                  <div class="callout-body"><p>Hidden content</p>
                 </div>
                 </details>
             "#}

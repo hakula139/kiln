@@ -296,20 +296,11 @@ mod tests {
             vec![pair("title", r#"He said "hi""#)]
         );
         // Escaped backslash.
-        assert_eq!(
-            kvs(r#"title="path\\to""#),
-            vec![pair("title", r"path\to")]
-        );
+        assert_eq!(kvs(r#"title="path\\to""#), vec![pair("title", r"path\to")]);
         // Unrecognized escape alone — no escapes detected, takes borrowed path.
-        assert_eq!(
-            kvs(r#"title="foo\nbar""#),
-            vec![pair("title", r"foo\nbar")]
-        );
+        assert_eq!(kvs(r#"title="foo\nbar""#), vec![pair("title", r"foo\nbar")]);
         // Mixed recognized and unknown escapes — unknown sequences preserved as-is.
-        assert_eq!(
-            kvs(r#"title="a\"b\nc""#),
-            vec![pair("title", r#"a"b\nc"#)]
-        );
+        assert_eq!(kvs(r#"title="a\"b\nc""#), vec![pair("title", r#"a"b\nc"#)]);
     }
 
     #[test]
@@ -332,10 +323,11 @@ mod tests {
 
     #[test]
     fn parse_pandoc_attrs_extracts_class_and_id() {
-        let result = parse_pandoc_attrs(".highlight #my-id open=false");
+        let input = ".highlight #my-id open=false";
+        let result = parse_pandoc_attrs(input);
         assert_eq!(result.id, Some("my-id"));
         assert_eq!(result.classes, vec!["highlight"]);
-        assert_eq!(kvs(".highlight #my-id open=false"), vec![pair("open", "false")]);
+        assert_eq!(kvs(input), vec![pair("open", "false")]);
     }
 
     #[test]
