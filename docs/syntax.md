@@ -135,6 +135,25 @@ Here is an icon ![icon](/icon.png) in the middle of text.
 
 Renders as a plain `<img>` element.
 
+#### Image Attributes
+
+Pandoc-style attribute blocks can follow an image to set id, classes, width, and height:
+
+```markdown
+![Photo](photo.jpg){#hero .wide width=800 height=600}
+```
+
+For block images, `#id` and `.class` are applied to the `<figure>` element, while `width` and `height` are applied to the `<img>`. For inline images, all attributes are applied directly to the `<img>`.
+
+Attribute blocks must appear immediately after the closing `)` on the same line. Supported attributes:
+
+| Attribute | Target (block) | Target (inline) |
+| --------- | -------------- | --------------- |
+| `#id`     | `<figure>`     | `<img>`         |
+| `.class`  | `<figure>`     | `<img>`         |
+| `width`   | `<img>`        | `<img>`         |
+| `height`  | `<img>`        | `<img>`         |
+
 ### Syntax Highlighting
 
 Fenced code blocks with a language tag receive syntax highlighting via [syntect](https://github.com/trishume/syntect):
@@ -154,9 +173,51 @@ Features:
 - Language labels are canonicalized from syntect's syntax definitions (e.g., `rs` maps to `rust`).
 - Unrecognized languages fall back to plain text.
 
+Code blocks are wrapped in a structured HTML container:
+
+```html
+<div class="code-block" data-lang="rust">
+  <div class="code-header">
+    <span class="code-lang">Rust</span>
+    <button class="copy-btn" aria-label="Copy code">...</button>
+  </div>
+  <div class="code-body">
+    <div class="highlight">...</div>
+  </div>
+</div>
+```
+
+The `code-header` displays the human-readable language name. When `code_max_lines` is set in the site's `[params]`, the `code-body` div includes a `data-max-lines` attribute for JS-driven collapse / expand.
+
 ### Table of Contents
 
 Headings are collected during rendering and made available as structured `TocEntry` data for template-driven `<nav>` generation. The table of contents is generated from all headings in the document, preserving their hierarchy.
+
+## Shortcodes
+
+Shortcodes are inline replacements processed before Markdown rendering. They are skipped inside fenced code blocks and inline code spans.
+
+### Emoji
+
+When `emojis = true` is set in `[params]`, GitHub-style emoji shortcodes are replaced with Unicode characters:
+
+```markdown
+Hello :smile: and :wave:
+<!-- renders as: Hello 😄 and 👋 -->
+```
+
+Unknown shortcodes (e.g., `:not_a_real_emoji:`) are left as-is. See the [GitHub emoji list](https://github.com/ikatyang/emoji-cheat-sheet) for supported shortcodes.
+
+### Font Awesome Icons
+
+When `fontawesome = true` is set in `[params]`, icon shortcodes produce `<i>` elements:
+
+```markdown
+:(fas fa-link): Click here :(fab fa-github):
+<!-- renders as: <i class="fas fa-link" aria-hidden="true"></i> Click here <i class="fab fa-github" aria-hidden="true"></i> -->
+```
+
+The class inside `:(...):` is passed to the `class` attribute of the `<i>` element. The page template must include the [Font Awesome](https://fontawesome.com) CSS for icons to display.
 
 ## Directives
 
@@ -304,9 +365,21 @@ print("Hello")
 :::
 ````
 
+### Template-Based Directives
+
+Themes can provide custom directive renderers as MiniJinja templates at `templates/directives/<name>.html`. When a directive name matches a template, kiln renders it using the template instead of the default `<div>` wrapper:
+
+```markdown
+::: site
+https://example.com
+:::
+```
+
+If `templates/directives/site.html` exists, kiln renders it with the [directive template variables](themes.md#directive-templates-directivesnamehtml). Otherwise, it falls back to a `<div>` wrapper.
+
 ### Unknown Directives
 
-Unrecognized directive names are rendered as `<div>` elements with the name as a CSS class:
+Directives with no matching template are rendered as `<div>` elements with the name as a CSS class:
 
 ```markdown
 ::: custom-type

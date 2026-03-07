@@ -19,6 +19,15 @@ enum Command {
         #[arg(long, default_value = ".")]
         root: PathBuf,
     },
+    /// Scaffold a new theme.
+    InitTheme {
+        /// Theme name (used as directory name under themes/).
+        name: String,
+
+        /// Project root directory (defaults to current directory).
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+    },
 }
 
 fn main() -> Result<()> {
@@ -34,6 +43,10 @@ fn main() -> Result<()> {
         Command::Build { root } => {
             let root = root.canonicalize()?;
             kiln::build(&root)?;
+        }
+        Command::InitTheme { name, root } => {
+            let root = root.canonicalize()?;
+            kiln::init_theme(&root, &name)?;
         }
     }
 

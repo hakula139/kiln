@@ -17,10 +17,16 @@ kiln is purpose-built to support the specific needs of hakula.xyz — CJK conten
 - [x] KaTeX math support (`$...$` / `$$...$$`)
 - [x] Syntax highlighting via [syntect](https://github.com/trishume/syntect) (CSS classes, no JS runtime)
 - [x] `:::` fenced directive system with callouts and Pandoc fenced divs
-- [x] CJK-aware heading ID generation and table of contents
-- [x] [MiniJinja](https://github.com/mitsuhiko/minijinja) templates with Open Graph / Twitter Card / SEO meta
-- [x] Single-page build pipeline
-- [x] Multi-page builds with static files and content assets
+- [x] CJK-aware heading ID generation
+- [x] Table of contents generation
+- [x] Open Graph / Twitter Card / SEO meta tags
+- [x] Template engine with block inheritance ([MiniJinja](https://github.com/mitsuhiko/minijinja))
+- [x] Theme system with site-level overrides
+- [x] Emoji shortcodes and [Font Awesome](https://fontawesome.com) icons
+- [x] Pandoc-style image attributes (`{#id .class width=N}`)
+- [x] Code blocks with language headers and collapsible max-lines
+- [x] Static file handling and co-located content assets
+- [x] Pretty URLs (`/post/` instead of `/post.html`)
 - [ ] Additional directives (styled blocks, embeds, link cards)
 - [ ] Hugo content migration tool (`kiln convert`)
 - [ ] Taxonomy support (tags, categories) with pagination
@@ -37,6 +43,9 @@ kiln build
 
 # Build from a specific project root
 kiln build --root /path/to/site
+
+# Scaffold a new theme
+kiln init-theme my-theme
 ```
 
 ## Site Structure
@@ -44,18 +53,21 @@ kiln build --root /path/to/site
 A kiln site is organized as follows:
 
 ```text
-config.toml          # Site configuration (TOML)
-content/             # Markdown content
-  posts/             # Blog posts organized by category
-  about-me/          # Standalone pages
-templates/           # MiniJinja templates
-static/              # Static assets (copied to output as-is)
-public/              # Build output (configurable via output_dir)
+.
+├── config.toml      # Site configuration (TOML)
+├── content/         # Markdown content
+│   ├── posts/       # Blog posts organized by category
+│   └── about-me/    # Standalone pages
+├── templates/       # MiniJinja templates (site overrides theme)
+├── themes/          # Themes (git submodules)
+├── static/          # Static assets (copied to output as-is)
+└── public/          # Build output (configurable via output_dir)
 ```
 
-## Syntax Reference
+## Documentation
 
-See [docs/syntax.md](docs/syntax.md) for the full list of supported Markdown extensions, frontmatter fields, and directive syntax.
+- [docs/syntax.md](docs/syntax.md) — Markdown extensions, frontmatter fields, and directive syntax
+- [docs/themes.md](docs/themes.md) — Theme installation, configuration, and creation
 
 ## Building from Source
 

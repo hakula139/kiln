@@ -12,9 +12,12 @@ workspace = true
 [dependencies]
 anyhow = { workspace = true }
 clap = { workspace = true }
+gh-emoji = { workspace = true }
 jiff = { workspace = true }
 minijinja = { workspace = true }
 pulldown-cmark = { workspace = true }
+regex = { workspace = true }
+semver = { workspace = true }
 serde = { workspace = true }
 strum = { workspace = true }
 syntect = { workspace = true }

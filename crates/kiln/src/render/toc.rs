@@ -1,8 +1,6 @@
-use std::fmt::Write;
-
 use pulldown_cmark::HeadingLevel;
 
-use super::escape_html;
+use super::{escape_html, writeln_indented};
 
 /// A single entry in the table of contents, collected during heading rendering.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,9 +26,10 @@ pub fn render_toc_html(entries: &[TocEntry]) -> String {
         return String::new();
     }
 
-    let min_level = entries.iter().map(|e| e.level as u8).min().unwrap_or(1);
+    let mut html = String::new();
+    writeln_indented!(&mut html, 0, r#"<nav class="toc">"#);
 
-    let mut html = String::from("<nav class=\"toc\">\n");
+    let min_level = entries.iter().map(|e| e.level as u8).min().unwrap_or(1);
     let mut depth: u8 = 0;
 
     for entry in entries {
@@ -39,34 +38,29 @@ pub fn render_toc_html(entries: &[TocEntry]) -> String {
         if target <= depth {
             // Close deeper levels.
             while depth > target {
-                indent(&mut html, depth * 2);
-                html.push_str("</li>\n");
-                indent(&mut html, depth * 2 - 1);
-                html.push_str("</ul>\n");
+                writeln_indented!(&mut html, depth * 2, "</li>");
+                writeln_indented!(&mut html, depth * 2 - 1, "</ul>");
                 depth -= 1;
             }
             // Close sibling at target depth.
-            indent(&mut html, depth * 2);
-            html.push_str("</li>\n");
+            writeln_indented!(&mut html, depth * 2, "</li>");
         }
 
         // Open new levels. When skipping heading levels (e.g., H2 → H4),
         // emit wrapper <li> elements at intermediate depths so that nested
         // <ul> elements always appear inside a <li> (required by HTML spec).
         while depth < target {
-            indent(&mut html, depth * 2 + 1);
-            html.push_str("<ul>\n");
+            writeln_indented!(&mut html, depth * 2 + 1, "<ul>");
             depth += 1;
             if depth < target {
-                indent(&mut html, depth * 2);
-                html.push_str("<li>\n");
+                writeln_indented!(&mut html, depth * 2, "<li>");
             }
         }
 
         // Emit entry.
-        indent(&mut html, depth * 2);
-        let _ = writeln!(
-            html,
+        writeln_indented!(
+            &mut html,
+            depth * 2,
             "<li><a href=\"#{}\">{}</a>",
             escape_html(&entry.id),
             escape_html(&entry.title),
@@ -75,21 +69,13 @@ pub fn render_toc_html(entries: &[TocEntry]) -> String {
 
     // Close all remaining levels.
     while depth > 0 {
-        indent(&mut html, depth * 2);
-        html.push_str("</li>\n");
-        indent(&mut html, depth * 2 - 1);
-        html.push_str("</ul>\n");
+        writeln_indented!(&mut html, depth * 2, "</li>");
+        writeln_indented!(&mut html, depth * 2 - 1, "</ul>");
         depth -= 1;
     }
 
-    html.push_str("</nav>\n");
+    writeln_indented!(&mut html, 0, "</nav>");
     html
-}
-
-fn indent(html: &mut String, level: u8) {
-    for _ in 0..level {
-        html.push_str("  ");
-    }
 }
 
 #[cfg(test)]

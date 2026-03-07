@@ -19,5 +19,6 @@ slugified
 slugify
 swatinem
 syntect
+tmpl
 tracing
 walkdir

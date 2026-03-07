@@ -7,6 +7,7 @@ use crate::config::Config;
 use crate::content::discovery::discover_content;
 use crate::content::page::Page;
 use crate::output::{clean_output_dir, copy_file, copy_static, write_output};
+use crate::render::RenderOptions;
 use crate::render::pipeline::render_page;
 use crate::template::{PostTemplateVars, TemplateEngine};
 
@@ -26,7 +27,19 @@ struct BuildContext {
 pub fn build(root: &Path) -> Result<()> {
     let config = Config::load(root).context("failed to load config")?;
     let syntax_set = SyntaxSet::load_defaults_newlines();
-    let template_engine = TemplateEngine::new(&root.join("templates"))
+
+    let site_templates = root.join("templates");
+    let theme_dir = config.theme_dir(root);
+    let theme_templates = theme_dir.as_ref().map(|d| d.join("templates"));
+
+    if config.theme.is_none() {
+        tracing::warn!("no theme configured; set `theme` in config.toml to use a theme");
+    }
+    if !site_templates.is_dir() && theme_templates.as_ref().is_none_or(|d| !d.is_dir()) {
+        tracing::warn!("no templates found; provide templates/ or configure a theme");
+    }
+
+    let template_engine = TemplateEngine::new(Some(&site_templates), theme_templates.as_deref())
         .context("failed to initialize template engine")?;
 
     let ctx = BuildContext {
@@ -39,6 +52,11 @@ pub fn build(root: &Path) -> Result<()> {
     let output_dir = root.join(&ctx.config.output_dir);
 
     clean_output_dir(&output_dir)?;
+
+    // Theme static files first, then site static files (site overrides theme).
+    if let Some(ref td) = theme_dir {
+        copy_static(&td.join("static"), &output_dir)?;
+    }
     copy_static(&root.join("static"), &output_dir)?;
 
     for page in &content.pages {
@@ -56,7 +74,16 @@ fn build_page(
     content_dir: &Path,
     output_dir: &Path,
 ) -> Result<()> {
-    let rendered = render_page(&page.raw_content, &ctx.syntax_set);
+    let options = RenderOptions::from_params(&ctx.config.params);
+
+    let rendered = render_page(
+        &page.raw_content,
+        &ctx.syntax_set,
+        &ctx.template_engine,
+        &options,
+    )
+    .with_context(|| format!("failed to render {}", page.source_path.display()))?;
+
     let output_path = page.output_path(content_dir).with_context(|| {
         format!(
             "failed to compute output path for {}",
@@ -128,9 +155,7 @@ mod tests {
 
     use super::*;
 
-    fn copy_templates(dest: &Path) {
-        copy_static(&crate::test_utils::template_dir(), dest).unwrap();
-    }
+    use crate::test_utils::{PermissionGuard, copy_templates};
 
     // -- page_url --
 
@@ -343,6 +368,107 @@ mod tests {
         );
     }
 
+    // -- build with theme --
+
+    /// Sets up a minimal theme for build tests.
+    fn setup_theme(root: &Path, theme_name: &str) {
+        let theme_dir = root.join("themes").join(theme_name);
+        let tmpl_dir = theme_dir.join("templates");
+        fs::create_dir_all(&tmpl_dir).unwrap();
+        copy_templates(&tmpl_dir);
+        fs::write(theme_dir.join("theme.toml"), "").unwrap();
+    }
+
+    #[test]
+    fn build_with_theme() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(
+            root.path().join("config.toml"),
+            indoc! {r#"
+                base_url = "https://example.com"
+                title = "Test"
+                theme = "my-theme"
+            "#},
+        )
+        .unwrap();
+        setup_theme(root.path(), "my-theme");
+
+        let content_dir = root.path().join("content").join("posts").join("hello");
+        fs::create_dir_all(&content_dir).unwrap();
+        fs::write(
+            content_dir.join("index.md"),
+            indoc! {r#"
+                +++
+                title = "Hello"
+                +++
+                Body
+            "#},
+        )
+        .unwrap();
+
+        build(root.path()).unwrap();
+
+        let output = root.path().join("public").join("hello").join("index.html");
+        assert!(output.exists(), "output file should exist");
+        let html = fs::read_to_string(&output).unwrap();
+        assert!(
+            html.contains("<h1>Hello</h1>"),
+            "should render with theme templates, html:\n{html}"
+        );
+    }
+
+    #[test]
+    fn build_theme_static_files_with_site_override() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("config.toml"), r#"theme = "my-theme""#).unwrap();
+        setup_theme(root.path(), "my-theme");
+
+        // Theme static file.
+        let theme_static = root.path().join("themes/my-theme/static");
+        fs::create_dir_all(&theme_static).unwrap();
+        fs::write(theme_static.join("theme.css"), "theme-default").unwrap();
+        fs::write(theme_static.join("shared.css"), "from-theme").unwrap();
+
+        // Site static file overrides shared.css.
+        let site_static = root.path().join("static");
+        fs::create_dir_all(&site_static).unwrap();
+        fs::write(site_static.join("shared.css"), "from-site").unwrap();
+
+        build(root.path()).unwrap();
+
+        let output_dir = root.path().join("public");
+        assert_eq!(
+            fs::read_to_string(output_dir.join("theme.css")).unwrap(),
+            "theme-default",
+            "theme-only static file should be copied"
+        );
+        assert_eq!(
+            fs::read_to_string(output_dir.join("shared.css")).unwrap(),
+            "from-site",
+            "site static file should override theme"
+        );
+    }
+
+    // -- build errors --
+
+    /// Creates a minimal site with one page for error-path tests.
+    fn setup_site_with_page(root: &Path) {
+        fs::write(root.join("config.toml"), "").unwrap();
+        copy_templates(&root.join("templates"));
+        let page_dir = root.join("content").join("posts").join("hello");
+        fs::create_dir_all(&page_dir).unwrap();
+        fs::write(
+            page_dir.join("index.md"),
+            indoc! {r#"
+                +++
+                title = "Hello"
+                +++
+                Body
+            "#},
+        )
+        .unwrap();
+    }
+
     #[test]
     fn build_invalid_config_returns_error() {
         let root = tempfile::tempdir().unwrap();
@@ -359,12 +485,107 @@ mod tests {
     fn build_missing_templates_returns_error() {
         let root = tempfile::tempdir().unwrap();
         fs::write(root.path().join("config.toml"), "").unwrap();
-        // No templates directory created.
 
         let err = build(root.path()).unwrap_err().to_string();
         assert!(
             err.contains("failed to initialize template engine"),
             "should report template engine failure, got: {err}"
+        );
+    }
+
+    #[test]
+    fn build_broken_post_template_returns_error() {
+        let root = tempfile::tempdir().unwrap();
+        setup_site_with_page(root.path());
+
+        // Overwrite post.html with invalid Jinja syntax.
+        fs::write(
+            root.path().join("templates").join("post.html"),
+            "{% invalid %}",
+        )
+        .unwrap();
+
+        let err = build(root.path()).unwrap_err().to_string();
+        assert!(
+            err.contains("failed to render"),
+            "should report render failure, got: {err}"
+        );
+    }
+
+    #[test]
+    fn build_write_permission_denied_returns_error() {
+        let root = tempfile::tempdir().unwrap();
+        setup_site_with_page(root.path());
+
+        // Build once to create output structure, then restrict the output dir.
+        build(root.path()).unwrap();
+        let output_dir = root.path().join("public");
+        let _guard = PermissionGuard::restrict(&output_dir, 0o555);
+
+        let err = build(root.path()).unwrap_err().to_string();
+        assert!(
+            err.contains("failed to write") || err.contains("failed to clean"),
+            "should report write or clean failure, got: {err}"
+        );
+    }
+
+    #[test]
+    fn build_asset_copy_permission_denied_returns_error() {
+        let root = tempfile::tempdir().unwrap();
+        setup_site_with_page(root.path());
+
+        // Add a co-located asset.
+        let page_dir = root.path().join("content").join("posts").join("hello");
+        fs::write(page_dir.join("image.png"), "img-data").unwrap();
+
+        // Build once to create output structure.
+        build(root.path()).unwrap();
+
+        // Make the page output dir read-only so asset copy fails on rebuild,
+        // but the parent output dir stays writable for clean_output_dir.
+        let page_output = root.path().join("public").join("hello");
+        let _guard = PermissionGuard::restrict(&page_output, 0o555);
+
+        let err = build(root.path()).unwrap_err().to_string();
+        assert!(
+            err.contains("failed to copy asset") || err.contains("failed to clean"),
+            "should report asset copy or clean failure, got: {err}"
+        );
+    }
+
+    #[test]
+    fn build_broken_directive_template_returns_error() {
+        let root = tempfile::tempdir().unwrap();
+        setup_site_with_page(root.path());
+
+        // Directive template that compiles but fails at render time:
+        // `items()` filter requires a map, not a string.
+        let directives = root.path().join("templates").join("directives");
+        fs::create_dir_all(&directives).unwrap();
+        fs::write(
+            directives.join("broken.html"),
+            "{% for k, v in name | items %}{{ k }}{% endfor %}",
+        )
+        .unwrap();
+
+        let page_dir = root.path().join("content").join("posts").join("hello");
+        fs::write(
+            page_dir.join("index.md"),
+            indoc! {r#"
+                +++
+                title = "Hello"
+                +++
+                ::: broken
+                Body
+                :::
+            "#},
+        )
+        .unwrap();
+
+        let err = build(root.path()).unwrap_err().to_string();
+        assert!(
+            err.contains("failed to render"),
+            "should report render failure, got: {err}"
         );
     }
 }

@@ -1,4 +1,5 @@
 use super::{DirectiveBlock, DirectiveKind};
+use crate::markdown::{detect_opening_code_fence, is_closing_code_fence};
 
 struct StackEntry {
     colon_count: usize,
@@ -100,51 +101,11 @@ fn count_leading_colons(line: &str) -> Option<usize> {
     (count >= 3).then_some(count)
 }
 
-/// Detects an opening code fence (three or more `` ` `` or `~` characters).
-/// Handles up to 3 spaces of leading indentation.
-fn detect_opening_code_fence(line: &str) -> Option<(u8, usize)> {
-    let indent = line.bytes().take_while(|&b| b == b' ').count();
-    if indent > 3 {
-        return None;
-    }
-
-    let rest = &line[indent..];
-    let &ch = rest.as_bytes().first()?;
-    if ch != b'`' && ch != b'~' {
-        return None;
-    }
-
-    let count = rest.bytes().take_while(|&b| b == ch).count();
-    if count < 3 {
-        return None;
-    }
-
-    // CommonMark: backtick fence info strings must not contain backticks.
-    if ch == b'`' && rest[count..].contains('`') {
-        return None;
-    }
-
-    Some((ch, count))
-}
-
-/// Checks whether `line` closes a code fence opened with `fence_char` repeated
-/// `min_count` times. Handles up to 3 spaces of leading indentation.
-fn is_closing_code_fence(line: &str, fence_char: u8, min_count: usize) -> bool {
-    let indent = line.bytes().take_while(|&b| b == b' ').count();
-    if indent > 3 {
-        return false;
-    }
-
-    let rest = &line[indent..];
-    let count = rest.bytes().take_while(|&b| b == fence_char).count();
-    count >= min_count && rest[count..].trim().is_empty()
-}
-
 /// Splits the text after the colons into a directive name and Pandoc
 /// attributes (`#id`, `.class`, `key=value`).
 ///
 /// Accepts `name {attrs}`, bare `name`, or `{attrs}` alone. Attributes always
-/// require `{…}` braces.
+/// require `{...}` braces.
 fn parse_directive_head(text: &str) -> DirectiveHead<'_> {
     let text = text.trim();
 
@@ -158,7 +119,7 @@ fn parse_directive_head(text: &str) -> DirectiveHead<'_> {
 
     // Parse {#id .class key=value} if present.
     if let Some(inner) = rest.strip_prefix('{').and_then(|s| s.strip_suffix('}')) {
-        let mut head = parse_pandoc_attrs(inner.trim());
+        let mut head = parse_raw_attrs(inner.trim());
         head.name = name;
         return head;
     }
@@ -173,12 +134,12 @@ fn parse_directive_head(text: &str) -> DirectiveHead<'_> {
 }
 
 /// Extracts `#id`, `.class`, and remaining key=value args from the interior
-/// of a `{…}` Pandoc attribute block.
+/// of a `{...}` Pandoc attribute block.
 ///
 /// `#id` and `.class` tokens are extracted regardless of position — they can
 /// be interleaved with key=value pairs. The first `#id` wins; duplicates are
 /// silently ignored. Everything else is collected into the args string.
-fn parse_pandoc_attrs(input: &str) -> DirectiveHead<'_> {
+fn parse_raw_attrs(input: &str) -> DirectiveHead<'_> {
     let mut id: Option<&str> = None;
     let mut classes = Vec::new();
     let mut args = String::new();

@@ -1,11 +1,19 @@
+use std::collections::HashMap;
+
+use anyhow::Result;
 use syntect::parsing::SyntaxSet;
 
+use super::RenderOptions;
 use crate::directive::callout::render_callout;
 use crate::directive::div::render_div;
 use crate::directive::parser::parse_directives;
-use crate::directive::{DirectiveBlock, DirectiveKind};
+use crate::directive::{DirectiveBlock, DirectiveContext, DirectiveKind};
+use crate::render::emoji::replace_emojis;
+use crate::render::icon::replace_icons;
+use crate::render::image_attrs::extract_image_attrs;
 use crate::render::markdown::render_markdown;
 use crate::render::toc::render_toc_html;
+use crate::template::TemplateEngine;
 
 /// The fully rendered output of a single page.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -16,16 +24,35 @@ pub struct RenderedPage {
 
 /// Renders raw markdown through the full pipeline: directive processing,
 /// markdown rendering, and `ToC` generation.
-#[must_use]
-pub fn render_page(raw_content: &str, syntax_set: &SyntaxSet) -> RenderedPage {
-    let processed = render_directives(raw_content, syntax_set);
-    let md_output = render_markdown(&processed, syntax_set);
+///
+/// # Errors
+///
+/// Returns an error if a template-based directive fails to render.
+pub fn render_page(
+    raw_content: &str,
+    syntax_set: &SyntaxSet,
+    engine: &TemplateEngine,
+    options: &RenderOptions,
+) -> Result<RenderedPage> {
+    let processed = render_directives(raw_content, syntax_set, engine)?;
+
+    // Pre-process: extract image attrs, optionally replace shortcodes.
+    let mut preprocessed = processed;
+    if options.emojis {
+        preprocessed = replace_emojis(&preprocessed);
+    }
+    if options.fontawesome {
+        preprocessed = replace_icons(&preprocessed);
+    }
+    let (cleaned, image_attrs) = extract_image_attrs(&preprocessed);
+
+    let md_output = render_markdown(&cleaned, syntax_set, &image_attrs, options.code_max_lines);
     let toc_html = render_toc_html(&md_output.headings);
 
-    RenderedPage {
+    Ok(RenderedPage {
         content_html: md_output.html,
         toc_html,
-    }
+    })
 }
 
 /// Recursively processes directive blocks in content, replacing them with
@@ -38,25 +65,26 @@ pub fn render_page(raw_content: &str, syntax_set: &SyntaxSet) -> RenderedPage {
 /// - Headings inside directives do **not** appear in the page-level `ToC`.
 /// - Footnotes and reference-link definitions do not resolve across directive
 ///   boundaries.
-fn render_directives(content: &str, syntax_set: &SyntaxSet) -> String {
+fn render_directives(
+    content: &str,
+    syntax_set: &SyntaxSet,
+    engine: &TemplateEngine,
+) -> Result<String> {
     let all_blocks = parse_directives(content);
     if all_blocks.is_empty() {
-        return content.to_owned();
+        return Ok(content.to_owned());
     }
 
     let top_level = top_level_blocks(&all_blocks);
     let mut result = content.to_owned();
 
+    let empty_attrs = HashMap::new();
+
     // Replace right-to-left so earlier ranges remain valid.
     for block in top_level.into_iter().rev() {
-        let inner = render_directives(&block.body, syntax_set);
-        let md_output = render_markdown(&inner, syntax_set);
-        let html = render_directive_block(
-            &block.kind,
-            block.id.as_deref(),
-            &block.classes,
-            &md_output.html,
-        );
+        let inner = render_directives(&block.body, syntax_set, engine)?;
+        let md_output = render_markdown(&inner, syntax_set, &empty_attrs, None);
+        let html = render_directive_block(block, &md_output.html, engine)?;
 
         // Blank-line padding: <details> / <div> are CommonMark type 6 HTML
         // blocks which cannot interrupt paragraphs. Safe because the directive
@@ -65,7 +93,7 @@ fn render_directives(content: &str, syntax_set: &SyntaxSet) -> String {
         result.replace_range(block.range.clone(), &padded);
     }
 
-    result
+    Ok(result)
 }
 
 /// Filters to only top-level directive blocks (those not nested inside another).
@@ -86,18 +114,42 @@ fn top_level_blocks(blocks: &[DirectiveBlock]) -> Vec<&DirectiveBlock> {
 }
 
 /// Dispatches a directive block to its renderer.
+///
+/// For `Unknown` directives, checks the template engine for a
+/// `directives/<name>.html` template. Falls back to `render_div` if no
+/// template exists.
 fn render_directive_block(
-    kind: &DirectiveKind,
-    id: Option<&str>,
-    classes: &[String],
+    block: &DirectiveBlock,
     body_html: &str,
-) -> String {
-    match kind {
-        DirectiveKind::Callout { kind, title, open } => {
-            render_callout(*kind, title.as_deref(), *open, id, classes, body_html)
+    engine: &TemplateEngine,
+) -> Result<String> {
+    let id = block.id.as_deref();
+    let classes = &block.classes;
+
+    match &block.kind {
+        DirectiveKind::Callout { kind, title, open } => Ok(render_callout(
+            *kind,
+            title.as_deref(),
+            *open,
+            id,
+            classes,
+            body_html,
+        )),
+        DirectiveKind::Unknown { name, args } => {
+            // Try template first, fall back to generic div wrapper.
+            let ctx = DirectiveContext {
+                name: name.clone(),
+                args: args.clone(),
+                id: block.id.clone(),
+                classes: block.classes.clone(),
+                body_html: body_html.to_owned(),
+                body_raw: block.body.clone(),
+            };
+            match engine.render_directive(name, ctx) {
+                Some(result) => result,
+                None => Ok(render_div(name, id, classes, body_html)),
+            }
         }
-        // args intentionally unused until directive-specific renderers exist.
-        DirectiveKind::Unknown { name, .. } => render_div(name, id, classes, body_html),
     }
 }
 
@@ -105,22 +157,32 @@ fn render_directive_block(
 mod tests {
     use std::sync::LazyLock;
 
+    use std::fs;
+
     use indoc::indoc;
 
     use super::*;
+    use crate::test_utils::test_engine;
 
     static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(SyntaxSet::load_defaults_newlines);
+
+    fn render(input: &str) -> RenderedPage {
+        render_with(input, &test_engine())
+    }
+
+    fn render_with(input: &str, engine: &TemplateEngine) -> RenderedPage {
+        render_page(input, &SYNTAX_SET, engine, &RenderOptions::default()).unwrap()
+    }
 
     // -- render_page --
 
     #[test]
     fn render_no_directives() {
-        let input = indoc! {"
+        let page = render(indoc! {"
             # Hello
 
             Some text.
-        "};
-        let page = render_page(input, &SYNTAX_SET);
+        "});
         assert!(
             page.content_html.contains("<p>Some text.</p>"),
             "html:\n{}",
@@ -133,13 +195,12 @@ mod tests {
     }
 
     #[test]
-    fn render_single_callout() {
-        let input = indoc! {"
+    fn render_callout() {
+        let page = render(indoc! {"
             ::: callout
             Hello **world**.
             :::
-        "};
-        let page = render_page(input, &SYNTAX_SET);
+        "});
         assert!(
             page.content_html.contains(r#"class="callout note""#),
             "should have callout wrapper, html:\n{}",
@@ -153,13 +214,44 @@ mod tests {
     }
 
     #[test]
-    fn render_unknown_directive() {
-        let input = indoc! {"
+    fn render_directive_uses_template() {
+        let dir = tempfile::tempdir().unwrap();
+        let directives = dir.path().join("directives");
+        fs::create_dir_all(&directives).unwrap();
+        fs::write(
+            directives.join("my-widget.html"),
+            "<widget>{{ name }}: {{ body_html | safe }}</widget>",
+        )
+        .unwrap();
+
+        let engine = TemplateEngine::new(Some(dir.path()), None).unwrap();
+        let page = render_with(
+            indoc! {"
+                ::: my-widget
+                Inner **content**.
+                :::
+            "},
+            &engine,
+        );
+        assert!(
+            page.content_html.contains("<widget>my-widget:"),
+            "should use directive template, html:\n{}",
+            page.content_html
+        );
+        assert!(
+            page.content_html.contains("<strong>content</strong>"),
+            "body should be markdown-rendered, html:\n{}",
+            page.content_html
+        );
+    }
+
+    #[test]
+    fn render_directive_fallback_to_div() {
+        let page = render(indoc! {"
             ::: custom
             Some body.
             :::
-        "};
-        let page = render_page(input, &SYNTAX_SET);
+        "});
         assert!(
             page.content_html.contains(r#"class="custom""#),
             "unknown directive should be wrapped in div with name as class, html:\n{}",
@@ -174,14 +266,13 @@ mod tests {
 
     #[test]
     fn render_anonymous_div() {
-        let input = indoc! {"
+        let page = render(indoc! {"
             ::: {.compact-table}
             | A | B |
             |---|---|
             | 1 | 2 |
             :::
-        "};
-        let page = render_page(input, &SYNTAX_SET);
+        "});
         assert!(
             page.content_html.contains(r#"class="compact-table""#),
             "anonymous div should have class, html:\n{}",
@@ -195,13 +286,12 @@ mod tests {
     }
 
     #[test]
-    fn render_callout_with_id_and_classes() {
-        let input = indoc! {"
+    fn render_directive_with_id_and_classes() {
+        let page = render(indoc! {"
             ::: callout {#my-note .highlight type=tip}
             Body text.
             :::
-        "};
-        let page = render_page(input, &SYNTAX_SET);
+        "});
         assert!(
             page.content_html.contains(r#"id="my-note""#),
             "id should be propagated, html:\n{}",
@@ -216,8 +306,8 @@ mod tests {
     }
 
     #[test]
-    fn render_multiple_sequential_directives() {
-        let input = indoc! {"
+    fn render_sequential_directives() {
+        let page = render(indoc! {"
             ::: callout
             First.
             :::
@@ -227,8 +317,7 @@ mod tests {
             ::: callout {type=warning}
             Second.
             :::
-        "};
-        let page = render_page(input, &SYNTAX_SET);
+        "});
         assert!(
             page.content_html.contains(r#"class="callout note""#),
             "first callout, html:\n{}",
@@ -247,8 +336,8 @@ mod tests {
     }
 
     #[test]
-    fn render_nested_callouts() {
-        let input = indoc! {"
+    fn render_nested_directives() {
+        let page = render(indoc! {"
             :::: callout {type=warning}
             Outer text.
 
@@ -256,8 +345,7 @@ mod tests {
             Inner text.
             :::
             ::::
-        "};
-        let page = render_page(input, &SYNTAX_SET);
+        "});
         assert!(
             page.content_html.contains(r#"class="callout warning""#),
             "outer callout, html:\n{}",
@@ -282,7 +370,7 @@ mod tests {
 
     #[test]
     fn render_directive_with_code_and_math() {
-        let input = indoc! {"
+        let page = render(indoc! {"
             ::: callout
             Inline $x^2$ math.
 
@@ -290,8 +378,7 @@ mod tests {
             fn main() {}
             ```
             :::
-        "};
-        let page = render_page(input, &SYNTAX_SET);
+        "});
         assert!(
             page.content_html.contains("math-inline"),
             "math should be rendered, html:\n{}",
@@ -300,6 +387,28 @@ mod tests {
         assert!(
             page.content_html.contains(r#"class="highlight""#),
             "code should be highlighted, html:\n{}",
+            page.content_html
+        );
+    }
+
+    #[test]
+    fn render_with_emojis_and_fontawesome() {
+        let engine = test_engine();
+        let options = RenderOptions {
+            emojis: true,
+            fontawesome: true,
+            ..RenderOptions::default()
+        };
+        let input = "Hello :smile: and :(fas fa-link):";
+        let page = render_page(input, &SYNTAX_SET, &engine, &options).unwrap();
+        assert!(
+            page.content_html.contains('\u{1f604}'),
+            "emoji should be replaced, html:\n{}",
+            page.content_html
+        );
+        assert!(
+            page.content_html.contains(r#"class="fas fa-link""#),
+            "icon should be replaced, html:\n{}",
             page.content_html
         );
     }

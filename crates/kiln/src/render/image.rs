@@ -1,19 +1,34 @@
 use std::fmt::Write;
 
 use super::escape_html;
+use super::image_attrs::ImageAttrs;
 
 /// Renders a standalone (block-level) image as a `<figure>` element.
 ///
 /// The image gets `loading="lazy"`. If `alt` is non-empty, a `<figcaption>` is
-/// included. The `title` attribute is omitted when empty.
+/// included. The `title` attribute is omitted when empty. Optional `attrs`
+/// apply `id` CSS classes to `<figure>`, and `width` / `height` to `<img>`.
 #[must_use]
-pub fn render_block_image(src: &str, alt: &str, title: &str) -> String {
-    let mut html = String::from("<figure>\n");
-    push_img_tag(&mut html, src, alt, title);
+pub fn render_block_image(src: &str, alt: &str, title: &str, attrs: Option<&ImageAttrs>) -> String {
+    let fig_id = attrs
+        .and_then(|a| a.id.as_deref())
+        .map(|v| format!(" id=\"{}\"", escape_html(v)))
+        .unwrap_or_default();
+
+    let fig_class = attrs
+        .filter(|a| !a.classes.is_empty())
+        .map(|a| {
+            let classes: Vec<_> = a.classes.iter().map(|c| escape_html(c)).collect();
+            format!(" class=\"{}\"", classes.join(" "))
+        })
+        .unwrap_or_default();
+
+    let mut html = format!("<figure{fig_id}{fig_class}>\n  ");
+    push_img_tag(&mut html, src, alt, title, attrs, false);
     html.push('\n');
 
     if !alt.is_empty() {
-        let _ = writeln!(html, "<figcaption>{}</figcaption>", escape_html(alt));
+        _ = writeln!(html, "  <figcaption>{}</figcaption>", escape_html(alt));
     }
 
     html.push_str("</figure>\n");
@@ -22,16 +37,29 @@ pub fn render_block_image(src: &str, alt: &str, title: &str) -> String {
 
 /// Renders an inline image as a plain `<img>` element with `loading="lazy"`.
 ///
-/// The `title` attribute is omitted when empty.
+/// The `title` attribute is omitted when empty. Optional `attrs` apply `id`,
+/// CSS classes, `width`, and `height` directly to the `<img>` element.
 #[must_use]
-pub fn render_inline_image(src: &str, alt: &str, title: &str) -> String {
+pub fn render_inline_image(
+    src: &str,
+    alt: &str,
+    title: &str,
+    attrs: Option<&ImageAttrs>,
+) -> String {
     let mut html = String::new();
-    push_img_tag(&mut html, src, alt, title);
+    push_img_tag(&mut html, src, alt, title, attrs, true);
     html
 }
 
-fn push_img_tag(html: &mut String, src: &str, alt: &str, title: &str) {
-    let _ = write!(
+fn push_img_tag(
+    html: &mut String,
+    src: &str,
+    alt: &str,
+    title: &str,
+    attrs: Option<&ImageAttrs>,
+    include_identity: bool,
+) {
+    _ = write!(
         html,
         r#"<img src="{}" alt="{}""#,
         escape_html(src),
@@ -39,7 +67,25 @@ fn push_img_tag(html: &mut String, src: &str, alt: &str, title: &str) {
     );
 
     if !title.is_empty() {
-        let _ = write!(html, r#" title="{}""#, escape_html(title));
+        _ = write!(html, r#" title="{}""#, escape_html(title));
+    }
+
+    if let Some(a) = attrs {
+        if include_identity {
+            if let Some(id) = &a.id {
+                _ = write!(html, r#" id="{}""#, escape_html(id));
+            }
+            if !a.classes.is_empty() {
+                let classes: Vec<_> = a.classes.iter().map(|c| escape_html(c)).collect();
+                _ = write!(html, r#" class="{}""#, classes.join(" "));
+            }
+        }
+        if let Some(w) = &a.width {
+            _ = write!(html, r#" width="{}""#, escape_html(w));
+        }
+        if let Some(h) = &a.height {
+            _ = write!(html, r#" height="{}""#, escape_html(h));
+        }
     }
 
     html.push_str(r#" loading="lazy" />"#);
@@ -49,74 +95,35 @@ fn push_img_tag(html: &mut String, src: &str, alt: &str, title: &str) {
 mod tests {
     use super::*;
 
+    // -- render_block_image --
+
     #[test]
     fn block_image_produces_figure() {
-        let html = render_block_image("img.png", "A photo", "");
-        assert!(
-            html.contains("<figure>"),
-            "should become a figure, html:\n{html}"
-        );
-        assert!(
-            html.contains(r#"src="img.png""#),
-            "should have src attribute, html:\n{html}"
-        );
-        assert!(
-            html.contains(r#"alt="A photo""#),
-            "should have alt attribute, html:\n{html}"
-        );
-        assert!(
-            html.contains(r#"loading="lazy""#),
-            "should have lazy loading, html:\n{html}"
-        );
+        let html = render_block_image("img.png", "A photo", "", None);
+        assert!(html.contains("<figure>"), "html:\n{html}");
+        assert!(html.contains(r#"src="img.png""#), "html:\n{html}");
+        assert!(html.contains(r#"alt="A photo""#), "html:\n{html}");
+        assert!(html.contains(r#"loading="lazy""#), "html:\n{html}");
         assert!(
             html.contains("<figcaption>A photo</figcaption>"),
-            "should have figcaption with alt text, html:\n{html}"
+            "html:\n{html}"
         );
     }
 
     #[test]
     fn block_image_empty_alt_no_figcaption() {
-        let html = render_block_image("img.png", "", "");
-        assert!(
-            html.contains("<figure>"),
-            "should become a figure, html:\n{html}"
-        );
-        assert!(
-            html.contains(r#"src="img.png""#),
-            "should have src attribute, html:\n{html}"
-        );
-        assert!(
-            html.contains(r#"alt="""#),
-            "should have empty alt, html:\n{html}"
-        );
-        assert!(
-            !html.contains("<figcaption>"),
-            "should omit figcaption when alt is empty, html:\n{html}"
-        );
+        let html = render_block_image("img.png", "", "", None);
+        assert!(html.contains("<figure>"), "html:\n{html}");
+        assert!(!html.contains("<figcaption>"), "html:\n{html}");
     }
 
     #[test]
     fn block_image_with_title() {
-        let html = render_block_image("img.png", "alt text", "My Title");
-        assert!(
-            html.contains("<figure>"),
-            "should become a figure, html:\n{html}"
-        );
-        assert!(
-            html.contains(r#"src="img.png""#),
-            "should have src attribute, html:\n{html}"
-        );
-        assert!(
-            html.contains(r#"alt="alt text""#),
-            "should have alt attribute, html:\n{html}"
-        );
-        assert!(
-            html.contains(r#"title="My Title""#),
-            "should have title attribute, html:\n{html}"
-        );
+        let html = render_block_image("img.png", "alt text", "My Title", None);
+        assert!(html.contains(r#"title="My Title""#), "html:\n{html}");
         assert!(
             html.contains("<figcaption>alt text</figcaption>"),
-            "figcaption should use alt not title, html:\n{html}"
+            "html:\n{html}"
         );
     }
 
@@ -126,47 +133,111 @@ mod tests {
             "img.png?a=1&b=2",
             r#"a <photo> & "test""#,
             "title's <value>",
+            None,
         );
         assert!(
             html.contains(r#"src="img.png?a=1&amp;b=2""#),
-            "src should be escaped, html:\n{html}"
+            "html:\n{html}"
         );
         assert!(
             html.contains(r#"alt="a &lt;photo&gt; &amp; &quot;test&quot;""#),
-            "alt should be escaped, html:\n{html}"
+            "html:\n{html}"
         );
         assert!(
             html.contains(r#"title="title&#39;s &lt;value&gt;""#),
-            "title should be escaped, html:\n{html}"
-        );
-        assert!(
-            html.contains("<figcaption>a &lt;photo&gt; &amp; &quot;test&quot;</figcaption>"),
-            "figcaption should be escaped, html:\n{html}"
+            "html:\n{html}"
         );
     }
 
     #[test]
+    fn block_image_with_id() {
+        let attrs = ImageAttrs {
+            id: Some("fig-1".into()),
+            ..ImageAttrs::default()
+        };
+        let html = render_block_image("img.png", "alt", "", Some(&attrs));
+        assert!(html.contains(r#"<figure id="fig-1">"#), "html:\n{html}");
+    }
+
+    #[test]
+    fn block_image_with_class() {
+        let attrs = ImageAttrs {
+            classes: vec!["hero".into()],
+            ..ImageAttrs::default()
+        };
+        let html = render_block_image("img.png", "alt", "", Some(&attrs));
+        assert!(html.contains(r#"<figure class="hero">"#), "html:\n{html}");
+    }
+
+    #[test]
+    fn block_image_with_width() {
+        let attrs = ImageAttrs {
+            width: Some("500".into()),
+            ..ImageAttrs::default()
+        };
+        let html = render_block_image("img.png", "alt", "", Some(&attrs));
+        assert!(html.contains(r#"width="500""#), "html:\n{html}");
+    }
+
+    #[test]
+    fn block_image_with_height() {
+        let attrs = ImageAttrs {
+            height: Some("300".into()),
+            ..ImageAttrs::default()
+        };
+        let html = render_block_image("img.png", "alt", "", Some(&attrs));
+        assert!(html.contains(r#"height="300""#), "html:\n{html}");
+    }
+
+    // -- render_inline_image --
+
+    #[test]
     fn inline_image_no_figure() {
-        let html = render_inline_image("img.png", "alt text", "");
-        assert!(
-            !html.contains("<figure>"),
-            "should not become a figure, html:\n{html}"
-        );
-        assert!(
-            html.starts_with("<img "),
-            "should have img tag, html:\n{html}"
-        );
-        assert!(
-            html.contains(r#"src="img.png""#),
-            "should have src attribute, html:\n{html}"
-        );
-        assert!(
-            html.contains(r#"alt="alt text""#),
-            "should have alt attribute, html:\n{html}"
-        );
-        assert!(
-            html.contains(r#"loading="lazy""#),
-            "should have lazy loading, html:\n{html}"
-        );
+        let html = render_inline_image("img.png", "alt text", "", None);
+        assert!(!html.contains("<figure>"), "html:\n{html}");
+        assert!(html.starts_with("<img "), "html:\n{html}");
+        assert!(html.contains(r#"src="img.png""#), "html:\n{html}");
+        assert!(html.contains(r#"alt="alt text""#), "html:\n{html}");
+        assert!(html.contains(r#"loading="lazy""#), "html:\n{html}");
+    }
+
+    #[test]
+    fn inline_image_with_id() {
+        let attrs = ImageAttrs {
+            id: Some("pic-1".into()),
+            ..ImageAttrs::default()
+        };
+        let html = render_inline_image("img.png", "alt", "", Some(&attrs));
+        assert!(html.contains(r#"id="pic-1""#), "html:\n{html}");
+    }
+
+    #[test]
+    fn inline_image_with_class() {
+        let attrs = ImageAttrs {
+            classes: vec!["centered".into()],
+            ..ImageAttrs::default()
+        };
+        let html = render_inline_image("img.png", "alt", "", Some(&attrs));
+        assert!(html.contains(r#"class="centered""#), "html:\n{html}");
+    }
+
+    #[test]
+    fn inline_image_with_width() {
+        let attrs = ImageAttrs {
+            width: Some("500".into()),
+            ..ImageAttrs::default()
+        };
+        let html = render_inline_image("img.png", "alt", "", Some(&attrs));
+        assert!(html.contains(r#"width="500""#), "html:\n{html}");
+    }
+
+    #[test]
+    fn inline_image_with_height() {
+        let attrs = ImageAttrs {
+            height: Some("300".into()),
+            ..ImageAttrs::default()
+        };
+        let html = render_inline_image("img.png", "alt", "", Some(&attrs));
+        assert!(html.contains(r#"height="300""#), "html:\n{html}");
     }
 }
