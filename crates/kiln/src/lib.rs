@@ -2,12 +2,14 @@ pub mod build;
 pub mod config;
 pub mod content;
 pub mod directive;
+pub mod init;
 pub mod markdown;
 pub mod output;
 pub mod render;
 pub mod template;
 
 pub use build::build;
+pub use init::init_theme;
 
 #[cfg(test)]
 pub(crate) mod test_utils {
