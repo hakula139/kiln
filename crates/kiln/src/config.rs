@@ -117,9 +117,7 @@ impl ThemeMeta {
             .parse()
             .expect("CARGO_PKG_VERSION is always valid semver");
         if current < required {
-            bail!(
-                "theme `{theme_name}` requires kiln >= {required}, but this is kiln {current}"
-            );
+            bail!("theme `{theme_name}` requires kiln >= {required}, but this is kiln {current}");
         }
         Ok(())
     }
