@@ -82,6 +82,11 @@ pub(crate) mod test_utils {
         TEST_TEMPLATE_DIR.path().to_owned()
     }
 
+    /// Copies the test templates into `dest` as real files on disk.
+    pub fn copy_templates(dest: &Path) {
+        crate::output::copy_static(&template_dir(), dest).unwrap();
+    }
+
     /// Creates a `TemplateEngine` using embedded test templates.
     pub fn test_engine() -> TemplateEngine {
         TemplateEngine::new(None, Some(TEST_TEMPLATE_DIR.path())).unwrap()
