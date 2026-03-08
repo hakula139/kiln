@@ -141,7 +141,6 @@ fn emit_callout(sc: &ShortcodeArgs, out: &mut String) {
     let type_name = sc.positional.first().copied().unwrap_or("");
     let remaining = &sc.positional[1..];
 
-    // Hugo's third arg is `open`: "false" means the admonition starts collapsed.
     let (title, open) = match remaining {
         [.., "false"] => (remaining[..remaining.len() - 1].first().copied(), false),
         _ => (remaining.first().copied(), true),

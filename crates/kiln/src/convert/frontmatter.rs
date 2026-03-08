@@ -73,9 +73,12 @@ mod tests {
             title: Minimal
         "};
         let toml = convert_frontmatter(yaml).unwrap();
-        assert!(toml.contains(r#"title = "Minimal""#), "got:\n{toml}");
-        assert!(!toml.contains("description"), "got:\n{toml}");
-        assert!(!toml.contains("draft"), "got:\n{toml}");
+        assert_eq!(
+            toml,
+            indoc! {r#"
+                title = "Minimal"
+            "#}
+        );
     }
 
     #[test]
@@ -93,28 +96,23 @@ mod tests {
             license: CC BY-NC-SA 4.0
         "};
         let toml = convert_frontmatter(yaml).unwrap();
-        assert!(toml.contains(r#"title = "Full Post""#), "got:\n{toml}");
-        assert!(
-            toml.contains(r#"description = "A description""#),
-            "got:\n{toml}"
-        );
-        assert!(toml.contains(r#"slug = "my-slug""#), "got:\n{toml}");
-        // jiff normalizes to UTC
-        assert!(
-            toml.contains(r#"date = "2024-01-15T02:30:00Z""#),
-            "got:\n{toml}"
-        );
-        assert!(
-            toml.contains(r#"featured_image = "/img.webp""#),
-            "got:\n{toml}"
-        );
-        assert!(toml.contains("tags = ["), "got:\n{toml}");
-        assert!(toml.contains("categories = ["), "got:\n{toml}");
-        assert!(toml.contains("draft = true"), "got:\n{toml}");
-        assert!(toml.contains("weight = -3"), "got:\n{toml}");
-        assert!(
-            toml.contains(r#"license = "CC BY-NC-SA 4.0""#),
-            "got:\n{toml}"
+        assert_eq!(
+            toml,
+            indoc! {r#"
+                title = "Full Post"
+                description = "A description"
+                slug = "my-slug"
+                date = "2024-01-15T02:30:00Z"
+                featured_image = "/img.webp"
+                tags = [
+                    "a",
+                    "b",
+                ]
+                categories = ["tutorial"]
+                draft = true
+                weight = -3
+                license = "CC BY-NC-SA 4.0"
+            "#}
         );
     }
 
@@ -124,11 +122,12 @@ mod tests {
             featuredImage: https://example.com/img.webp
         "};
         let toml = convert_frontmatter(yaml).unwrap();
-        assert!(
-            toml.contains(r#"featured_image = "https://example.com/img.webp""#),
-            "got:\n{toml}"
+        assert_eq!(
+            toml,
+            indoc! {r#"
+                featured_image = "https://example.com/img.webp"
+            "#}
         );
-        assert!(!toml.contains("featuredImage"), "got:\n{toml}");
     }
 
     #[test]
@@ -140,9 +139,11 @@ mod tests {
               maxShownLines: 10
         "};
         let toml = convert_frontmatter(yaml).unwrap();
-        assert!(toml.contains(r#"title = "Test""#), "got:\n{toml}");
-        assert!(!toml.contains("unknownField"), "got:\n{toml}");
-        assert!(!toml.contains("code"), "got:\n{toml}");
-        assert!(!toml.contains("maxShownLines"), "got:\n{toml}");
+        assert_eq!(
+            toml,
+            indoc! {r#"
+                title = "Test"
+            "#}
+        );
     }
 }
