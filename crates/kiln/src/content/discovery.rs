@@ -17,6 +17,7 @@ pub struct ContentSet {
 /// Excludes:
 /// - Files and directories whose names start with `_`
 /// - Non-markdown files
+/// - Markdown files without `+++` frontmatter (e.g., CLAUDE.md, README.md)
 /// - Pages with `draft = true` in frontmatter
 ///
 /// # Errors
@@ -47,7 +48,7 @@ pub fn discover_content(root: &Path) -> Result<ContentSet> {
         }
 
         let path = entry.path();
-        if path.extension().is_some_and(|ext| ext == "md") {
+        if path.extension().is_some_and(|ext| ext == "md") && has_frontmatter(path) {
             let page = Page::from_file(path)?;
             if !page.frontmatter.draft {
                 pages.push(page);
@@ -67,6 +68,18 @@ pub fn discover_content(root: &Path) -> Result<ContentSet> {
     Ok(ContentSet { pages, content_dir })
 }
 
+/// Returns `true` if the file starts with a `+++` frontmatter delimiter
+/// (optionally preceded by a UTF-8 BOM).
+///
+/// Markdown files without frontmatter (e.g., CLAUDE.md, README.md) are
+/// skipped during discovery rather than causing a parse error.
+fn has_frontmatter(path: &Path) -> bool {
+    std::fs::read_to_string(path).is_ok_and(|content| {
+        let content = content.strip_prefix('\u{feff}').unwrap_or(&content);
+        content.starts_with("+++")
+    })
+}
+
 /// Returns `true` for entries whose file name starts with `_`.
 fn is_excluded(entry: &walkdir::DirEntry) -> bool {
     entry
@@ -82,6 +95,8 @@ mod tests {
     use indoc::indoc;
 
     use super::*;
+
+    // -- discover_content --
 
     fn write_page(dir: &Path, rel_path: &str, content: &str) {
         let path = dir.join(rel_path);
@@ -176,6 +191,31 @@ mod tests {
         let set = discover_content(root.path()).unwrap();
         assert_eq!(set.pages.len(), 1);
         assert_eq!(set.pages[0].frontmatter.title, "Visible");
+    }
+
+    #[test]
+    fn skips_markdown_without_frontmatter() {
+        let root = tempfile::tempdir().unwrap();
+        write_page(
+            root.path(),
+            "content/posts/hello/index.md",
+            indoc! {r#"
+                +++
+                title = "Hello"
+                +++
+                Body
+            "#},
+        );
+        // CLAUDE.md has no frontmatter — should be silently skipped.
+        write_page(
+            root.path(),
+            "content/posts/hello/CLAUDE.md",
+            "# Notes\nSome reference notes.",
+        );
+
+        let set = discover_content(root.path()).unwrap();
+        assert_eq!(set.pages.len(), 1);
+        assert_eq!(set.pages[0].frontmatter.title, "Hello");
     }
 
     #[test]
