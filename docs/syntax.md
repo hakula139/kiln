@@ -377,6 +377,42 @@ https://example.com
 
 If `templates/directives/site.html` exists, kiln renders it with the [directive template variables](themes.md#directive-templates-directivesnamehtml). Otherwise, it falls back to a `<div>` wrapper.
 
+#### Directive Arguments
+
+Arguments inside `{...}` (after `#id` and `.class` extraction) are parsed into **positional** and **named** components, available to templates as `positional_args` and `named_args`. For example, in `::: music {#player .wide server="netease"}`, `id` is `"player"`, `classes` is `["wide"]`, and `named_args` contains `server → "netease"`.
+
+```markdown
+::: music {server="netease" type="song" track="12345"}
+:::
+```
+
+Templates access these as:
+
+```html
+<iframe src="https://{{ named_args.server }}.com/embed/{{ named_args.type }}/{{ named_args.track }}"></iframe>
+```
+
+Parsing rules:
+
+| Input form        | Example            | Result                      |
+| ----------------- | ------------------ | --------------------------- |
+| `"quoted string"` | `"scores.csv"`     | Positional: `"scores.csv"`  |
+| `key="value"`     | `server="netease"` | Named: `server → "netease"` |
+| `key=value`       | `cols=3`           | Named: `cols → "3"`         |
+| `bare_word`       | `inline`           | Positional: `"inline"`      |
+
+Quoted values support `\"` and `\\` escape sequences.
+
+#### Reading Files from Templates
+
+Templates can read files co-located with the page source using the `read_file` function:
+
+```html
+{% set csv = read_file(positional_args[0]) %}
+```
+
+`read_file` resolves the filename relative to the page's source directory. The return value is auto-escaped; use `| safe` if the content should be rendered as raw HTML. Path traversal (`..`) and absolute paths are rejected.
+
 ### Unknown Directives
 
 Directives with no matching template are rendered as `<div>` elements with the name as a CSS class:

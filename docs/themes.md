@@ -240,11 +240,25 @@ Templates receive the following variables during rendering:
 
 #### Directive templates (`directives/<name>.html`)
 
-| Variable    | Type             | Description                               |
-| ----------- | ---------------- | ----------------------------------------- |
-| `name`      | string           | Directive name                            |
-| `args`      | string           | Raw arguments string after the name       |
-| `id`        | string or `none` | Pandoc `#id` attribute                    |
-| `classes`   | list of strings  | Pandoc `.class` attributes                |
-| `body_html` | string           | Rendered HTML body of the directive block |
-| `body_raw`  | string           | Raw markdown source of the directive body |
+| Variable          | Type                | Description                               |
+| ----------------- | ------------------- | ----------------------------------------- |
+| `name`            | string              | Directive name                            |
+| `positional_args` | list of strings     | Parsed positional arguments               |
+| `named_args`      | map (string→string) | Parsed named arguments (`key=value`)      |
+| `id`              | string or `none`    | Pandoc `#id` attribute                    |
+| `classes`         | list of strings     | Pandoc `.class` attributes                |
+| `body_html`       | string              | Rendered HTML body of the directive block |
+| `body_raw`        | string              | Raw markdown source of the directive body |
+| `source_dir`      | string or `none`    | Page source directory (for `read_file`)   |
+
+#### Template functions
+
+##### `read_file(filename)`
+
+Reads a file relative to the page's `source_dir`. Only available in directive templates (where `source_dir` is set). Useful for directives that reference co-located data files (e.g., CSV for score tables):
+
+```html
+{% set csv = read_file(positional_args[0]) %}
+```
+
+The return value is auto-escaped by MiniJinja. Use `| safe` if the content should be rendered as raw HTML. Path traversal (`..`) and absolute paths are rejected.
