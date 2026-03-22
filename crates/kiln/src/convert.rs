@@ -90,7 +90,7 @@ mod tests {
 
         fs::write(
             &src,
-            indoc! {r#"
+            indoc! {r"
                 ---
                 title: Hello, world!
                 tags: [rust]
@@ -105,7 +105,7 @@ mod tests {
                 {{< admonition info Note false >}}
                 Body
                 {{< /admonition >}}
-            "#},
+            "},
         )
         .unwrap();
 
@@ -159,12 +159,12 @@ mod tests {
         fs::create_dir_all(&bundle).unwrap();
         fs::write(
             bundle.join("index.md"),
-            indoc! {r#"
+            indoc! {r"
                 ---
                 title: Post
                 ---
                 Content
-            "#},
+            "},
         )
         .unwrap();
         fs::write(bundle.join("image.webp"), "fake-image").unwrap();
@@ -173,23 +173,23 @@ mod tests {
         fs::create_dir_all(source.join("pages")).unwrap();
         fs::write(
             source.join("pages/about.md"),
-            indoc! {r#"
+            indoc! {r"
                 ---
                 title: About
                 ---
                 About page
-            "#},
+            "},
         )
         .unwrap();
 
         // Create Hugo section file (should be skipped).
         fs::write(
             source.join("posts/_index.md"),
-            indoc! {r#"
+            indoc! {r"
                 ---
                 title: Section
                 ---
-            "#},
+            "},
         )
         .unwrap();
 
