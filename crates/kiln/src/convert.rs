@@ -45,7 +45,7 @@ pub fn convert(source: &Path, dest: &Path) -> Result<()> {
             .extension()
             .is_some_and(|ext| ext.eq_ignore_ascii_case("md"))
         {
-            convert_markdown_file(entry.path(), &dest_path)?;
+            convert_or_copy_markdown(entry.path(), &dest_path)?;
         } else {
             fs::copy(entry.path(), &dest_path)?;
         }
@@ -54,15 +54,23 @@ pub fn convert(source: &Path, dest: &Path) -> Result<()> {
     Ok(())
 }
 
-fn convert_markdown_file(src: &Path, dest: &Path) -> Result<()> {
+/// Converts a markdown file if it has YAML frontmatter, otherwise copies it as-is.
+/// Frontmatter-less `.md` files (e.g. page bundle resources) are not convertible.
+fn convert_or_copy_markdown(src: &Path, dest: &Path) -> Result<()> {
     let content =
         fs::read_to_string(src).with_context(|| format!("failed to read {}", src.display()))?;
 
-    let (yaml_fm, body) = frontmatter::split_yaml_frontmatter(&content)
-        .with_context(|| format!("failed to split frontmatter in {}", src.display()))?;
+    if let Ok((yaml_fm, body)) = frontmatter::split_yaml_frontmatter(&content) {
+        convert_markdown_file(yaml_fm, body, dest)
+    } else {
+        fs::copy(src, dest)?;
+        Ok(())
+    }
+}
 
+fn convert_markdown_file(yaml_fm: &str, body: &str, dest: &Path) -> Result<()> {
     let toml_fm = frontmatter::convert_frontmatter(yaml_fm)
-        .with_context(|| format!("failed to convert frontmatter in {}", src.display()))?;
+        .with_context(|| format!("failed to convert frontmatter for {}", dest.display()))?;
 
     let converted_body = shortcode::convert_shortcodes(body);
 
@@ -109,7 +117,7 @@ mod tests {
         )
         .unwrap();
 
-        convert_markdown_file(&src, &dest).unwrap();
+        convert_or_copy_markdown(&src, &dest).unwrap();
         let result = fs::read_to_string(&dest).unwrap();
 
         assert_eq!(
@@ -134,18 +142,15 @@ mod tests {
     }
 
     #[test]
-    fn convert_markdown_file_no_frontmatter_returns_error() {
+    fn convert_markdown_file_no_frontmatter_copies_as_is() {
         let dir = tempfile::tempdir().unwrap();
-        let src = dir.path().join("bad.md");
+        let src = dir.path().join("raw.md");
         let dest = dir.path().join("out.md");
 
         fs::write(&src, "No frontmatter here\n").unwrap();
 
-        let err = convert_markdown_file(&src, &dest).unwrap_err();
-        assert!(
-            err.to_string().contains("failed to split frontmatter"),
-            "got: {err}"
-        );
+        convert_or_copy_markdown(&src, &dest).unwrap();
+        assert_eq!(fs::read_to_string(&dest).unwrap(), "No frontmatter here\n");
     }
 
     #[test]
@@ -154,7 +159,7 @@ mod tests {
         let src = dir.path().join("missing.md");
         let dest = dir.path().join("output.md");
 
-        let err = convert_markdown_file(&src, &dest).unwrap_err();
+        let err = convert_or_copy_markdown(&src, &dest).unwrap_err();
         assert!(err.to_string().contains("failed to read"), "got: {err}");
     }
 
@@ -176,7 +181,7 @@ mod tests {
         )
         .unwrap();
 
-        let err = convert_markdown_file(&src, &dest).unwrap_err();
+        let err = convert_or_copy_markdown(&src, &dest).unwrap_err();
         assert!(
             err.to_string().contains("failed to convert frontmatter"),
             "got: {err}"
