@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Component, Path};
 
 use anyhow::{Context, Result, ensure};
 use minijinja::path_loader;
@@ -57,6 +57,7 @@ impl TemplateEngine {
             }
             Ok(None)
         });
+        env.add_function("read_file", tpl_read_file);
 
         Ok(Self { env })
     }
@@ -92,6 +93,56 @@ impl TemplateEngine {
     }
 }
 
+/// `MiniJinja` template function: reads a file relative to the directive's
+/// `source_dir` context variable.
+///
+/// Usage in templates: `{% set data = read_file("data.csv") %}`
+///
+/// Rejects `..`, absolute, and rooted path components to prevent reading
+/// outside the page's source directory.
+fn tpl_read_file(
+    state: &minijinja::State,
+    filename: &str,
+) -> std::result::Result<String, minijinja::Error> {
+    let source_dir = state
+        .lookup("source_dir")
+        .filter(|v| !v.is_none() && !v.is_undefined())
+        .ok_or_else(|| {
+            minijinja::Error::new(
+                minijinja::ErrorKind::InvalidOperation,
+                "read_file requires source_dir in directive context",
+            )
+        })?;
+
+    let source_dir = source_dir.as_str().ok_or_else(|| {
+        minijinja::Error::new(
+            minijinja::ErrorKind::InvalidOperation,
+            "source_dir must be a string",
+        )
+    })?;
+
+    let rel = Path::new(filename);
+    for component in rel.components() {
+        if matches!(
+            component,
+            Component::ParentDir | Component::RootDir | Component::Prefix(..)
+        ) {
+            return Err(minijinja::Error::new(
+                minijinja::ErrorKind::InvalidOperation,
+                format!("path traversal not allowed: {filename}"),
+            ));
+        }
+    }
+
+    let path = Path::new(source_dir).join(rel);
+    std::fs::read_to_string(&path).map_err(|e| {
+        minijinja::Error::new(
+            minijinja::ErrorKind::InvalidOperation,
+            format!("failed to read {}: {e}", path.display()),
+        )
+    })
+}
+
 /// Template variables for rendering a post page.
 ///
 /// The `date` field is pre-formatted as a string so the template doesn't need
@@ -111,6 +162,7 @@ pub struct PostTemplateVars<'a> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
     use std::fs as test_fs;
 
     use super::*;
@@ -396,6 +448,175 @@ mod tests {
         assert!(
             err.contains("failed to render directive template"),
             "should have context message, got: {err}"
+        );
+    }
+
+    // -- read_file --
+
+    #[test]
+    fn read_file_reads_relative_to_source_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let directives_dir = dir.path().join("directives");
+        test_fs::create_dir_all(&directives_dir).unwrap();
+        test_fs::write(
+            directives_dir.join("csv-reader.html"),
+            r"{% set data = read_file(positional_args[0]) %}DATA:{{ data }}",
+        )
+        .unwrap();
+
+        // Create a CSV file in a fake source dir.
+        let source = tempfile::tempdir().unwrap();
+        test_fs::write(source.path().join("scores.csv"), "A,B\n1,2").unwrap();
+
+        let engine = TemplateEngine::new(Some(dir.path()), None).unwrap();
+        let ctx = crate::directive::DirectiveContext {
+            name: "csv-reader".into(),
+            positional_args: vec!["scores.csv".into()],
+            named_args: BTreeMap::default(),
+            id: None,
+            classes: Vec::new(),
+            body_html: String::new(),
+            body_raw: String::new(),
+            source_dir: Some(source.path().to_string_lossy().into_owned()),
+        };
+
+        let result = engine.render_directive("csv-reader", ctx);
+        let html = result.unwrap().unwrap();
+        assert!(
+            html.contains("DATA:A,B\n1,2"),
+            "should read file content, got: {html}"
+        );
+    }
+
+    #[test]
+    fn read_file_path_traversal_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let directives_dir = dir.path().join("directives");
+        test_fs::create_dir_all(&directives_dir).unwrap();
+        test_fs::write(
+            directives_dir.join("reader.html"),
+            r"{{ read_file(positional_args[0]) }}",
+        )
+        .unwrap();
+
+        let source = tempfile::tempdir().unwrap();
+        // Place a secret file outside source_dir.
+        test_fs::write(source.path().join("secret.txt"), "SECRET").unwrap();
+
+        let engine = TemplateEngine::new(Some(dir.path()), None).unwrap();
+        let ctx = crate::directive::DirectiveContext {
+            name: "reader".into(),
+            positional_args: vec!["../secret.txt".into()],
+            named_args: BTreeMap::default(),
+            id: None,
+            classes: Vec::new(),
+            body_html: String::new(),
+            body_raw: String::new(),
+            source_dir: Some(source.path().join("subdir").to_string_lossy().into_owned()),
+        };
+
+        let result = engine.render_directive("reader", ctx);
+        let err = format!("{:#}", result.unwrap().unwrap_err());
+        assert!(
+            err.contains("path traversal not allowed"),
+            "should reject traversal, got: {err}"
+        );
+    }
+
+    #[test]
+    fn read_file_absolute_path_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let directives_dir = dir.path().join("directives");
+        test_fs::create_dir_all(&directives_dir).unwrap();
+        test_fs::write(
+            directives_dir.join("reader.html"),
+            r"{{ read_file(positional_args[0]) }}",
+        )
+        .unwrap();
+
+        let source = tempfile::tempdir().unwrap();
+
+        let engine = TemplateEngine::new(Some(dir.path()), None).unwrap();
+        let ctx = crate::directive::DirectiveContext {
+            name: "reader".into(),
+            positional_args: vec!["/etc/passwd".into()],
+            named_args: BTreeMap::default(),
+            id: None,
+            classes: Vec::new(),
+            body_html: String::new(),
+            body_raw: String::new(),
+            source_dir: Some(source.path().to_string_lossy().into_owned()),
+        };
+
+        let result = engine.render_directive("reader", ctx);
+        let err = format!("{:#}", result.unwrap().unwrap_err());
+        assert!(
+            err.contains("path traversal not allowed"),
+            "should reject absolute path, got: {err}"
+        );
+    }
+
+    #[test]
+    fn read_file_without_source_dir_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let directives_dir = dir.path().join("directives");
+        test_fs::create_dir_all(&directives_dir).unwrap();
+        test_fs::write(
+            directives_dir.join("reader.html"),
+            r#"{{ read_file("test.csv") }}"#,
+        )
+        .unwrap();
+
+        let engine = TemplateEngine::new(Some(dir.path()), None).unwrap();
+        let ctx = crate::directive::DirectiveContext {
+            name: "reader".into(),
+            positional_args: Vec::new(),
+            named_args: BTreeMap::default(),
+            id: None,
+            classes: Vec::new(),
+            body_html: String::new(),
+            body_raw: String::new(),
+            source_dir: None,
+        };
+
+        let result = engine.render_directive("reader", ctx);
+        let err = format!("{:#}", result.unwrap().unwrap_err());
+        assert!(
+            err.contains("read_file requires source_dir"),
+            "should report missing source_dir, got: {err}"
+        );
+    }
+
+    #[test]
+    fn read_file_nonexistent_file_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let directives_dir = dir.path().join("directives");
+        test_fs::create_dir_all(&directives_dir).unwrap();
+        test_fs::write(
+            directives_dir.join("reader.html"),
+            r#"{{ read_file("missing.csv") }}"#,
+        )
+        .unwrap();
+
+        let source = tempfile::tempdir().unwrap();
+
+        let engine = TemplateEngine::new(Some(dir.path()), None).unwrap();
+        let ctx = crate::directive::DirectiveContext {
+            name: "reader".into(),
+            positional_args: Vec::new(),
+            named_args: BTreeMap::default(),
+            id: None,
+            classes: Vec::new(),
+            body_html: String::new(),
+            body_raw: String::new(),
+            source_dir: Some(source.path().to_string_lossy().into_owned()),
+        };
+
+        let result = engine.render_directive("reader", ctx);
+        let err = format!("{:#}", result.unwrap().unwrap_err());
+        assert!(
+            err.contains("failed to read"),
+            "should report file read error, got: {err}"
         );
     }
 }

@@ -18,7 +18,7 @@ kiln is a custom static site generator (SSG) written in Rust, replacing a Hugo +
 - [x] Pre-processors (image attrs, icon shortcodes, emoji shortcodes)
 - [x] Code block wrapper with header, language label, and max-lines
 - [x] Hugo → kiln content converter (`kiln convert`)
-- [ ] Remaining directive renderers (style, embed, site, score-table)
+- [ ] Remaining directive renderers (site, music, apple-music, score-table — template-based in theme)
 - [ ] Taxonomy support (tags, categories) with pagination
 - [ ] Home page + section pages + special pages
 - [ ] Tailwind CSS + dark theme
@@ -64,7 +64,7 @@ kiln convert --source <dir> --dest <dir> # Convert Hugo content to kiln format
 │   └── discovery.rs    # Recursive content walking with draft / _-prefix exclusion
 ├── markdown.rs         # Shared raw-markdown text utilities (code fence detection, code span scanning)
 ├── directive/          # :::-fenced directive parsing + rendering (shared types in directive.rs)
-│   ├── parser.rs       # Line-based stack parser, nesting, Pandoc {#id .class key=val} attrs
+│   ├── parser.rs       # Line-based stack parser, nesting, single-pass arg + Pandoc attr parsing
 │   ├── callout.rs      # 12 callout types (<details> with id / class propagation)
 │   └── div.rs          # Fenced divs and unknown directives (<div> with id / class propagation)
 ├── output.rs           # File output, static file copying, output directory cleaning
@@ -77,7 +77,7 @@ kiln convert --source <dir> --dest <dir> # Convert Hugo content to kiln format
 │   ├── markdown.rs     # pulldown-cmark, GFM, CJK heading IDs, KaTeX, block / inline images
 │   ├── pipeline.rs     # Full pipeline: directives → pre-processors → markdown → ToC
 │   └── toc.rs          # TocEntry struct, nested <nav> table of contents generation
-└── template.rs         # MiniJinja layered template engine with directive rendering
+└── template.rs         # MiniJinja layered template engine, directive rendering, read_file
 ```
 
 ## Coding Conventions

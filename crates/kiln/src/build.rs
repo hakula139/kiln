@@ -81,6 +81,7 @@ fn build_page(
         &ctx.syntax_set,
         &ctx.template_engine,
         &options,
+        page.source_path.parent(),
     )
     .with_context(|| format!("failed to render {}", page.source_path.display()))?;
 

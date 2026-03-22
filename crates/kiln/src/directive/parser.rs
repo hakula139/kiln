@@ -1,4 +1,6 @@
-use super::{DirectiveBlock, DirectiveKind};
+use std::collections::BTreeMap;
+
+use super::{DirectiveBlock, DirectiveKind, parse_directive_args};
 use crate::markdown::{detect_opening_code_fence, is_closing_code_fence};
 
 struct StackEntry {
@@ -13,11 +15,12 @@ struct StackEntry {
 }
 
 /// Parsed result from the text after the opening colon fence.
-struct DirectiveHead<'a> {
-    name: &'a str,
-    args: String,
-    id: Option<&'a str>,
-    classes: Vec<&'a str>,
+struct DirectiveHead {
+    name: String,
+    positional_args: Vec<String>,
+    named_args: BTreeMap<String, String>,
+    id: Option<String>,
+    classes: Vec<String>,
 }
 
 /// Scans content for `:::`-fenced directive blocks.
@@ -76,9 +79,13 @@ pub fn parse_directives(content: &str) -> Vec<DirectiveBlock> {
                 let head = parse_directive_head(after_colons);
                 stack.push(StackEntry {
                     colon_count,
-                    kind: DirectiveKind::from_name(head.name, &head.args),
-                    id: head.id.map(String::from),
-                    classes: head.classes.into_iter().map(String::from).collect(),
+                    kind: DirectiveKind::from_parsed(
+                        &head.name,
+                        head.positional_args,
+                        head.named_args,
+                    ),
+                    id: head.id,
+                    classes: head.classes,
                     body_start: next_offset,
                     range_start: offset,
                 });
@@ -105,8 +112,9 @@ fn count_leading_colons(line: &str) -> Option<usize> {
 /// attributes (`#id`, `.class`, `key=value`).
 ///
 /// Accepts `name {attrs}`, bare `name`, or `{attrs}` alone. Attributes always
-/// require `{...}` braces.
-fn parse_directive_head(text: &str) -> DirectiveHead<'_> {
+/// require `{...}` braces. The `{...}` interior is parsed in a single pass
+/// by [`parse_directive_args`] and then [`extract_pandoc_from_positional`].
+fn parse_directive_head(text: &str) -> DirectiveHead {
     let text = text.trim();
 
     // Split off directive name (if not starting with '{').
@@ -117,93 +125,26 @@ fn parse_directive_head(text: &str) -> DirectiveHead<'_> {
         (&text[..pos], text[pos..].trim_start())
     };
 
-    // Parse {#id .class key=value} if present.
+    // Parse {#id .class key=value "positional"} if present.
     if let Some(inner) = rest.strip_prefix('{').and_then(|s| s.strip_suffix('}')) {
-        let mut head = parse_raw_attrs(inner.trim());
-        head.name = name;
-        return head;
+        let args = parse_directive_args(inner.trim());
+        return DirectiveHead {
+            name: name.to_string(),
+            positional_args: args.positional,
+            named_args: args.named,
+            id: args.id,
+            classes: args.classes,
+        };
     }
 
     // Name only — text after the name without braces is ignored.
     DirectiveHead {
-        name,
-        args: String::new(),
+        name: name.to_string(),
+        positional_args: Vec::new(),
+        named_args: BTreeMap::new(),
         id: None,
         classes: Vec::new(),
     }
-}
-
-/// Extracts `#id`, `.class`, and remaining key=value args from the interior
-/// of a `{...}` Pandoc attribute block.
-///
-/// `#id` and `.class` tokens are extracted regardless of position — they can
-/// be interleaved with key=value pairs. The first `#id` wins; duplicates are
-/// silently ignored. Everything else is collected into the args string.
-fn parse_raw_attrs(input: &str) -> DirectiveHead<'_> {
-    let mut id: Option<&str> = None;
-    let mut classes = Vec::new();
-    let mut args = String::new();
-    let mut scan = input;
-
-    while !scan.is_empty() {
-        if let Some(after_hash) = scan.strip_prefix('#') {
-            let token = take_token(after_hash);
-            if id.is_none() && !token.is_empty() {
-                id = Some(token);
-            }
-            scan = after_hash[token.len()..].trim_start();
-            continue;
-        }
-
-        if let Some(after_dot) = scan.strip_prefix('.') {
-            let token = take_token(after_dot);
-            if !token.is_empty() {
-                classes.push(token);
-            }
-            scan = after_dot[token.len()..].trim_start();
-            continue;
-        }
-
-        // key=value or bare word — collect into args.
-        let (token, rest) = take_attr_token(scan);
-        if !args.is_empty() {
-            args.push(' ');
-        }
-        args.push_str(token);
-
-        scan = rest;
-    }
-
-    DirectiveHead {
-        name: "",
-        args,
-        id,
-        classes,
-    }
-}
-
-/// Returns the leading non-whitespace slice of `s`.
-fn take_token(s: &str) -> &str {
-    let end = s.find(char::is_whitespace).unwrap_or(s.len());
-    &s[..end]
-}
-
-/// Consumes the next attribute token (bare word or `key=value`) from the
-/// input, respecting quoted values. Returns `(token, remainder)`.
-fn take_attr_token(s: &str) -> (&str, &str) {
-    let ws = s.find(char::is_whitespace).unwrap_or(s.len());
-
-    // key="quoted value" — find the closing quote.
-    if let Some(eq) = s.find('=').filter(|&p| p < ws) {
-        let after_eq = &s[eq + 1..];
-        if let Some(quoted) = after_eq.strip_prefix('"') {
-            let (end, _) = super::scan_quoted_value(quoted);
-            let consumed = eq + 1 + 1 + end + usize::from(end < quoted.len());
-            return (&s[..consumed], s[consumed..].trim_start());
-        }
-    }
-
-    (&s[..ws], s[ws..].trim_start())
 }
 
 /// Extracts the body text between byte offsets `start` and `end`, stripping
@@ -220,6 +161,8 @@ fn extract_body(content: &str, start: usize, end: usize) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use indoc::indoc;
 
     use super::*;
@@ -345,7 +288,8 @@ mod tests {
             blocks[0].kind,
             DirectiveKind::Unknown {
                 name: "custom".into(),
-                args: String::new(),
+                positional_args: Vec::new(),
+                named_args: BTreeMap::new(),
             }
         );
     }
@@ -363,7 +307,8 @@ mod tests {
             blocks[0].kind,
             DirectiveKind::Unknown {
                 name: "table".into(),
-                args: "cols=3".into(),
+                positional_args: Vec::new(),
+                named_args: BTreeMap::from([("cols".into(), "3".into())]),
             }
         );
         assert_eq!(blocks[0].body, "Body");
@@ -440,7 +385,8 @@ mod tests {
             blocks[0].kind,
             DirectiveKind::Unknown {
                 name: String::new(),
-                args: String::new(),
+                positional_args: Vec::new(),
+                named_args: BTreeMap::new(),
             }
         );
         assert_eq!(blocks[0].classes, ["note"]);
@@ -460,7 +406,8 @@ mod tests {
             blocks[0].kind,
             DirectiveKind::Unknown {
                 name: String::new(),
-                args: String::new(),
+                positional_args: Vec::new(),
+                named_args: BTreeMap::new(),
             }
         );
         assert_eq!(blocks[0].id.as_deref(), Some("section"));
@@ -468,7 +415,7 @@ mod tests {
     }
 
     #[test]
-    fn pandoc_attrs_bare_words_become_args() {
+    fn pandoc_attrs_bare_words_become_positional_args() {
         let input = indoc! {r#"
             ::: {note title="Custom"}
             Body
@@ -480,7 +427,8 @@ mod tests {
             blocks[0].kind,
             DirectiveKind::Unknown {
                 name: String::new(),
-                args: r#"note title="Custom""#.into(),
+                positional_args: vec!["note".into()],
+                named_args: BTreeMap::from([("title".into(), "Custom".into())]),
             }
         );
     }

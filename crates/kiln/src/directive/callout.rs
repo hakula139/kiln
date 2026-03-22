@@ -1,4 +1,6 @@
-use super::{CalloutKind, parse_pandoc_attrs};
+use std::collections::BTreeMap;
+
+use super::CalloutKind;
 use crate::render::{escape_html, writeln_indented};
 
 /// Renders a callout to HTML as a collapsible `<details>` element.
@@ -59,27 +61,23 @@ pub fn render_callout(
     html
 }
 
-/// Parses callout parameters from Pandoc-style key-value attributes.
+/// Extracts callout parameters from pre-parsed named arguments.
 ///
 /// Recognized keys: `type` (defaults to `note`), `title`, `open`.
 #[must_use]
-pub(super) fn parse_args(args: &str) -> (CalloutKind, Option<String>, bool) {
-    let mut kind = CalloutKind::Note;
-    let mut title = None;
-    let mut open = true;
+pub(super) fn parse_named_args(
+    named: &BTreeMap<String, String>,
+) -> (CalloutKind, Option<String>, bool) {
+    let kind = named
+        .get("type")
+        .and_then(|v| v.parse::<CalloutKind>().ok())
+        .unwrap_or(CalloutKind::Note);
 
-    for (key, value) in parse_pandoc_attrs(args).kvs {
-        match key {
-            "type" => {
-                if let Ok(k) = value.parse::<CalloutKind>() {
-                    kind = k;
-                }
-            }
-            "title" => title = (!value.is_empty()).then(|| value.into_owned()),
-            "open" => open = !value.eq_ignore_ascii_case("false"),
-            _ => {}
-        }
-    }
+    let title = named.get("title").filter(|v| !v.is_empty()).cloned();
+
+    let open = named
+        .get("open")
+        .is_none_or(|v| !v.eq_ignore_ascii_case("false"));
 
     (kind, title, open)
 }
@@ -249,58 +247,97 @@ mod tests {
         );
     }
 
-    // -- parse_args --
+    // -- parse_named_args --
 
-    #[test]
-    fn parse_args_defaults() {
-        assert_eq!(parse_args(""), (CalloutKind::Note, None, true));
+    fn named(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
+        pairs
+            .iter()
+            .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+            .collect()
     }
 
     #[test]
-    fn parse_args_type() {
-        assert_eq!(parse_args("type=tip"), (CalloutKind::Tip, None, true));
-        // Case-insensitive.
-        assert_eq!(parse_args("type=TIP"), (CalloutKind::Tip, None, true));
-    }
-
-    #[test]
-    fn parse_args_unknown_type_defaults_to_note() {
-        assert_eq!(parse_args("type=invalid"), (CalloutKind::Note, None, true));
-    }
-
-    #[test]
-    fn parse_args_title_only() {
+    fn parse_named_args_defaults() {
         assert_eq!(
-            parse_args(r#"title="Custom""#),
+            parse_named_args(&BTreeMap::new()),
+            (CalloutKind::Note, None, true)
+        );
+    }
+
+    #[test]
+    fn parse_named_args_type() {
+        assert_eq!(
+            parse_named_args(&named(&[("type", "tip")])),
+            (CalloutKind::Tip, None, true)
+        );
+        // Case-insensitive.
+        assert_eq!(
+            parse_named_args(&named(&[("type", "TIP")])),
+            (CalloutKind::Tip, None, true)
+        );
+    }
+
+    #[test]
+    fn parse_named_args_unknown_type_defaults_to_note() {
+        assert_eq!(
+            parse_named_args(&named(&[("type", "invalid")])),
+            (CalloutKind::Note, None, true)
+        );
+    }
+
+    #[test]
+    fn parse_named_args_title_only() {
+        assert_eq!(
+            parse_named_args(&named(&[("title", "Custom")])),
             (CalloutKind::Note, Some("Custom".into()), true)
         );
     }
 
     #[test]
-    fn parse_args_open() {
-        assert_eq!(parse_args("open=false"), (CalloutKind::Note, None, false));
-        assert_eq!(parse_args("open=true"), (CalloutKind::Note, None, true));
+    fn parse_named_args_open() {
+        assert_eq!(
+            parse_named_args(&named(&[("open", "false")])),
+            (CalloutKind::Note, None, false)
+        );
+        assert_eq!(
+            parse_named_args(&named(&[("open", "true")])),
+            (CalloutKind::Note, None, true)
+        );
         // Case-insensitive.
-        assert_eq!(parse_args("open=FALSE"), (CalloutKind::Note, None, false));
+        assert_eq!(
+            parse_named_args(&named(&[("open", "FALSE")])),
+            (CalloutKind::Note, None, false)
+        );
     }
 
     #[test]
-    fn parse_args_all_keys() {
+    fn parse_named_args_all_keys() {
         assert_eq!(
-            parse_args(r#"type=warning title="Careful" open=false"#),
+            parse_named_args(&named(&[
+                ("open", "false"),
+                ("title", "Careful"),
+                ("type", "warning"),
+            ])),
             (CalloutKind::Warning, Some("Careful".into()), false)
         );
     }
 
     #[test]
-    fn parse_args_empty_title_treated_as_none() {
-        assert_eq!(parse_args(r#"title="""#), (CalloutKind::Note, None, true));
+    fn parse_named_args_empty_title_treated_as_none() {
+        assert_eq!(
+            parse_named_args(&named(&[("title", "")])),
+            (CalloutKind::Note, None, true)
+        );
     }
 
     #[test]
-    fn parse_args_ignores_unknown_keys() {
+    fn parse_named_args_ignores_unknown_keys() {
         assert_eq!(
-            parse_args(r#"title="Hello" unknown="x" open=false"#),
+            parse_named_args(&named(&[
+                ("open", "false"),
+                ("title", "Hello"),
+                ("unknown", "x"),
+            ])),
             (CalloutKind::Note, Some("Hello".into()), false)
         );
     }
