@@ -19,6 +19,15 @@ enum Command {
         #[arg(long, default_value = ".")]
         root: PathBuf,
     },
+    /// Convert Hugo content to kiln format.
+    Convert {
+        /// Path to Hugo content directory.
+        #[arg(long)]
+        source: PathBuf,
+        /// Path to kiln content directory.
+        #[arg(long)]
+        dest: PathBuf,
+    },
     /// Scaffold a new theme.
     InitTheme {
         /// Theme name (used as directory name under themes/).
@@ -43,6 +52,11 @@ fn main() -> Result<()> {
         Command::Build { root } => {
             let root = root.canonicalize()?;
             kiln::build(&root)?;
+        }
+        Command::Convert { source, dest } => {
+            let source = source.canonicalize()?;
+            let dest = dest.canonicalize().unwrap_or(dest);
+            kiln::convert(&source, &dest)?;
         }
         Command::InitTheme { name, root } => {
             let root = root.canonicalize()?;

@@ -1,6 +1,7 @@
 pub mod build;
 pub mod config;
 pub mod content;
+pub mod convert;
 pub mod directive;
 pub mod init;
 pub mod markdown;
@@ -9,6 +10,7 @@ pub mod render;
 pub mod template;
 
 pub use build::build;
+pub use convert::convert;
 pub use init::init_theme;
 
 #[cfg(test)]
@@ -73,7 +75,7 @@ pub(crate) mod test_utils {
 
     /// Persistent temp directory holding test templates (lives for the process).
     static TEST_TEMPLATE_DIR: LazyLock<TempDir> = LazyLock::new(|| {
-        let dir = TempDir::new().expect("failed to create test template dir");
+        let dir = tempfile::tempdir().unwrap();
         fs::write(dir.path().join("base.html"), BASE_HTML).unwrap();
         fs::write(dir.path().join("post.html"), POST_HTML).unwrap();
         dir

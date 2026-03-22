@@ -1,66 +1,133 @@
 use anyhow::Result;
 use jiff::Timestamp;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 const DELIMITER: &str = "+++";
-const NEWLINE_DELIMITER: &str = "\n+++";
 
 /// Metadata parsed from the TOML frontmatter of a content file.
-#[derive(Debug, Default, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug, Default, PartialEq, Deserialize, Serialize)]
 pub struct Frontmatter {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub title: String,
 
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
 
-    #[serde(default)]
-    pub featured_image: Option<String>,
+    /// Explicit slug override. When set, takes priority over the filename-derived slug.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slug: Option<String>,
 
-    #[serde(default, deserialize_with = "toml_timestamp::deserialize_option")]
+    #[serde(
+        default,
+        deserialize_with = "timestamp_serde::deserialize_option",
+        serialize_with = "timestamp_serde::serialize_option",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub date: Option<Timestamp>,
 
-    #[serde(default, deserialize_with = "toml_timestamp::deserialize_option")]
+    #[serde(
+        default,
+        deserialize_with = "timestamp_serde::deserialize_option",
+        serialize_with = "timestamp_serde::serialize_option",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub updated: Option<Timestamp>,
 
-    #[serde(default)]
-    pub draft: bool,
+    #[serde(
+        default,
+        alias = "featuredImage",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub featured_image: Option<String>,
 
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
 
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub categories: Vec<String>,
 
-    /// Explicit slug override. When set, takes priority over the filename-derived slug.
-    #[serde(default)]
-    pub slug: Option<String>,
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub draft: bool,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub weight: Option<i64>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub license: Option<String>,
 }
 
-/// Handles deserialization of `jiff::Timestamp` from both quoted strings and
-/// TOML native datetimes. The `toml` crate serializes native datetimes as maps,
-/// which jiff's default serde impl can't handle.
-mod toml_timestamp {
+fn is_default<T: Default + PartialEq>(t: &T) -> bool {
+    *t == T::default()
+}
+
+/// Handles (de)serialization of `jiff::Timestamp` as a string.
+///
+/// This is format-agnostic: it handles both TOML (where the `toml` crate
+/// passes native datetimes through as single-entry maps) and YAML (where
+/// datetimes are plain strings).
+mod timestamp_serde {
+    use std::fmt;
+
     use jiff::Timestamp;
-    use serde::{Deserialize, Deserializer, de};
+    use serde::Serializer;
+    use serde::de::{self, Deserializer, MapAccess, Visitor};
 
     pub fn deserialize_option<'de, D>(deserializer: D) -> Result<Option<Timestamp>, D::Error>
     where
         D: Deserializer<'de>,
     {
-        let Some(value) = Option::<toml::Value>::deserialize(deserializer)? else {
-            return Ok(None);
-        };
+        deserializer.deserialize_option(OptionVisitor)
+    }
 
-        match value {
-            toml::Value::String(s) => parse_timestamp(&s).map(Some).map_err(de::Error::custom),
-            toml::Value::Datetime(dt) => parse_timestamp(&dt.to_string())
-                .map(Some)
-                .map_err(de::Error::custom),
-            other => Err(de::Error::custom(format!(
-                "expected datetime or string, got {other}"
-            ))),
+    // Signature is dictated by serde's `serialize_with` attribute.
+    #[expect(clippy::ref_option)]
+    pub fn serialize_option<S>(ts: &Option<Timestamp>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match ts {
+            Some(ts) => serializer.serialize_str(&ts.to_string()),
+            None => serializer.serialize_none(),
+        }
+    }
+
+    struct OptionVisitor;
+
+    impl<'de> Visitor<'de> for OptionVisitor {
+        type Value = Option<Timestamp>;
+
+        fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            f.write_str("a datetime string with UTC offset, or null")
+        }
+
+        fn visit_none<E: de::Error>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+
+        fn visit_some<D: Deserializer<'de>>(self, d: D) -> Result<Self::Value, D::Error> {
+            d.deserialize_any(TimestampVisitor).map(Some)
+        }
+    }
+
+    struct TimestampVisitor;
+
+    impl<'de> Visitor<'de> for TimestampVisitor {
+        type Value = Timestamp;
+
+        fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            f.write_str("a datetime string with UTC offset")
+        }
+
+        fn visit_str<E: de::Error>(self, s: &str) -> Result<Self::Value, E> {
+            parse_timestamp(s).map_err(de::Error::custom)
+        }
+
+        // TOML native datetimes are passed as single-entry maps by the `toml` crate.
+        fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+            let (_, value): (String, String) = map
+                .next_entry()?
+                .ok_or_else(|| de::Error::custom("expected datetime"))?;
+            parse_timestamp(&value).map_err(de::Error::custom)
         }
     }
 
@@ -74,42 +141,6 @@ mod toml_timestamp {
     }
 }
 
-/// Splits content into raw TOML frontmatter and the remaining body.
-///
-/// Expects the content to start with `+++` on its own line, followed by TOML,
-/// then a closing `+++` on its own line.
-///
-/// # Errors
-///
-/// Returns an error if the `+++` delimiters are missing or malformed.
-pub(crate) fn split_frontmatter(content: &str) -> Result<(&str, &str)> {
-    let content = content.strip_prefix('\u{feff}').unwrap_or(content);
-    let rest = content
-        .strip_prefix(DELIMITER)
-        .ok_or_else(|| anyhow::anyhow!("missing opening `+++` delimiter"))?;
-
-    // The opening delimiter must be followed by a newline (or be the entire file).
-    let rest = rest
-        .strip_prefix('\n')
-        .or_else(|| rest.strip_prefix("\r\n"))
-        .ok_or_else(|| anyhow::anyhow!("opening `+++` must be on its own line"))?;
-
-    // Find the closing delimiter on its own line.
-    let closing = find_closing_delimiter(rest)
-        .ok_or_else(|| anyhow::anyhow!("missing closing `+++` delimiter"))?;
-
-    let frontmatter = &rest[..closing];
-    let after_delim = &rest[closing + DELIMITER.len()..];
-
-    // Skip the newline after the closing delimiter.
-    let body = after_delim
-        .strip_prefix('\n')
-        .or_else(|| after_delim.strip_prefix("\r\n"))
-        .unwrap_or(after_delim);
-
-    Ok((frontmatter, body))
-}
-
 /// Parses a content file into its `Frontmatter` and body text.
 ///
 /// # Errors
@@ -121,28 +152,81 @@ pub(crate) fn parse(content: &str) -> Result<(Frontmatter, &str)> {
     Ok((fm, body))
 }
 
-/// Finds the byte offset of the closing `+++` delimiter within the frontmatter region.
+/// Splits content into raw TOML frontmatter and the remaining body.
+///
+/// Expects the content to start with `+++` on its own line, followed by TOML,
+/// then a closing `+++` on its own line.
+///
+/// # Errors
+///
+/// Returns an error if the `+++` delimiters are missing or malformed.
+pub(crate) fn split_frontmatter(content: &str) -> Result<(&str, &str)> {
+    split_delimited_frontmatter(content, DELIMITER)
+}
+
+/// Splits content into raw frontmatter and the remaining body using the given
+/// delimiter (e.g., `+++` for TOML, `---` for YAML).
+///
+/// Expects the content to start with the delimiter on its own line, followed by
+/// frontmatter content, then a closing delimiter on its own line.
+///
+/// # Errors
+///
+/// Returns an error if the delimiters are missing or malformed.
+pub(crate) fn split_delimited_frontmatter<'a>(
+    content: &'a str,
+    delimiter: &str,
+) -> Result<(&'a str, &'a str)> {
+    let content = content.strip_prefix('\u{feff}').unwrap_or(content);
+    let rest = content
+        .strip_prefix(delimiter)
+        .ok_or_else(|| anyhow::anyhow!("missing opening `{delimiter}` delimiter"))?;
+
+    // The opening delimiter must be followed by a newline (or be the entire file).
+    let rest = rest
+        .strip_prefix('\n')
+        .or_else(|| rest.strip_prefix("\r\n"))
+        .ok_or_else(|| anyhow::anyhow!("opening `{delimiter}` must be on its own line"))?;
+
+    // Find the closing delimiter on its own line.
+    let newline_delimiter = format!("\n{delimiter}");
+    let closing = find_closing_delimiter(rest, delimiter, &newline_delimiter)
+        .ok_or_else(|| anyhow::anyhow!("missing closing `{delimiter}` delimiter"))?;
+
+    let frontmatter = &rest[..closing];
+    let after_delim = &rest[closing + delimiter.len()..];
+
+    // Skip the newline after the closing delimiter.
+    let body = after_delim
+        .strip_prefix('\n')
+        .or_else(|| after_delim.strip_prefix("\r\n"))
+        .unwrap_or(after_delim);
+
+    Ok((frontmatter, body))
+}
+
+/// Finds the byte offset of the closing delimiter within the frontmatter region.
 ///
 /// NOTE: This is a text-level search. It cannot distinguish a real closing delimiter
-/// from `+++` appearing on its own line inside a TOML multi-line string (`"""`).
+/// from one appearing on its own line inside a multi-line string literal.
 /// This is a known limitation shared with Hugo and other delimiter-based parsers.
-fn find_closing_delimiter(s: &str) -> Option<usize> {
+fn find_closing_delimiter(s: &str, delimiter: &str, newline_delimiter: &str) -> Option<usize> {
     // Check the very start (empty frontmatter).
-    if let Some(after) = s.strip_prefix(DELIMITER)
+    if let Some(after) = s.strip_prefix(delimiter)
         && at_line_boundary(after)
     {
         return Some(0);
     }
 
-    // Search for `\n+++` on its own line.
+    // Search for `\n{delimiter}` on its own line.
     let mut search_from = 0;
-    while let Some(pos) = s[search_from..].find(NEWLINE_DELIMITER) {
+    while let Some(pos) = s[search_from..].find(newline_delimiter) {
         let abs = search_from + pos + 1; // skip the `\n`
-        let after = &s[abs + DELIMITER.len()..];
+        let after = &s[abs + delimiter.len()..];
         if at_line_boundary(after) {
             return Some(abs);
         }
-        search_from = abs + DELIMITER.len();
+        search_from = abs + delimiter.len();
     }
 
     None
@@ -158,6 +242,95 @@ mod tests {
     use indoc::indoc;
 
     use super::*;
+
+    // -- parse --
+
+    #[test]
+    fn parse_minimal() {
+        let input = indoc! {r"
+            +++
+            +++
+            Hello, world!
+        "};
+        let (fm, body) = parse(input).unwrap();
+        assert_eq!(fm, Frontmatter::default());
+        assert_eq!(body, "Hello, world!\n");
+    }
+
+    #[test]
+    fn parse_full() {
+        let input = indoc! {r#"
+            +++
+            title = "My Post"
+            description = "A test post"
+            slug = "my-post"
+            date = "2024-06-15T12:34:56+08:00"
+            updated = 2025-07-01T23:59:59Z
+            featured_image = "/images/example.webp"
+            tags = ["rust", "ssg"]
+            categories = ["tutorial"]
+            draft = true
+            weight = 10
+            license = "CC BY-NC-SA 4.0"
+            +++
+            Content here.
+        "#};
+        let (fm, body) = parse(input).unwrap();
+        assert_eq!(fm.title, "My Post");
+        assert_eq!(fm.description.as_deref(), Some("A test post"));
+        assert_eq!(fm.slug.as_deref(), Some("my-post"));
+        assert_eq!(
+            fm.date.unwrap(),
+            "2024-06-15T04:34:56Z".parse::<Timestamp>().unwrap()
+        );
+        assert_eq!(
+            fm.updated.unwrap(),
+            "2025-07-01T23:59:59Z".parse::<Timestamp>().unwrap()
+        );
+        assert_eq!(fm.featured_image.as_deref(), Some("/images/example.webp"));
+        assert_eq!(fm.tags, vec!["rust", "ssg"]);
+        assert_eq!(fm.categories, vec!["tutorial"]);
+        assert!(fm.draft);
+        assert_eq!(fm.weight, Some(10));
+        assert_eq!(fm.license.as_deref(), Some("CC BY-NC-SA 4.0"));
+        assert_eq!(body, "Content here.\n");
+    }
+
+    #[test]
+    fn parse_invalid_toml_returns_error() {
+        let input = indoc! {r"
+            +++
+            {{invalid toml
+            +++
+            Body
+        "};
+        assert!(parse(input).is_err());
+    }
+
+    #[test]
+    fn parse_wrong_type_for_date_returns_error() {
+        let input = indoc! {r"
+            +++
+            date = 42
+            +++
+        "};
+        assert!(parse(input).is_err());
+    }
+
+    #[test]
+    fn parse_local_datetime_without_offset_returns_error() {
+        let input = indoc! {"
+            +++
+            date = 2024-06-15T10:30:00
+            +++
+        "};
+        // Local datetimes come through as TOML maps; jiff rejects the missing offset.
+        let err = parse(input).unwrap_err().to_string();
+        assert!(
+            err.contains("UTC offset"),
+            "error should mention UTC offset requirement, got: {err}"
+        );
+    }
 
     // -- split_frontmatter --
 
@@ -285,106 +458,49 @@ mod tests {
         );
     }
 
-    // -- parse --
+    // -- yaml deserialization --
 
     #[test]
-    fn parse_minimal() {
-        let input = indoc! {r"
-            +++
-            +++
-            Hello, world!
+    fn yaml_basic() {
+        let yaml = indoc! {"
+            title: Hello
+            date: 2024-06-15T12:34:56+08:00
         "};
-        let (fm, body) = parse(input).unwrap();
-        assert_eq!(fm, Frontmatter::default());
-        assert_eq!(body, "Hello, world!\n");
-    }
-
-    #[test]
-    fn parse_full() {
-        let input = indoc! {r#"
-            +++
-            title = "My Post"
-            description = "A test post"
-            featured_image = "/images/example.webp"
-            date = "2024-06-15T12:34:56+08:00"
-            updated = 2025-07-01T23:59:59Z
-            draft = true
-            tags = ["rust", "ssg"]
-            categories = ["tutorial"]
-            slug = "my-post"
-            +++
-            Content here.
-        "#};
-        let (fm, body) = parse(input).unwrap();
-        assert_eq!(fm.title, "My Post");
-        assert_eq!(fm.description.as_deref(), Some("A test post"));
-        assert_eq!(fm.featured_image.as_deref(), Some("/images/example.webp"));
+        let fm: Frontmatter = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(fm.title, "Hello");
         assert_eq!(
             fm.date.unwrap(),
             "2024-06-15T04:34:56Z".parse::<Timestamp>().unwrap()
         );
-        assert_eq!(
-            fm.updated.unwrap(),
-            "2025-07-01T23:59:59Z".parse::<Timestamp>().unwrap()
-        );
-        assert!(fm.draft);
-        assert_eq!(fm.tags, vec!["rust", "ssg"]);
-        assert_eq!(fm.categories, vec!["tutorial"]);
-        assert_eq!(fm.slug.as_deref(), Some("my-post"));
-        assert_eq!(body, "Content here.\n");
     }
 
     #[test]
-    fn parse_invalid_toml_returns_error() {
-        let input = indoc! {r"
-            +++
-            {{invalid toml
-            +++
-            Body
+    fn yaml_alias_featured_image() {
+        let yaml = indoc! {"
+            featuredImage: /img.webp
         "};
-        assert!(parse(input).is_err());
+        let fm: Frontmatter = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(fm.featured_image.as_deref(), Some("/img.webp"));
     }
 
     #[test]
-    fn parse_unknown_field_returns_error() {
-        let input = indoc! {r"
-            +++
-            daft = true
-            +++
-            Body
+    fn yaml_null_date() {
+        let yaml = indoc! {"
+            date: ~
         "};
-        let err = parse(input).unwrap_err().to_string();
-        assert!(
-            err.contains("unknown field"),
-            "should reject unknown fields, got: {err}"
-        );
+        let fm: Frontmatter = serde_yaml::from_str(yaml).unwrap();
+        assert!(fm.date.is_none());
     }
 
     #[test]
-    fn parse_wrong_type_for_date_returns_error() {
-        let input = indoc! {r"
-            +++
-            date = 42
-            +++
+    fn yaml_unknown_fields_ignored() {
+        let yaml = indoc! {"
+            title: Test
+            unknownField: dropped
+            code:
+              maxShownLines: 10
         "};
-        let err = parse(input).unwrap_err().to_string();
-        assert!(
-            err.contains("expected datetime or string"),
-            "should reject non-datetime types, got: {err}"
-        );
-    }
-
-    #[test]
-    fn parse_local_datetime_without_offset_returns_error() {
-        let input = indoc! {"
-            +++
-            date = 2024-06-15T10:30:00
-            +++
-        "};
-        let err = parse(input).unwrap_err().to_string();
-        assert!(
-            err.contains("UTC offset"),
-            "error should mention UTC offset requirement, got: {err}"
-        );
+        let fm: Frontmatter = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(fm.title, "Test");
     }
 }
