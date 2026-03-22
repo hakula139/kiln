@@ -58,6 +58,7 @@ impl TemplateEngine {
             Ok(None)
         });
         env.add_function("read_file", tpl_read_file);
+        env.add_function("parse_csv", tpl_parse_csv);
 
         Ok(Self { env })
     }
@@ -143,6 +144,36 @@ fn tpl_read_file(
     })
 }
 
+/// `MiniJinja` template function: parses CSV text into a list of rows,
+/// where each row is a list of field strings.
+///
+/// Usage in templates: `{% set rows = parse_csv(read_file("data.csv")) %}`
+fn tpl_parse_csv(text: &str) -> std::result::Result<minijinja::Value, minijinja::Error> {
+    let mut reader = csv::ReaderBuilder::new()
+        .has_headers(false)
+        .from_reader(text.as_bytes());
+
+    let rows: Vec<minijinja::Value> = reader
+        .records()
+        .map(|r| {
+            let record = r.map_err(|e| {
+                minijinja::Error::new(
+                    minijinja::ErrorKind::InvalidOperation,
+                    format!("CSV parse error: {e}"),
+                )
+            })?;
+            Ok(minijinja::Value::from(
+                record
+                    .iter()
+                    .map(|field| minijinja::Value::from(field.to_string()))
+                    .collect::<Vec<_>>(),
+            ))
+        })
+        .collect::<std::result::Result<_, minijinja::Error>>()?;
+
+    Ok(minijinja::Value::from(rows))
+}
+
 /// Template variables for rendering a post page.
 ///
 /// The `date` field is pre-formatted as a string so the template doesn't need
@@ -164,6 +195,8 @@ pub struct PostTemplateVars<'a> {
 mod tests {
     use std::collections::BTreeMap;
     use std::fs as test_fs;
+
+    use indoc::indoc;
 
     use super::*;
 
@@ -618,5 +651,105 @@ mod tests {
             err.contains("failed to read"),
             "should report file read error, got: {err}"
         );
+    }
+
+    // -- parse_csv --
+
+    #[test]
+    fn parse_csv_basic() {
+        let dir = tempfile::tempdir().unwrap();
+        let directives_dir = dir.path().join("directives");
+        test_fs::create_dir_all(&directives_dir).unwrap();
+        test_fs::write(
+            directives_dir.join("csv-test.html"),
+            r#"{% set rows = parse_csv(read_file(positional_args[0])) %}{% for row in rows %}{{ row | join(",") }};{% endfor %}"#,
+        )
+        .unwrap();
+
+        let source = tempfile::tempdir().unwrap();
+        test_fs::write(source.path().join("data.csv"), "A,B\n1,2\n3,4").unwrap();
+
+        let engine = TemplateEngine::new(Some(dir.path()), None).unwrap();
+        let ctx = crate::directive::DirectiveContext {
+            name: "csv-test".into(),
+            positional_args: vec!["data.csv".into()],
+            named_args: BTreeMap::default(),
+            id: None,
+            classes: Vec::new(),
+            body_html: String::new(),
+            body_raw: String::new(),
+            source_dir: Some(source.path().to_string_lossy().into_owned()),
+        };
+
+        let html = engine.render_directive("csv-test", ctx).unwrap().unwrap();
+        assert_eq!(html, "A,B;1,2;3,4;");
+    }
+
+    #[test]
+    fn parse_csv_quoted_fields() {
+        let dir = tempfile::tempdir().unwrap();
+        let directives_dir = dir.path().join("directives");
+        test_fs::create_dir_all(&directives_dir).unwrap();
+        test_fs::write(
+            directives_dir.join("csv-test.html"),
+            r#"{% set rows = parse_csv(read_file(positional_args[0])) %}{% for row in rows %}[{{ row | join("|") }}]{% endfor %}"#,
+        )
+        .unwrap();
+
+        let source = tempfile::tempdir().unwrap();
+        test_fs::write(
+            source.path().join("data.csv"),
+            indoc! {r#"
+                name,value
+                "field with, comma","has ""quotes"""
+            "#},
+        )
+        .unwrap();
+
+        let engine = TemplateEngine::new(Some(dir.path()), None).unwrap();
+        let ctx = crate::directive::DirectiveContext {
+            name: "csv-test".into(),
+            positional_args: vec!["data.csv".into()],
+            named_args: BTreeMap::default(),
+            id: None,
+            classes: Vec::new(),
+            body_html: String::new(),
+            body_raw: String::new(),
+            source_dir: Some(source.path().to_string_lossy().into_owned()),
+        };
+
+        let html = engine.render_directive("csv-test", ctx).unwrap().unwrap();
+        assert_eq!(
+            html,
+            "[name|value][field with, comma|has &quot;quotes&quot;]"
+        );
+    }
+
+    #[test]
+    fn parse_csv_empty_input() {
+        let dir = tempfile::tempdir().unwrap();
+        let directives_dir = dir.path().join("directives");
+        test_fs::create_dir_all(&directives_dir).unwrap();
+        test_fs::write(
+            directives_dir.join("csv-test.html"),
+            r#"{% set rows = parse_csv("") %}{{ rows | length }}"#,
+        )
+        .unwrap();
+
+        let engine = TemplateEngine::new(Some(dir.path()), None).unwrap();
+
+        let ctx = crate::directive::DirectiveContext {
+            name: "csv-test".into(),
+            positional_args: Vec::new(),
+            named_args: BTreeMap::default(),
+            id: None,
+            classes: Vec::new(),
+            body_html: String::new(),
+            body_raw: String::new(),
+            source_dir: None,
+        };
+
+        let html = engine.render_directive("csv-test", ctx).unwrap().unwrap();
+        assert_eq!(html, "0");
     }
 }
