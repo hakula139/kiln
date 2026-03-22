@@ -17,7 +17,7 @@ kiln is a custom static site generator (SSG) written in Rust, replacing a Hugo +
 - [x] Theme system (layered templates, static files, param merging)
 - [x] Pre-processors (image attrs, icon shortcodes, emoji shortcodes)
 - [x] Code block wrapper with header, language label, and max-lines
-- [ ] Hugo → kiln content converter (`kiln convert`)
+- [x] Hugo → kiln content converter (`kiln convert`)
 - [ ] Remaining directive renderers (style, embed, site, score-table)
 - [ ] Taxonomy support (tags, categories) with pagination
 - [ ] Home page + section pages + special pages
@@ -29,8 +29,9 @@ kiln is a custom static site generator (SSG) written in Rust, replacing a Hugo +
 ### CLI
 
 ```bash
-kiln build [--root <dir>]        # Build the site (default root: cwd)
-kiln init-theme <name> [--root]  # Scaffold a new theme under themes/<name>/
+kiln build [--root <dir>]                # Build the site (default root: cwd)
+kiln init-theme <name> [--root]          # Scaffold a new theme under themes/<name>/
+kiln convert --source <dir> --dest <dir> # Convert Hugo content to kiln format
 ```
 
 ### Project Layout
@@ -53,6 +54,10 @@ kiln init-theme <name> [--root]  # Scaffold a new theme under themes/<name>/
 ├── build.rs            # BuildContext, per-page rendering, canonical URLs, static / asset copying
 ├── config.rs           # TOML site configuration loading, theme resolution, param merging
 ├── init.rs             # Theme scaffolding (kiln init-theme)
+├── convert.rs          # Hugo → kiln content converter orchestrator
+├── convert/
+│   ├── frontmatter.rs  # YAML → TOML frontmatter serde round-trip
+│   └── shortcode.rs    # Hugo shortcode → kiln directive conversion
 ├── content/
 │   ├── frontmatter.rs  # TOML frontmatter parsing (+++), Frontmatter with jiff timestamps
 │   ├── page.rs         # Page struct, slug derivation, summary, output paths, co-located assets
