@@ -28,7 +28,8 @@ kiln is purpose-built to support the specific needs of hakula.xyz — CJK conten
 - [x] Static file handling and co-located content assets
 - [x] Pretty URLs (`/post/` instead of `/post.html`)
 - [x] Hugo content migration tool (`kiln convert`)
-- [ ] Additional directives (styled blocks, embeds, link cards)
+- [x] Template functions for data-driven directives (`read_file`, `parse_csv`)
+- [x] Directive templates for link cards, music embeds, and score tables
 - [ ] Taxonomy support (tags, categories) with pagination
 - [ ] Home page, section pages, and special pages
 - [ ] Dark theme with [Tailwind CSS](https://tailwindcss.com)

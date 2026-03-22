@@ -18,7 +18,8 @@ kiln is a custom static site generator (SSG) written in Rust, replacing a Hugo +
 - [x] Pre-processors (image attrs, icon shortcodes, emoji shortcodes)
 - [x] Code block wrapper with header, language label, and max-lines
 - [x] Hugo → kiln content converter (`kiln convert`)
-- [ ] Remaining directive renderers (site, music, apple-music, score-table — template-based in theme)
+- [x] Directive template functions (`read_file`, `parse_csv`) + structured arg parsing
+- [x] Directive renderers (site, music, score-table — template-based in theme / site)
 - [ ] Taxonomy support (tags, categories) with pagination
 - [ ] Home page + section pages + special pages
 - [ ] Tailwind CSS + dark theme
@@ -61,7 +62,7 @@ kiln convert --source <dir> --dest <dir> # Convert Hugo content to kiln format
 ├── content/
 │   ├── frontmatter.rs  # TOML frontmatter parsing (+++), Frontmatter with jiff timestamps
 │   ├── page.rs         # Page struct, slug derivation, summary, output paths, co-located assets
-│   └── discovery.rs    # Recursive content walking with draft / _-prefix exclusion
+│   └── discovery.rs    # Recursive content walking with draft / _-prefix / no-frontmatter exclusion
 ├── markdown.rs         # Shared raw-markdown text utilities (code fence detection, code span scanning)
 ├── directive/          # :::-fenced directive parsing + rendering (shared types in directive.rs)
 │   ├── parser.rs       # Line-based stack parser, nesting, single-pass arg + Pandoc attr parsing
