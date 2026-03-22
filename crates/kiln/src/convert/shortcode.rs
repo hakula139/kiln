@@ -153,9 +153,9 @@ fn emit_callout(sc: &ShortcodeArgs, out: &mut String) {
     if !open {
         attrs.push("open=false".to_string());
     }
-    out.push_str("::: callout {");
+    out.push_str("::: callout { ");
     out.push_str(&attrs.join(" "));
-    out.push_str("}\n");
+    out.push_str(" }\n");
 }
 
 // -- Self-closing shortcodes --
@@ -188,13 +188,18 @@ fn emit_image(sc: &ShortcodeArgs) -> String {
 
 /// Emits a generic kiln directive for self-closing shortcodes.
 fn emit_directive(name: &str, sc: &ShortcodeArgs) -> String {
-    use std::fmt::Write as _;
     let mut out = format!("::: {name}");
-    for arg in &sc.positional {
-        _ = write!(out, r#" "{arg}""#);
-    }
-    for (key, value) in &sc.named {
-        _ = write!(out, r#" {key}="{value}""#);
+    if !sc.positional.is_empty() || !sc.named.is_empty() {
+        let mut args: Vec<String> = Vec::new();
+        for arg in &sc.positional {
+            args.push(format!(r#""{arg}""#));
+        }
+        for (key, value) in &sc.named {
+            args.push(format!(r#"{key}="{value}""#));
+        }
+        out.push_str(" { ");
+        out.push_str(&args.join(" "));
+        out.push_str(" }");
     }
     out.push_str("\n:::");
     out
@@ -249,7 +254,7 @@ mod tests {
         assert_eq!(
             result,
             indoc! {r#"
-                ::: callout {type=info title="Title"}
+                ::: callout { type=info title="Title" }
                 Body content
                 :::
             "#}
@@ -267,7 +272,7 @@ mod tests {
         assert_eq!(
             result,
             indoc! {"
-                ::: callout {type=warning}
+                ::: callout { type=warning }
                 Content
                 :::
             "}
@@ -285,7 +290,7 @@ mod tests {
         assert_eq!(
             result,
             indoc! {r#"
-                ::: callout {type=info title="封面出处"}
+                ::: callout { type=info title="封面出处" }
                 Body
                 :::
             "#}
@@ -303,7 +308,7 @@ mod tests {
         assert_eq!(
             result,
             indoc! {r#"
-                ::: callout {type=abstract title="Collapsed Block" open=false}
+                ::: callout { type=abstract title="Collapsed Block" open=false }
                 Hidden content
                 :::
             "#}
@@ -420,7 +425,7 @@ mod tests {
         assert_eq!(
             result,
             indoc! {r#"
-                ::: my-widget "Title" "https://example.com" "Description"
+                ::: my-widget { "Title" "https://example.com" "Description" }
                 :::
             "#}
         );
@@ -435,7 +440,7 @@ mod tests {
         assert_eq!(
             result,
             indoc! {r#"
-                ::: music server="abc" type="song" id="123"
+                ::: music { server="abc" type="song" id="123" }
                 :::
             "#}
         );

@@ -17,6 +17,7 @@ pedantic = { level = "warn", priority = -1 }
 [workspace.dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
+csv = "1"
 gh-emoji = "1"
 indoc = "2"
 jiff = { version = "0.2", features = ["serde"] }

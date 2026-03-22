@@ -77,7 +77,7 @@ kiln convert --source <dir> --dest <dir> # Convert Hugo content to kiln format
 │   ├── markdown.rs     # pulldown-cmark, GFM, CJK heading IDs, KaTeX, block / inline images
 │   ├── pipeline.rs     # Full pipeline: directives → pre-processors → markdown → ToC
 │   └── toc.rs          # TocEntry struct, nested <nav> table of contents generation
-└── template.rs         # MiniJinja layered template engine, directive rendering, read_file
+└── template.rs         # MiniJinja layered template engine, directive rendering, read_file, parse_csv
 ```
 
 ## Coding Conventions

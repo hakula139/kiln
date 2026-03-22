@@ -262,3 +262,15 @@ Reads a file relative to the page's `source_dir`. Only available in directive te
 ```
 
 The return value is auto-escaped by MiniJinja. Use `| safe` if the content should be rendered as raw HTML. Path traversal (`..`) and absolute paths are rejected.
+
+##### `parse_csv(text)`
+
+Parses CSV text (RFC 4180) into a list of rows, where each row is a list of field strings. Handles quoted fields with embedded commas and escaped quotes. Useful with `read_file` for data-driven directive templates:
+
+```html
+{% set rows = parse_csv(read_file("scores.csv")) %}
+{% set headers = rows[0] %}
+{% for row in rows[1:] %}
+  <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+{% endfor %}
+```
