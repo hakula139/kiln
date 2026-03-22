@@ -441,6 +441,18 @@ mod tests {
         );
     }
 
+    // -- unknown closing tag --
+
+    #[test]
+    fn unknown_closing_tag_dropped() {
+        let input = "{{< /unknown >}}\n";
+        let result = convert_shortcodes(input);
+        assert_eq!(
+            result, "",
+            "unknown closing tags should be silently dropped"
+        );
+    }
+
     // -- code block skipping --
 
     #[test]

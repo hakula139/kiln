@@ -149,6 +149,41 @@ mod tests {
     }
 
     #[test]
+    fn convert_markdown_file_unreadable_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("missing.md");
+        let dest = dir.path().join("output.md");
+
+        let err = convert_markdown_file(&src, &dest).unwrap_err();
+        assert!(err.to_string().contains("failed to read"), "got: {err}");
+    }
+
+    #[test]
+    fn convert_markdown_file_invalid_yaml_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("bad.md");
+        let dest = dir.path().join("output.md");
+
+        fs::write(
+            &src,
+            indoc! {"
+                ---
+                :
+                  invalid: [yaml
+                ---
+                Body
+            "},
+        )
+        .unwrap();
+
+        let err = convert_markdown_file(&src, &dest).unwrap_err();
+        assert!(
+            err.to_string().contains("failed to convert frontmatter"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
     fn convert_directory_structure() {
         let dir = tempfile::tempdir().unwrap();
         let source = dir.path().join("source");

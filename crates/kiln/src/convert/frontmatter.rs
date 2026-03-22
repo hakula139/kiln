@@ -131,6 +131,19 @@ mod tests {
     }
 
     #[test]
+    fn convert_invalid_yaml_returns_error() {
+        let yaml = indoc! {"
+            :
+              invalid: [yaml
+        "};
+        let err = convert_frontmatter(yaml).unwrap_err();
+        assert!(
+            err.to_string().contains("failed to parse YAML"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
     fn convert_drops_unknown_fields() {
         let yaml = indoc! {"
             title: Test
