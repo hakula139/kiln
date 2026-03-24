@@ -236,7 +236,7 @@ This is a note.
 Pandoc-style attributes (`#id`, `.class`, `key=value`) are specified inside curly braces after the directive name:
 
 ```markdown
-::: callout {#my-id .custom-class type=tip title="Read This"}
+::: callout { #my-id .custom-class type=tip title="Read This" }
 Content here.
 :::
 ```
@@ -274,7 +274,7 @@ Each callout renders as a collapsible `<details>` element:
 The callout type defaults to `note`. Use `type=` to specify a different type. Custom titles and collapse behavior are set via Pandoc-style key-value attributes:
 
 ```markdown
-::: callout {type=warning title="Careful" open=false}
+::: callout { type=warning title="Careful" open=false }
 This warning starts collapsed.
 :::
 ```
@@ -294,7 +294,7 @@ Recognized attributes:
 Callouts support `#id` and `.class` attributes inside `{...}`:
 
 ```markdown
-::: callout {#important .highlight type=tip}
+::: callout { #important .highlight type=tip }
 This tip has a custom id and extra CSS class.
 :::
 ```
@@ -311,7 +311,7 @@ The body of a callout is standard Markdown. It is rendered to HTML before being 
 Directives using only Pandoc attributes (no directive name) render as `<div>` wrappers:
 
 ```markdown
-::: {.compact-table}
+::: { .compact-table }
 | A   | B   |
 | --- | --- |
 | 1   | 2   |
@@ -331,7 +331,7 @@ This follows the [Pandoc fenced div](https://pandoc.org/MANUAL.html#divs-and-spa
 Both `#id` and `.class` attributes are supported:
 
 ```markdown
-::: {#results .wide .striped}
+::: { #results .wide .striped }
 Content here.
 :::
 ```
@@ -341,8 +341,8 @@ Content here.
 Directives can be nested by using more colons for the outer fence:
 
 ```markdown
-:::: callout {type=warning}
-::: callout {type=tip}
+:::: callout { type=warning }
+::: callout { type=tip }
 This tip is inside a warning.
 :::
 More warning content.
@@ -379,17 +379,17 @@ If `templates/directives/site.html` exists, kiln renders it with the [directive 
 
 #### Directive Arguments
 
-Arguments inside `{...}` (after `#id` and `.class` extraction) are parsed into **positional** and **named** components, available to templates as `positional_args` and `named_args`. For example, in `::: music {#player .wide server="netease"}`, `id` is `"player"`, `classes` is `["wide"]`, and `named_args` contains `server → "netease"`.
+Arguments inside `{...}` (after `#id` and `.class` extraction) are parsed into **positional** and **named** components, available to templates as `positional_args` and `named_args`. For example, in `::: music { #player .wide server="netease" }`, `id` is `"player"`, `classes` is `["wide"]`, and `named_args` contains `server → "netease"`.
 
 ```markdown
-::: music {server="netease" type="song" track="12345"}
+::: music { server="netease" type="song" id="12345" }
 :::
 ```
 
 Templates access these as:
 
 ```html
-<iframe src="https://{{ named_args.server }}.com/embed/{{ named_args.type }}/{{ named_args.track }}"></iframe>
+<iframe src="https://{{ named_args.server }}.com/embed/{{ named_args.type }}/{{ named_args.id }}"></iframe>
 ```
 
 Parsing rules:
@@ -412,6 +412,21 @@ Templates can read files co-located with the page source using the `read_file` f
 ```
 
 `read_file` resolves the filename relative to the page's source directory. The return value is auto-escaped; use `| safe` if the content should be rendered as raw HTML. Path traversal (`..`) and absolute paths are rejected.
+
+#### Parsing CSV Data
+
+The `parse_csv` function parses CSV text into a list of rows, where each row is a list of field strings:
+
+```html
+{% set rows = parse_csv(read_file(positional_args[0])) %}
+<table>
+{% for row in rows %}
+  <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+{% endfor %}
+</table>
+```
+
+Standard CSV quoting rules apply (double-quoted fields, escaped quotes). The function does not treat the first row as a header — all rows are returned uniformly.
 
 ### Unknown Directives
 
