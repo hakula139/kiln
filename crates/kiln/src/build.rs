@@ -142,7 +142,7 @@ fn build_page(
 ///
 /// For `index.html` pages (page bundles), returns the directory path with a
 /// trailing slash. For other files, returns the file path as-is.
-fn page_url(base_url: &str, output_path: &Path) -> String {
+pub(crate) fn page_url(base_url: &str, output_path: &Path) -> String {
     let base = base_url.trim_end_matches('/');
     let rel = output_path.to_string_lossy();
 

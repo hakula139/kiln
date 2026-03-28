@@ -78,11 +78,50 @@ pub(crate) mod test_utils {
         {% endblock %}
     "#};
 
+    static TAXONOMY_HTML: &str = indoc! {r#"
+        {% extends "base.html" %}
+
+        {% block title %}<title>{{ kind | capitalize }} - {{ config.title }}</title>{% endblock %}
+
+        {% block body %}
+            <h1>All {{ kind }}</h1>
+            <ul>
+            {% for term in terms %}
+              <li><a href="{{ term.url | safe }}">{{ term.name }}</a> ({{ term.page_count }})</li>
+            {% endfor %}
+            </ul>
+        {% endblock %}
+    "#};
+
+    static TERM_HTML: &str = indoc! {r#"
+        {% extends "base.html" %}
+
+        {% block title %}<title>{{ term_name }} - {{ config.title }}</title>{% endblock %}
+
+        {% block body %}
+            <h1>{{ singular | capitalize }}: {{ term_name }}</h1>
+            <ul>
+            {% for page in pages %}
+              <li><a href="{{ page.url | safe }}">{{ page.title }}</a>{% if page.date %} ({{ page.date }}){% endif %}</li>
+            {% endfor %}
+            </ul>
+            {% if pagination.total_pages > 1 %}
+            <nav class="pagination">
+              {% if pagination.prev_url %}<a href="{{ pagination.prev_url | safe }}">← Prev</a>{% endif %}
+              <span>Page {{ pagination.current_page }} / {{ pagination.total_pages }}</span>
+              {% if pagination.next_url %}<a href="{{ pagination.next_url | safe }}">Next →</a>{% endif %}
+            </nav>
+            {% endif %}
+        {% endblock %}
+    "#};
+
     /// Persistent temp directory holding test templates (lives for the process).
     static TEST_TEMPLATE_DIR: LazyLock<TempDir> = LazyLock::new(|| {
         let dir = tempfile::tempdir().unwrap();
         fs::write(dir.path().join("base.html"), BASE_HTML).unwrap();
         fs::write(dir.path().join("post.html"), POST_HTML).unwrap();
+        fs::write(dir.path().join("taxonomy.html"), TAXONOMY_HTML).unwrap();
+        fs::write(dir.path().join("term.html"), TERM_HTML).unwrap();
         dir
     });
 
