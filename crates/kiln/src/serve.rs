@@ -352,6 +352,32 @@ mod tests {
     use super::*;
     use crate::test_utils::copy_templates;
 
+    // -- setup_watcher --
+
+    #[tokio::test]
+    async fn setup_watcher_sends_event_on_file_change() {
+        let root = tempfile::tempdir().unwrap();
+        let content = root.path().join("content");
+        fs::create_dir(&content).unwrap();
+        fs::write(root.path().join("config.toml"), "").unwrap();
+
+        let config: Config = toml::from_str("").unwrap();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+
+        // Watcher must stay alive while we wait for events.
+        let _watcher = setup_watcher(root.path(), &config, tx).unwrap();
+
+        // Modify a file in a watched directory.
+        fs::write(content.join("test.md"), "hello").unwrap();
+
+        // The watcher should detect the change and fire the callback.
+        let result = tokio::time::timeout(Duration::from_secs(5), rx.recv()).await;
+        assert!(
+            result.is_ok(),
+            "should receive event after file change within timeout"
+        );
+    }
+
     // -- watch_paths --
 
     #[test]
@@ -417,7 +443,7 @@ mod tests {
         );
     }
 
-    // -- safe_rebuild --
+    // -- watch_loop --
 
     /// Creates a minimal site that builds successfully.
     fn setup_site(root: &Path) {
@@ -436,6 +462,82 @@ mod tests {
         )
         .unwrap();
     }
+
+    #[tokio::test]
+    async fn watch_loop_triggers_reload_on_success() {
+        let root = tempfile::tempdir().unwrap();
+        setup_site(root.path());
+
+        let (event_tx, event_rx) = mpsc::unbounded_channel();
+        let (reload_tx, mut reload_rx) = broadcast::channel::<()>(16);
+
+        let root_path = root.path().to_owned();
+        tokio::spawn(watch_loop(root_path, event_rx, reload_tx));
+
+        // Trigger a rebuild event.
+        event_tx.send(()).unwrap();
+
+        // Should receive a reload signal after successful rebuild.
+        let result = tokio::time::timeout(Duration::from_secs(5), reload_rx.recv()).await;
+        assert!(
+            result.is_ok(),
+            "should receive reload after successful rebuild"
+        );
+    }
+
+    #[tokio::test]
+    async fn watch_loop_no_reload_on_failure() {
+        let root = tempfile::tempdir().unwrap();
+        setup_site(root.path());
+
+        // Break the template so rebuild fails.
+        fs::write(
+            root.path().join("templates").join("post.html"),
+            "{% invalid %}",
+        )
+        .unwrap();
+
+        let (event_tx, event_rx) = mpsc::unbounded_channel();
+        let (reload_tx, mut reload_rx) = broadcast::channel::<()>(16);
+
+        let root_path = root.path().to_owned();
+        tokio::spawn(watch_loop(root_path, event_rx, reload_tx));
+
+        // Trigger a rebuild event — rebuild will fail.
+        event_tx.send(()).unwrap();
+
+        // Allow time for debounce + rebuild attempt.
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        assert!(
+            reload_rx.try_recv().is_err(),
+            "should not send reload on failed rebuild"
+        );
+    }
+
+    #[tokio::test]
+    async fn watch_loop_stops_when_sender_dropped() {
+        let root = tempfile::tempdir().unwrap();
+        setup_site(root.path());
+
+        let (event_tx, event_rx) = mpsc::unbounded_channel();
+        let (reload_tx, _) = broadcast::channel::<()>(16);
+
+        let root_path = root.path().to_owned();
+        let handle = tokio::spawn(watch_loop(root_path, event_rx, reload_tx));
+
+        // Drop the sender to signal shutdown.
+        drop(event_tx);
+
+        // The loop should exit promptly.
+        let result = tokio::time::timeout(Duration::from_secs(2), handle).await;
+        assert!(
+            result.is_ok(),
+            "watch_loop should exit when event sender is dropped"
+        );
+    }
+
+    // -- safe_rebuild --
 
     #[test]
     fn safe_rebuild_success_cleans_backup() {
@@ -594,6 +696,37 @@ mod tests {
         assert!(
             content_type.starts_with("text/event-stream"),
             "should return text/event-stream, got: {content_type}"
+        );
+    }
+
+    #[tokio::test]
+    async fn build_router_sse_sends_reload_event() {
+        let dir = tempfile::tempdir().unwrap();
+        let (tx, _) = broadcast::channel::<()>(16);
+        let app = build_router(dir.path(), tx.clone());
+
+        let response = app
+            .oneshot(Request::get(LIVE_RELOAD_PATH).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        let mut body = response.into_body();
+
+        // Send a reload event after the handler has subscribed.
+        tx.send(()).unwrap();
+
+        // First frame should be the SSE reload event.
+        let frame = tokio::time::timeout(Duration::from_secs(2), body.frame())
+            .await
+            .expect("should receive frame within timeout")
+            .expect("stream should produce a frame")
+            .expect("frame should not error");
+
+        let data = frame.into_data().expect("frame should be a data frame");
+        let text = String::from_utf8(data.to_vec()).unwrap();
+        assert!(
+            text.contains("event: reload"),
+            "should contain SSE reload event, got: {text}"
         );
     }
 
