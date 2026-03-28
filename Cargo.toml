@@ -16,12 +16,16 @@ pedantic = { level = "warn", priority = -1 }
 
 [workspace.dependencies]
 anyhow = "1"
+axum = "0.8"
 clap = { version = "4", features = ["derive"] }
 csv = "1"
 gh-emoji = "1"
+http-body-util = "0.1"
 indoc = "2"
 jiff = { version = "0.2", features = ["serde"] }
 minijinja = { version = "2", features = ["loader"] }
+notify = "8"
+open = "5"
 pulldown-cmark = "0.13"
 regex = "1"
 semver = "1"
@@ -33,7 +37,17 @@ syntect = { version = "5", default-features = false, features = [
   "html",
   "regex-onig",
 ] }
+tokio = { version = "1", features = [
+  "rt-multi-thread",
+  "macros",
+  "signal",
+  "sync",
+  "time",
+] }
+tokio-stream = { version = "0.1", features = ["sync"] }
 toml = "1"
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["fs"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", default-features = false, features = [
   "fmt",

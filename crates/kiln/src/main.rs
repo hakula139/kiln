@@ -37,6 +37,20 @@ enum Command {
         #[arg(long, default_value = ".")]
         root: PathBuf,
     },
+    /// Start a dev server with live reload.
+    Serve {
+        /// Project root directory (defaults to current directory).
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+
+        /// Port to serve on.
+        #[arg(long, default_value_t = 1313)]
+        port: u16,
+
+        /// Open the site in the default browser after starting.
+        #[arg(long)]
+        open: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -61,6 +75,10 @@ fn main() -> Result<()> {
         Command::InitTheme { name, root } => {
             let root = root.canonicalize()?;
             kiln::init_theme(&root, &name)?;
+        }
+        Command::Serve { root, port, open } => {
+            let root = root.canonicalize()?;
+            kiln::serve(&root, port, open)?;
         }
     }
 
