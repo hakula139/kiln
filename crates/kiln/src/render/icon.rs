@@ -3,7 +3,7 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-use super::escape_html;
+use crate::html::escape;
 use crate::markdown::{for_each_non_code_line, scan_code_span};
 
 /// Matches icon shortcodes, e.g., `:(fas fa-link):`.
@@ -42,7 +42,7 @@ fn replace_icons_in_line(line: &str, output: &mut String) {
             _ = write!(
                 output,
                 r#"<i class="{}" aria-hidden="true"></i>"#,
-                escape_html(&caps[1])
+                escape(&caps[1])
             );
             i += caps[0].len();
             continue;

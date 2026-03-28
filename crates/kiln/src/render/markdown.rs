@@ -5,11 +5,11 @@ use syntect::parsing::SyntaxSet;
 
 use crate::text::slugify;
 
-use super::escape_html;
 use super::highlight::highlight_code;
 use super::image::{render_block_image, render_inline_image};
 use super::image_attrs::ImageAttrs;
 use super::toc::TocEntry;
+use crate::html::escape;
 
 /// The result of rendering markdown content.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,7 +62,7 @@ pub(crate) fn render_markdown(
                 let entry = &headings[heading_index];
                 heading_index += 1;
                 output_events.push(Event::Html(
-                    format!("<{} id=\"{}\">", entry.level, escape_html(&entry.id)).into(),
+                    format!("<{} id=\"{}\">", entry.level, escape(&entry.id)).into(),
                 ));
             }
             Event::End(TagEnd::Heading(level)) => {
@@ -293,14 +293,14 @@ fn transform_math(event: Event<'_>) -> Event<'_> {
         Event::InlineMath(content) => Event::InlineHtml(
             format!(
                 "<span class=\"math math-inline\">\\({}\\)</span>",
-                escape_html(&content)
+                escape(&content)
             )
             .into(),
         ),
         Event::DisplayMath(content) => Event::Html(
             format!(
                 "<span class=\"math math-display\">\\[{}\\]</span>\n",
-                escape_html(&content)
+                escape(&content)
             )
             .into(),
         ),

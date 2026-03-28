@@ -3,6 +3,7 @@ pub mod config;
 pub mod content;
 pub mod convert;
 pub mod directive;
+pub mod html;
 pub mod init;
 pub mod markdown;
 pub mod output;

@@ -1,6 +1,6 @@
 use pulldown_cmark::HeadingLevel;
 
-use super::{escape_html, writeln_indented};
+use crate::html::{escape, writeln_indented};
 
 /// A single entry in the table of contents, collected during heading rendering.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,8 +62,8 @@ pub fn render_toc_html(entries: &[TocEntry]) -> String {
             &mut html,
             depth * 2,
             "<li><a href=\"#{}\">{}</a>",
-            escape_html(&entry.id),
-            escape_html(&entry.title),
+            escape(&entry.id),
+            escape(&entry.title),
         );
     }
 
