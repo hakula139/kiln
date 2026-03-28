@@ -129,6 +129,7 @@ kiln convert --source <dir> --dest <dir>          # Convert Hugo content to kiln
   - Scope: crate or module name (e.g., `kiln`, `config`, `render`)
 - Feature branches: `feat/<feature-name>`
 - Keep commits atomic — one logical change per commit.
+- PRs: assign to `hakula139`, label `enhancement` for `feat`, `bug` for `fix`.
 
 ### Testing
 
