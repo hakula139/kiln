@@ -2,6 +2,7 @@
 
 use std::convert::Infallible;
 use std::fs;
+use std::future::Future;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -75,6 +76,25 @@ const LIVE_RELOAD_SCRIPT: &str = r#"
 /// Panics if the Ctrl+C signal handler cannot be installed.
 #[tokio::main]
 pub async fn serve(root: &Path, port: u16, open: bool) -> Result<()> {
+    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    let listener = tokio::net::TcpListener::bind(addr)
+        .await
+        .with_context(|| format!("failed to bind to port {port} (is it already in use?)"))?;
+
+    serve_until(root, listener, open, shutdown_signal()).await
+}
+
+/// Builds the site, starts file watching, and serves until `shutdown` completes.
+///
+/// Separated from [`serve`] so that tests can supply a pre-bound listener
+/// (port 0 for dynamic allocation) and a controlled shutdown signal.
+async fn serve_until(
+    root: &Path,
+    listener: tokio::net::TcpListener,
+    open: bool,
+    shutdown: impl Future<Output = ()> + Send + 'static,
+) -> Result<()> {
+    let port = listener.local_addr()?.port();
     let base_url = localhost_url(port);
 
     eprintln!("Building site...");
@@ -93,20 +113,14 @@ pub async fn serve(root: &Path, port: u16, open: bool) -> Result<()> {
 
     let rebuild_root = root.to_owned();
     let rebuild_tx = reload_tx.clone();
-    let rebuild_base_url = base_url.clone();
     tokio::spawn(watch_loop(
         rebuild_root,
-        rebuild_base_url,
+        base_url.clone(),
         watch_rx,
         rebuild_tx,
     ));
 
     let app = build_router(&output_dir, reload_tx);
-
-    let addr = SocketAddr::from(([127, 0, 0, 1], port));
-    let listener = tokio::net::TcpListener::bind(addr)
-        .await
-        .with_context(|| format!("failed to bind to port {port} (is it already in use?)"))?;
 
     eprintln!("\nServing at {base_url} (Press Ctrl+C to stop)");
     eprint!("Watching: config.toml, content/, templates/, static/");
@@ -120,7 +134,7 @@ pub async fn serve(root: &Path, port: u16, open: bool) -> Result<()> {
     }
 
     axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
+        .with_graceful_shutdown(shutdown)
         .await
         .context("server error")?;
 
@@ -797,5 +811,106 @@ mod tests {
             result.ends_with(LIVE_RELOAD_SCRIPT),
             "should append script when no </body>, got:\n{result}"
         );
+    }
+
+    // -- serve_until (integration) --
+
+    /// Polls until the server responds to an HTTP request.
+    async fn wait_for_server(addr: SocketAddr) {
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_millis(200))
+            .build()
+            .unwrap();
+        for _ in 0..50 {
+            if client.get(format!("http://{addr}/")).send().await.is_ok() {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        panic!("server did not start within 5 seconds");
+    }
+
+    /// Starts `serve_until` in a background task and returns the address
+    /// and a shutdown sender.
+    async fn spawn_server(root: &Path) -> (SocketAddr, tokio::sync::oneshot::Sender<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+        let root = root.to_owned();
+        tokio::spawn(async move {
+            _ = serve_until(&root, listener, false, async { _ = shutdown_rx.await }).await;
+        });
+        (addr, shutdown_tx)
+    }
+
+    #[tokio::test]
+    async fn serve_until_serves_html_with_live_reload() {
+        let root = tempfile::tempdir().unwrap();
+        setup_site(root.path());
+
+        let (addr, shutdown_tx) = spawn_server(root.path()).await;
+        wait_for_server(addr).await;
+
+        let resp = reqwest::get(format!("http://{addr}/hello/")).await.unwrap();
+        assert_eq!(resp.status(), 200);
+        let body = resp.text().await.unwrap();
+        assert!(body.contains("Hello"), "should contain page content");
+        assert!(
+            body.contains(LIVE_RELOAD_SCRIPT),
+            "should inject live reload script"
+        );
+
+        _ = shutdown_tx.send(());
+    }
+
+    #[tokio::test]
+    async fn serve_until_no_inject_for_non_html() {
+        let root = tempfile::tempdir().unwrap();
+        setup_site(root.path());
+        // Add a static file that the build will copy.
+        fs::create_dir_all(root.path().join("static")).unwrap();
+        fs::write(
+            root.path().join("static").join("style.css"),
+            "body { color: red; }",
+        )
+        .unwrap();
+
+        let (addr, shutdown_tx) = spawn_server(root.path()).await;
+        wait_for_server(addr).await;
+
+        let resp = reqwest::get(format!("http://{addr}/style.css"))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        let body = resp.text().await.unwrap();
+        assert_eq!(body, "body { color: red; }");
+
+        _ = shutdown_tx.send(());
+    }
+
+    #[tokio::test]
+    async fn serve_until_sse_endpoint() {
+        let root = tempfile::tempdir().unwrap();
+        setup_site(root.path());
+
+        let (addr, shutdown_tx) = spawn_server(root.path()).await;
+        wait_for_server(addr).await;
+
+        let resp = reqwest::get(format!("http://{addr}{LIVE_RELOAD_PATH}"))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        let ct = resp
+            .headers()
+            .get("content-type")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert!(
+            ct.starts_with("text/event-stream"),
+            "should return text/event-stream, got: {ct}"
+        );
+
+        _ = shutdown_tx.send(());
     }
 }

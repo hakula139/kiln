@@ -38,4 +38,5 @@ walkdir = { workspace = true }
 
 [dev-dependencies]
 indoc = { workspace = true }
+reqwest = { workspace = true }
 tempfile = "3"
