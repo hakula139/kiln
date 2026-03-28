@@ -349,6 +349,8 @@ mod tests {
 
     use indoc::indoc;
 
+    use axum::http::{Request, StatusCode};
+
     use super::*;
     use crate::test_utils::copy_templates;
 
@@ -414,42 +416,6 @@ mod tests {
         assert!(
             theme_entry.is_none(),
             "should not include any theme directory"
-        );
-    }
-
-    // -- inject_script --
-
-    #[test]
-    fn inject_script_before_body_close() {
-        let html = "<html><body><p>Hello</p></body></html>";
-        let result = inject_script(html);
-        assert!(
-            result.contains(LIVE_RELOAD_SCRIPT),
-            "should contain live reload script"
-        );
-        assert!(
-            result.contains(&format!("{LIVE_RELOAD_SCRIPT}</body>")),
-            "script should be injected before </body>, got:\n{result}"
-        );
-    }
-
-    #[test]
-    fn inject_script_case_insensitive() {
-        let html = "<html><body><p>Hello</p></BODY></html>";
-        let result = inject_script(html);
-        assert!(
-            result.contains(&format!("{LIVE_RELOAD_SCRIPT}</BODY>")),
-            "should handle uppercase </BODY>, got:\n{result}"
-        );
-    }
-
-    #[test]
-    fn inject_script_no_body_tag() {
-        let html = "<html><p>Hello</p></html>";
-        let result = inject_script(html);
-        assert!(
-            result.ends_with(LIVE_RELOAD_SCRIPT),
-            "should append script when no </body>, got:\n{result}"
         );
     }
 
@@ -526,5 +492,146 @@ mod tests {
 
         safe_rebuild(root.path()).unwrap();
         assert!(root.path().join("public").exists());
+    }
+
+    // -- build_router --
+
+    /// Creates a router backed by a directory of static files.
+    fn setup_router(dir: &Path) -> Router {
+        let (tx, _) = broadcast::channel::<()>(16);
+        build_router(dir, tx)
+    }
+
+    /// Collects a response body into a string.
+    async fn collect_body(response: Response) -> String {
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        String::from_utf8(bytes.to_vec()).unwrap()
+    }
+
+    #[tokio::test]
+    async fn build_router_injects_script_into_html() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("page.html"),
+            "<html><body><p>Hello</p></body></html>",
+        )
+        .unwrap();
+
+        let app = setup_router(dir.path());
+        let response = app
+            .oneshot(Request::get("/page.html").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = collect_body(response).await;
+        assert!(
+            body.contains("<p>Hello</p>"),
+            "should preserve original content"
+        );
+        assert!(
+            body.contains(LIVE_RELOAD_SCRIPT),
+            "should inject live reload script into HTML"
+        );
+    }
+
+    #[tokio::test]
+    async fn build_router_no_inject_for_non_html() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("style.css"), "body { color: red; }").unwrap();
+
+        let app = setup_router(dir.path());
+        let response = app
+            .oneshot(Request::get("/style.css").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = collect_body(response).await;
+        assert_eq!(body, "body { color: red; }");
+    }
+
+    #[tokio::test]
+    async fn build_router_serves_directory_index() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("index.html"),
+            "<html><body>Home</body></html>",
+        )
+        .unwrap();
+
+        let app = setup_router(dir.path());
+        let response = app
+            .oneshot(Request::get("/").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = collect_body(response).await;
+        assert!(body.contains("Home"), "should serve index.html for /");
+        assert!(
+            body.contains(LIVE_RELOAD_SCRIPT),
+            "should inject into directory index"
+        );
+    }
+
+    #[tokio::test]
+    async fn build_router_sse_endpoint() {
+        let dir = tempfile::tempdir().unwrap();
+        let (tx, _) = broadcast::channel::<()>(16);
+        let app = build_router(dir.path(), tx);
+
+        let response = app
+            .oneshot(Request::get(LIVE_RELOAD_PATH).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let content_type = response
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert!(
+            content_type.starts_with("text/event-stream"),
+            "should return text/event-stream, got: {content_type}"
+        );
+    }
+
+    // -- inject_script --
+
+    #[test]
+    fn inject_script_before_body_close() {
+        let html = "<html><body><p>Hello</p></body></html>";
+        let result = inject_script(html);
+        assert!(
+            result.contains(LIVE_RELOAD_SCRIPT),
+            "should contain live reload script"
+        );
+        assert!(
+            result.contains(&format!("{LIVE_RELOAD_SCRIPT}</body>")),
+            "script should be injected before </body>, got:\n{result}"
+        );
+    }
+
+    #[test]
+    fn inject_script_case_insensitive() {
+        let html = "<html><body><p>Hello</p></BODY></html>";
+        let result = inject_script(html);
+        assert!(
+            result.contains(&format!("{LIVE_RELOAD_SCRIPT}</BODY>")),
+            "should handle uppercase </BODY>, got:\n{result}"
+        );
+    }
+
+    #[test]
+    fn inject_script_no_body_tag() {
+        let html = "<html><p>Hello</p></html>";
+        let result = inject_script(html);
+        assert!(
+            result.ends_with(LIVE_RELOAD_SCRIPT),
+            "should append script when no </body>, got:\n{result}"
+        );
     }
 }
