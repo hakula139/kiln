@@ -367,7 +367,7 @@ mod tests {
         let source = dir.path().join("source");
         let dest = dir.path().join("dest");
 
-        // Source file.
+        // Source markdown + asset.
         let post_dir = source.join("posts/hello");
         fs::create_dir_all(&post_dir).unwrap();
         fs::write(
@@ -380,19 +380,26 @@ mod tests {
             "},
         )
         .unwrap();
+        fs::write(post_dir.join("image.webp"), "new-image").unwrap();
 
-        // Pre-existing file at dest with different content.
+        // Pre-existing files at dest with different content.
         let dest_post_dir = dest.join("posts/hello");
         fs::create_dir_all(&dest_post_dir).unwrap();
-        fs::write(dest_post_dir.join("index.md"), "existing content").unwrap();
+        fs::write(dest_post_dir.join("index.md"), "existing markdown").unwrap();
+        fs::write(dest_post_dir.join("image.webp"), "existing image").unwrap();
 
         convert(&source, &dest).unwrap();
 
-        // Should not overwrite.
-        let result = fs::read_to_string(dest.join("posts/hello/index.md")).unwrap();
+        // Neither markdown nor asset should be overwritten.
         assert_eq!(
-            result, "existing content",
-            "should not overwrite existing file"
+            fs::read_to_string(dest.join("posts/hello/index.md")).unwrap(),
+            "existing markdown",
+            "should not overwrite existing markdown"
+        );
+        assert_eq!(
+            fs::read_to_string(dest.join("posts/hello/image.webp")).unwrap(),
+            "existing image",
+            "should not overwrite existing asset"
         );
     }
 }
