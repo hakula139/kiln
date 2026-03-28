@@ -10,9 +10,10 @@ use crate::output::{clean_output_dir, copy_file, copy_static, write_output};
 use crate::pagination::{PaginationVars, Paginator, page_url as pagination_url};
 use crate::render::RenderOptions;
 use crate::render::pipeline::render_page;
-use crate::taxonomy::{TaxonomyKind, Term, build_taxonomies};
+use crate::taxonomy::{TaxonomyKind, TaxonomySet, Term, build_taxonomies};
 use crate::template::{
-    PageSummary, PostTemplateVars, TaxonomyIndexVars, TemplateEngine, TermPageVars, TermSummary,
+    PageGroup, PageSummary, PostTemplateVars, TaxonomyIndexVars, TemplateEngine, TermPageVars,
+    TermSummary,
 };
 
 /// Shared build state, created once per build invocation.
@@ -195,54 +196,98 @@ fn build_taxonomy_pages(
         let kind = taxonomy.kind;
         let base_path = format!("/{}", kind.plural());
 
-        // Build taxonomy index page (e.g., /tags/index.html).
-        let term_summaries: Vec<TermSummary> = taxonomy
+        // Resolve and sort pages for each term once (reused by index and term pages).
+        let term_pages: Vec<Vec<PageSummary>> = taxonomy
             .terms
             .iter()
-            .map(|term| TermSummary {
-                name: term.name.clone(),
-                slug: term.slug.clone(),
-                url: format!("{base_path}/{}/", term.slug),
-                page_count: term.page_count,
-            })
+            .map(|term| resolve_term_pages(&taxonomy_set, kind, &term.slug, page_summaries))
             .collect();
 
-        let vars = TaxonomyIndexVars {
-            kind: kind.plural(),
-            singular: kind.singular(),
-            terms: term_summaries,
-            config: &ctx.config,
-        };
+        build_taxonomy_index(
+            ctx,
+            kind,
+            &base_path,
+            &taxonomy.terms,
+            &term_pages,
+            output_dir,
+        )?;
 
-        let html = ctx
-            .template_engine
-            .render_taxonomy(&vars)
-            .with_context(|| format!("failed to render {} index", kind.plural()))?;
-
-        let dest = output_dir.join(kind.plural()).join("index.html");
-        write_output(&dest, &html)
-            .with_context(|| format!("failed to write {}", dest.display()))?;
-
-        // Build paginated term pages (e.g., /tags/rust/index.html).
-        for term in &taxonomy.terms {
-            let key = (kind, term.slug.clone());
-            let Some(page_indices) = taxonomy_set.term_pages.get(&key) else {
-                continue;
-            };
-
-            let term_page_summaries: Vec<&PageSummary> = page_indices
-                .iter()
-                .filter_map(|&idx| page_summaries.get(idx))
-                .collect();
-
-            build_term_pages(ctx, kind, term, &term_page_summaries, per_page, output_dir)?;
+        for (term, pages) in taxonomy.terms.iter().zip(&term_pages) {
+            let refs: Vec<&PageSummary> = pages.iter().collect();
+            build_term_pages(ctx, kind, term, &refs, per_page, output_dir)?;
         }
     }
 
     Ok(())
 }
 
+/// Resolves page indices for a term into sorted page summaries.
+fn resolve_term_pages(
+    taxonomy_set: &TaxonomySet,
+    kind: TaxonomyKind,
+    slug: &str,
+    page_summaries: &[PageSummary],
+) -> Vec<PageSummary> {
+    let key = (kind, slug.to_owned());
+    let mut pages: Vec<PageSummary> = taxonomy_set
+        .term_pages
+        .get(&key)
+        .map(|indices| {
+            indices
+                .iter()
+                .filter_map(|&idx| page_summaries.get(idx))
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default();
+    sort_by_date_desc(&mut pages);
+    pages
+}
+
+/// Sorts page summaries by date descending (newest first, undated last).
+fn sort_by_date_desc(pages: &mut [PageSummary]) {
+    pages.sort_by(|a, b| b.date.cmp(&a.date));
+}
+
+/// Renders a taxonomy index page (e.g., `/tags/index.html`).
+fn build_taxonomy_index(
+    ctx: &BuildContext,
+    kind: TaxonomyKind,
+    base_path: &str,
+    terms: &[Term],
+    term_pages: &[Vec<PageSummary>],
+    output_dir: &Path,
+) -> Result<()> {
+    let term_summaries: Vec<TermSummary> = terms
+        .iter()
+        .zip(term_pages)
+        .map(|(term, pages)| TermSummary {
+            name: term.name.clone(),
+            slug: term.slug.clone(),
+            url: format!("{base_path}/{}/", term.slug),
+            pages: pages.clone(),
+        })
+        .collect();
+
+    let vars = TaxonomyIndexVars {
+        kind: kind.plural(),
+        singular: kind.singular(),
+        terms: term_summaries,
+        config: &ctx.config,
+    };
+
+    let html = ctx
+        .template_engine
+        .render_taxonomy(&vars)
+        .with_context(|| format!("failed to render {} index", kind.plural()))?;
+
+    let dest = output_dir.join(kind.plural()).join("index.html");
+    write_output(&dest, &html).with_context(|| format!("failed to write {}", dest.display()))
+}
+
 /// Generates paginated pages for a single taxonomy term.
+///
+/// Pages must be pre-sorted by date descending.
 fn build_term_pages(
     ctx: &BuildContext,
     kind: TaxonomyKind,
@@ -257,13 +302,15 @@ fn build_term_pages(
     for page_num in 1..=paginator.total_pages() {
         let items = paginator.page_items(page_num);
         let pagination = PaginationVars::new(&term_base, page_num, paginator.total_pages());
+        let pages: Vec<PageSummary> = items.iter().copied().cloned().collect();
+        let page_groups = group_by_year(pages);
 
         let vars = TermPageVars {
             kind: kind.plural(),
             singular: kind.singular(),
             term_name: &term.name,
             term_slug: &term.slug,
-            pages: items.iter().copied().cloned().collect(),
+            page_groups,
             pagination,
             config: &ctx.config,
         };
@@ -286,6 +333,33 @@ fn build_term_pages(
     }
 
     Ok(())
+}
+
+/// Groups pages into year-based sections.
+///
+/// Assumes pages are already sorted by date descending. Consecutive pages
+/// with the same year are grouped together.
+fn group_by_year(pages: Vec<PageSummary>) -> Vec<PageGroup> {
+    let mut groups: Vec<PageGroup> = Vec::new();
+
+    for page in pages {
+        let year = page
+            .date
+            .as_deref()
+            .and_then(|d| d.get(..4))
+            .unwrap_or("")
+            .to_owned();
+
+        if groups.last().is_none_or(|g| g.key != year) {
+            groups.push(PageGroup {
+                key: year,
+                pages: Vec::new(),
+            });
+        }
+        groups.last_mut().expect("just pushed").pages.push(page);
+    }
+
+    groups
 }
 
 /// Computes the canonical URL for a page from its output path.
@@ -313,32 +387,6 @@ mod tests {
     use super::*;
 
     use crate::test_utils::{PermissionGuard, copy_templates};
-
-    // -- page_url --
-
-    #[test]
-    fn page_url_index_html() {
-        assert_eq!(
-            page_url("https://example.com", Path::new("foo/bar/index.html")),
-            "https://example.com/foo/bar/"
-        );
-    }
-
-    #[test]
-    fn page_url_root_index() {
-        assert_eq!(
-            page_url("https://example.com", Path::new("index.html")),
-            "https://example.com/"
-        );
-    }
-
-    #[test]
-    fn page_url_non_index() {
-        assert_eq!(
-            page_url("https://example.com", Path::new("standalone.html")),
-            "https://example.com/standalone.html"
-        );
-    }
 
     // -- build --
 
@@ -939,6 +987,77 @@ mod tests {
         assert!(
             err.contains("failed to render"),
             "should report render failure, got: {err}"
+        );
+    }
+
+    // -- group_by_year --
+
+    fn make_summary(title: &str, date: Option<&str>) -> PageSummary {
+        PageSummary {
+            title: title.into(),
+            url: format!("/{title}/"),
+            date: date.map(Into::into),
+            description: String::new(),
+            featured_image: None,
+        }
+    }
+
+    #[test]
+    fn group_by_year_basic() {
+        let pages = vec![
+            make_summary("a", Some("2026-03-01T00:00:00Z")),
+            make_summary("b", Some("2026-01-15T00:00:00Z")),
+            make_summary("c", Some("2025-12-01T00:00:00Z")),
+        ];
+        let groups = group_by_year(pages);
+        assert_eq!(groups.len(), 2);
+        assert_eq!(groups[0].key, "2026");
+        assert_eq!(groups[0].pages.len(), 2);
+        assert_eq!(groups[1].key, "2025");
+        assert_eq!(groups[1].pages.len(), 1);
+    }
+
+    #[test]
+    fn group_by_year_undated_pages() {
+        let pages = vec![
+            make_summary("a", Some("2026-01-01T00:00:00Z")),
+            make_summary("b", None),
+        ];
+        let groups = group_by_year(pages);
+        assert_eq!(groups.len(), 2);
+        assert_eq!(groups[0].key, "2026");
+        assert_eq!(groups[1].key, "", "undated pages should have empty key");
+    }
+
+    #[test]
+    fn group_by_year_empty() {
+        let groups = group_by_year(Vec::new());
+        assert!(groups.is_empty());
+    }
+
+    // -- page_url --
+
+    #[test]
+    fn page_url_index_html() {
+        assert_eq!(
+            page_url("https://example.com", Path::new("foo/bar/index.html")),
+            "https://example.com/foo/bar/"
+        );
+    }
+
+    #[test]
+    fn page_url_root_index() {
+        assert_eq!(
+            page_url("https://example.com", Path::new("index.html")),
+            "https://example.com/"
+        );
+    }
+
+    #[test]
+    fn page_url_non_index() {
+        assert_eq!(
+            page_url("https://example.com", Path::new("standalone.html")),
+            "https://example.com/standalone.html"
         );
     }
 }

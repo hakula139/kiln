@@ -242,12 +242,22 @@ pub struct TaxonomyIndexVars<'a> {
 }
 
 /// A term entry for the taxonomy index template.
+///
+/// Templates can use `term.pages | length` to get the page count.
 #[derive(Debug, Clone, Serialize)]
 pub struct TermSummary {
     pub name: String,
     pub slug: String,
     pub url: String,
-    pub page_count: usize,
+    /// All pages with this term, sorted by date descending.
+    pub pages: Vec<PageSummary>,
+}
+
+/// A group of pages sharing a common key (e.g., year).
+#[derive(Debug, Clone, Serialize)]
+pub struct PageGroup {
+    pub key: String,
+    pub pages: Vec<PageSummary>,
 }
 
 /// Template variables for a term page (e.g., `/tags/rust/`).
@@ -257,7 +267,7 @@ pub struct TermPageVars<'a> {
     pub singular: &'a str,
     pub term_name: &'a str,
     pub term_slug: &'a str,
-    pub pages: Vec<PageSummary>,
+    pub page_groups: Vec<PageGroup>,
     pub pagination: PaginationVars,
     pub config: &'a Config,
 }
@@ -572,13 +582,19 @@ mod tests {
                     name: "Rust".into(),
                     slug: "rust".into(),
                     url: "/tags/rust/".into(),
-                    page_count: 5,
+                    pages: vec![PageSummary {
+                        title: "Hello Rust".into(),
+                        url: "/hello-rust/".into(),
+                        date: None,
+                        description: String::new(),
+                        featured_image: None,
+                    }],
                 },
                 TermSummary {
                     name: "Web".into(),
                     slug: "web".into(),
                     url: "/tags/web/".into(),
-                    page_count: 3,
+                    pages: Vec::new(),
                 },
             ],
             config: &config,
@@ -589,12 +605,51 @@ mod tests {
             "should have taxonomy heading, html:\n{html}"
         );
         assert!(
-            html.contains(r#"<a href="/tags/rust/">Rust</a> (5)"#),
+            html.contains(r#"<a href="/tags/rust/">Rust</a> (1)"#),
             "should list terms with counts, html:\n{html}"
         );
         assert!(
-            html.contains(r#"<a href="/tags/web/">Web</a> (3)"#),
+            html.contains(r#"<a href="/hello-rust/">Hello Rust</a>"#),
+            "should include term pages, html:\n{html}"
+        );
+        assert!(
+            html.contains(r#"<a href="/tags/web/">Web</a> (0)"#),
             "should list all terms, html:\n{html}"
+        );
+    }
+
+    #[test]
+    fn render_taxonomy_truncates_pages() {
+        let engine = test_engine();
+        let config = test_config();
+        let pages: Vec<PageSummary> = (1..=7)
+            .map(|i| PageSummary {
+                title: format!("Post {i}"),
+                url: format!("/post-{i}/"),
+                date: None,
+                description: String::new(),
+                featured_image: None,
+            })
+            .collect();
+        let vars = TaxonomyIndexVars {
+            kind: "categories",
+            singular: "category",
+            terms: vec![TermSummary {
+                name: "Big".into(),
+                slug: "big".into(),
+                url: "/categories/big/".into(),
+                pages,
+            }],
+            config: &config,
+        };
+        let html = engine.render_taxonomy(&vars).unwrap();
+        assert!(
+            html.contains("Post 5"),
+            "should include 5th page, html:\n{html}"
+        );
+        assert!(
+            !html.contains("Post 6"),
+            "should truncate after 5 pages, html:\n{html}"
         );
     }
 
@@ -627,12 +682,15 @@ mod tests {
             singular: "tag",
             term_name: "Rust",
             term_slug: "rust",
-            pages: vec![PageSummary {
-                title: "Hello Rust".into(),
-                url: "/hello-rust/".into(),
-                date: Some("2026-01-15T00:00:00Z".into()),
-                description: "A post about Rust".into(),
-                featured_image: None,
+            page_groups: vec![PageGroup {
+                key: "2026".into(),
+                pages: vec![PageSummary {
+                    title: "Hello Rust".into(),
+                    url: "/hello-rust/".into(),
+                    date: Some("2026-01-15T00:00:00Z".into()),
+                    description: "A post about Rust".into(),
+                    featured_image: None,
+                }],
             }],
             pagination: PaginationVars::new("/tags/rust", 1, 1),
             config: &config,
@@ -641,6 +699,10 @@ mod tests {
         assert!(
             html.contains("<h1>Tag: Rust</h1>"),
             "should have term heading, html:\n{html}"
+        );
+        assert!(
+            html.contains("<h3>2026</h3>"),
+            "should have year group heading, html:\n{html}"
         );
         assert!(
             html.contains(r#"<a href="/hello-rust/">Hello Rust</a>"#),
@@ -657,12 +719,15 @@ mod tests {
             singular: "tag",
             term_name: "Rust",
             term_slug: "rust",
-            pages: vec![PageSummary {
-                title: "Post".into(),
-                url: "/post/".into(),
-                date: None,
-                description: String::new(),
-                featured_image: None,
+            page_groups: vec![PageGroup {
+                key: "2025".into(),
+                pages: vec![PageSummary {
+                    title: "Post".into(),
+                    url: "/post/".into(),
+                    date: Some("2025-06-01T00:00:00Z".into()),
+                    description: String::new(),
+                    featured_image: None,
+                }],
             }],
             pagination: PaginationVars::new("/tags/rust", 2, 3),
             config: &config,
@@ -675,6 +740,18 @@ mod tests {
         assert!(
             html.contains("Page 2 / 3"),
             "should show page numbers, html:\n{html}"
+        );
+        assert!(
+            html.contains(r#"<span class="active">2</span>"#),
+            "should highlight current page, html:\n{html}"
+        );
+        assert!(
+            html.contains(r#"<a href="/tags/rust/">1</a>"#),
+            "should have page 1 link, html:\n{html}"
+        );
+        assert!(
+            html.contains(r#"<a href="/tags/rust/page/3/">3</a>"#),
+            "should have page 3 link, html:\n{html}"
         );
         assert!(
             html.contains(r#"<a href="/tags/rust/page/3/">Next →</a>"#),
@@ -692,7 +769,7 @@ mod tests {
             singular: "tag",
             term_name: "Rust",
             term_slug: "rust",
-            pages: Vec::new(),
+            page_groups: Vec::new(),
             pagination: PaginationVars::new("/tags/rust", 1, 1),
             config: &config,
         };

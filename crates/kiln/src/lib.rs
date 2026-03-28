@@ -41,6 +41,7 @@ pub(crate) mod test_utils {
             {% block title %}<title>{{ config.title }}</title>{% endblock %}
             {% block head %}{% endblock %}
           </head>
+
           <body>
             {% block body %}{% endblock %}
           </body>
@@ -87,10 +88,16 @@ pub(crate) mod test_utils {
 
         {% block body %}
             <h1>All {{ kind }}</h1>
+
             <ul>
-            {% for term in terms %}
-              <li><a href="{{ term.url | safe }}">{{ term.name }}</a> ({{ term.page_count }})</li>
-            {% endfor %}
+            {%- for term in terms %}
+              <li>
+                <a href="{{ term.url | safe }}">{{ term.name }}</a> ({{ term.pages | length }})
+                {%- for page in term.pages[:5] %}
+                <a href="{{ page.url | safe }}">{{ page.title }}</a>
+                {%- endfor %}
+              </li>
+            {%- endfor %}
             </ul>
         {% endblock %}
     "#};
@@ -102,18 +109,41 @@ pub(crate) mod test_utils {
 
         {% block body %}
             <h1>{{ singular | capitalize }}: {{ term_name }}</h1>
-            <ul>
-            {% for page in pages %}
-              <li><a href="{{ page.url | safe }}">{{ page.title }}</a>{% if page.date %} ({{ page.date }}){% endif %}</li>
-            {% endfor %}
-            </ul>
-            {% if pagination.total_pages > 1 %}
+
+            {%- for group in page_groups %}
+              {%- if group.key %}
+              <h3>{{ group.key }}</h3>
+              {%- endif %}
+              <ul>
+              {%- for page in group.pages %}
+                <li>
+                  <a href="{{ page.url | safe }}">{{ page.title }}</a>
+                  {%- if page.date %} ({{ page.date }}){%- endif %}
+                </li>
+              {%- endfor %}
+              </ul>
+            {%- endfor %}
+
+            {%- if pagination.total_pages > 1 %}
             <nav class="pagination">
-              {% if pagination.prev_url %}<a href="{{ pagination.prev_url | safe }}">← Prev</a>{% endif %}
+              {%- if pagination.prev_url %}
+              <a href="{{ pagination.prev_url | safe }}">← Prev</a>
+              {%- endif %}
               <span>Page {{ pagination.current_page }} / {{ pagination.total_pages }}</span>
-              {% if pagination.next_url %}<a href="{{ pagination.next_url | safe }}">Next →</a>{% endif %}
+              {%- for item in pagination.items %}
+                {%- if item.number and item.is_current %}
+                <span class="active">{{ item.number }}</span>
+                {%- elif item.number %}
+                <a href="{{ item.url | safe }}">{{ item.number }}</a>
+                {%- else %}
+                <span>&hellip;</span>
+                {%- endif %}
+              {%- endfor %}
+              {%- if pagination.next_url %}
+              <a href="{{ pagination.next_url | safe }}">Next →</a>
+              {%- endif %}
             </nav>
-            {% endif %}
+            {%- endif %}
         {% endblock %}
     "#};
 
