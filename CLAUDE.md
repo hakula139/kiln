@@ -56,26 +56,23 @@ kiln convert --source <dir> --dest <dir>          # Convert Hugo content to kiln
 .
 ├── build.rs            # BuildContext, per-page rendering, taxonomy page generation, static / asset copying
 ├── config.rs           # TOML site configuration loading, theme resolution, param merging
-├── init.rs             # Theme scaffolding (kiln init-theme)
+├── content/            # Content model (module declarations in content.rs)
+│   ├── discovery.rs    # Recursive content walking with draft / _-prefix / no-frontmatter exclusion
+│   ├── frontmatter.rs  # TOML frontmatter parsing (+++), Frontmatter with jiff timestamps
+│   └── page.rs         # Page struct, slug derivation, summary, output paths, co-located assets
 ├── convert.rs          # Hugo → kiln content converter orchestrator
 ├── convert/            # Hugo → kiln converter submodules (orchestrator in convert.rs)
 │   ├── frontmatter.rs  # YAML → TOML frontmatter serde round-trip
 │   └── shortcode.rs    # Hugo shortcode → kiln directive conversion
-├── content/            # Content model (module declarations in content.rs)
-│   ├── frontmatter.rs  # TOML frontmatter parsing (+++), Frontmatter with jiff timestamps
-│   ├── page.rs         # Page struct, slug derivation, summary, output paths, co-located assets
-│   └── discovery.rs    # Recursive content walking with draft / _-prefix / no-frontmatter exclusion
-├── html.rs             # Shared HTML utilities (escape, indent, writeln_indented)
-├── markdown.rs         # Shared raw-markdown text utilities (code fence detection, code span scanning)
-├── text.rs             # Shared format-agnostic text utilities (slugify)
 ├── directive/          # :::-fenced directive parsing + rendering (shared types in directive.rs)
-│   ├── parser.rs       # Line-based stack parser, nesting, single-pass arg + Pandoc attr parsing
 │   ├── callout.rs      # 12 callout types (<details> with id / class propagation)
-│   └── div.rs          # Fenced divs and unknown directives (<div> with id / class propagation)
+│   ├── div.rs          # Fenced divs and unknown directives (<div> with id / class propagation)
+│   └── parser.rs       # Line-based stack parser, nesting, single-pass arg + Pandoc attr parsing
+├── html.rs             # Shared HTML utilities (escape, indent, writeln_indented)
+├── init.rs             # Theme scaffolding (kiln init-theme)
+├── markdown.rs         # Shared raw-markdown text utilities (code fence detection, code span scanning)
 ├── output.rs           # File output, static file copying, output directory cleaning
 ├── pagination.rs       # Paginator for windowed views over slices, page URL computation
-├── serve.rs            # Dev server with file watching, SSE live reload, script injection
-├── taxonomy.rs         # TaxonomyKind, Taxonomy, Term, TaxonomySet, build_taxonomies()
 ├── render/             # Markdown rendering pipeline (RenderOptions in render.rs)
 │   ├── emoji.rs        # GitHub-style :shortcode: → Unicode emoji replacement
 │   ├── highlight.rs    # syntect CSS-class highlighting with line numbers, code-block wrapper
@@ -85,7 +82,10 @@ kiln convert --source <dir> --dest <dir>          # Convert Hugo content to kiln
 │   ├── markdown.rs     # pulldown-cmark, GFM, CJK heading IDs, KaTeX, block / inline images
 │   ├── pipeline.rs     # Full pipeline: directives → pre-processors → markdown → ToC
 │   └── toc.rs          # TocEntry struct, nested <nav> table of contents generation
-└── template.rs         # MiniJinja layered template engine, directive / taxonomy / term rendering
+├── serve.rs            # Dev server with file watching, SSE live reload, script injection
+├── taxonomy.rs         # TaxonomyKind, Taxonomy, Term, TaxonomySet, build_taxonomies()
+├── template.rs         # MiniJinja layered template engine, directive / taxonomy / term rendering
+└── text.rs             # Shared format-agnostic text utilities (slugify)
 ```
 
 ## Coding Conventions
@@ -142,7 +142,7 @@ kiln convert --source <dir> --dest <dir>          # Convert Hugo content to kiln
 ### Documentation Maintenance
 
 - When a feature is completed, update **all** references to it: the status checklist in this file, the README roadmap, and any other docs that mention it.
-- Crate structure diagrams must match the actual filesystem. When adding, removing, or renaming modules, update the tree in this file.
+- Crate structure diagrams must match the actual filesystem. When adding, removing, or renaming modules, update the tree in this file. Entries are sorted alphabetically; directories sort alongside their parent `.rs` file.
 
 ## Verification
 
