@@ -558,6 +558,151 @@ mod tests {
         );
     }
 
+    // -- render_taxonomy --
+
+    #[test]
+    fn render_taxonomy_basic() {
+        let engine = test_engine();
+        let config = test_config();
+        let vars = TaxonomyIndexVars {
+            kind: "tags",
+            singular: "tag",
+            terms: vec![
+                TermSummary {
+                    name: "Rust".into(),
+                    slug: "rust".into(),
+                    url: "/tags/rust/".into(),
+                    page_count: 5,
+                },
+                TermSummary {
+                    name: "Web".into(),
+                    slug: "web".into(),
+                    url: "/tags/web/".into(),
+                    page_count: 3,
+                },
+            ],
+            config: &config,
+        };
+        let html = engine.render_taxonomy(&vars).unwrap();
+        assert!(
+            html.contains("<h1>All tags</h1>"),
+            "should have taxonomy heading, html:\n{html}"
+        );
+        assert!(
+            html.contains(r#"<a href="/tags/rust/">Rust</a> (5)"#),
+            "should list terms with counts, html:\n{html}"
+        );
+        assert!(
+            html.contains(r#"<a href="/tags/web/">Web</a> (3)"#),
+            "should list all terms, html:\n{html}"
+        );
+    }
+
+    #[test]
+    fn render_taxonomy_missing_template_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine = TemplateEngine::new(Some(dir.path()), None).unwrap();
+        let config = test_config();
+        let vars = TaxonomyIndexVars {
+            kind: "tags",
+            singular: "tag",
+            terms: Vec::new(),
+            config: &config,
+        };
+        let err = engine.render_taxonomy(&vars).unwrap_err().to_string();
+        assert!(
+            err.contains("failed to load taxonomy.html template"),
+            "should report missing template, got: {err}"
+        );
+    }
+
+    // -- render_term --
+
+    #[test]
+    fn render_term_basic() {
+        let engine = test_engine();
+        let config = test_config();
+        let vars = TermPageVars {
+            kind: "tags",
+            singular: "tag",
+            term_name: "Rust",
+            term_slug: "rust",
+            pages: vec![PageSummary {
+                title: "Hello Rust".into(),
+                url: "/hello-rust/".into(),
+                date: Some("2026-01-15T00:00:00Z".into()),
+                description: "A post about Rust".into(),
+                featured_image: None,
+            }],
+            pagination: PaginationVars::new("/tags/rust", 1, 1),
+            config: &config,
+        };
+        let html = engine.render_term(&vars).unwrap();
+        assert!(
+            html.contains("<h1>Tag: Rust</h1>"),
+            "should have term heading, html:\n{html}"
+        );
+        assert!(
+            html.contains(r#"<a href="/hello-rust/">Hello Rust</a>"#),
+            "should list page, html:\n{html}"
+        );
+    }
+
+    #[test]
+    fn render_term_with_pagination() {
+        let engine = test_engine();
+        let config = test_config();
+        let vars = TermPageVars {
+            kind: "tags",
+            singular: "tag",
+            term_name: "Rust",
+            term_slug: "rust",
+            pages: vec![PageSummary {
+                title: "Post".into(),
+                url: "/post/".into(),
+                date: None,
+                description: String::new(),
+                featured_image: None,
+            }],
+            pagination: PaginationVars::new("/tags/rust", 2, 3),
+            config: &config,
+        };
+        let html = engine.render_term(&vars).unwrap();
+        assert!(
+            html.contains(r#"<a href="/tags/rust/">← Prev</a>"#),
+            "should have prev link, html:\n{html}"
+        );
+        assert!(
+            html.contains("Page 2 / 3"),
+            "should show page numbers, html:\n{html}"
+        );
+        assert!(
+            html.contains(r#"<a href="/tags/rust/page/3/">Next →</a>"#),
+            "should have next link, html:\n{html}"
+        );
+    }
+
+    #[test]
+    fn render_term_missing_template_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine = TemplateEngine::new(Some(dir.path()), None).unwrap();
+        let config = test_config();
+        let vars = TermPageVars {
+            kind: "tags",
+            singular: "tag",
+            term_name: "Rust",
+            term_slug: "rust",
+            pages: Vec::new(),
+            pagination: PaginationVars::new("/tags/rust", 1, 1),
+            config: &config,
+        };
+        let err = engine.render_term(&vars).unwrap_err().to_string();
+        assert!(
+            err.contains("failed to load term.html template"),
+            "should report missing template, got: {err}"
+        );
+    }
+
     // -- read_file --
 
     #[test]
@@ -825,150 +970,5 @@ mod tests {
 
         let html = engine.render_directive("csv-test", ctx).unwrap().unwrap();
         assert_eq!(html, "0");
-    }
-
-    // -- render_taxonomy --
-
-    #[test]
-    fn render_taxonomy_basic() {
-        let engine = test_engine();
-        let config = test_config();
-        let vars = TaxonomyIndexVars {
-            kind: "tags",
-            singular: "tag",
-            terms: vec![
-                TermSummary {
-                    name: "Rust".into(),
-                    slug: "rust".into(),
-                    url: "/tags/rust/".into(),
-                    page_count: 5,
-                },
-                TermSummary {
-                    name: "Web".into(),
-                    slug: "web".into(),
-                    url: "/tags/web/".into(),
-                    page_count: 3,
-                },
-            ],
-            config: &config,
-        };
-        let html = engine.render_taxonomy(&vars).unwrap();
-        assert!(
-            html.contains("<h1>All tags</h1>"),
-            "should have taxonomy heading, html:\n{html}"
-        );
-        assert!(
-            html.contains(r#"<a href="/tags/rust/">Rust</a> (5)"#),
-            "should list terms with counts, html:\n{html}"
-        );
-        assert!(
-            html.contains(r#"<a href="/tags/web/">Web</a> (3)"#),
-            "should list all terms, html:\n{html}"
-        );
-    }
-
-    #[test]
-    fn render_taxonomy_missing_template_returns_error() {
-        let dir = tempfile::tempdir().unwrap();
-        let engine = TemplateEngine::new(Some(dir.path()), None).unwrap();
-        let config = test_config();
-        let vars = TaxonomyIndexVars {
-            kind: "tags",
-            singular: "tag",
-            terms: Vec::new(),
-            config: &config,
-        };
-        let err = engine.render_taxonomy(&vars).unwrap_err().to_string();
-        assert!(
-            err.contains("failed to load taxonomy.html template"),
-            "should report missing template, got: {err}"
-        );
-    }
-
-    // -- render_term --
-
-    #[test]
-    fn render_term_basic() {
-        let engine = test_engine();
-        let config = test_config();
-        let vars = TermPageVars {
-            kind: "tags",
-            singular: "tag",
-            term_name: "Rust",
-            term_slug: "rust",
-            pages: vec![PageSummary {
-                title: "Hello Rust".into(),
-                url: "/hello-rust/".into(),
-                date: Some("2026-01-15T00:00:00Z".into()),
-                description: "A post about Rust".into(),
-                featured_image: None,
-            }],
-            pagination: PaginationVars::new("/tags/rust", 1, 1),
-            config: &config,
-        };
-        let html = engine.render_term(&vars).unwrap();
-        assert!(
-            html.contains("<h1>Tag: Rust</h1>"),
-            "should have term heading, html:\n{html}"
-        );
-        assert!(
-            html.contains(r#"<a href="/hello-rust/">Hello Rust</a>"#),
-            "should list page, html:\n{html}"
-        );
-    }
-
-    #[test]
-    fn render_term_with_pagination() {
-        let engine = test_engine();
-        let config = test_config();
-        let vars = TermPageVars {
-            kind: "tags",
-            singular: "tag",
-            term_name: "Rust",
-            term_slug: "rust",
-            pages: vec![PageSummary {
-                title: "Post".into(),
-                url: "/post/".into(),
-                date: None,
-                description: String::new(),
-                featured_image: None,
-            }],
-            pagination: PaginationVars::new("/tags/rust", 2, 3),
-            config: &config,
-        };
-        let html = engine.render_term(&vars).unwrap();
-        assert!(
-            html.contains(r#"<a href="/tags/rust/">← Prev</a>"#),
-            "should have prev link, html:\n{html}"
-        );
-        assert!(
-            html.contains("Page 2 / 3"),
-            "should show page numbers, html:\n{html}"
-        );
-        assert!(
-            html.contains(r#"<a href="/tags/rust/page/3/">Next →</a>"#),
-            "should have next link, html:\n{html}"
-        );
-    }
-
-    #[test]
-    fn render_term_missing_template_returns_error() {
-        let dir = tempfile::tempdir().unwrap();
-        let engine = TemplateEngine::new(Some(dir.path()), None).unwrap();
-        let config = test_config();
-        let vars = TermPageVars {
-            kind: "tags",
-            singular: "tag",
-            term_name: "Rust",
-            term_slug: "rust",
-            pages: Vec::new(),
-            pagination: PaginationVars::new("/tags/rust", 1, 1),
-            config: &config,
-        };
-        let err = engine.render_term(&vars).unwrap_err().to_string();
-        assert!(
-            err.contains("failed to load term.html template"),
-            "should report missing template, got: {err}"
-        );
     }
 }
