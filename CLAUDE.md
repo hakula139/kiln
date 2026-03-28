@@ -20,6 +20,7 @@ kiln is a custom static site generator (SSG) written in Rust, replacing a Hugo +
 - [x] Hugo → kiln content converter (`kiln convert`)
 - [x] Directive template functions (`read_file`, `parse_csv`) + structured arg parsing
 - [x] Directive renderers (site, music, score-table — template-based in theme / site)
+- [x] Dev server with file watching, SSE live reload, and safe rebuild (`kiln serve`)
 - [ ] Taxonomy support (tags, categories) with pagination
 - [ ] Home page + section pages + special pages
 - [ ] Tailwind CSS + dark theme

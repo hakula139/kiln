@@ -30,6 +30,7 @@ kiln is purpose-built to support the specific needs of hakula.xyz — CJK conten
 - [x] Hugo content migration tool (`kiln convert`)
 - [x] Template functions for data-driven directives (`read_file`, `parse_csv`)
 - [x] Directive templates for link cards, music embeds, and score tables
+- [x] Dev server with file watching and live reload (`kiln serve`)
 - [ ] Taxonomy support (tags, categories) with pagination
 - [ ] Home page, section pages, and special pages
 - [ ] Dark theme with [Tailwind CSS](https://tailwindcss.com)
@@ -44,6 +45,12 @@ kiln build
 
 # Build from a specific project root
 kiln build --root /path/to/site
+
+# Start a dev server with live reload (default port: 5456)
+kiln serve
+
+# Dev server with custom port and auto-open browser
+kiln serve --port 3000 --open
 
 # Scaffold a new theme
 kiln init-theme my-theme
