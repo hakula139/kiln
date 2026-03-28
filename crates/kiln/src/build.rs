@@ -37,7 +37,7 @@ pub fn build(root: &Path, base_url_override: Option<&str>) -> Result<()> {
     if let Some(base_url) = base_url_override {
         base_url.clone_into(&mut config.base_url);
     }
-    let syntax_set = SyntaxSet::load_defaults_newlines();
+    let syntax_set = two_face::syntax::extra_newlines();
 
     let site_templates = root.join("templates");
     let theme_dir = config.theme_dir(root);

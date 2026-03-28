@@ -15,7 +15,7 @@ kiln is purpose-built to support the specific needs of hakula.xyz — CJK conten
 - [x] TOML configuration and frontmatter (`+++` delimited)
 - [x] Markdown with GFM extensions (tables, strikethrough, autolinks, footnotes)
 - [x] KaTeX math support (`$...$` / `$$...$$`)
-- [x] Syntax highlighting via [syntect](https://github.com/trishume/syntect) (CSS classes, no JS runtime)
+- [x] Syntax highlighting via [syntect](https://github.com/trishume/syntect) + [two-face](https://github.com/CosmicHorrorDev/two-face) (200+ languages, CSS classes, no JS runtime)
 - [x] `:::` fenced directive system with callouts and Pandoc fenced divs
 - [x] CJK-aware heading ID generation
 - [x] Table of contents generation

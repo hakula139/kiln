@@ -337,7 +337,7 @@ mod tests {
 
     use super::*;
 
-    static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(SyntaxSet::load_defaults_newlines);
+    static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(two_face::syntax::extra_newlines);
 
     fn render(content: &str) -> MarkdownOutput {
         render_markdown(content, &SYNTAX_SET, &HashMap::new(), None)
