@@ -254,9 +254,10 @@ fn build_taxonomy_pages(
                     )
                 })?;
 
-                let rel_url = pagination_url(&term_base, page_num);
-                let dest =
-                    output_dir.join(rel_url.trim_start_matches('/').to_owned() + "index.html");
+                let rel_path = pagination_url(&term_base, page_num);
+                let dest = output_dir
+                    .join(rel_path.trim_start_matches('/'))
+                    .join("index.html");
                 write_output(&dest, &html)
                     .with_context(|| format!("failed to write {}", dest.display()))?;
             }
