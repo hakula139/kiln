@@ -268,24 +268,6 @@ mod tests {
     }
 
     #[test]
-    fn build_taxonomies_categories() {
-        let pages = [
-            make_page("Post 1", &[], &["tutorial"]),
-            make_page("Post 2", &[], &["tutorial", "note"]),
-        ];
-        let set = build_taxonomies(&pages);
-
-        let cats = set
-            .taxonomies
-            .iter()
-            .find(|t| t.kind == TaxonomyKind::Categories)
-            .unwrap();
-        assert_eq!(cats.terms.len(), 2);
-        assert_eq!(cats.terms[0].name, "tutorial");
-        assert_eq!(cats.terms[0].page_count, 2);
-    }
-
-    #[test]
     fn build_taxonomies_empty_tags_ignored() {
         let pages = [make_page("Post 1", &["", "  ", "rust"], &[])];
         let set = build_taxonomies(&pages);
@@ -301,7 +283,10 @@ mod tests {
 
     #[test]
     fn build_taxonomies_both_kinds() {
-        let pages = [make_page("Post 1", &["rust"], &["tutorial"])];
+        let pages = [
+            make_page("Post 1", &["rust"], &["tutorial"]),
+            make_page("Post 2", &["rust"], &["tutorial", "note"]),
+        ];
         let set = build_taxonomies(&pages);
 
         let tags = set
@@ -309,26 +294,29 @@ mod tests {
             .iter()
             .find(|t| t.kind == TaxonomyKind::Tags)
             .unwrap();
+        assert_eq!(tags.terms.len(), 1);
+        assert_eq!(tags.terms[0].page_count, 2);
+
+        // Categories also grouped and sorted by count.
         let cats = set
             .taxonomies
             .iter()
             .find(|t| t.kind == TaxonomyKind::Categories)
             .unwrap();
-        assert_eq!(tags.terms.len(), 1);
-        assert_eq!(cats.terms.len(), 1);
+        assert_eq!(cats.terms.len(), 2);
+        assert_eq!(cats.terms[0].name, "tutorial");
+        assert_eq!(cats.terms[0].page_count, 2);
+        assert_eq!(cats.terms[1].name, "note");
+        assert_eq!(cats.terms[1].page_count, 1);
     }
 
     // -- TaxonomyKind --
 
     #[test]
-    fn kind_singular() {
+    fn kind_names() {
         assert_eq!(TaxonomyKind::Tags.singular(), "tag");
-        assert_eq!(TaxonomyKind::Categories.singular(), "category");
-    }
-
-    #[test]
-    fn kind_plural() {
         assert_eq!(TaxonomyKind::Tags.plural(), "tags");
+        assert_eq!(TaxonomyKind::Categories.singular(), "category");
         assert_eq!(TaxonomyKind::Categories.plural(), "categories");
     }
 }
