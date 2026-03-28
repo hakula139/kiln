@@ -80,7 +80,13 @@ pub fn build(root: &Path, base_url_override: Option<&str>) -> Result<()> {
         build_page(&ctx, page, &content.content_dir, &output_dir)?;
     }
 
-    build_taxonomy_pages(&ctx, &page_summaries, &content.pages, &output_dir)?;
+    build_taxonomy_pages(
+        &ctx,
+        &page_summaries,
+        &content.pages,
+        &content.content_dir,
+        &output_dir,
+    )?;
 
     println!("Build complete: {} page(s).", content.pages.len());
     Ok(())
@@ -172,9 +178,10 @@ fn build_taxonomy_pages(
     ctx: &BuildContext,
     page_summaries: &[PageSummary],
     pages: &[Page],
+    content_dir: &Path,
     output_dir: &Path,
 ) -> Result<()> {
-    let taxonomy_set = build_taxonomies(pages);
+    let taxonomy_set = build_taxonomies(pages, Some(content_dir));
 
     let per_page = ctx
         .config

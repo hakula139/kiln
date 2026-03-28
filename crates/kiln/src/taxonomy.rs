@@ -1,7 +1,9 @@
 use std::collections::HashMap;
+use std::path::Path;
 
 use strum::{EnumIter, IntoEnumIterator};
 
+use crate::content::frontmatter;
 use crate::content::page::Page;
 use crate::text::slugify;
 
@@ -64,8 +66,12 @@ pub struct TaxonomySet {
 /// Groups pages by their tag / category values, deduplicates terms by slug,
 /// and sorts terms by page count descending (then name ascending).
 /// Page indices within each term are in the same order as the input (newest first).
+///
+/// When `content_dir` is provided, looks for `<kind>/<slug>/_index.md` files
+/// with a `title` field to override the display name (e.g., category "anime"
+/// can display as "动画" via `content/categories/anime/_index.md`).
 #[must_use]
-pub fn build_taxonomies(pages: &[Page]) -> TaxonomySet {
+pub fn build_taxonomies(pages: &[Page], content_dir: Option<&Path>) -> TaxonomySet {
     // Collect (kind, slug) → (display_name, Vec<page_index>).
     let mut grouped: HashMap<(TaxonomyKind, String), (String, Vec<usize>)> = HashMap::new();
 
@@ -88,9 +94,12 @@ pub fn build_taxonomies(pages: &[Page]) -> TaxonomySet {
     let mut kind_terms: HashMap<TaxonomyKind, Vec<Term>> = HashMap::new();
 
     for ((kind, slug), (name, indices)) in grouped {
+        let display_name = content_dir
+            .and_then(|dir| load_term_title(dir, kind, &slug))
+            .unwrap_or(name);
         let page_count = indices.len();
         kind_terms.entry(kind).or_default().push(Term {
-            name,
+            name: display_name,
             slug: slug.clone(),
             page_count,
         });
@@ -113,6 +122,22 @@ pub fn build_taxonomies(pages: &[Page]) -> TaxonomySet {
     TaxonomySet {
         taxonomies,
         term_pages,
+    }
+}
+
+/// Loads the display title from a term's `_index.md` file.
+///
+/// Looks for `<content_dir>/<kind_plural>/<slug>/_index.md` with TOML
+/// frontmatter containing a non-empty `title` field. Returns `None` if the
+/// file doesn't exist or has no title.
+fn load_term_title(content_dir: &Path, kind: TaxonomyKind, slug: &str) -> Option<String> {
+    let path = content_dir.join(kind.plural()).join(slug).join("_index.md");
+    let content = std::fs::read_to_string(&path).ok()?;
+    let (fm, _) = frontmatter::parse(&content).ok()?;
+    if fm.title.is_empty() {
+        None
+    } else {
+        Some(fm.title)
     }
 }
 
@@ -140,6 +165,8 @@ fn collect_terms(
 mod tests {
     use std::path::PathBuf;
 
+    use indoc::indoc;
+
     use crate::content::frontmatter::Frontmatter;
 
     use super::*;
@@ -164,7 +191,7 @@ mod tests {
 
     #[test]
     fn build_taxonomies_empty() {
-        let set = build_taxonomies(&[]);
+        let set = build_taxonomies(&[], None);
         // Always produces one Taxonomy per kind (Tags + Categories), even with no pages.
         assert_eq!(set.taxonomies.len(), 2);
         assert!(set.taxonomies[0].terms.is_empty());
@@ -174,7 +201,7 @@ mod tests {
     #[test]
     fn build_taxonomies_single_tag() {
         let pages = [make_page("Post 1", &["rust"], &[])];
-        let set = build_taxonomies(&pages);
+        let set = build_taxonomies(&pages, None);
 
         let tags = set
             .taxonomies
@@ -194,7 +221,7 @@ mod tests {
             make_page("Post 2", &["rust"], &[]),
             make_page("Post 3", &["web"], &[]),
         ];
-        let set = build_taxonomies(&pages);
+        let set = build_taxonomies(&pages, None);
 
         let tags = set
             .taxonomies
@@ -215,7 +242,7 @@ mod tests {
             make_page("Post 1", &["Rust"], &[]),
             make_page("Post 2", &["rust"], &[]),
         ];
-        let set = build_taxonomies(&pages);
+        let set = build_taxonomies(&pages, None);
 
         let tags = set
             .taxonomies
@@ -237,7 +264,7 @@ mod tests {
             make_page("Post 2", &["common", "alpha"], &[]),
             make_page("Post 3", &["common"], &[]),
         ];
-        let set = build_taxonomies(&pages);
+        let set = build_taxonomies(&pages, None);
 
         let tags = set
             .taxonomies
@@ -260,7 +287,7 @@ mod tests {
             make_page("Newest", &["rust"], &[]),
             make_page("Oldest", &["rust"], &[]),
         ];
-        let set = build_taxonomies(&pages);
+        let set = build_taxonomies(&pages, None);
 
         let indices = &set.term_pages[&(TaxonomyKind::Tags, "rust".to_owned())];
         assert_eq!(
@@ -273,7 +300,7 @@ mod tests {
     #[test]
     fn build_taxonomies_empty_tags_ignored() {
         let pages = [make_page("Post 1", &["", "  ", "rust"], &[])];
-        let set = build_taxonomies(&pages);
+        let set = build_taxonomies(&pages, None);
 
         let tags = set
             .taxonomies
@@ -290,7 +317,7 @@ mod tests {
             make_page("Post 1", &["rust"], &["tutorial"]),
             make_page("Post 2", &["rust"], &["tutorial", "note"]),
         ];
-        let set = build_taxonomies(&pages);
+        let set = build_taxonomies(&pages, None);
 
         let tags = set
             .taxonomies
@@ -311,6 +338,93 @@ mod tests {
         assert_eq!(cats.terms[0].page_count, 2);
         assert_eq!(cats.terms[1].name, "note");
         assert_eq!(cats.terms[1].page_count, 1);
+    }
+
+    // -- load_term_title --
+
+    #[test]
+    fn build_taxonomies_uses_index_title() {
+        let dir = tempfile::tempdir().unwrap();
+        let content_dir = dir.path().join("content");
+
+        // Create _index.md with display name override.
+        let cat_dir = content_dir.join("categories").join("anime");
+        std::fs::create_dir_all(&cat_dir).unwrap();
+        std::fs::write(
+            cat_dir.join("_index.md"),
+            indoc! {r#"
+                +++
+                title = "动画"
+                +++
+            "#},
+        )
+        .unwrap();
+
+        let pages = [make_page("Post 1", &[], &["anime"])];
+        let set = build_taxonomies(&pages, Some(&content_dir));
+
+        let cats = set
+            .taxonomies
+            .iter()
+            .find(|t| t.kind == TaxonomyKind::Categories)
+            .unwrap();
+        assert_eq!(
+            cats.terms[0].name, "动画",
+            "should use title from _index.md"
+        );
+        assert_eq!(cats.terms[0].slug, "anime", "slug should stay as-is");
+    }
+
+    #[test]
+    fn build_taxonomies_falls_back_without_index() {
+        let dir = tempfile::tempdir().unwrap();
+        let content_dir = dir.path().join("content");
+        // No _index.md files — display name comes from frontmatter.
+        std::fs::create_dir_all(&content_dir).unwrap();
+
+        let pages = [make_page("Post 1", &[], &["anime"])];
+        let set = build_taxonomies(&pages, Some(&content_dir));
+
+        let cats = set
+            .taxonomies
+            .iter()
+            .find(|t| t.kind == TaxonomyKind::Categories)
+            .unwrap();
+        assert_eq!(
+            cats.terms[0].name, "anime",
+            "should fall back to frontmatter value"
+        );
+    }
+
+    #[test]
+    fn build_taxonomies_ignores_empty_index_title() {
+        let dir = tempfile::tempdir().unwrap();
+        let content_dir = dir.path().join("content");
+
+        // _index.md with empty title — should fall back.
+        let cat_dir = content_dir.join("categories").join("anime");
+        std::fs::create_dir_all(&cat_dir).unwrap();
+        std::fs::write(
+            cat_dir.join("_index.md"),
+            indoc! {r"
+                +++
+                +++
+            "},
+        )
+        .unwrap();
+
+        let pages = [make_page("Post 1", &[], &["anime"])];
+        let set = build_taxonomies(&pages, Some(&content_dir));
+
+        let cats = set
+            .taxonomies
+            .iter()
+            .find(|t| t.kind == TaxonomyKind::Categories)
+            .unwrap();
+        assert_eq!(
+            cats.terms[0].name, "anime",
+            "should fall back when _index.md has empty title"
+        );
     }
 
     // -- TaxonomyKind --
