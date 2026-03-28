@@ -6,8 +6,10 @@ pub mod directive;
 pub mod init;
 pub mod markdown;
 pub mod output;
+pub mod pagination;
 pub mod render;
 pub mod serve;
+pub mod taxonomy;
 pub mod template;
 
 pub use build::build;
