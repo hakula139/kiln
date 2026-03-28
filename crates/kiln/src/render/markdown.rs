@@ -3,6 +3,8 @@ use std::collections::{HashMap, HashSet};
 use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use syntect::parsing::SyntaxSet;
 
+use crate::text::slugify;
+
 use super::escape_html;
 use super::highlight::highlight_code;
 use super::image::{render_block_image, render_inline_image};
@@ -306,33 +308,6 @@ fn transform_math(event: Event<'_>) -> Event<'_> {
     }
 }
 
-/// Generates a URL-safe slug from heading text.
-///
-/// - Lowercases ASCII characters
-/// - Preserves non-ASCII alphanumeric characters (CJK, accented letters)
-/// - Replaces non-alphanumeric characters with `-`
-/// - Collapses consecutive `-` and strips leading / trailing `-`
-pub(crate) fn slugify(text: &str) -> String {
-    let mut result = String::with_capacity(text.len());
-    let mut prev_dash = true; // strip leading dashes
-
-    for ch in text.chars() {
-        if ch.is_alphanumeric() {
-            result.push(ch.to_ascii_lowercase());
-            prev_dash = false;
-        } else if !prev_dash {
-            result.push('-');
-            prev_dash = true;
-        }
-    }
-
-    if result.ends_with('-') {
-        result.pop();
-    }
-
-    result
-}
-
 /// Appends a numeric suffix to make `id` unique within the set of already-used IDs.
 ///
 /// First occurrence → unchanged. Second → `-1`. Third → `-2`.
@@ -366,53 +341,6 @@ mod tests {
 
     fn render(content: &str) -> MarkdownOutput {
         render_markdown(content, &SYNTAX_SET, &HashMap::new(), None)
-    }
-
-    // -- slugify --
-
-    #[test]
-    fn slugify_ascii() {
-        assert_eq!(slugify("Hello World"), "hello-world");
-    }
-
-    #[test]
-    fn slugify_numbers() {
-        assert_eq!(slugify("123"), "123");
-    }
-
-    #[test]
-    fn slugify_cjk() {
-        assert_eq!(slugify("你好世界"), "你好世界");
-    }
-
-    #[test]
-    fn slugify_accented_latin() {
-        assert_eq!(slugify("Café Résumé"), "café-résumé");
-    }
-
-    #[test]
-    fn slugify_mixed() {
-        assert_eq!(slugify("1.1 Foobar - 测试文本"), "1-1-foobar-测试文本");
-    }
-
-    #[test]
-    fn slugify_collapses_dashes() {
-        assert_eq!(slugify("a - - b"), "a-b");
-    }
-
-    #[test]
-    fn slugify_strips_leading_trailing() {
-        assert_eq!(slugify(" hello "), "hello");
-    }
-
-    #[test]
-    fn slugify_empty() {
-        assert_eq!(slugify(""), "");
-    }
-
-    #[test]
-    fn slugify_only_punctuation() {
-        assert_eq!(slugify("..."), "");
     }
 
     // -- deduplicate_id --

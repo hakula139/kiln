@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use strum::{EnumIter, IntoEnumIterator};
 
 use crate::content::page::Page;
+use crate::text::slugify;
 
 /// The two built-in taxonomy kinds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumIter)]
@@ -126,41 +127,12 @@ fn collect_terms(
         if trimmed.is_empty() {
             continue;
         }
-        let slug = slugify_term(trimmed);
+        let slug = slugify(trimmed);
         grouped
             .entry((kind, slug))
             .and_modify(|(_, indices)| indices.push(page_idx))
             .or_insert_with(|| (trimmed.to_owned(), vec![page_idx]));
     }
-}
-
-/// Converts a term name to a URL-safe slug.
-///
-/// Lowercases, replaces whitespace and special characters with hyphens,
-/// and collapses consecutive hyphens. CJK characters are preserved.
-#[must_use]
-pub fn slugify_term(name: &str) -> String {
-    let mut slug = String::with_capacity(name.len());
-    let mut prev_hyphen = true; // suppress leading hyphens
-
-    for ch in name.chars() {
-        if ch.is_alphanumeric() {
-            for lower in ch.to_lowercase() {
-                slug.push(lower);
-            }
-            prev_hyphen = false;
-        } else if !prev_hyphen {
-            slug.push('-');
-            prev_hyphen = true;
-        }
-    }
-
-    // Remove trailing hyphen.
-    if slug.ends_with('-') {
-        slug.pop();
-    }
-
-    slug
 }
 
 #[cfg(test)]
@@ -185,43 +157,6 @@ mod tests {
             source_path: PathBuf::from(format!("content/posts/{title}/index.md")),
             assets: Vec::new(),
         }
-    }
-
-    // -- slugify_term --
-
-    #[test]
-    fn slugify_lowercase() {
-        assert_eq!(slugify_term("Rust"), "rust");
-    }
-
-    #[test]
-    fn slugify_spaces() {
-        assert_eq!(slugify_term("Hello World"), "hello-world");
-    }
-
-    #[test]
-    fn slugify_special_chars() {
-        assert_eq!(slugify_term("C++ & Rust"), "c-rust");
-    }
-
-    #[test]
-    fn slugify_cjk_preserved() {
-        assert_eq!(slugify_term("动画"), "动画");
-    }
-
-    #[test]
-    fn slugify_mixed_cjk_ascii() {
-        assert_eq!(slugify_term("Rust 编程"), "rust-编程");
-    }
-
-    #[test]
-    fn slugify_leading_trailing_special() {
-        assert_eq!(slugify_term("--hello--"), "hello");
-    }
-
-    #[test]
-    fn slugify_consecutive_special() {
-        assert_eq!(slugify_term("a  &  b"), "a-b");
     }
 
     // -- build_taxonomies --

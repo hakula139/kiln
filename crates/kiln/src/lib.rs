@@ -11,6 +11,7 @@ pub mod render;
 pub mod serve;
 pub mod taxonomy;
 pub mod template;
+pub mod text;
 
 pub use build::build;
 pub use convert::convert;
