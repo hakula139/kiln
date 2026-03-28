@@ -821,10 +821,10 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         fs::write(
             root.path().join("config.toml"),
-            indoc! {r#"
+            indoc! {r"
                 [params]
                 paginate = 2
-            "#},
+            "},
         )
         .unwrap();
         copy_templates(&root.path().join("templates"));
