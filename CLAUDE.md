@@ -58,10 +58,10 @@ kiln convert --source <dir> --dest <dir>          # Convert Hugo content to kiln
 ├── config.rs           # TOML site configuration loading, theme resolution, param merging
 ├── init.rs             # Theme scaffolding (kiln init-theme)
 ├── convert.rs          # Hugo → kiln content converter orchestrator
-├── convert/
+├── convert/            # Hugo → kiln converter submodules (orchestrator in convert.rs)
 │   ├── frontmatter.rs  # YAML → TOML frontmatter serde round-trip
 │   └── shortcode.rs    # Hugo shortcode → kiln directive conversion
-├── content/
+├── content/            # Content model (module declarations in content.rs)
 │   ├── frontmatter.rs  # TOML frontmatter parsing (+++), Frontmatter with jiff timestamps
 │   ├── page.rs         # Page struct, slug derivation, summary, output paths, co-located assets
 │   └── discovery.rs    # Recursive content walking with draft / _-prefix / no-frontmatter exclusion
@@ -134,10 +134,15 @@ kiln convert --source <dir> --dest <dir>          # Convert Hugo content to kiln
 
 - Unit tests in the same file as the code they test (`#[cfg(test)]` module).
 - Integration tests in `tests/` directory for cross-module behavior.
-- Group tests by function under `// -- function_name --` section headers. Within each section, order: happy path → variants → error cases.
+- Group tests by function under `// -- function_name --` section headers. Section order must mirror the production function order in the same file. Within each section, order: happy path → variants → error cases.
 - Test name prefixes should match the section's function name (or a clear shortening).
 - Error-case test names use a return-type suffix: `_returns_error` (`Result`), `_returns_none` (`Option`), `_returns_false` (`bool`).
 - Use `indoc!` for multi-line test inputs whenever possible.
+
+### Documentation Maintenance
+
+- When a feature is completed, update **all** references to it: the status checklist in this file, the README roadmap, and any other docs that mention it.
+- Crate structure diagrams must match the actual filesystem. When adding, removing, or renaming modules, update the tree in this file.
 
 ## Verification
 

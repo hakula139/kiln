@@ -31,7 +31,7 @@ kiln is purpose-built to support the specific needs of hakula.xyz — CJK conten
 - [x] Template functions for data-driven directives (`read_file`, `parse_csv`)
 - [x] Directive templates for link cards, music embeds, and score tables
 - [x] Dev server with file watching and live reload (`kiln serve`)
-- [ ] Taxonomy support (tags, categories) with pagination
+- [x] Taxonomy support (tags, categories) with pagination
 - [ ] Home page, section pages, and special pages
 - [ ] Dark theme with [Tailwind CSS](https://tailwindcss.com)
 - [ ] RSS feed + sitemap
