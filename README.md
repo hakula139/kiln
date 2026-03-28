@@ -64,12 +64,12 @@ A kiln site is organized as follows:
 .
 ├── config.toml      # Site configuration (TOML)
 ├── content/         # Markdown content
-│   ├── posts/       # Blog posts organized by category
-│   └── about-me/    # Standalone pages
-├── templates/       # MiniJinja templates (site overrides theme)
-├── themes/          # Themes (git submodules)
+│   ├── about-me/    # Standalone pages
+│   └── posts/       # Blog posts organized by category
+├── public/          # Build output (configurable via output_dir)
 ├── static/          # Static assets (copied to output as-is)
-└── public/          # Build output (configurable via output_dir)
+├── templates/       # MiniJinja templates (site overrides theme)
+└── themes/          # Themes (git submodules)
 ```
 
 ## Documentation

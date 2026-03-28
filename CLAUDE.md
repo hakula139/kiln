@@ -43,11 +43,11 @@ kiln convert --source <dir> --dest <dir>          # Convert Hugo content to kiln
 .
 ├── config.toml   # Site configuration (TOML)
 ├── content/      # Markdown content (posts, standalone pages)
+├── crates/kiln/  # SSG engine — library (lib.rs) + CLI binary (main.rs)
+├── public/       # Build output (configurable via output_dir)
 ├── static/       # Static files copied to output root (favicons, images)
 ├── templates/    # MiniJinja templates (site overrides theme)
-├── themes/       # Themes (git submodules), each with templates/ + static/
-├── crates/kiln/  # SSG engine — library (lib.rs) + CLI binary (main.rs)
-└── public/       # Build output (configurable via output_dir)
+└── themes/       # Themes (git submodules), each with templates/ + static/
 ```
 
 ### Crate Structure (`crates/kiln/src/`)
