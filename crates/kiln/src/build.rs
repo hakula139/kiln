@@ -610,146 +610,6 @@ mod tests {
         );
     }
 
-    // -- build errors --
-
-    /// Creates a minimal site with one page for error-path tests.
-    fn setup_site_with_page(root: &Path) {
-        fs::write(root.join("config.toml"), "").unwrap();
-        copy_templates(&root.join("templates"));
-        let page_dir = root.join("content").join("posts").join("hello");
-        fs::create_dir_all(&page_dir).unwrap();
-        fs::write(
-            page_dir.join("index.md"),
-            indoc! {r#"
-                +++
-                title = "Hello"
-                +++
-                Body
-            "#},
-        )
-        .unwrap();
-    }
-
-    #[test]
-    fn build_invalid_config_returns_error() {
-        let root = tempfile::tempdir().unwrap();
-        fs::write(root.path().join("config.toml"), "{{invalid toml").unwrap();
-
-        let err = build(root.path(), None).unwrap_err().to_string();
-        assert!(
-            err.contains("failed to load config"),
-            "should report config failure, got: {err}"
-        );
-    }
-
-    #[test]
-    fn build_missing_templates_returns_error() {
-        let root = tempfile::tempdir().unwrap();
-        fs::write(root.path().join("config.toml"), "").unwrap();
-
-        let err = build(root.path(), None).unwrap_err().to_string();
-        assert!(
-            err.contains("failed to initialize template engine"),
-            "should report template engine failure, got: {err}"
-        );
-    }
-
-    #[test]
-    fn build_broken_post_template_returns_error() {
-        let root = tempfile::tempdir().unwrap();
-        setup_site_with_page(root.path());
-
-        // Overwrite post.html with invalid Jinja syntax.
-        fs::write(
-            root.path().join("templates").join("post.html"),
-            "{% invalid %}",
-        )
-        .unwrap();
-
-        let err = build(root.path(), None).unwrap_err().to_string();
-        assert!(
-            err.contains("failed to render"),
-            "should report render failure, got: {err}"
-        );
-    }
-
-    #[test]
-    fn build_write_permission_denied_returns_error() {
-        let root = tempfile::tempdir().unwrap();
-        setup_site_with_page(root.path());
-
-        // Build once to create output structure, then restrict the output dir.
-        build(root.path(), None).unwrap();
-        let output_dir = root.path().join("public");
-        let _guard = PermissionGuard::restrict(&output_dir, 0o555);
-
-        let err = build(root.path(), None).unwrap_err().to_string();
-        assert!(
-            err.contains("failed to write") || err.contains("failed to clean"),
-            "should report write or clean failure, got: {err}"
-        );
-    }
-
-    #[test]
-    fn build_asset_copy_permission_denied_returns_error() {
-        let root = tempfile::tempdir().unwrap();
-        setup_site_with_page(root.path());
-
-        // Add a co-located asset.
-        let page_dir = root.path().join("content").join("posts").join("hello");
-        fs::write(page_dir.join("image.png"), "img-data").unwrap();
-
-        // Build once to create output structure.
-        build(root.path(), None).unwrap();
-
-        // Make the page output dir read-only so asset copy fails on rebuild,
-        // but the parent output dir stays writable for clean_output_dir.
-        let page_output = root.path().join("public").join("hello");
-        let _guard = PermissionGuard::restrict(&page_output, 0o555);
-
-        let err = build(root.path(), None).unwrap_err().to_string();
-        assert!(
-            err.contains("failed to copy asset") || err.contains("failed to clean"),
-            "should report asset copy or clean failure, got: {err}"
-        );
-    }
-
-    #[test]
-    fn build_broken_directive_template_returns_error() {
-        let root = tempfile::tempdir().unwrap();
-        setup_site_with_page(root.path());
-
-        // Directive template that compiles but fails at render time:
-        // `items()` filter requires a map, not a string.
-        let directives = root.path().join("templates").join("directives");
-        fs::create_dir_all(&directives).unwrap();
-        fs::write(
-            directives.join("broken.html"),
-            "{% for k, v in name | items %}{{ k }}{% endfor %}",
-        )
-        .unwrap();
-
-        let page_dir = root.path().join("content").join("posts").join("hello");
-        fs::write(
-            page_dir.join("index.md"),
-            indoc! {r#"
-                +++
-                title = "Hello"
-                +++
-                ::: broken
-                Body
-                :::
-            "#},
-        )
-        .unwrap();
-
-        let err = build(root.path(), None).unwrap_err().to_string();
-        assert!(
-            err.contains("failed to render"),
-            "should report render failure, got: {err}"
-        );
-    }
-
     // -- build with taxonomies --
 
     #[test]
@@ -939,6 +799,146 @@ mod tests {
         assert!(
             tags_index.exists(),
             "should generate /tags/index.html even with no tags"
+        );
+    }
+
+    // -- build errors --
+
+    /// Creates a minimal site with one page for error-path tests.
+    fn setup_site_with_page(root: &Path) {
+        fs::write(root.join("config.toml"), "").unwrap();
+        copy_templates(&root.join("templates"));
+        let page_dir = root.join("content").join("posts").join("hello");
+        fs::create_dir_all(&page_dir).unwrap();
+        fs::write(
+            page_dir.join("index.md"),
+            indoc! {r#"
+                +++
+                title = "Hello"
+                +++
+                Body
+            "#},
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn build_invalid_config_returns_error() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("config.toml"), "{{invalid toml").unwrap();
+
+        let err = build(root.path(), None).unwrap_err().to_string();
+        assert!(
+            err.contains("failed to load config"),
+            "should report config failure, got: {err}"
+        );
+    }
+
+    #[test]
+    fn build_missing_templates_returns_error() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("config.toml"), "").unwrap();
+
+        let err = build(root.path(), None).unwrap_err().to_string();
+        assert!(
+            err.contains("failed to initialize template engine"),
+            "should report template engine failure, got: {err}"
+        );
+    }
+
+    #[test]
+    fn build_broken_post_template_returns_error() {
+        let root = tempfile::tempdir().unwrap();
+        setup_site_with_page(root.path());
+
+        // Overwrite post.html with invalid Jinja syntax.
+        fs::write(
+            root.path().join("templates").join("post.html"),
+            "{% invalid %}",
+        )
+        .unwrap();
+
+        let err = build(root.path(), None).unwrap_err().to_string();
+        assert!(
+            err.contains("failed to render"),
+            "should report render failure, got: {err}"
+        );
+    }
+
+    #[test]
+    fn build_write_permission_denied_returns_error() {
+        let root = tempfile::tempdir().unwrap();
+        setup_site_with_page(root.path());
+
+        // Build once to create output structure, then restrict the output dir.
+        build(root.path(), None).unwrap();
+        let output_dir = root.path().join("public");
+        let _guard = PermissionGuard::restrict(&output_dir, 0o555);
+
+        let err = build(root.path(), None).unwrap_err().to_string();
+        assert!(
+            err.contains("failed to write") || err.contains("failed to clean"),
+            "should report write or clean failure, got: {err}"
+        );
+    }
+
+    #[test]
+    fn build_asset_copy_permission_denied_returns_error() {
+        let root = tempfile::tempdir().unwrap();
+        setup_site_with_page(root.path());
+
+        // Add a co-located asset.
+        let page_dir = root.path().join("content").join("posts").join("hello");
+        fs::write(page_dir.join("image.png"), "img-data").unwrap();
+
+        // Build once to create output structure.
+        build(root.path(), None).unwrap();
+
+        // Make the page output dir read-only so asset copy fails on rebuild,
+        // but the parent output dir stays writable for clean_output_dir.
+        let page_output = root.path().join("public").join("hello");
+        let _guard = PermissionGuard::restrict(&page_output, 0o555);
+
+        let err = build(root.path(), None).unwrap_err().to_string();
+        assert!(
+            err.contains("failed to copy asset") || err.contains("failed to clean"),
+            "should report asset copy or clean failure, got: {err}"
+        );
+    }
+
+    #[test]
+    fn build_broken_directive_template_returns_error() {
+        let root = tempfile::tempdir().unwrap();
+        setup_site_with_page(root.path());
+
+        // Directive template that compiles but fails at render time:
+        // `items()` filter requires a map, not a string.
+        let directives = root.path().join("templates").join("directives");
+        fs::create_dir_all(&directives).unwrap();
+        fs::write(
+            directives.join("broken.html"),
+            "{% for k, v in name | items %}{{ k }}{% endfor %}",
+        )
+        .unwrap();
+
+        let page_dir = root.path().join("content").join("posts").join("hello");
+        fs::write(
+            page_dir.join("index.md"),
+            indoc! {r#"
+                +++
+                title = "Hello"
+                +++
+                ::: broken
+                Body
+                :::
+            "#},
+        )
+        .unwrap();
+
+        let err = build(root.path(), None).unwrap_err().to_string();
+        assert!(
+            err.contains("failed to render"),
+            "should report render failure, got: {err}"
         );
     }
 }
