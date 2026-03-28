@@ -15,7 +15,7 @@ use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use http_body_util::BodyExt;
-use notify::RecursiveMode;
+use notify::{RecursiveMode, Watcher};
 use tokio::sync::{broadcast, mpsc};
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
@@ -124,8 +124,6 @@ fn setup_watcher(
     config: &Config,
     event_tx: mpsc::UnboundedSender<()>,
 ) -> Result<notify::RecommendedWatcher> {
-    use notify::Watcher;
-
     let mut watcher =
         notify::recommended_watcher(move |res: notify::Result<notify::Event>| match res {
             Ok(event)
