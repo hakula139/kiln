@@ -7,11 +7,14 @@ pub mod init;
 pub mod markdown;
 pub mod output;
 pub mod render;
+pub mod serve;
 pub mod template;
 
 pub use build::build;
 pub use convert::convert;
 pub use init::init_theme;
+pub use serve::DEFAULT_PORT;
+pub use serve::serve;
 
 #[cfg(test)]
 pub(crate) mod test_utils {
@@ -123,7 +126,7 @@ pub(crate) mod test_utils {
 
     impl Drop for PermissionGuard {
         fn drop(&mut self) {
-            let _ = fs::set_permissions(&self.path, fs::Permissions::from_mode(self.mode));
+            _ = fs::set_permissions(&self.path, fs::Permissions::from_mode(self.mode));
         }
     }
 }

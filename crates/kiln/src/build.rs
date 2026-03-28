@@ -20,12 +20,18 @@ struct BuildContext {
 
 /// Builds the site from the given project root directory.
 ///
+/// When `base_url_override` is provided, it replaces the `base_url` from
+/// config. This is used by `kiln serve` to match the actual server port.
+///
 /// # Errors
 ///
 /// Returns an error if configuration loading, content discovery, rendering,
 /// or output writing fails.
-pub fn build(root: &Path) -> Result<()> {
-    let config = Config::load(root).context("failed to load config")?;
+pub fn build(root: &Path, base_url_override: Option<&str>) -> Result<()> {
+    let mut config = Config::load(root).context("failed to load config")?;
+    if let Some(base_url) = base_url_override {
+        base_url.clone_into(&mut config.base_url);
+    }
     let syntax_set = SyntaxSet::load_defaults_newlines();
 
     let site_templates = root.join("templates");
@@ -195,7 +201,7 @@ mod tests {
         let template_dest = root.path().join("templates");
         copy_templates(&template_dest);
 
-        build(root.path()).unwrap();
+        build(root.path(), None).unwrap();
 
         // Output directory exists (created by clean_output_dir) but is empty
         let output_dir = root.path().join("public");
@@ -248,7 +254,7 @@ mod tests {
         .unwrap();
 
         // Build
-        build(root.path()).unwrap();
+        build(root.path(), None).unwrap();
 
         // Verify output
         let output = root.path().join("public").join("hello").join("index.html");
@@ -301,7 +307,7 @@ mod tests {
         fs::write(static_dir.join("favicon.ico"), "icon").unwrap();
         fs::write(static_dir.join("images").join("logo.png"), "logo").unwrap();
 
-        build(root.path()).unwrap();
+        build(root.path(), None).unwrap();
 
         let output_dir = root.path().join("public");
         assert_eq!(
@@ -337,7 +343,7 @@ mod tests {
         fs::write(bundle.join("cover.webp"), "cover-data").unwrap();
         fs::write(assets_dir.join("diagram.svg"), "svg-data").unwrap();
 
-        build(root.path()).unwrap();
+        build(root.path(), None).unwrap();
 
         let output_dir = root.path().join("public").join("hello");
         assert_eq!(
@@ -361,7 +367,7 @@ mod tests {
         fs::create_dir_all(output_dir.join("old")).unwrap();
         fs::write(output_dir.join("old").join("stale.html"), "stale").unwrap();
 
-        build(root.path()).unwrap();
+        build(root.path(), None).unwrap();
 
         assert!(
             !output_dir.join("old").exists(),
@@ -407,7 +413,7 @@ mod tests {
         )
         .unwrap();
 
-        build(root.path()).unwrap();
+        build(root.path(), None).unwrap();
 
         let output = root.path().join("public").join("hello").join("index.html");
         assert!(output.exists(), "output file should exist");
@@ -435,7 +441,7 @@ mod tests {
         fs::create_dir_all(&site_static).unwrap();
         fs::write(site_static.join("shared.css"), "from-site").unwrap();
 
-        build(root.path()).unwrap();
+        build(root.path(), None).unwrap();
 
         let output_dir = root.path().join("public");
         assert_eq!(
@@ -475,7 +481,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         fs::write(root.path().join("config.toml"), "{{invalid toml").unwrap();
 
-        let err = build(root.path()).unwrap_err().to_string();
+        let err = build(root.path(), None).unwrap_err().to_string();
         assert!(
             err.contains("failed to load config"),
             "should report config failure, got: {err}"
@@ -487,7 +493,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         fs::write(root.path().join("config.toml"), "").unwrap();
 
-        let err = build(root.path()).unwrap_err().to_string();
+        let err = build(root.path(), None).unwrap_err().to_string();
         assert!(
             err.contains("failed to initialize template engine"),
             "should report template engine failure, got: {err}"
@@ -506,7 +512,7 @@ mod tests {
         )
         .unwrap();
 
-        let err = build(root.path()).unwrap_err().to_string();
+        let err = build(root.path(), None).unwrap_err().to_string();
         assert!(
             err.contains("failed to render"),
             "should report render failure, got: {err}"
@@ -519,11 +525,11 @@ mod tests {
         setup_site_with_page(root.path());
 
         // Build once to create output structure, then restrict the output dir.
-        build(root.path()).unwrap();
+        build(root.path(), None).unwrap();
         let output_dir = root.path().join("public");
         let _guard = PermissionGuard::restrict(&output_dir, 0o555);
 
-        let err = build(root.path()).unwrap_err().to_string();
+        let err = build(root.path(), None).unwrap_err().to_string();
         assert!(
             err.contains("failed to write") || err.contains("failed to clean"),
             "should report write or clean failure, got: {err}"
@@ -540,14 +546,14 @@ mod tests {
         fs::write(page_dir.join("image.png"), "img-data").unwrap();
 
         // Build once to create output structure.
-        build(root.path()).unwrap();
+        build(root.path(), None).unwrap();
 
         // Make the page output dir read-only so asset copy fails on rebuild,
         // but the parent output dir stays writable for clean_output_dir.
         let page_output = root.path().join("public").join("hello");
         let _guard = PermissionGuard::restrict(&page_output, 0o555);
 
-        let err = build(root.path()).unwrap_err().to_string();
+        let err = build(root.path(), None).unwrap_err().to_string();
         assert!(
             err.contains("failed to copy asset") || err.contains("failed to clean"),
             "should report asset copy or clean failure, got: {err}"
@@ -583,7 +589,7 @@ mod tests {
         )
         .unwrap();
 
-        let err = build(root.path()).unwrap_err().to_string();
+        let err = build(root.path(), None).unwrap_err().to_string();
         assert!(
             err.contains("failed to render"),
             "should report render failure, got: {err}"

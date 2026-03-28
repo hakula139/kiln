@@ -152,7 +152,7 @@ fn merge_params(site: &mut toml::Table, theme_defaults: &toml::Table) -> Result<
 }
 
 fn default_base_url() -> String {
-    String::from("http://localhost:1313")
+    crate::serve::localhost_url(crate::serve::DEFAULT_PORT)
 }
 
 fn default_title() -> String {
@@ -171,6 +171,8 @@ fn default_output_dir() -> String {
 mod tests {
     use indoc::indoc;
 
+    use crate::serve::{DEFAULT_PORT, localhost_url};
+
     use super::*;
 
     // -- deserialization --
@@ -178,7 +180,7 @@ mod tests {
     #[test]
     fn defaults_when_empty() {
         let config: Config = toml::from_str("").unwrap();
-        assert_eq!(config.base_url, "http://localhost:1313");
+        assert_eq!(config.base_url, localhost_url(DEFAULT_PORT));
         assert_eq!(config.title, "My Site");
         assert!(config.description.is_empty());
         assert_eq!(config.language, "en");
@@ -248,7 +250,7 @@ mod tests {
     fn load_missing_file_uses_defaults() {
         let dir = tempfile::tempdir().unwrap();
         let config = Config::load(dir.path()).unwrap();
-        assert_eq!(config.base_url, "http://localhost:1313");
+        assert_eq!(config.base_url, localhost_url(DEFAULT_PORT));
     }
 
     #[test]

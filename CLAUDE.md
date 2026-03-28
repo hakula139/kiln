@@ -20,6 +20,7 @@ kiln is a custom static site generator (SSG) written in Rust, replacing a Hugo +
 - [x] Hugo → kiln content converter (`kiln convert`)
 - [x] Directive template functions (`read_file`, `parse_csv`) + structured arg parsing
 - [x] Directive renderers (site, music, score-table — template-based in theme / site)
+- [x] Dev server with file watching, SSE live reload, and safe rebuild (`kiln serve`)
 - [ ] Taxonomy support (tags, categories) with pagination
 - [ ] Home page + section pages + special pages
 - [ ] Tailwind CSS + dark theme
@@ -30,9 +31,10 @@ kiln is a custom static site generator (SSG) written in Rust, replacing a Hugo +
 ### CLI
 
 ```bash
-kiln build [--root <dir>]                # Build the site (default root: cwd)
-kiln init-theme <name> [--root]          # Scaffold a new theme under themes/<name>/
-kiln convert --source <dir> --dest <dir> # Convert Hugo content to kiln format
+kiln build [--root <dir>]                         # Build the site (default root: cwd)
+kiln serve [--root <dir>] [--port 5456] [--open]  # Dev server with live reload
+kiln init-theme <name> [--root]                   # Scaffold a new theme under themes/<name>/
+kiln convert --source <dir> --dest <dir>          # Convert Hugo content to kiln format
 ```
 
 ### Project Layout
@@ -69,6 +71,7 @@ kiln convert --source <dir> --dest <dir> # Convert Hugo content to kiln format
 │   ├── callout.rs      # 12 callout types (<details> with id / class propagation)
 │   └── div.rs          # Fenced divs and unknown directives (<div> with id / class propagation)
 ├── output.rs           # File output, static file copying, output directory cleaning
+├── serve.rs            # Dev server with file watching, SSE live reload, script injection
 ├── render/             # Markdown rendering pipeline (RenderOptions + escape_html in render.rs)
 │   ├── emoji.rs        # GitHub-style :shortcode: → Unicode emoji replacement
 │   ├── highlight.rs    # syntect CSS-class highlighting with line numbers, code-block wrapper
