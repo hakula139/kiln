@@ -347,7 +347,10 @@ async fn shutdown_signal() {
 mod tests {
     use std::fs;
 
+    use indoc::indoc;
+
     use super::*;
+    use crate::test_utils::copy_templates;
 
     // -- watch_paths --
 
@@ -448,5 +451,80 @@ mod tests {
             result.ends_with(LIVE_RELOAD_SCRIPT),
             "should append script when no </body>, got:\n{result}"
         );
+    }
+
+    // -- safe_rebuild --
+
+    /// Creates a minimal site that builds successfully.
+    fn setup_site(root: &Path) {
+        fs::write(root.join("config.toml"), "").unwrap();
+        copy_templates(&root.join("templates"));
+        let page_dir = root.join("content").join("posts").join("hello");
+        fs::create_dir_all(&page_dir).unwrap();
+        fs::write(
+            page_dir.join("index.md"),
+            indoc! {r#"
+                +++
+                title = "Hello"
+                +++
+                Body
+            "#},
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn safe_rebuild_success_cleans_backup() {
+        let root = tempfile::tempdir().unwrap();
+        setup_site(root.path());
+
+        // First build to create output.
+        crate::build(root.path()).unwrap();
+        assert!(root.path().join("public").exists());
+
+        // Rebuild should succeed and clean up the backup.
+        safe_rebuild(root.path()).unwrap();
+        assert!(root.path().join("public").exists());
+        assert!(!root.path().join("public.prev").exists());
+    }
+
+    #[test]
+    fn safe_rebuild_failure_restores_backup() {
+        let root = tempfile::tempdir().unwrap();
+        setup_site(root.path());
+
+        // First build to create output with known content.
+        crate::build(root.path()).unwrap();
+        let output = root.path().join("public").join("hello").join("index.html");
+        let original = fs::read_to_string(&output).unwrap();
+
+        // Break the template so the next build fails.
+        fs::write(
+            root.path().join("templates").join("post.html"),
+            "{% invalid %}",
+        )
+        .unwrap();
+
+        assert!(safe_rebuild(root.path()).is_err());
+
+        // Previous output should be restored.
+        let restored = fs::read_to_string(&output).unwrap();
+        assert_eq!(
+            restored, original,
+            "should restore previous output on failure"
+        );
+        assert!(!root.path().join("public.prev").exists());
+    }
+
+    #[test]
+    fn safe_rebuild_no_existing_output() {
+        let root = tempfile::tempdir().unwrap();
+        setup_site(root.path());
+
+        // No prior build — output dir doesn't exist yet.
+        assert!(!root.path().join("public").exists());
+
+        safe_rebuild(root.path()).unwrap();
+        assert!(root.path().join("public").exists());
     }
 }
