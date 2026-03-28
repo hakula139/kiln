@@ -10,7 +10,7 @@ use crate::output::{clean_output_dir, copy_file, copy_static, write_output};
 use crate::pagination::{PaginationVars, Paginator, page_url as pagination_url};
 use crate::render::RenderOptions;
 use crate::render::pipeline::render_page;
-use crate::taxonomy::build_taxonomies;
+use crate::taxonomy::{TaxonomyKind, Term, build_taxonomies};
 use crate::template::{
     PageSummary, PostTemplateVars, TaxonomyIndexVars, TemplateEngine, TermPageVars, TermSummary,
 };
@@ -92,6 +92,22 @@ pub fn build(root: &Path, base_url_override: Option<&str>) -> Result<()> {
     Ok(())
 }
 
+/// Builds a `PageSummary` for use in taxonomy / listing templates.
+///
+/// Returns `None` if the output path cannot be computed (shouldn't happen
+/// for pages that passed discovery).
+fn page_summary(page: &Page, content_dir: &Path, base_url: &str) -> Option<PageSummary> {
+    let output_path = page.output_path(content_dir).ok()?;
+    let url = page_url(base_url, &output_path);
+    Some(PageSummary {
+        title: page.frontmatter.title.clone(),
+        url,
+        date: page.frontmatter.date.map(|d| d.to_string()),
+        description: page.frontmatter.description.clone().unwrap_or_default(),
+        featured_image: page.frontmatter.featured_image.clone(),
+    })
+}
+
 /// Renders a single page and writes it to the output directory.
 fn build_page(
     ctx: &BuildContext,
@@ -157,22 +173,6 @@ fn build_page(
     Ok(())
 }
 
-/// Builds a `PageSummary` for use in taxonomy / listing templates.
-///
-/// Returns `None` if the output path cannot be computed (shouldn't happen
-/// for pages that passed discovery).
-fn page_summary(page: &Page, content_dir: &Path, base_url: &str) -> Option<PageSummary> {
-    let output_path = page.output_path(content_dir).ok()?;
-    let url = page_url(base_url, &output_path);
-    Some(PageSummary {
-        title: page.frontmatter.title.clone(),
-        url,
-        date: page.frontmatter.date.map(|d| d.to_string()),
-        description: page.frontmatter.description.clone().unwrap_or_default(),
-        featured_image: page.frontmatter.featured_image.clone(),
-    })
-}
-
 /// Generates taxonomy index pages and paginated term pages.
 fn build_taxonomy_pages(
     ctx: &BuildContext,
@@ -230,45 +230,59 @@ fn build_taxonomy_pages(
                 continue;
             };
 
-            let term_summaries: Vec<&PageSummary> = page_indices
+            let term_page_summaries: Vec<&PageSummary> = page_indices
                 .iter()
                 .filter_map(|&idx| page_summaries.get(idx))
                 .collect();
 
-            let term_base = format!("{base_path}/{}", term.slug);
-            let paginator = Paginator::new(&term_summaries, per_page);
-
-            for page_num in 1..=paginator.total_pages() {
-                let items = paginator.page_items(page_num);
-                let pagination = PaginationVars::new(&term_base, page_num, paginator.total_pages());
-
-                let vars = TermPageVars {
-                    kind: kind.plural(),
-                    singular: kind.singular(),
-                    term_name: &term.name,
-                    term_slug: &term.slug,
-                    pages: items.iter().map(|s| (*s).clone()).collect(),
-                    pagination,
-                    config: &ctx.config,
-                };
-
-                let html = ctx.template_engine.render_term(&vars).with_context(|| {
-                    format!(
-                        "failed to render {}/{} page {}",
-                        kind.plural(),
-                        term.slug,
-                        page_num
-                    )
-                })?;
-
-                let rel_path = pagination_url(&term_base, page_num);
-                let dest = output_dir
-                    .join(rel_path.trim_start_matches('/'))
-                    .join("index.html");
-                write_output(&dest, &html)
-                    .with_context(|| format!("failed to write {}", dest.display()))?;
-            }
+            build_term_pages(ctx, kind, term, &term_page_summaries, per_page, output_dir)?;
         }
+    }
+
+    Ok(())
+}
+
+/// Generates paginated pages for a single taxonomy term.
+fn build_term_pages(
+    ctx: &BuildContext,
+    kind: TaxonomyKind,
+    term: &Term,
+    page_summaries: &[&PageSummary],
+    per_page: usize,
+    output_dir: &Path,
+) -> Result<()> {
+    let term_base = format!("/{}/{}", kind.plural(), term.slug);
+    let paginator = Paginator::new(page_summaries, per_page);
+
+    for page_num in 1..=paginator.total_pages() {
+        let items = paginator.page_items(page_num);
+        let pagination = PaginationVars::new(&term_base, page_num, paginator.total_pages());
+
+        let vars = TermPageVars {
+            kind: kind.plural(),
+            singular: kind.singular(),
+            term_name: &term.name,
+            term_slug: &term.slug,
+            pages: items.iter().copied().cloned().collect(),
+            pagination,
+            config: &ctx.config,
+        };
+
+        let html = ctx.template_engine.render_term(&vars).with_context(|| {
+            format!(
+                "failed to render {}/{} page {}",
+                kind.plural(),
+                term.slug,
+                page_num
+            )
+        })?;
+
+        let rel_path = pagination_url(&term_base, page_num);
+        let dest = output_dir
+            .join(rel_path.trim_start_matches('/'))
+            .join("index.html");
+        write_output(&dest, &html)
+            .with_context(|| format!("failed to write {}", dest.display()))?;
     }
 
     Ok(())
