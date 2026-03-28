@@ -44,7 +44,7 @@ enum Command {
         root: PathBuf,
 
         /// Port to serve on.
-        #[arg(long, default_value_t = 1313)]
+        #[arg(long, default_value_t = kiln::serve::DEFAULT_PORT)]
         port: u16,
 
         /// Open the site in the default browser after starting.
@@ -65,7 +65,7 @@ fn main() -> Result<()> {
     match cli.command {
         Command::Build { root } => {
             let root = root.canonicalize()?;
-            kiln::build(&root)?;
+            kiln::build(&root, None)?;
         }
         Command::Convert { source, dest } => {
             let source = source.canonicalize()?;

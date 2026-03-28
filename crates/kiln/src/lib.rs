@@ -13,6 +13,7 @@ pub mod template;
 pub use build::build;
 pub use convert::convert;
 pub use init::init_theme;
+pub use serve::DEFAULT_PORT;
 pub use serve::serve;
 
 #[cfg(test)]

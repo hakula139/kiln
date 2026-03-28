@@ -24,6 +24,15 @@ use tower_http::services::ServeDir;
 
 use crate::config::Config;
 
+/// Default port for `kiln serve` (KILN on a phone keypad: K=5 I=4 L=5 N=6).
+pub const DEFAULT_PORT: u16 = 5456;
+
+/// Constructs the localhost base URL for a given port.
+#[must_use]
+pub fn localhost_url(port: u16) -> String {
+    format!("http://localhost:{port}")
+}
+
 /// SSE endpoint path — prefixed to avoid conflicts with site content.
 const LIVE_RELOAD_PATH: &str = "/__kiln_live_reload";
 
@@ -66,8 +75,10 @@ const LIVE_RELOAD_SCRIPT: &str = r#"
 /// Panics if the Ctrl+C signal handler cannot be installed.
 #[tokio::main]
 pub async fn serve(root: &Path, port: u16, open: bool) -> Result<()> {
+    let base_url = localhost_url(port);
+
     eprintln!("Building site...");
-    crate::build(root).context("initial build failed")?;
+    crate::build(root, Some(&base_url)).context("initial build failed")?;
 
     let config = Config::load(root).context("failed to load config")?;
     // output_dir is captured once; if config.toml changes output_dir at runtime,
@@ -82,7 +93,13 @@ pub async fn serve(root: &Path, port: u16, open: bool) -> Result<()> {
 
     let rebuild_root = root.to_owned();
     let rebuild_tx = reload_tx.clone();
-    tokio::spawn(watch_loop(rebuild_root, watch_rx, rebuild_tx));
+    let rebuild_base_url = base_url.clone();
+    tokio::spawn(watch_loop(
+        rebuild_root,
+        rebuild_base_url,
+        watch_rx,
+        rebuild_tx,
+    ));
 
     let app = build_router(&output_dir, reload_tx);
 
@@ -91,15 +108,14 @@ pub async fn serve(root: &Path, port: u16, open: bool) -> Result<()> {
         .await
         .with_context(|| format!("failed to bind to port {port} (is it already in use?)"))?;
 
-    let url = format!("http://localhost:{port}");
-    eprintln!("\nServing at {url} (Press Ctrl+C to stop)");
+    eprintln!("\nServing at {base_url} (Press Ctrl+C to stop)");
     eprint!("Watching: config.toml, content/, templates/, static/");
     if let Some(ref theme) = config.theme {
         eprint!(", themes/{theme}/");
     }
     eprintln!();
 
-    if open && let Err(e) = open::that(&url) {
+    if open && let Err(e) = open::that(&base_url) {
         eprintln!("Failed to open browser: {e}");
     }
 
@@ -197,6 +213,7 @@ fn watch_paths(root: &Path, config: &Config) -> Vec<WatchEntry> {
 /// Debounced rebuild loop: waits for watcher events, rebuilds, and notifies SSE clients.
 async fn watch_loop(
     root: PathBuf,
+    base_url: String,
     mut event_rx: mpsc::UnboundedReceiver<()>,
     reload_tx: broadcast::Sender<()>,
 ) {
@@ -209,7 +226,8 @@ async fn watch_loop(
 
         eprintln!("\nRebuilding...");
         let root = root.clone();
-        let result = tokio::task::spawn_blocking(move || safe_rebuild(&root)).await;
+        let base_url = base_url.clone();
+        let result = tokio::task::spawn_blocking(move || safe_rebuild(&root, &base_url)).await;
 
         match result {
             Ok(Ok(())) => {
@@ -231,7 +249,7 @@ async fn watch_loop(
 /// writing. If the build then fails (e.g., template error), the server would be
 /// left serving an empty directory. This wrapper backs up the previous output and
 /// restores it if the build fails, so the last successful build remains available.
-fn safe_rebuild(root: &Path) -> Result<()> {
+fn safe_rebuild(root: &Path, base_url: &str) -> Result<()> {
     let config = Config::load(root).context("failed to load config")?;
     let output_dir = root.join(&config.output_dir);
     let backup_dir = root.join(format!("{}.prev", config.output_dir));
@@ -243,7 +261,7 @@ fn safe_rebuild(root: &Path) -> Result<()> {
         fs::rename(&output_dir, &backup_dir).context("failed to back up output directory")?;
     }
 
-    match crate::build(root) {
+    match crate::build(root, Some(base_url)) {
         Ok(()) => {
             if backup_dir.exists() {
                 _ = fs::remove_dir_all(&backup_dir);
@@ -472,7 +490,12 @@ mod tests {
         let (reload_tx, mut reload_rx) = broadcast::channel::<()>(16);
 
         let root_path = root.path().to_owned();
-        tokio::spawn(watch_loop(root_path, event_rx, reload_tx));
+        tokio::spawn(watch_loop(
+            root_path,
+            "http://localhost:0".to_owned(),
+            event_rx,
+            reload_tx,
+        ));
 
         // Trigger a rebuild event.
         event_tx.send(()).unwrap();
@@ -501,7 +524,12 @@ mod tests {
         let (reload_tx, mut reload_rx) = broadcast::channel::<()>(16);
 
         let root_path = root.path().to_owned();
-        tokio::spawn(watch_loop(root_path, event_rx, reload_tx));
+        tokio::spawn(watch_loop(
+            root_path,
+            "http://localhost:0".to_owned(),
+            event_rx,
+            reload_tx,
+        ));
 
         // Trigger a rebuild event — rebuild will fail.
         event_tx.send(()).unwrap();
@@ -524,7 +552,12 @@ mod tests {
         let (reload_tx, _) = broadcast::channel::<()>(16);
 
         let root_path = root.path().to_owned();
-        let handle = tokio::spawn(watch_loop(root_path, event_rx, reload_tx));
+        let handle = tokio::spawn(watch_loop(
+            root_path,
+            "http://localhost:0".to_owned(),
+            event_rx,
+            reload_tx,
+        ));
 
         // Drop the sender to signal shutdown.
         drop(event_tx);
@@ -545,11 +578,11 @@ mod tests {
         setup_site(root.path());
 
         // First build to create output.
-        crate::build(root.path()).unwrap();
+        crate::build(root.path(), None).unwrap();
         assert!(root.path().join("public").exists());
 
         // Rebuild should succeed and clean up the backup.
-        safe_rebuild(root.path()).unwrap();
+        safe_rebuild(root.path(), "http://localhost:0").unwrap();
         assert!(root.path().join("public").exists());
         assert!(!root.path().join("public.prev").exists());
     }
@@ -560,7 +593,7 @@ mod tests {
         setup_site(root.path());
 
         // First build to create output with known content.
-        crate::build(root.path()).unwrap();
+        crate::build(root.path(), None).unwrap();
         let output = root.path().join("public").join("hello").join("index.html");
         let original = fs::read_to_string(&output).unwrap();
 
@@ -571,7 +604,7 @@ mod tests {
         )
         .unwrap();
 
-        assert!(safe_rebuild(root.path()).is_err());
+        assert!(safe_rebuild(root.path(), "http://localhost:0").is_err());
 
         // Previous output should be restored.
         let restored = fs::read_to_string(&output).unwrap();
@@ -590,7 +623,7 @@ mod tests {
         // No prior build — output dir doesn't exist yet.
         assert!(!root.path().join("public").exists());
 
-        safe_rebuild(root.path()).unwrap();
+        safe_rebuild(root.path(), "http://localhost:0").unwrap();
         assert!(root.path().join("public").exists());
     }
 

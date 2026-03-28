@@ -31,7 +31,7 @@ kiln is a custom static site generator (SSG) written in Rust, replacing a Hugo +
 
 ```bash
 kiln build [--root <dir>]                         # Build the site (default root: cwd)
-kiln serve [--root <dir>] [--port 1313] [--open]  # Dev server with live reload
+kiln serve [--root <dir>] [--port 5456] [--open]  # Dev server with live reload
 kiln init-theme <name> [--root]                   # Scaffold a new theme under themes/<name>/
 kiln convert --source <dir> --dest <dir>          # Convert Hugo content to kiln format
 ```

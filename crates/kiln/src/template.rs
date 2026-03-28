@@ -200,6 +200,7 @@ mod tests {
 
     use super::*;
 
+    use crate::serve::{DEFAULT_PORT, localhost_url};
     use crate::test_utils::{test_config, test_engine};
 
     // -- new --
@@ -305,10 +306,12 @@ mod tests {
             html.contains(r#"<meta property="og:type" content="article">"#),
             "should have og:type article, html:\n{html}"
         );
+        let expected_og_image = format!(
+            r#"<meta property="og:image" content="{}/images/hello.webp">"#,
+            localhost_url(DEFAULT_PORT),
+        );
         assert!(
-            html.contains(
-                r#"<meta property="og:image" content="http://localhost:1313/images/hello.webp">"#
-            ),
+            html.contains(&expected_og_image),
             "should have og:image with absolute URL, html:\n{html}"
         );
         assert!(
