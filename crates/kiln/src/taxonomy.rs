@@ -102,6 +102,7 @@ pub fn build_taxonomies(pages: &[Page]) -> TaxonomySet {
         terms.sort_by(|a, b| b.page_count.cmp(&a.page_count).then(a.name.cmp(&b.name)));
     }
 
+    // Always emit one Taxonomy per kind so index pages are generated even when empty.
     let taxonomies = TaxonomyKind::iter()
         .map(|kind| Taxonomy {
             kind,
@@ -164,6 +165,7 @@ mod tests {
     #[test]
     fn build_taxonomies_empty() {
         let set = build_taxonomies(&[]);
+        // Always produces one Taxonomy per kind (Tags + Categories), even with no pages.
         assert_eq!(set.taxonomies.len(), 2);
         assert!(set.taxonomies[0].terms.is_empty());
         assert!(set.taxonomies[1].terms.is_empty());
