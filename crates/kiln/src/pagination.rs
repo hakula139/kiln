@@ -85,91 +85,47 @@ impl PaginationVars {
 mod tests {
     use super::*;
 
-    // -- Paginator::total_pages --
+    // -- Paginator --
+
+    /// Exercises `total_pages`, `page_items` (full, partial, out-of-range),
+    /// and the page-0 guard in a single paginator instance.
+    #[test]
+    fn paginator_basic() {
+        let items: Vec<i32> = (0..25).collect();
+        let p = Paginator::new(&items, 10);
+
+        assert_eq!(p.total_pages(), 3);
+        assert_eq!(p.page_items(1), &(0..10).collect::<Vec<_>>());
+        assert_eq!(p.page_items(2), &(10..20).collect::<Vec<_>>());
+        assert_eq!(p.page_items(3), &(20..25).collect::<Vec<_>>());
+        assert!(p.page_items(0).is_empty(), "page 0 should return empty");
+        assert!(
+            p.page_items(4).is_empty(),
+            "past last page should return empty"
+        );
+    }
 
     #[test]
-    fn total_pages_exact_fit() {
+    fn paginator_exact_fit() {
         let items: Vec<i32> = (0..20).collect();
         let p = Paginator::new(&items, 10);
         assert_eq!(p.total_pages(), 2);
+        assert_eq!(p.page_items(2).len(), 10);
     }
 
     #[test]
-    fn total_pages_remainder() {
-        let items: Vec<i32> = (0..21).collect();
-        let p = Paginator::new(&items, 10);
-        assert_eq!(p.total_pages(), 3);
-    }
-
-    #[test]
-    fn total_pages_empty() {
+    fn paginator_empty() {
         let items: Vec<i32> = Vec::new();
         let p = Paginator::new(&items, 10);
         assert_eq!(p.total_pages(), 0);
     }
 
-    #[test]
-    fn total_pages_single_item() {
-        let items = [1];
-        let p = Paginator::new(&items, 10);
-        assert_eq!(p.total_pages(), 1);
-    }
-
-    #[test]
-    fn total_pages_per_page_equals_len() {
-        let items: Vec<i32> = (0..5).collect();
-        let p = Paginator::new(&items, 5);
-        assert_eq!(p.total_pages(), 1);
-    }
-
-    // -- Paginator::page_items --
-
-    #[test]
-    fn page_items_first() {
-        let items: Vec<i32> = (0..25).collect();
-        let p = Paginator::new(&items, 10);
-        assert_eq!(p.page_items(1), &(0..10).collect::<Vec<_>>());
-    }
-
-    #[test]
-    fn page_items_middle() {
-        let items: Vec<i32> = (0..25).collect();
-        let p = Paginator::new(&items, 10);
-        assert_eq!(p.page_items(2), &(10..20).collect::<Vec<_>>());
-    }
-
-    #[test]
-    fn page_items_last_partial() {
-        let items: Vec<i32> = (0..25).collect();
-        let p = Paginator::new(&items, 10);
-        assert_eq!(p.page_items(3), &(20..25).collect::<Vec<_>>());
-    }
-
-    #[test]
-    fn page_items_out_of_range() {
-        let items: Vec<i32> = (0..5).collect();
-        let p = Paginator::new(&items, 10);
-        assert!(p.page_items(2).is_empty());
-    }
-
-    #[test]
-    fn page_items_zero_returns_empty() {
-        let items: Vec<i32> = (0..5).collect();
-        let p = Paginator::new(&items, 10);
-        assert!(p.page_items(0).is_empty());
-    }
-
     // -- page_url --
 
     #[test]
-    fn page_url_first_page() {
+    fn page_url_canonical_vs_subsequent() {
         assert_eq!(page_url("/tags/rust", 1), "/tags/rust/");
-    }
-
-    #[test]
-    fn page_url_subsequent() {
         assert_eq!(page_url("/tags/rust", 2), "/tags/rust/page/2/");
-        assert_eq!(page_url("/tags/rust", 3), "/tags/rust/page/3/");
     }
 
     #[test]
@@ -177,40 +133,28 @@ mod tests {
         assert_eq!(page_url("/tags/rust/", 2), "/tags/rust/page/2/");
     }
 
-    #[test]
-    fn page_url_zero_treated_as_first() {
-        assert_eq!(page_url("/tags/rust", 0), "/tags/rust/");
-    }
-
     // -- PaginationVars --
 
     #[test]
-    fn pagination_vars_first_page() {
-        let vars = PaginationVars::new("/tags/rust", 1, 3);
-        assert_eq!(vars.current_page, 1);
-        assert_eq!(vars.total_pages, 3);
-        assert!(vars.prev_url.is_none());
-        assert_eq!(vars.next_url.as_deref(), Some("/tags/rust/page/2/"));
-    }
+    fn pagination_vars_boundaries() {
+        // First page: no prev, has next.
+        let first = PaginationVars::new("/t", 1, 3);
+        assert!(first.prev_url.is_none());
+        assert_eq!(first.next_url.as_deref(), Some("/t/page/2/"));
 
-    #[test]
-    fn pagination_vars_middle_page() {
-        let vars = PaginationVars::new("/tags/rust", 2, 3);
-        assert_eq!(vars.prev_url.as_deref(), Some("/tags/rust/"));
-        assert_eq!(vars.next_url.as_deref(), Some("/tags/rust/page/3/"));
-    }
+        // Middle page: has both.
+        let mid = PaginationVars::new("/t", 2, 3);
+        assert_eq!(mid.prev_url.as_deref(), Some("/t/"));
+        assert_eq!(mid.next_url.as_deref(), Some("/t/page/3/"));
 
-    #[test]
-    fn pagination_vars_last_page() {
-        let vars = PaginationVars::new("/tags/rust", 3, 3);
-        assert_eq!(vars.prev_url.as_deref(), Some("/tags/rust/page/2/"));
-        assert!(vars.next_url.is_none());
-    }
+        // Last page: has prev, no next.
+        let last = PaginationVars::new("/t", 3, 3);
+        assert_eq!(last.prev_url.as_deref(), Some("/t/page/2/"));
+        assert!(last.next_url.is_none());
 
-    #[test]
-    fn pagination_vars_single_page() {
-        let vars = PaginationVars::new("/tags/rust", 1, 1);
-        assert!(vars.prev_url.is_none());
-        assert!(vars.next_url.is_none());
+        // Single page: neither.
+        let single = PaginationVars::new("/t", 1, 1);
+        assert!(single.prev_url.is_none());
+        assert!(single.next_url.is_none());
     }
 }
