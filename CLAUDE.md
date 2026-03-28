@@ -75,7 +75,7 @@ kiln convert --source <dir> --dest <dir>          # Convert Hugo content to kiln
 ├── pagination.rs       # Paginator for windowed views over slices, page URL computation
 ├── render/             # Markdown rendering pipeline (RenderOptions in render.rs)
 │   ├── emoji.rs        # GitHub-style :shortcode: → Unicode emoji replacement
-│   ├── highlight.rs    # syntect CSS-class highlighting with line numbers, code-block wrapper
+│   ├── highlight.rs    # syntect + two-face CSS-class highlighting with line numbers, code-block wrapper
 │   ├── icon.rs         # :(class): → <i> FontAwesome icon shortcode replacement
 │   ├── image.rs        # Block (<figure>) and inline (<img>) image rendering, lazy loading
 │   ├── image_attrs.rs  # Pandoc-style {#id .class width=N} extraction for images
@@ -129,6 +129,7 @@ kiln convert --source <dir> --dest <dir>          # Convert Hugo content to kiln
   - Scope: crate or module name (e.g., `kiln`, `config`, `render`)
 - Feature branches: `feat/<feature-name>`
 - Keep commits atomic — one logical change per commit.
+- PRs: assign to `hakula139`, label `enhancement` for `feat`, `bug` for `fix`.
 
 ### Testing
 

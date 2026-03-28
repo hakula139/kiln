@@ -2,7 +2,7 @@ use syntect::html::{ClassStyle, ClassedHTMLGenerator};
 use syntect::parsing::{SyntaxReference, SyntaxSet};
 use syntect::util::LinesWithEndings;
 
-use tracing::warn;
+use tracing::{debug, warn};
 
 use crate::html::{escape, writeln_indented};
 
@@ -118,7 +118,7 @@ pub fn highlight_code(
 /// attributes. The display label uses the original syntax name casing (e.g.,
 /// "Rust", "JavaScript", "C++") for the code block header.
 ///
-/// Unrecognized non-empty tokens are lowercased and emit a warning.
+/// Unrecognized non-empty tokens are lowercased and logged at debug level.
 fn find_syntax<'a>(syntax_set: &'a SyntaxSet, lang: &str) -> (&'a SyntaxReference, String, String) {
     if lang.is_empty() {
         return (
@@ -142,10 +142,20 @@ fn find_syntax<'a>(syntax_set: &'a SyntaxSet, lang: &str) -> (&'a SyntaxReferenc
         return (s, canonical_lang(&s.name), s.name.clone());
     }
 
-    warn!(lang, "unrecognized language, falling back to plain text");
     let lower = lang.to_ascii_lowercase();
     let display = capitalize_first(&lower);
+
+    if !is_plain_text_alias(lang) {
+        debug!(lang, "unrecognized language, falling back to plain text");
+    }
+
     (syntax_set.find_syntax_plain_text(), lower, display)
+}
+
+/// Returns `true` for language tokens that are intentionally not highlighted
+/// (e.g., diagram DSLs) and should not trigger an "unrecognized" warning.
+fn is_plain_text_alias(lang: &str) -> bool {
+    lang.eq_ignore_ascii_case("mermaid")
 }
 
 /// Derives a canonical HTML-safe language label from a syntect syntax name.
@@ -181,7 +191,7 @@ mod tests {
 
     use super::*;
 
-    static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(SyntaxSet::load_defaults_newlines);
+    static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(two_face::syntax::extra_newlines);
 
     fn highlight(lang: &str, code: &str) -> String {
         highlight_code(&SYNTAX_SET, lang, code, None)
@@ -273,6 +283,7 @@ mod tests {
 
     #[test]
     fn highlight_code_known_language() {
+        // By extension
         let html = highlight("rs", "fn main() {}\n");
         assert!(
             html.contains(r#"data-lang="rust""#),
@@ -282,18 +293,12 @@ mod tests {
             html.contains(r#"<span class="code-lang">Rust</span>"#),
             "display label should be proper-cased, html:\n{html}"
         );
-    }
 
-    #[test]
-    fn highlight_code_language_by_name() {
+        // By name (case-insensitive)
         let html = highlight("Rust", "fn main() {}\n");
         assert!(
             html.contains(r#"data-lang="rust""#),
             "should canonicalize to lowercase, html:\n{html}"
-        );
-        assert!(
-            html.contains(r#"<span class="code-lang">Rust</span>"#),
-            "display label should preserve original casing, html:\n{html}"
         );
     }
 
@@ -350,6 +355,34 @@ mod tests {
         assert!(
             !html.contains("<script>"),
             "raw script tag must not appear, html:\n{html}"
+        );
+    }
+
+    #[test]
+    fn highlight_code_mermaid() {
+        let html = highlight("mermaid", "graph TD\n");
+        assert!(
+            html.contains(r#"data-lang="mermaid""#),
+            "should treat mermaid as plain text alias, html:\n{html}"
+        );
+        assert!(
+            html.contains(r#"<span class="code-lang">Mermaid</span>"#),
+            "display label should be Mermaid, html:\n{html}"
+        );
+    }
+
+    #[test]
+    fn highlight_code_two_face_languages() {
+        let html = highlight("ts", "const x = 1;\n");
+        assert!(
+            html.contains(r#"data-lang="typescript""#),
+            "should resolve ts to TypeScript, html:\n{html}"
+        );
+
+        let html = highlight("toml", "[table]\n");
+        assert!(
+            html.contains(r#"data-lang="toml""#),
+            "should resolve toml, html:\n{html}"
         );
     }
 

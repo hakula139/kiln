@@ -173,7 +173,7 @@ mod tests {
     use super::*;
     use crate::test_utils::test_engine;
 
-    static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(SyntaxSet::load_defaults_newlines);
+    static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(two_face::syntax::extra_newlines);
 
     fn render(input: &str) -> RenderedPage {
         render_with(input, &test_engine())
