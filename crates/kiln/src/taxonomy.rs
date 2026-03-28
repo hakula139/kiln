@@ -231,12 +231,11 @@ mod tests {
     }
 
     #[test]
-    fn build_taxonomies_sorted_by_count_desc() {
+    fn build_taxonomies_sorted_by_count_then_name() {
         let pages = [
-            make_page("Post 1", &["rare"], &[]),
-            make_page("Post 2", &["common"], &[]),
+            make_page("Post 1", &["zebra"], &[]),
+            make_page("Post 2", &["common", "alpha"], &[]),
             make_page("Post 3", &["common"], &[]),
-            make_page("Post 4", &["common"], &[]),
         ];
         let set = build_taxonomies(&pages);
 
@@ -245,10 +244,14 @@ mod tests {
             .iter()
             .find(|t| t.kind == TaxonomyKind::Tags)
             .unwrap();
+        // Primary: count descending.
         assert_eq!(tags.terms[0].name, "common");
-        assert_eq!(tags.terms[0].page_count, 3);
-        assert_eq!(tags.terms[1].name, "rare");
+        assert_eq!(tags.terms[0].page_count, 2);
+        // Tiebreak: name ascending ("alpha" < "zebra").
+        assert_eq!(tags.terms[1].name, "alpha");
         assert_eq!(tags.terms[1].page_count, 1);
+        assert_eq!(tags.terms[2].name, "zebra");
+        assert_eq!(tags.terms[2].page_count, 1);
     }
 
     #[test]
