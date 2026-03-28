@@ -54,7 +54,7 @@ kiln convert --source <dir> --dest <dir>          # Convert Hugo content to kiln
 
 ```text
 .
-├── build.rs            # BuildContext, per-page rendering, canonical URLs, static / asset copying
+├── build.rs            # BuildContext, per-page rendering, taxonomy page generation, static / asset copying
 ├── config.rs           # TOML site configuration loading, theme resolution, param merging
 ├── init.rs             # Theme scaffolding (kiln init-theme)
 ├── convert.rs          # Hugo → kiln content converter orchestrator
@@ -65,14 +65,18 @@ kiln convert --source <dir> --dest <dir>          # Convert Hugo content to kiln
 │   ├── frontmatter.rs  # TOML frontmatter parsing (+++), Frontmatter with jiff timestamps
 │   ├── page.rs         # Page struct, slug derivation, summary, output paths, co-located assets
 │   └── discovery.rs    # Recursive content walking with draft / _-prefix / no-frontmatter exclusion
+├── html.rs             # Shared HTML utilities (escape, indent, writeln_indented)
 ├── markdown.rs         # Shared raw-markdown text utilities (code fence detection, code span scanning)
+├── text.rs             # Shared format-agnostic text utilities (slugify)
 ├── directive/          # :::-fenced directive parsing + rendering (shared types in directive.rs)
 │   ├── parser.rs       # Line-based stack parser, nesting, single-pass arg + Pandoc attr parsing
 │   ├── callout.rs      # 12 callout types (<details> with id / class propagation)
 │   └── div.rs          # Fenced divs and unknown directives (<div> with id / class propagation)
 ├── output.rs           # File output, static file copying, output directory cleaning
+├── pagination.rs       # Paginator for windowed views over slices, page URL computation
 ├── serve.rs            # Dev server with file watching, SSE live reload, script injection
-├── render/             # Markdown rendering pipeline (RenderOptions + escape_html in render.rs)
+├── taxonomy.rs         # TaxonomyKind, Taxonomy, Term, TaxonomySet, build_taxonomies()
+├── render/             # Markdown rendering pipeline (RenderOptions in render.rs)
 │   ├── emoji.rs        # GitHub-style :shortcode: → Unicode emoji replacement
 │   ├── highlight.rs    # syntect CSS-class highlighting with line numbers, code-block wrapper
 │   ├── icon.rs         # :(class): → <i> FontAwesome icon shortcode replacement
@@ -81,7 +85,7 @@ kiln convert --source <dir> --dest <dir>          # Convert Hugo content to kiln
 │   ├── markdown.rs     # pulldown-cmark, GFM, CJK heading IDs, KaTeX, block / inline images
 │   ├── pipeline.rs     # Full pipeline: directives → pre-processors → markdown → ToC
 │   └── toc.rs          # TocEntry struct, nested <nav> table of contents generation
-└── template.rs         # MiniJinja layered template engine, directive rendering, read_file, parse_csv
+└── template.rs         # MiniJinja layered template engine, directive / taxonomy / term rendering
 ```
 
 ## Coding Conventions
