@@ -1,4 +1,4 @@
-use crate::render::escape_html;
+use crate::html::escape;
 
 /// Renders an unknown directive as a `<div>` wrapper.
 ///
@@ -13,15 +13,15 @@ pub fn render_div(name: &str, id: Option<&str>, classes: &[String], body_html: &
     }
 
     let id_attr = id
-        .map(|v| format!(" id=\"{}\"", escape_html(v)))
+        .map(|v| format!(" id=\"{}\"", escape(v)))
         .unwrap_or_default();
 
     let mut class_parts = Vec::new();
     if !name.is_empty() {
-        class_parts.push(escape_html(name));
+        class_parts.push(escape(name));
     }
     for class in classes {
-        class_parts.push(escape_html(class));
+        class_parts.push(escape(class));
     }
     let class_attr = if class_parts.is_empty() {
         String::new()

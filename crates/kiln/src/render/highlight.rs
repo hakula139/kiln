@@ -4,7 +4,7 @@ use syntect::util::LinesWithEndings;
 
 use tracing::warn;
 
-use super::{escape_html, writeln_indented};
+use crate::html::{escape, writeln_indented};
 
 /// Highlights a code block with syntax highlighting, line numbers, and a
 /// header with a language label and copy button.
@@ -65,7 +65,7 @@ pub fn highlight_code(
         &mut html,
         2,
         r#"<span class="code-lang">{}</span>"#,
-        escape_html(&display_label)
+        escape(&display_label)
     );
     writeln_indented!(&mut html, 2, r#"<button class="copy-btn">Copy</button>"#);
     writeln_indented!(&mut html, 1, "</div>");
@@ -93,7 +93,7 @@ pub fn highlight_code(
     );
 
     // Code column.
-    let escaped_lang = escape_html(&effective_lang);
+    let escaped_lang = escape(&effective_lang);
     writeln_indented!(
         &mut html,
         5,

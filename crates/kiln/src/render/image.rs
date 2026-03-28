@@ -1,7 +1,7 @@
 use std::fmt::Write;
 
-use super::escape_html;
 use super::image_attrs::ImageAttrs;
+use crate::html::escape;
 
 /// Renders a standalone (block-level) image as a `<figure>` element.
 ///
@@ -12,13 +12,13 @@ use super::image_attrs::ImageAttrs;
 pub fn render_block_image(src: &str, alt: &str, title: &str, attrs: Option<&ImageAttrs>) -> String {
     let fig_id = attrs
         .and_then(|a| a.id.as_deref())
-        .map(|v| format!(" id=\"{}\"", escape_html(v)))
+        .map(|v| format!(" id=\"{}\"", escape(v)))
         .unwrap_or_default();
 
     let fig_class = attrs
         .filter(|a| !a.classes.is_empty())
         .map(|a| {
-            let classes: Vec<_> = a.classes.iter().map(|c| escape_html(c)).collect();
+            let classes: Vec<_> = a.classes.iter().map(|c| escape(c)).collect();
             format!(" class=\"{}\"", classes.join(" "))
         })
         .unwrap_or_default();
@@ -28,7 +28,7 @@ pub fn render_block_image(src: &str, alt: &str, title: &str, attrs: Option<&Imag
     html.push('\n');
 
     if !alt.is_empty() {
-        _ = writeln!(html, "  <figcaption>{}</figcaption>", escape_html(alt));
+        _ = writeln!(html, "  <figcaption>{}</figcaption>", escape(alt));
     }
 
     html.push_str("</figure>\n");
@@ -59,32 +59,27 @@ fn push_img_tag(
     attrs: Option<&ImageAttrs>,
     include_identity: bool,
 ) {
-    _ = write!(
-        html,
-        r#"<img src="{}" alt="{}""#,
-        escape_html(src),
-        escape_html(alt)
-    );
+    _ = write!(html, r#"<img src="{}" alt="{}""#, escape(src), escape(alt));
 
     if !title.is_empty() {
-        _ = write!(html, r#" title="{}""#, escape_html(title));
+        _ = write!(html, r#" title="{}""#, escape(title));
     }
 
     if let Some(a) = attrs {
         if include_identity {
             if let Some(id) = &a.id {
-                _ = write!(html, r#" id="{}""#, escape_html(id));
+                _ = write!(html, r#" id="{}""#, escape(id));
             }
             if !a.classes.is_empty() {
-                let classes: Vec<_> = a.classes.iter().map(|c| escape_html(c)).collect();
+                let classes: Vec<_> = a.classes.iter().map(|c| escape(c)).collect();
                 _ = write!(html, r#" class="{}""#, classes.join(" "));
             }
         }
         if let Some(w) = &a.width {
-            _ = write!(html, r#" width="{}""#, escape_html(w));
+            _ = write!(html, r#" width="{}""#, escape(w));
         }
         if let Some(h) = &a.height {
-            _ = write!(html, r#" height="{}""#, escape_html(h));
+            _ = write!(html, r#" height="{}""#, escape(h));
         }
     }
 

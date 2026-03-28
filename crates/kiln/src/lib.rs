@@ -3,12 +3,16 @@ pub mod config;
 pub mod content;
 pub mod convert;
 pub mod directive;
+pub mod html;
 pub mod init;
 pub mod markdown;
 pub mod output;
+pub mod pagination;
 pub mod render;
 pub mod serve;
+pub mod taxonomy;
 pub mod template;
+pub mod text;
 
 pub use build::build;
 pub use convert::convert;
@@ -37,6 +41,7 @@ pub(crate) mod test_utils {
             {% block title %}<title>{{ config.title }}</title>{% endblock %}
             {% block head %}{% endblock %}
           </head>
+
           <body>
             {% block body %}{% endblock %}
           </body>
@@ -76,11 +81,79 @@ pub(crate) mod test_utils {
         {% endblock %}
     "#};
 
+    static TAXONOMY_HTML: &str = indoc! {r#"
+        {% extends "base.html" %}
+
+        {% block title %}<title>{{ kind | capitalize }} - {{ config.title }}</title>{% endblock %}
+
+        {% block body %}
+            <h1>All {{ kind }}</h1>
+
+            <ul>
+            {%- for term in terms %}
+              <li>
+                <a href="{{ term.url | safe }}">{{ term.name }}</a> ({{ term.pages | length }})
+                {%- for page in term.pages[:5] %}
+                <a href="{{ page.url | safe }}">{{ page.title }}</a>
+                {%- endfor %}
+              </li>
+            {%- endfor %}
+            </ul>
+        {% endblock %}
+    "#};
+
+    static TERM_HTML: &str = indoc! {r#"
+        {% extends "base.html" %}
+
+        {% block title %}<title>{{ term_name }} - {{ config.title }}</title>{% endblock %}
+
+        {% block body %}
+            <h1>{{ singular | capitalize }}: {{ term_name }}</h1>
+
+            {%- for group in page_groups %}
+              {%- if group.key %}
+              <h3>{{ group.key }}</h3>
+              {%- endif %}
+              <ul>
+              {%- for page in group.pages %}
+                <li>
+                  <a href="{{ page.url | safe }}">{{ page.title }}</a>
+                  {%- if page.date %} ({{ page.date }}){%- endif %}
+                </li>
+              {%- endfor %}
+              </ul>
+            {%- endfor %}
+
+            {%- if pagination.total_pages > 1 %}
+            <nav class="pagination">
+              {%- if pagination.prev_url %}
+              <a href="{{ pagination.prev_url | safe }}">← Prev</a>
+              {%- endif %}
+              <span>Page {{ pagination.current_page }} / {{ pagination.total_pages }}</span>
+              {%- for item in pagination.items %}
+                {%- if item.number and item.is_current %}
+                <span class="active">{{ item.number }}</span>
+                {%- elif item.number %}
+                <a href="{{ item.url | safe }}">{{ item.number }}</a>
+                {%- else %}
+                <span>&hellip;</span>
+                {%- endif %}
+              {%- endfor %}
+              {%- if pagination.next_url %}
+              <a href="{{ pagination.next_url | safe }}">Next →</a>
+              {%- endif %}
+            </nav>
+            {%- endif %}
+        {% endblock %}
+    "#};
+
     /// Persistent temp directory holding test templates (lives for the process).
     static TEST_TEMPLATE_DIR: LazyLock<TempDir> = LazyLock::new(|| {
         let dir = tempfile::tempdir().unwrap();
         fs::write(dir.path().join("base.html"), BASE_HTML).unwrap();
         fs::write(dir.path().join("post.html"), POST_HTML).unwrap();
+        fs::write(dir.path().join("taxonomy.html"), TAXONOMY_HTML).unwrap();
+        fs::write(dir.path().join("term.html"), TERM_HTML).unwrap();
         dir
     });
 

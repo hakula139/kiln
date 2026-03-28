@@ -7,9 +7,14 @@ use crate::config::Config;
 use crate::content::discovery::discover_content;
 use crate::content::page::Page;
 use crate::output::{clean_output_dir, copy_file, copy_static, write_output};
+use crate::pagination::{PaginationVars, Paginator, page_url as pagination_url};
 use crate::render::RenderOptions;
 use crate::render::pipeline::render_page;
-use crate::template::{PostTemplateVars, TemplateEngine};
+use crate::taxonomy::{TaxonomyKind, TaxonomySet, Term, build_taxonomies};
+use crate::template::{
+    PageGroup, PageSummary, PostTemplateVars, TaxonomyIndexVars, TemplateEngine, TermPageVars,
+    TermSummary,
+};
 
 /// Shared build state, created once per build invocation.
 struct BuildContext {
@@ -65,12 +70,43 @@ pub fn build(root: &Path, base_url_override: Option<&str>) -> Result<()> {
     }
     copy_static(&root.join("static"), &output_dir)?;
 
+    // Precompute page summaries for taxonomy listings.
+    let page_summaries: Vec<PageSummary> = content
+        .pages
+        .iter()
+        .filter_map(|page| page_summary(page, &content.content_dir, &ctx.config.base_url))
+        .collect();
+
     for page in &content.pages {
         build_page(&ctx, page, &content.content_dir, &output_dir)?;
     }
 
+    build_taxonomy_pages(
+        &ctx,
+        &page_summaries,
+        &content.pages,
+        &content.content_dir,
+        &output_dir,
+    )?;
+
     println!("Build complete: {} page(s).", content.pages.len());
     Ok(())
+}
+
+/// Builds a `PageSummary` for use in taxonomy / listing templates.
+///
+/// Returns `None` if the output path cannot be computed (shouldn't happen
+/// for pages that passed discovery).
+fn page_summary(page: &Page, content_dir: &Path, base_url: &str) -> Option<PageSummary> {
+    let output_path = page.output_path(content_dir).ok()?;
+    let url = page_url(base_url, &output_path);
+    Some(PageSummary {
+        title: page.frontmatter.title.clone(),
+        url,
+        date: page.frontmatter.date.map(|d| d.to_string()),
+        description: page.frontmatter.description.clone().unwrap_or_default(),
+        featured_image: page.frontmatter.featured_image.clone(),
+    })
 }
 
 /// Renders a single page and writes it to the output directory.
@@ -138,11 +174,199 @@ fn build_page(
     Ok(())
 }
 
+/// Generates taxonomy index pages and paginated term pages.
+fn build_taxonomy_pages(
+    ctx: &BuildContext,
+    page_summaries: &[PageSummary],
+    pages: &[Page],
+    content_dir: &Path,
+    output_dir: &Path,
+) -> Result<()> {
+    let taxonomy_set = build_taxonomies(pages, Some(content_dir));
+
+    let per_page = ctx
+        .config
+        .params
+        .get("paginate")
+        .and_then(toml::Value::as_integer)
+        .and_then(|n| usize::try_from(n).ok())
+        .unwrap_or(10);
+
+    for taxonomy in &taxonomy_set.taxonomies {
+        let kind = taxonomy.kind;
+        let base_path = format!("/{}", kind.plural());
+
+        // Resolve and sort pages for each term once (reused by index and term pages).
+        let term_pages: Vec<Vec<PageSummary>> = taxonomy
+            .terms
+            .iter()
+            .map(|term| resolve_term_pages(&taxonomy_set, kind, &term.slug, page_summaries))
+            .collect();
+
+        build_taxonomy_index(
+            ctx,
+            kind,
+            &base_path,
+            &taxonomy.terms,
+            &term_pages,
+            output_dir,
+        )?;
+
+        for (term, pages) in taxonomy.terms.iter().zip(&term_pages) {
+            let refs: Vec<&PageSummary> = pages.iter().collect();
+            build_term_pages(ctx, kind, term, &refs, per_page, output_dir)?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Resolves page indices for a term into sorted page summaries.
+fn resolve_term_pages(
+    taxonomy_set: &TaxonomySet,
+    kind: TaxonomyKind,
+    slug: &str,
+    page_summaries: &[PageSummary],
+) -> Vec<PageSummary> {
+    let key = (kind, slug.to_owned());
+    let mut pages: Vec<PageSummary> = taxonomy_set
+        .term_pages
+        .get(&key)
+        .map(|indices| {
+            indices
+                .iter()
+                .filter_map(|&idx| page_summaries.get(idx))
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default();
+    sort_by_date_desc(&mut pages);
+    pages
+}
+
+/// Sorts page summaries by date descending (newest first, undated last).
+fn sort_by_date_desc(pages: &mut [PageSummary]) {
+    pages.sort_by(|a, b| b.date.cmp(&a.date));
+}
+
+/// Renders a taxonomy index page (e.g., `/tags/index.html`).
+fn build_taxonomy_index(
+    ctx: &BuildContext,
+    kind: TaxonomyKind,
+    base_path: &str,
+    terms: &[Term],
+    term_pages: &[Vec<PageSummary>],
+    output_dir: &Path,
+) -> Result<()> {
+    let term_summaries: Vec<TermSummary> = terms
+        .iter()
+        .zip(term_pages)
+        .map(|(term, pages)| TermSummary {
+            name: term.name.clone(),
+            slug: term.slug.clone(),
+            url: format!("{base_path}/{}/", term.slug),
+            pages: pages.clone(),
+        })
+        .collect();
+
+    let vars = TaxonomyIndexVars {
+        kind: kind.plural(),
+        singular: kind.singular(),
+        terms: term_summaries,
+        config: &ctx.config,
+    };
+
+    let html = ctx
+        .template_engine
+        .render_taxonomy(&vars)
+        .with_context(|| format!("failed to render {} index", kind.plural()))?;
+
+    let dest = output_dir.join(kind.plural()).join("index.html");
+    write_output(&dest, &html).with_context(|| format!("failed to write {}", dest.display()))
+}
+
+/// Generates paginated pages for a single taxonomy term.
+///
+/// Pages must be pre-sorted by date descending.
+fn build_term_pages(
+    ctx: &BuildContext,
+    kind: TaxonomyKind,
+    term: &Term,
+    page_summaries: &[&PageSummary],
+    per_page: usize,
+    output_dir: &Path,
+) -> Result<()> {
+    let term_base = format!("/{}/{}", kind.plural(), term.slug);
+    let paginator = Paginator::new(page_summaries, per_page);
+
+    for page_num in 1..=paginator.total_pages() {
+        let items = paginator.page_items(page_num);
+        let pagination = PaginationVars::new(&term_base, page_num, paginator.total_pages());
+        let pages: Vec<PageSummary> = items.iter().copied().cloned().collect();
+        let page_groups = group_by_year(pages);
+
+        let vars = TermPageVars {
+            kind: kind.plural(),
+            singular: kind.singular(),
+            term_name: &term.name,
+            term_slug: &term.slug,
+            page_groups,
+            pagination,
+            config: &ctx.config,
+        };
+
+        let html = ctx.template_engine.render_term(&vars).with_context(|| {
+            format!(
+                "failed to render {}/{} page {}",
+                kind.plural(),
+                term.slug,
+                page_num
+            )
+        })?;
+
+        let rel_path = pagination_url(&term_base, page_num);
+        let dest = output_dir
+            .join(rel_path.trim_start_matches('/'))
+            .join("index.html");
+        write_output(&dest, &html)
+            .with_context(|| format!("failed to write {}", dest.display()))?;
+    }
+
+    Ok(())
+}
+
+/// Groups pages into year-based sections.
+///
+/// Assumes pages are already sorted by date descending. Consecutive pages
+/// with the same year are grouped together.
+fn group_by_year(pages: Vec<PageSummary>) -> Vec<PageGroup> {
+    let mut groups: Vec<PageGroup> = Vec::new();
+
+    for page in pages {
+        let year = page
+            .date
+            .as_deref()
+            .and_then(|d| d.get(..4))
+            .unwrap_or("")
+            .to_owned();
+
+        if groups.last().is_none_or(|g| g.key != year) {
+            groups.push(PageGroup {
+                key: year,
+                pages: Vec::new(),
+            });
+        }
+        groups.last_mut().expect("just pushed").pages.push(page);
+    }
+
+    groups
+}
+
 /// Computes the canonical URL for a page from its output path.
 ///
 /// For `index.html` pages (page bundles), returns the directory path with a
 /// trailing slash. For other files, returns the file path as-is.
-fn page_url(base_url: &str, output_path: &Path) -> String {
+pub(crate) fn page_url(base_url: &str, output_path: &Path) -> String {
     let base = base_url.trim_end_matches('/');
     let rel = output_path.to_string_lossy();
 
@@ -164,51 +388,29 @@ mod tests {
 
     use crate::test_utils::{PermissionGuard, copy_templates};
 
-    // -- page_url --
-
-    #[test]
-    fn page_url_index_html() {
-        assert_eq!(
-            page_url("https://example.com", Path::new("foo/bar/index.html")),
-            "https://example.com/foo/bar/"
-        );
-    }
-
-    #[test]
-    fn page_url_root_index() {
-        assert_eq!(
-            page_url("https://example.com", Path::new("index.html")),
-            "https://example.com/"
-        );
-    }
-
-    #[test]
-    fn page_url_non_index() {
-        assert_eq!(
-            page_url("https://example.com", Path::new("standalone.html")),
-            "https://example.com/standalone.html"
-        );
-    }
-
     // -- build --
 
     #[test]
     fn build_no_content() {
         let root = tempfile::tempdir().unwrap();
 
-        // Config + templates, but no content directory
+        // Config + templates, but no content directory.
         fs::write(root.path().join("config.toml"), "").unwrap();
         let template_dest = root.path().join("templates");
         copy_templates(&template_dest);
 
         build(root.path(), None).unwrap();
 
-        // Output directory exists (created by clean_output_dir) but is empty
+        // Output directory exists and contains taxonomy index pages (but no post pages).
         let output_dir = root.path().join("public");
         assert!(output_dir.exists(), "output directory should exist");
         assert!(
-            fs::read_dir(&output_dir).unwrap().next().is_none(),
-            "output directory should be empty for site with no content"
+            output_dir.join("tags").join("index.html").exists(),
+            "should generate empty tags index"
+        );
+        assert!(
+            output_dir.join("categories").join("index.html").exists(),
+            "should generate empty categories index"
         );
     }
 
@@ -456,6 +658,198 @@ mod tests {
         );
     }
 
+    // -- build with taxonomies --
+
+    #[test]
+    fn build_generates_taxonomy_index_pages() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("config.toml"), "").unwrap();
+        copy_templates(&root.path().join("templates"));
+
+        let page_dir = root.path().join("content").join("posts").join("hello");
+        fs::create_dir_all(&page_dir).unwrap();
+        fs::write(
+            page_dir.join("index.md"),
+            indoc! {r#"
+                +++
+                title = "Hello"
+                tags = ["rust", "web"]
+                categories = ["tutorial"]
+                +++
+                Body
+            "#},
+        )
+        .unwrap();
+
+        build(root.path(), None).unwrap();
+
+        let output_dir = root.path().join("public");
+        let tags_index = output_dir.join("tags").join("index.html");
+        assert!(tags_index.exists(), "should generate /tags/index.html");
+        let html = fs::read_to_string(&tags_index).unwrap();
+        assert!(
+            html.contains("rust") && html.contains("web"),
+            "tags index should list terms, html:\n{html}"
+        );
+
+        let cats_index = output_dir.join("categories").join("index.html");
+        assert!(
+            cats_index.exists(),
+            "should generate /categories/index.html"
+        );
+        let html = fs::read_to_string(&cats_index).unwrap();
+        assert!(
+            html.contains("tutorial"),
+            "categories index should list terms, html:\n{html}"
+        );
+    }
+
+    #[test]
+    fn build_generates_term_pages() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("config.toml"), "").unwrap();
+        copy_templates(&root.path().join("templates"));
+
+        for (name, tag) in &[("post-1", "rust"), ("post-2", "rust"), ("post-3", "web")] {
+            let page_dir = root.path().join("content").join("posts").join(name);
+            fs::create_dir_all(&page_dir).unwrap();
+            fs::write(
+                page_dir.join("index.md"),
+                format!(
+                    indoc! {r#"
+                        +++
+                        title = "{name}"
+                        tags = ["{tag}"]
+                        +++
+                        Body
+                    "#},
+                    name = name,
+                    tag = tag,
+                ),
+            )
+            .unwrap();
+        }
+
+        build(root.path(), None).unwrap();
+
+        let output_dir = root.path().join("public");
+        let rust_page = output_dir.join("tags").join("rust").join("index.html");
+        assert!(rust_page.exists(), "should generate /tags/rust/index.html");
+        let html = fs::read_to_string(&rust_page).unwrap();
+        assert!(
+            html.contains("post-1") && html.contains("post-2"),
+            "term page should list posts, html:\n{html}"
+        );
+        assert!(
+            !html.contains("post-3"),
+            "term page should not include unrelated posts, html:\n{html}"
+        );
+    }
+
+    #[test]
+    fn build_generates_paginated_term_pages() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(
+            root.path().join("config.toml"),
+            indoc! {r"
+                [params]
+                paginate = 2
+            "},
+        )
+        .unwrap();
+        copy_templates(&root.path().join("templates"));
+
+        // Create 3 pages with the same tag → 2 pages of pagination.
+        for i in 1..=3 {
+            let page_dir = root
+                .path()
+                .join("content")
+                .join("posts")
+                .join(format!("post-{i}"));
+            fs::create_dir_all(&page_dir).unwrap();
+            fs::write(
+                page_dir.join("index.md"),
+                format!(
+                    indoc! {r#"
+                        +++
+                        title = "Post {i}"
+                        tags = ["rust"]
+                        date = "2026-01-0{i}T00:00:00Z"
+                        +++
+                        Body
+                    "#},
+                    i = i,
+                ),
+            )
+            .unwrap();
+        }
+
+        build(root.path(), None).unwrap();
+
+        let output_dir = root.path().join("public");
+
+        // Page 1.
+        let page1 = output_dir.join("tags").join("rust").join("index.html");
+        assert!(page1.exists(), "should generate page 1");
+        let html1 = fs::read_to_string(&page1).unwrap();
+        assert!(
+            html1.contains("Page 1 / 2"),
+            "should show pagination, html:\n{html1}"
+        );
+        assert!(
+            html1.contains("Next"),
+            "page 1 should have next link, html:\n{html1}"
+        );
+
+        // Page 2.
+        let page2 = output_dir
+            .join("tags")
+            .join("rust")
+            .join("page")
+            .join("2")
+            .join("index.html");
+        assert!(page2.exists(), "should generate page 2");
+        let html2 = fs::read_to_string(&page2).unwrap();
+        assert!(
+            html2.contains("Page 2 / 2"),
+            "should show page 2, html:\n{html2}"
+        );
+        assert!(
+            html2.contains("Prev"),
+            "page 2 should have prev link, html:\n{html2}"
+        );
+    }
+
+    #[test]
+    fn build_no_taxonomy_pages_without_tags() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("config.toml"), "").unwrap();
+        copy_templates(&root.path().join("templates"));
+
+        let page_dir = root.path().join("content").join("posts").join("hello");
+        fs::create_dir_all(&page_dir).unwrap();
+        fs::write(
+            page_dir.join("index.md"),
+            indoc! {r#"
+                +++
+                title = "Hello"
+                +++
+                Body
+            "#},
+        )
+        .unwrap();
+
+        build(root.path(), None).unwrap();
+
+        let output_dir = root.path().join("public");
+        // Taxonomy index pages should still be generated (even if empty).
+        let tags_index = output_dir.join("tags").join("index.html");
+        assert!(
+            tags_index.exists(),
+            "should generate /tags/index.html even with no tags"
+        );
+    }
+
     // -- build errors --
 
     /// Creates a minimal site with one page for error-path tests.
@@ -593,6 +987,77 @@ mod tests {
         assert!(
             err.contains("failed to render"),
             "should report render failure, got: {err}"
+        );
+    }
+
+    // -- group_by_year --
+
+    fn make_summary(title: &str, date: Option<&str>) -> PageSummary {
+        PageSummary {
+            title: title.into(),
+            url: format!("/{title}/"),
+            date: date.map(Into::into),
+            description: String::new(),
+            featured_image: None,
+        }
+    }
+
+    #[test]
+    fn group_by_year_basic() {
+        let pages = vec![
+            make_summary("a", Some("2026-03-01T00:00:00Z")),
+            make_summary("b", Some("2026-01-15T00:00:00Z")),
+            make_summary("c", Some("2025-12-01T00:00:00Z")),
+        ];
+        let groups = group_by_year(pages);
+        assert_eq!(groups.len(), 2);
+        assert_eq!(groups[0].key, "2026");
+        assert_eq!(groups[0].pages.len(), 2);
+        assert_eq!(groups[1].key, "2025");
+        assert_eq!(groups[1].pages.len(), 1);
+    }
+
+    #[test]
+    fn group_by_year_undated_pages() {
+        let pages = vec![
+            make_summary("a", Some("2026-01-01T00:00:00Z")),
+            make_summary("b", None),
+        ];
+        let groups = group_by_year(pages);
+        assert_eq!(groups.len(), 2);
+        assert_eq!(groups[0].key, "2026");
+        assert_eq!(groups[1].key, "", "undated pages should have empty key");
+    }
+
+    #[test]
+    fn group_by_year_empty() {
+        let groups = group_by_year(Vec::new());
+        assert!(groups.is_empty());
+    }
+
+    // -- page_url --
+
+    #[test]
+    fn page_url_index_html() {
+        assert_eq!(
+            page_url("https://example.com", Path::new("foo/bar/index.html")),
+            "https://example.com/foo/bar/"
+        );
+    }
+
+    #[test]
+    fn page_url_root_index() {
+        assert_eq!(
+            page_url("https://example.com", Path::new("index.html")),
+            "https://example.com/"
+        );
+    }
+
+    #[test]
+    fn page_url_non_index() {
+        assert_eq!(
+            page_url("https://example.com", Path::new("standalone.html")),
+            "https://example.com/standalone.html"
         );
     }
 }

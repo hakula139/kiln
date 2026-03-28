@@ -11,7 +11,7 @@ use anyhow::{Context, Result};
 use axum::Router;
 use axum::body::Body;
 use axum::extract::State;
-use axum::http::header;
+use axum::http::{StatusCode, header};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
@@ -302,12 +302,14 @@ fn safe_rebuild(root: &Path, base_url: &str) -> Result<()> {
 /// Creates the axum router with SSE live reload and static file serving.
 fn build_router(output_dir: &Path, reload_tx: broadcast::Sender<()>) -> Router {
     let serve_dir = ServeDir::new(output_dir).append_index_html_on_directories(true);
+    let root = output_dir.to_owned();
 
     Router::new()
         .route(LIVE_RELOAD_PATH, get(sse_handler))
         .fallback(move |request: axum::extract::Request| {
             let sd = serve_dir.clone();
-            async move { serve_with_inject(sd, request).await }
+            let root = root.clone();
+            async move { serve_request(sd, &root, request).await }
         })
         .with_state(reload_tx)
 }
@@ -324,9 +326,33 @@ async fn sse_handler(State(tx): State<broadcast::Sender<()>>) -> impl IntoRespon
     Sse::new(stream).keep_alive(KeepAlive::default())
 }
 
-/// Serves a static file via `ServeDir` and injects the live reload script
-/// into HTML responses. Non-HTML responses pass through untouched.
-async fn serve_with_inject(serve_dir: ServeDir, request: axum::extract::Request) -> Response {
+/// Serves a request from the output directory.
+///
+/// Handles three cases in order:
+/// 1. **Trailing-slash redirect** — when the path has no trailing slash and
+///    a directory with `index.html` exists, responds with 301 to the
+///    slash-suffixed path (standard HTTP behavior for pretty URLs).
+/// 2. **HTML response** — injects the live reload script before `</body>`.
+/// 3. **Non-HTML response** — passes through untouched.
+async fn serve_request(
+    serve_dir: ServeDir,
+    output_dir: &Path,
+    request: axum::extract::Request,
+) -> Response {
+    let path = request.uri().path();
+    if !path.ends_with('/')
+        && output_dir
+            .join(path.trim_start_matches('/'))
+            .join("index.html")
+            .is_file()
+    {
+        return Response::builder()
+            .status(StatusCode::MOVED_PERMANENTLY)
+            .header(header::LOCATION, format!("{path}/"))
+            .body(Body::empty())
+            .expect("redirect response is valid");
+    }
+
     let response = serve_dir
         .oneshot(request)
         .await
@@ -385,7 +411,7 @@ mod tests {
 
     use indoc::indoc;
 
-    use axum::http::{Request, StatusCode};
+    use axum::http::Request;
 
     use super::*;
     use crate::test_utils::copy_templates;
@@ -827,6 +853,54 @@ mod tests {
             body.contains(LIVE_RELOAD_SCRIPT),
             "should inject into directory index"
         );
+    }
+
+    #[tokio::test]
+    async fn build_router_redirects_directory_without_trailing_slash() {
+        let dir = tempfile::tempdir().unwrap();
+        let sub = dir.path().join("about");
+        fs::create_dir(&sub).unwrap();
+        fs::write(sub.join("index.html"), "<html><body>About</body></html>").unwrap();
+
+        let app = setup_router(dir.path());
+        let response = app
+            .oneshot(Request::get("/about").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::MOVED_PERMANENTLY);
+        assert_eq!(response.headers().get(header::LOCATION).unwrap(), "/about/");
+    }
+
+    #[tokio::test]
+    async fn build_router_no_redirect_with_trailing_slash() {
+        let dir = tempfile::tempdir().unwrap();
+        let sub = dir.path().join("about");
+        fs::create_dir(&sub).unwrap();
+        fs::write(sub.join("index.html"), "<html><body>About</body></html>").unwrap();
+
+        let app = setup_router(dir.path());
+        let response = app
+            .oneshot(Request::get("/about/").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = collect_body(response).await;
+        assert!(body.contains("About"), "should serve index.html directly");
+    }
+
+    #[tokio::test]
+    async fn build_router_returns_not_found() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let app = setup_router(dir.path());
+        let response = app
+            .oneshot(Request::get("/nonexistent").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]

@@ -25,13 +25,15 @@ A theme lives in `themes/<name>/` and follows this layout:
 
 ```text
 themes/IgnIt/
-├── theme.toml                # Theme metadata and default parameters
+├── static/                   # Static assets (CSS, JS, images)
 ├── templates/                # MiniJinja templates
 │   ├── base.html             # Base layout
+│   ├── directives/           # Directive templates (optional)
+│   │   └── site.html         # Renders ::: site directives
 │   ├── post.html             # Post page template
-│   └── directives/           # Directive templates (optional)
-│       └── site.html         # Renders ::: site directives
-└── static/                   # Static assets (CSS, JS, images)
+│   ├── taxonomy.html         # Taxonomy index page (e.g., /tags/)
+│   └── term.html             # Term page with post list (e.g., /tags/rust/)
+└── theme.toml                # Theme metadata and default parameters
 ```
 
 ### `theme.toml`
@@ -161,11 +163,11 @@ This creates the following structure under `themes/my-theme/`:
 
 ```text
 themes/my-theme/
-├── theme.toml          # Empty (all fields are optional)
+├── static/             # Empty directory for CSS, JS, images
 ├── templates/
 │   ├── base.html       # Minimal base layout with block inheritance
 │   └── post.html       # Post template extending base.html
-└── static/             # Empty directory for CSS, JS, images
+└── theme.toml          # Empty (all fields are optional)
 ```
 
 Set `theme = "my-theme"` in your site's `config.toml` to use it. From there, customize the templates and add static assets as needed.
@@ -237,6 +239,80 @@ Templates receive the following variables during rendering:
 | `config`          | object           | Site configuration              |
 | `config.base_url` | string           | Site base URL                   |
 | `config.title`    | string           | Site title                      |
+
+#### Taxonomy index templates (`taxonomy.html`)
+
+| Variable   | Type          | Description                                                                     |
+| ---------- | ------------- | ------------------------------------------------------------------------------- |
+| `kind`     | string        | Taxonomy kind plural (e.g., `"tags"`)                                           |
+| `singular` | string        | Taxonomy kind singular (e.g., `"tag"`)                                          |
+| `terms`    | list of terms | All terms in this taxonomy, sorted by page count descending then name ascending |
+| `config`   | object        | Site configuration                                                              |
+
+Each term in `terms` has:
+
+| Field   | Type          | Description                                         |
+| ------- | ------------- | --------------------------------------------------- |
+| `name`  | string        | Display name (e.g., `"Rust"`)                       |
+| `slug`  | string        | URL-safe slug (e.g., `"rust"`)                      |
+| `url`   | string        | URL to the term page (e.g., `"/tags/rust/"`)        |
+| `pages` | list of pages | All pages with this term, sorted by date descending |
+
+Use `term.pages | length` to get the page count.
+
+Each page in `pages` has:
+
+| Field            | Type             | Description         |
+| ---------------- | ---------------- | ------------------- |
+| `title`          | string           | Post title          |
+| `url`            | string           | Canonical URL       |
+| `date`           | string or `none` | Publication date    |
+| `description`    | string           | Post description    |
+| `featured_image` | string or `none` | Featured image path |
+
+#### Term page templates (`term.html`)
+
+| Variable      | Type           | Description                               |
+| ------------- | -------------- | ----------------------------------------- |
+| `kind`        | string         | Taxonomy kind plural (e.g., `"tags"`)     |
+| `singular`    | string         | Taxonomy kind singular (e.g., `"tag"`)    |
+| `term_name`   | string         | Display name of the term (e.g., `"Rust"`) |
+| `term_slug`   | string         | URL-safe slug (e.g., `"rust"`)            |
+| `page_groups` | list of groups | Pages grouped by year, newest first       |
+| `pagination`  | object         | Pagination metadata                       |
+| `config`      | object         | Site configuration                        |
+
+Each group in `page_groups` has:
+
+| Field   | Type          | Description                             |
+| ------- | ------------- | --------------------------------------- |
+| `key`   | string        | Group key (year, e.g., `"2026"`)        |
+| `pages` | list of pages | Pages in this group (same fields above) |
+
+The `pagination` object has:
+
+| Field          | Type             | Description                                  |
+| -------------- | ---------------- | -------------------------------------------- |
+| `current_page` | number           | Current page number (1-indexed)              |
+| `total_pages`  | number           | Total number of pages                        |
+| `base_url`     | string           | Base URL for page links (e.g., `/tags/rust`) |
+| `prev_url`     | string or `none` | URL to the previous page (if exists)         |
+| `next_url`     | string or `none` | URL to the next page (if exists)             |
+| `items`        | list of items    | Numbered page entries for display            |
+
+Each item in `items` has:
+
+| Field        | Type             | Description                                 |
+| ------------ | ---------------- | ------------------------------------------- |
+| `number`     | number or `none` | Page number, or `none` for ellipsis markers |
+| `url`        | string or `none` | Page URL, or `none` for ellipsis markers    |
+| `is_current` | boolean          | Whether this is the active page             |
+
+Items include the first page, last page, and pages within ±2 of the current page. Gaps between shown ranges are represented by a single ellipsis marker (`number: none`).
+
+To build a "jump to page" control, use `base_url`: page 1 is `{base_url}/`, page N is `{base_url}/page/{n}/`.
+
+The number of items per page is configurable via `paginate` in `[params]` (default: 10).
 
 #### Directive templates (`directives/<name>.html`)
 

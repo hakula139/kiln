@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use super::CalloutKind;
-use crate::render::{escape_html, writeln_indented};
+use crate::html::{escape, writeln_indented};
 
 /// Renders a callout to HTML as a collapsible `<details>` element.
 ///
@@ -28,17 +28,17 @@ pub fn render_callout(
     body_html: &str,
 ) -> String {
     let default_title = kind.to_string();
-    let display_title = escape_html(title.unwrap_or(&default_title));
+    let display_title = escape(title.unwrap_or(&default_title));
     let open_attr = if open { " open" } else { "" };
 
     let id_attr = id
-        .map(|v| format!(r#" id="{}""#, escape_html(v)))
+        .map(|v| format!(r#" id="{}""#, escape(v)))
         .unwrap_or_default();
 
     let mut class_val = format!("callout {}", kind.as_ref());
     for class in classes {
         class_val.push(' ');
-        class_val.push_str(&escape_html(class));
+        class_val.push_str(&escape(class));
     }
 
     let mut html = String::new();
