@@ -22,7 +22,7 @@ kiln is a custom static site generator (SSG) written in Rust, replacing a Hugo +
 - [x] Directive renderers (site, music, score-table — template-based in theme / site)
 - [x] Dev server with file watching, SSE live reload, and safe rebuild (`kiln serve`)
 - [x] Taxonomy support (tags, categories) with pagination
-- [ ] Home page + section pages + special pages
+- [x] Home page + section pages + standalone page template
 - [ ] Tailwind CSS + dark theme
 - [ ] RSS feed + sitemap
 - [ ] Full-text search (Pagefind)
@@ -54,12 +54,12 @@ kiln convert --source <dir> --dest <dir>          # Convert Hugo content to kiln
 
 ```text
 .
-├── build.rs            # BuildContext, per-page rendering, taxonomy page generation, static / asset copying
+├── build.rs            # BuildContext, per-page rendering, home / section / taxonomy page generation, static / asset copying
 ├── config.rs           # TOML site configuration loading, theme resolution, param merging
 ├── content/            # Content model (module declarations in content.rs)
 │   ├── discovery.rs    # Recursive content walking with draft / _-prefix / no-frontmatter exclusion
 │   ├── frontmatter.rs  # TOML frontmatter parsing (+++), Frontmatter with jiff timestamps
-│   └── page.rs         # Page struct, slug derivation, summary, output paths, co-located assets
+│   └── page.rs         # Page struct, PageKind, slug derivation, summary, output paths, co-located assets
 ├── convert.rs          # Hugo → kiln content converter orchestrator
 ├── convert/            # Hugo → kiln converter submodules (orchestrator in convert.rs)
 │   ├── frontmatter.rs  # YAML → TOML frontmatter serde round-trip
@@ -82,10 +82,12 @@ kiln convert --source <dir> --dest <dir>          # Convert Hugo content to kiln
 │   ├── markdown.rs     # pulldown-cmark, GFM, CJK heading IDs, KaTeX, block / inline images
 │   ├── pipeline.rs     # Full pipeline: directives → pre-processors → markdown → ToC
 │   └── toc.rs          # TocEntry struct, nested <nav> table of contents generation
+├── section.rs          # Section struct, collect_sections() from page kinds, _index.md title loading
 ├── serve.rs            # Dev server with file watching, SSE live reload, script injection
 ├── taxonomy.rs         # TaxonomyKind, Taxonomy, Term, TaxonomySet, build_taxonomies()
 ├── template.rs         # MiniJinja layered template engine, directive / taxonomy / term rendering
-└── text.rs             # Shared format-agnostic text utilities (slugify)
+├── test_utils.rs       # Shared test infrastructure (templates, helpers, Page factory)
+└── text.rs             # Shared format-agnostic text utilities (slugify, titlecase)
 ```
 
 ## Coding Conventions
