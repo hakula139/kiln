@@ -2,7 +2,7 @@ mod frontmatter;
 mod shortcode;
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use walkdir::WalkDir;
@@ -13,9 +13,11 @@ use walkdir::WalkDir;
 /// to TOML and translates shortcodes to kiln directives. Non-markdown files
 /// (co-located assets) are copied as-is.
 ///
-/// Taxonomy term files (`categories/<slug>/_index.md`, `tags/<slug>/_index.md`)
-/// are converted with their frontmatter. Other `_index.md` files (Hugo section
-/// files) are skipped since kiln has no equivalent.
+/// Hugo category index files (`categories/<slug>/_index.md`) are converted to
+/// kiln section indexes at `posts/<slug>/_index.md`. Tag index files
+/// (`tags/<slug>/_index.md`) are converted in place. Other `_index.md` files
+/// (Hugo section files) are skipped since kiln derives sections from directory
+/// structure.
 ///
 /// Existing files in `dest` are never overwritten.
 ///
@@ -36,8 +38,17 @@ pub fn convert(source: &Path, dest: &Path) -> Result<()> {
 
         let file_name = rel_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
-        // Skip Hugo section _index.md files, but convert taxonomy term ones.
-        if file_name == "_index.md" && !is_taxonomy_term_index(rel_path) {
+        // Handle _index.md files: convert category / tag term indexes,
+        // redirect category indexes to section indexes, skip others.
+        if file_name == "_index.md" {
+            if let Some(dest_path) = index_dest_path(rel_path, dest)
+                && !dest_path.exists()
+            {
+                if let Some(parent) = dest_path.parent() {
+                    fs::create_dir_all(parent)?;
+                }
+                convert_or_copy_markdown(entry.path(), &dest_path)?;
+            }
             continue;
         }
 
@@ -65,16 +76,24 @@ pub fn convert(source: &Path, dest: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Returns `true` for taxonomy term `_index.md` files like
-/// `categories/<slug>/_index.md` or `tags/<slug>/_index.md`.
-fn is_taxonomy_term_index(rel_path: &Path) -> bool {
+/// Computes the destination path for an `_index.md` file, or `None` to skip.
+///
+/// - `categories/<slug>/_index.md` → `posts/<slug>/_index.md` (section index)
+/// - `tags/<slug>/_index.md` → `tags/<slug>/_index.md` (tag term index)
+/// - Everything else → `None` (skipped)
+fn index_dest_path(rel_path: &Path, dest: &Path) -> Option<PathBuf> {
     let components: Vec<_> = rel_path.components().collect();
-    // Expect exactly: <taxonomy_kind>/<slug>/_index.md (3 components).
+    // Expect exactly: <kind>/<slug>/_index.md (3 components).
     if components.len() != 3 {
-        return false;
+        return None;
     }
     let kind = components[0].as_os_str().to_str().unwrap_or("");
-    kind == "categories" || kind == "tags"
+    let slug = components[1].as_os_str();
+    match kind {
+        "categories" => Some(dest.join("posts").join(slug).join("_index.md")),
+        "tags" => Some(dest.join(rel_path)),
+        _ => None,
+    }
 }
 
 /// Converts a markdown file if it has YAML frontmatter, otherwise copies it as-is.
@@ -290,12 +309,12 @@ mod tests {
     }
 
     #[test]
-    fn convert_taxonomy_term_index() {
+    fn convert_category_index_to_section_index() {
         let dir = tempfile::tempdir().unwrap();
         let source = dir.path().join("source");
         let dest = dir.path().join("dest");
 
-        // Category _index.md (should be converted).
+        // Category _index.md → should become section index at posts/<slug>/.
         let cat_dir = source.join("categories/anime");
         fs::create_dir_all(&cat_dir).unwrap();
         fs::write(
@@ -308,7 +327,7 @@ mod tests {
         )
         .unwrap();
 
-        // Tag _index.md (should be converted).
+        // Tag _index.md → should be converted in place.
         let tag_dir = source.join("tags/rust");
         fs::create_dir_all(&tag_dir).unwrap();
         fs::write(
@@ -321,7 +340,7 @@ mod tests {
         )
         .unwrap();
 
-        // Section _index.md (should be skipped).
+        // Section _index.md → should be skipped.
         fs::create_dir_all(source.join("posts")).unwrap();
         fs::write(
             source.join("posts/_index.md"),
@@ -335,18 +354,22 @@ mod tests {
 
         convert(&source, &dest).unwrap();
 
-        // Category term converted.
-        let cat = fs::read_to_string(dest.join("categories/anime/_index.md")).unwrap();
+        // Category index redirected to section index.
+        let section = fs::read_to_string(dest.join("posts/anime/_index.md")).unwrap();
         assert_eq!(
-            cat,
+            section,
             indoc! {r#"
                 +++
                 title = "动画"
                 +++
             "#}
         );
+        assert!(
+            !dest.join("categories/anime/_index.md").exists(),
+            "should NOT create categories/ output"
+        );
 
-        // Tag term converted.
+        // Tag term converted in place.
         let tag = fs::read_to_string(dest.join("tags/rust/_index.md")).unwrap();
         assert_eq!(
             tag,
