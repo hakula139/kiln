@@ -58,6 +58,7 @@ impl TemplateEngine {
             }
             Ok(None)
         });
+        env.add_function("now", tpl_now);
         env.add_function("read_file", tpl_read_file);
         env.add_function("parse_csv", tpl_parse_csv);
 
@@ -173,6 +174,14 @@ impl TemplateEngine {
     pub fn has_template(&self, name: &str) -> bool {
         self.env.get_template(name).is_ok()
     }
+}
+
+/// `MiniJinja` template function: returns the current UTC timestamp as an
+/// ISO 8601 string (e.g., `"2026-03-29T15:00:00Z"`).
+///
+/// Usage in templates: `{% set current_year = now()[0:4] %}`
+fn tpl_now() -> String {
+    jiff::Timestamp::now().to_string()
 }
 
 /// `MiniJinja` template function: reads a file relative to the directive's
