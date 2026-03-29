@@ -361,7 +361,7 @@ fn build_section_pages(
             .unwrap_or_default();
         sort_by_date_desc(&mut posts);
 
-        let section_base = format!("/{}", section.slug);
+        let section_base = format!("/posts/{}", section.slug);
         write_paginated(
             &posts,
             per_page,
@@ -1108,8 +1108,14 @@ mod tests {
             "orphan post should appear on home page, html:\n{home_html}"
         );
 
-        let note_html =
-            fs::read_to_string(root.path().join("public").join("note").join("index.html")).unwrap();
+        let note_html = fs::read_to_string(
+            root.path()
+                .join("public")
+                .join("posts")
+                .join("note")
+                .join("index.html"),
+        )
+        .unwrap();
         assert!(
             note_html.contains("Sectioned Post"),
             "sectioned post should appear in section page, html:\n{note_html}"
@@ -1260,8 +1266,11 @@ mod tests {
         build(root.path(), None).unwrap();
 
         let output_dir = root.path().join("public");
-        let note_index = output_dir.join("note").join("index.html");
-        assert!(note_index.exists(), "should generate /note/index.html");
+        let note_index = output_dir.join("posts").join("note").join("index.html");
+        assert!(
+            note_index.exists(),
+            "should generate /posts/note/index.html"
+        );
         let html = fs::read_to_string(&note_index).unwrap();
         assert!(
             html.contains("Note"),
@@ -1276,8 +1285,11 @@ mod tests {
             "section page should link to posts under /posts/, html:\n{html}"
         );
 
-        let essay_index = output_dir.join("essay").join("index.html");
-        assert!(essay_index.exists(), "should generate /essay/index.html");
+        let essay_index = output_dir.join("posts").join("essay").join("index.html");
+        assert!(
+            essay_index.exists(),
+            "should generate /posts/essay/index.html"
+        );
     }
 
     #[test]
@@ -1299,7 +1311,12 @@ mod tests {
 
         build(root.path(), None).unwrap();
 
-        let section_index = root.path().join("public").join("note").join("index.html");
+        let section_index = root
+            .path()
+            .join("public")
+            .join("posts")
+            .join("note")
+            .join("index.html");
         assert!(
             !section_index.exists(),
             "should NOT generate section pages without section.html template"
@@ -1337,8 +1354,14 @@ mod tests {
 
         build(root.path(), None).unwrap();
 
-        let html =
-            fs::read_to_string(root.path().join("public").join("note").join("index.html")).unwrap();
+        let html = fs::read_to_string(
+            root.path()
+                .join("public")
+                .join("posts")
+                .join("note")
+                .join("index.html"),
+        )
+        .unwrap();
         assert!(
             html.contains("笔记"),
             "should use _index.md title, html:\n{html}"
@@ -1378,7 +1401,7 @@ mod tests {
         build(root.path(), None).unwrap();
 
         let output_dir = root.path().join("public");
-        let page1 = output_dir.join("note").join("index.html");
+        let page1 = output_dir.join("posts").join("note").join("index.html");
         assert!(page1.exists(), "should generate section page 1");
         let html1 = fs::read_to_string(&page1).unwrap();
         assert!(
@@ -1387,6 +1410,7 @@ mod tests {
         );
 
         let page2 = output_dir
+            .join("posts")
             .join("note")
             .join("page")
             .join("2")

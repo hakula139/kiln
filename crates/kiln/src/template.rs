@@ -306,7 +306,7 @@ pub struct HomePageVars<'a> {
     pub config: &'a Config,
 }
 
-/// Template variables for a section listing page (e.g., `/note/`).
+/// Template variables for a section listing page (e.g., `/posts/note/`).
 #[derive(Debug, Serialize)]
 pub struct SectionPageVars<'a> {
     pub section_title: &'a str,
@@ -699,7 +699,7 @@ mod tests {
                     featured_image: None,
                 }],
             }],
-            pagination: PaginationVars::new("/note", 1, 1),
+            pagination: PaginationVars::new("/posts/note", 1, 1),
             config: &config,
         };
         let html = engine.render_section(&vars).unwrap();
@@ -726,7 +726,7 @@ mod tests {
             section_title: "Note",
             section_slug: "note",
             page_groups: Vec::new(),
-            pagination: PaginationVars::new("/note", 1, 1),
+            pagination: PaginationVars::new("/posts/note", 1, 1),
             config: &config,
         };
         let err = engine.render_section(&vars).unwrap_err().to_string();

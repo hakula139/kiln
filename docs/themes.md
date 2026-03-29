@@ -33,7 +33,7 @@ themes/IgnIt/
 │   ├── home.html             # Home page with paginated post listing
 │   ├── page.html             # Standalone page (about, etc.)
 │   ├── post.html             # Post page template
-│   ├── section.html          # Section listing page (e.g., /note/)
+│   ├── section.html          # Section listing page (e.g., /posts/note/)
 │   ├── taxonomy.html         # Taxonomy index page (e.g., /tags/)
 │   └── term.html             # Term page with post list (e.g., /tags/rust/)
 └── theme.toml                # Theme metadata and default parameters
