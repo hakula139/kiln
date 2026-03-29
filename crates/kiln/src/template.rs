@@ -79,19 +79,49 @@ impl TemplateEngine {
             .context("failed to render post template")
     }
 
-    /// Tries to render a directive using a theme template at
-    /// `directives/<name>.html`.
+    /// Renders a standalone page using the `page.html` template.
     ///
-    /// Returns `None` if no template exists for the directive name.
-    /// Returns `Some(Err(_))` if the template exists but rendering fails.
-    pub fn render_directive(&self, name: &str, ctx: impl Serialize) -> Option<Result<String>> {
-        let template_name = format!("directives/{name}.html");
-        let template = self.env.get_template(&template_name).ok()?;
-        Some(
-            template
-                .render(ctx)
-                .with_context(|| format!("failed to render directive template: {template_name}")),
-        )
+    /// # Errors
+    ///
+    /// Returns an error if the template is missing or rendering fails.
+    pub fn render_page(&self, vars: &PostTemplateVars<'_>) -> Result<String> {
+        let template = self
+            .env
+            .get_template("page.html")
+            .context("failed to load page.html template")?;
+        template
+            .render(vars)
+            .context("failed to render page template")
+    }
+
+    /// Renders the home page using the `home.html` template.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the template is missing or rendering fails.
+    pub fn render_home(&self, vars: &HomePageVars<'_>) -> Result<String> {
+        let template = self
+            .env
+            .get_template("home.html")
+            .context("failed to load home.html template")?;
+        template
+            .render(vars)
+            .context("failed to render home template")
+    }
+
+    /// Renders a section listing page using the `section.html` template.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the template is missing or rendering fails.
+    pub fn render_section(&self, vars: &SectionPageVars<'_>) -> Result<String> {
+        let template = self
+            .env
+            .get_template("section.html")
+            .context("failed to load section.html template")?;
+        template
+            .render(vars)
+            .context("failed to render section template")
     }
 
     /// Renders a taxonomy index page (e.g., `/tags/` listing all tags).
@@ -122,6 +152,26 @@ impl TemplateEngine {
         template
             .render(vars)
             .context("failed to render term template")
+    }
+
+    /// Tries to render a directive using a theme template at
+    /// `directives/<name>.html`.
+    ///
+    /// Returns `None` if no template exists for the directive name.
+    /// Returns `Some(Err(_))` if the template exists but rendering fails.
+    pub fn render_directive(&self, name: &str, ctx: impl Serialize) -> Option<Result<String>> {
+        let template_name = format!("directives/{name}.html");
+        let template = self.env.get_template(&template_name).ok()?;
+        Some(
+            template
+                .render(ctx)
+                .with_context(|| format!("failed to render directive template: {template_name}")),
+        )
+    }
+
+    /// Returns `true` if a template with the given name exists.
+    pub fn has_template(&self, name: &str) -> bool {
+        self.env.get_template(name).is_ok()
     }
 }
 
@@ -232,6 +282,31 @@ pub struct PageSummary {
     pub featured_image: Option<String>,
 }
 
+/// A group of pages sharing a common key (e.g., year).
+#[derive(Debug, Clone, Serialize)]
+pub struct PageGroup {
+    pub key: String,
+    pub pages: Vec<PageSummary>,
+}
+
+/// Template variables for the home page.
+#[derive(Debug, Serialize)]
+pub struct HomePageVars<'a> {
+    pub pages: Vec<PageSummary>,
+    pub pagination: PaginationVars,
+    pub config: &'a Config,
+}
+
+/// Template variables for a section listing page (e.g., `/note/`).
+#[derive(Debug, Serialize)]
+pub struct SectionPageVars<'a> {
+    pub section_title: &'a str,
+    pub section_slug: &'a str,
+    pub page_groups: Vec<PageGroup>,
+    pub pagination: PaginationVars,
+    pub config: &'a Config,
+}
+
 /// Template variables for a taxonomy index page (e.g., `/tags/`).
 #[derive(Debug, Serialize)]
 pub struct TaxonomyIndexVars<'a> {
@@ -250,13 +325,6 @@ pub struct TermSummary {
     pub slug: String,
     pub url: String,
     /// All pages with this term, sorted by date descending.
-    pub pages: Vec<PageSummary>,
-}
-
-/// A group of pages sharing a common key (e.g., year).
-#[derive(Debug, Clone, Serialize)]
-pub struct PageGroup {
-    pub key: String,
     pub pages: Vec<PageSummary>,
 }
 
@@ -487,84 +555,175 @@ mod tests {
         );
     }
 
-    // -- render_directive --
+    // -- render_page --
 
     #[test]
-    fn render_directive_renders_template() {
-        #[derive(Serialize)]
-        struct Ctx {
-            name: String,
-            body_html: String,
-        }
-
-        let dir = tempfile::tempdir().unwrap();
-        let directives_dir = dir.path().join("directives");
-        test_fs::create_dir_all(&directives_dir).unwrap();
-        test_fs::write(
-            directives_dir.join("test.html"),
-            "<div>{{ name }}: {{ body_html | safe }}</div>",
-        )
-        .unwrap();
-
-        let engine = TemplateEngine::new(Some(dir.path()), None).unwrap();
-        let ctx = Ctx {
-            name: "test".into(),
-            body_html: "<p>hello</p>".into(),
+    fn render_page_basic() {
+        let engine = test_engine();
+        let config = test_config();
+        let vars = PostTemplateVars {
+            title: "About Me",
+            description: "A page about me",
+            url: "https://example.com/about-me/",
+            featured_image: None,
+            date: None,
+            content: "<p>Hello</p>",
+            toc: "",
+            config: &config,
         };
-
-        let result = engine.render_directive("test", ctx);
-        assert!(result.is_some(), "should find template");
-        let html = result.unwrap().unwrap();
+        let html = engine.render_page(&vars).unwrap();
         assert!(
-            html.contains("<div>test: <p>hello</p></div>"),
-            "should render with context, html:\n{html}"
+            html.contains(r#"<article class="page">"#),
+            "should use page template, html:\n{html}"
+        );
+        assert!(
+            html.contains("<h1>About Me</h1>"),
+            "should have title, html:\n{html}"
+        );
+        assert!(
+            html.contains("<p>Hello</p>"),
+            "should have content, html:\n{html}"
         );
     }
 
     #[test]
-    fn render_directive_returns_none_for_missing_template() {
+    fn render_page_missing_template_returns_error() {
         let dir = tempfile::tempdir().unwrap();
         let engine = TemplateEngine::new(Some(dir.path()), None).unwrap();
-        assert!(engine.render_directive("nonexistent", ()).is_none());
-    }
-
-    #[test]
-    fn render_directive_rejects_path_traversal() {
-        let dir = tempfile::tempdir().unwrap();
-        let directives_dir = dir.path().join("directives");
-        test_fs::create_dir_all(&directives_dir).unwrap();
-        // Place a file outside directives/ that a traversal would reach.
-        test_fs::write(dir.path().join("secret.html"), "LEAKED").unwrap();
-
-        let engine = TemplateEngine::new(Some(dir.path()), None).unwrap();
-        // `render_directive` builds "directives/../secret.html" — safe_join rejects "..".
-        let result = engine.render_directive("../secret", ());
-        assert!(result.is_none(), "path traversal should not find template");
-    }
-
-    #[test]
-    fn render_directive_render_failure_returns_error() {
-        #[derive(Serialize)]
-        struct Ctx {
-            items: i32,
-        }
-
-        let dir = tempfile::tempdir().unwrap();
-        let directives_dir = dir.path().join("directives");
-        test_fs::create_dir_all(&directives_dir).unwrap();
-        test_fs::write(
-            directives_dir.join("bad.html"),
-            "{% for x in items %}{{ x }}{% endfor %}",
-        )
-        .unwrap();
-
-        let engine = TemplateEngine::new(Some(dir.path()), None).unwrap();
-        let result = engine.render_directive("bad", Ctx { items: 42 });
-        assert!(result.is_some(), "template exists so should return Some");
-        let err = result.unwrap().unwrap_err().to_string();
+        let config = test_config();
+        let vars = PostTemplateVars {
+            title: "Test",
+            description: "",
+            url: "",
+            featured_image: None,
+            date: None,
+            content: "",
+            toc: "",
+            config: &config,
+        };
+        let err = engine.render_page(&vars).unwrap_err().to_string();
         assert!(
-            err.contains("failed to render directive template"),
-            "should have context message, got: {err}"
+            err.contains("failed to load page.html template"),
+            "should report missing template, got: {err}"
+        );
+    }
+
+    // -- render_home --
+
+    #[test]
+    fn render_home_basic() {
+        let engine = test_engine();
+        let config = test_config();
+        let vars = HomePageVars {
+            pages: vec![PageSummary {
+                title: "Hello World".into(),
+                url: "/hello/".into(),
+                date: Some("2026-01-01T00:00:00Z".into()),
+                description: String::new(),
+                featured_image: None,
+            }],
+            pagination: PaginationVars::new("", 1, 1),
+            config: &config,
+        };
+        let html = engine.render_home(&vars).unwrap();
+        assert!(
+            html.contains(r#"<a href="/hello/">Hello World</a>"#),
+            "should list pages, html:\n{html}"
+        );
+    }
+
+    #[test]
+    fn render_home_with_pagination() {
+        let engine = test_engine();
+        let config = test_config();
+        let vars = HomePageVars {
+            pages: vec![PageSummary {
+                title: "Post".into(),
+                url: "/post/".into(),
+                date: None,
+                description: String::new(),
+                featured_image: None,
+            }],
+            pagination: PaginationVars::new("", 2, 3),
+            config: &config,
+        };
+        let html = engine.render_home(&vars).unwrap();
+        assert!(
+            html.contains("Page 2 / 3"),
+            "should show pagination, html:\n{html}"
+        );
+    }
+
+    #[test]
+    fn render_home_missing_template_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine = TemplateEngine::new(Some(dir.path()), None).unwrap();
+        let config = test_config();
+        let vars = HomePageVars {
+            pages: Vec::new(),
+            pagination: PaginationVars::new("", 1, 1),
+            config: &config,
+        };
+        let err = engine.render_home(&vars).unwrap_err().to_string();
+        assert!(
+            err.contains("failed to load home.html template"),
+            "should report missing template, got: {err}"
+        );
+    }
+
+    // -- render_section --
+
+    #[test]
+    fn render_section_basic() {
+        let engine = test_engine();
+        let config = test_config();
+        let vars = SectionPageVars {
+            section_title: "笔记",
+            section_slug: "note",
+            page_groups: vec![PageGroup {
+                key: "2026".into(),
+                pages: vec![PageSummary {
+                    title: "Hello Rust".into(),
+                    url: "/note/hello-rust/".into(),
+                    date: Some("2026-01-15T00:00:00Z".into()),
+                    description: String::new(),
+                    featured_image: None,
+                }],
+            }],
+            pagination: PaginationVars::new("/note", 1, 1),
+            config: &config,
+        };
+        let html = engine.render_section(&vars).unwrap();
+        assert!(
+            html.contains("<h1>笔记</h1>"),
+            "should have section title, html:\n{html}"
+        );
+        assert!(
+            html.contains("<h3>2026</h3>"),
+            "should have year group, html:\n{html}"
+        );
+        assert!(
+            html.contains(r#"<a href="/note/hello-rust/">Hello Rust</a>"#),
+            "should list pages, html:\n{html}"
+        );
+    }
+
+    #[test]
+    fn render_section_missing_template_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine = TemplateEngine::new(Some(dir.path()), None).unwrap();
+        let config = test_config();
+        let vars = SectionPageVars {
+            section_title: "Note",
+            section_slug: "note",
+            page_groups: Vec::new(),
+            pagination: PaginationVars::new("/note", 1, 1),
+            config: &config,
+        };
+        let err = engine.render_section(&vars).unwrap_err().to_string();
+        assert!(
+            err.contains("failed to load section.html template"),
+            "should report missing template, got: {err}"
         );
     }
 
@@ -780,7 +939,105 @@ mod tests {
         );
     }
 
-    // -- read_file --
+    // -- render_directive --
+
+    #[test]
+    fn render_directive_renders_template() {
+        #[derive(Serialize)]
+        struct Ctx {
+            name: String,
+            body_html: String,
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        let directives_dir = dir.path().join("directives");
+        test_fs::create_dir_all(&directives_dir).unwrap();
+        test_fs::write(
+            directives_dir.join("test.html"),
+            "<div>{{ name }}: {{ body_html | safe }}</div>",
+        )
+        .unwrap();
+
+        let engine = TemplateEngine::new(Some(dir.path()), None).unwrap();
+        let ctx = Ctx {
+            name: "test".into(),
+            body_html: "<p>hello</p>".into(),
+        };
+
+        let result = engine.render_directive("test", ctx);
+        assert!(result.is_some(), "should find template");
+        let html = result.unwrap().unwrap();
+        assert!(
+            html.contains("<div>test: <p>hello</p></div>"),
+            "should render with context, html:\n{html}"
+        );
+    }
+
+    #[test]
+    fn render_directive_returns_none_for_missing_template() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine = TemplateEngine::new(Some(dir.path()), None).unwrap();
+        assert!(engine.render_directive("nonexistent", ()).is_none());
+    }
+
+    #[test]
+    fn render_directive_rejects_path_traversal() {
+        let dir = tempfile::tempdir().unwrap();
+        let directives_dir = dir.path().join("directives");
+        test_fs::create_dir_all(&directives_dir).unwrap();
+        // Place a file outside directives/ that a traversal would reach.
+        test_fs::write(dir.path().join("secret.html"), "LEAKED").unwrap();
+
+        let engine = TemplateEngine::new(Some(dir.path()), None).unwrap();
+        // `render_directive` builds "directives/../secret.html" — safe_join rejects "..".
+        let result = engine.render_directive("../secret", ());
+        assert!(result.is_none(), "path traversal should not find template");
+    }
+
+    #[test]
+    fn render_directive_render_failure_returns_error() {
+        #[derive(Serialize)]
+        struct Ctx {
+            items: i32,
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        let directives_dir = dir.path().join("directives");
+        test_fs::create_dir_all(&directives_dir).unwrap();
+        test_fs::write(
+            directives_dir.join("bad.html"),
+            "{% for x in items %}{{ x }}{% endfor %}",
+        )
+        .unwrap();
+
+        let engine = TemplateEngine::new(Some(dir.path()), None).unwrap();
+        let result = engine.render_directive("bad", Ctx { items: 42 });
+        assert!(result.is_some(), "template exists so should return Some");
+        let err = result.unwrap().unwrap_err().to_string();
+        assert!(
+            err.contains("failed to render directive template"),
+            "should have context message, got: {err}"
+        );
+    }
+
+    // -- has_template --
+
+    #[test]
+    fn has_template_existing() {
+        let engine = test_engine();
+        assert!(engine.has_template("post.html"));
+        assert!(engine.has_template("page.html"));
+        assert!(engine.has_template("home.html"));
+        assert!(engine.has_template("section.html"));
+    }
+
+    #[test]
+    fn has_template_missing() {
+        let engine = test_engine();
+        assert!(!engine.has_template("nonexistent.html"));
+    }
+
+    // -- tpl_read_file --
 
     #[test]
     fn read_file_reads_relative_to_source_dir() {
@@ -949,7 +1206,7 @@ mod tests {
         );
     }
 
-    // -- parse_csv --
+    // -- tpl_parse_csv --
 
     #[test]
     fn parse_csv_basic() {
