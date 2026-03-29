@@ -176,12 +176,12 @@ impl TemplateEngine {
     }
 }
 
-/// `MiniJinja` template function: returns the current UTC timestamp as an
-/// ISO 8601 string (e.g., `"2026-03-29T15:00:00Z"`).
+/// `MiniJinja` template function: returns the current local timestamp as an
+/// ISO 8601 string (e.g., `"2026-03-29T23:00:00+08:00[Asia/Shanghai]"`).
 ///
 /// Usage in templates: `{% set current_year = now()[0:4] %}`
 fn tpl_now() -> String {
-    jiff::Timestamp::now().to_string()
+    jiff::Zoned::now().to_string()
 }
 
 /// `MiniJinja` template function: reads a file relative to the directive's
