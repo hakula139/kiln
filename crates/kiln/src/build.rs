@@ -27,6 +27,20 @@ struct BuildContext {
     template_engine: TemplateEngine,
 }
 
+/// Internal listing model for build-time sorting and grouping.
+#[derive(Debug, Clone)]
+struct ListedPage {
+    summary: PageSummary,
+    timestamp: Option<Timestamp>,
+    year: String,
+}
+
+impl ListedPage {
+    fn into_summary(self) -> PageSummary {
+        self.summary
+    }
+}
+
 /// Builds the site from the given project root directory.
 ///
 /// When `base_url_override` is provided, it replaces the `base_url` from
@@ -78,11 +92,12 @@ pub fn build(root: &Path, base_url_override: Option<&str>) -> Result<()> {
     }
     copy_static(&root.join("static"), &output_dir)?;
 
-    // All page summaries are used for taxonomy lookups.
-    let mut post_summaries = Vec::new();
-    let mut page_summaries = Vec::new();
+    // All listed pages are used for taxonomy lookups; posts are also reused
+    // for the home page.
+    let mut listed_posts = Vec::new();
+    let mut listed_pages = Vec::new();
     for page in &content.pages {
-        let Some(summary) = page_summary(
+        let Some(listed_page) = listed_page(
             page,
             &content.content_dir,
             &ctx.config.base_url,
@@ -91,9 +106,9 @@ pub fn build(root: &Path, base_url_override: Option<&str>) -> Result<()> {
             continue;
         };
         if page.is_post() {
-            post_summaries.push(summary.clone());
+            listed_posts.push(listed_page.clone());
         }
-        page_summaries.push(summary);
+        listed_pages.push(listed_page);
     }
 
     for page in &content.pages {
@@ -101,7 +116,7 @@ pub fn build(root: &Path, base_url_override: Option<&str>) -> Result<()> {
     }
 
     let sections = collect_sections(&content.pages, &content.content_dir);
-    build_home_pages(&ctx, &post_summaries, &output_dir)?;
+    build_home_pages(&ctx, &listed_posts, &output_dir)?;
     build_section_pages(
         &ctx,
         &sections,
@@ -109,10 +124,9 @@ pub fn build(root: &Path, base_url_override: Option<&str>) -> Result<()> {
         &content.content_dir,
         &output_dir,
     )?;
-
     build_taxonomy_pages(
         &ctx,
-        &page_summaries,
+        &listed_pages,
         &content.pages,
         &content.content_dir,
         &output_dir,
@@ -124,46 +138,49 @@ pub fn build(root: &Path, base_url_override: Option<&str>) -> Result<()> {
 
 // -- Single-page rendering --
 
-/// Builds a `PageSummary` for use in taxonomy / listing templates.
+/// Builds an internal listed page model for taxonomy / listing generation.
 ///
 /// Returns `None` if the output path cannot be computed (shouldn't happen
 /// for pages that passed discovery).
-fn page_summary(
+fn listed_page(
     page: &Page,
     content_dir: &Path,
     base_url: &str,
     time_zone: Option<&TimeZone>,
-) -> Option<PageSummary> {
+) -> Option<ListedPage> {
     let output_path = page.output_path(content_dir).ok()?;
     let url = page_url(base_url, &output_path);
-    Some(PageSummary {
-        title: page.frontmatter.title.clone(),
-        url,
-        date: page
-            .frontmatter
-            .date
-            .map(|date| format_page_date(date, time_zone)),
-        date_sort: page.frontmatter.date,
-        description: page.frontmatter.description.clone().unwrap_or_default(),
-        featured_image: page.frontmatter.featured_image.clone(),
+    let timestamp = page.frontmatter.date;
+    Some(ListedPage {
+        summary: PageSummary {
+            title: page.frontmatter.title.clone(),
+            url,
+            date: timestamp.map(|date| format_page_date(date, time_zone)),
+            description: page.frontmatter.description.clone().unwrap_or_default(),
+            featured_image: page.frontmatter.featured_image.clone(),
+        },
+        timestamp,
+        year: timestamp
+            .map(|date| page_year(date, time_zone))
+            .unwrap_or_default(),
     })
 }
 
-/// Returns the section slug and summary for posts that belong to a section.
-fn section_post_summary<'a>(
+/// Returns the section slug and listed page for posts that belong to a section.
+fn section_listed_page<'a>(
     page: &'a Page,
     content_dir: &Path,
     base_url: &str,
     time_zone: Option<&TimeZone>,
-) -> Option<(&'a str, PageSummary)> {
+) -> Option<(&'a str, ListedPage)> {
     let PageKind::Post {
         section: Some(section),
     } = &page.kind
     else {
         return None;
     };
-    let summary = page_summary(page, content_dir, base_url, time_zone)?;
-    Some((section.as_str(), summary))
+    let listed_page = listed_page(page, content_dir, base_url, time_zone)?;
+    Some((section.as_str(), listed_page))
 }
 
 /// Formats a page date for templates using the configured site time zone,
@@ -174,6 +191,13 @@ fn format_page_date(date: Timestamp, time_zone: Option<&TimeZone>) -> String {
     };
     let zoned = date.to_zoned(time_zone.clone());
     date.display_with_offset(zoned.offset()).to_string()
+}
+
+/// Returns the grouping year for a page date in the configured site time zone.
+fn page_year(date: Timestamp, time_zone: Option<&TimeZone>) -> String {
+    date.to_zoned(time_zone.cloned().unwrap_or(TimeZone::UTC))
+        .year()
+        .to_string()
 }
 
 /// Renders a single page and writes it to the output directory.
@@ -270,7 +294,7 @@ pub(crate) fn page_url(base_url: &str, output_path: &Path) -> String {
 /// Skipped when `home.html` is not present in the template set.
 fn build_home_pages(
     ctx: &BuildContext,
-    post_summaries: &[PageSummary],
+    listed_posts: &[ListedPage],
     output_dir: &Path,
 ) -> Result<()> {
     if !ctx.template_engine.has_template("home.html") {
@@ -282,13 +306,13 @@ fn build_home_pages(
         .unwrap_or(10);
 
     write_paginated(
-        post_summaries,
+        listed_posts,
         per_page,
         "",
         output_dir,
         |pages, pagination| {
             let vars = HomePageVars {
-                pages,
+                pages: into_page_summaries(pages),
                 pagination,
                 config: &ctx.config,
             };
@@ -317,10 +341,10 @@ fn build_section_pages(
         .or_else(|| paginate_config(&ctx.config.params, &["paginate"]))
         .unwrap_or(10);
 
-    // Build section → page summaries map.
-    let mut section_posts: HashMap<&str, Vec<PageSummary>> = HashMap::new();
+    // Build section → listed pages map.
+    let mut section_posts: HashMap<&str, Vec<ListedPage>> = HashMap::new();
     for page in pages {
-        let Some((section, summary)) = section_post_summary(
+        let Some((section, listed_page)) = section_listed_page(
             page,
             content_dir,
             &ctx.config.base_url,
@@ -328,7 +352,7 @@ fn build_section_pages(
         ) else {
             continue;
         };
-        section_posts.entry(section).or_default().push(summary);
+        section_posts.entry(section).or_default().push(listed_page);
     }
 
     for section in sections {
@@ -365,7 +389,7 @@ fn build_section_pages(
 /// Generates taxonomy index pages and paginated term pages.
 fn build_taxonomy_pages(
     ctx: &BuildContext,
-    page_summaries: &[PageSummary],
+    listed_pages: &[ListedPage],
     pages: &[Page],
     content_dir: &Path,
     output_dir: &Path,
@@ -379,10 +403,10 @@ fn build_taxonomy_pages(
         let base_path = format!("/{}", kind.plural());
 
         // Resolve and sort pages for each term once (reused by index and term pages).
-        let term_pages: Vec<Vec<PageSummary>> = taxonomy
+        let term_pages: Vec<Vec<ListedPage>> = taxonomy
             .terms
             .iter()
-            .map(|term| resolve_term_pages(&taxonomy_set, kind, &term.slug, page_summaries))
+            .map(|term| resolve_term_pages(&taxonomy_set, kind, &term.slug, listed_pages))
             .collect();
 
         build_taxonomy_index(
@@ -402,21 +426,21 @@ fn build_taxonomy_pages(
     Ok(())
 }
 
-/// Resolves page indices for a term into sorted page summaries.
+/// Resolves page indices for a term into sorted listed pages.
 fn resolve_term_pages(
     taxonomy_set: &TaxonomySet,
     kind: TaxonomyKind,
     slug: &str,
-    page_summaries: &[PageSummary],
-) -> Vec<PageSummary> {
+    listed_pages: &[ListedPage],
+) -> Vec<ListedPage> {
     let key = (kind, slug.to_owned());
-    let mut pages: Vec<PageSummary> = taxonomy_set
+    let mut pages: Vec<ListedPage> = taxonomy_set
         .term_pages
         .get(&key)
         .map(|indices| {
             indices
                 .iter()
-                .filter_map(|&idx| page_summaries.get(idx))
+                .filter_map(|&idx| listed_pages.get(idx))
                 .cloned()
                 .collect()
         })
@@ -431,7 +455,7 @@ fn build_taxonomy_index(
     kind: TaxonomyKind,
     base_path: &str,
     terms: &[Term],
-    term_pages: &[Vec<PageSummary>],
+    term_pages: &[Vec<ListedPage>],
     output_dir: &Path,
 ) -> Result<()> {
     let term_summaries: Vec<TermSummary> = terms
@@ -441,7 +465,7 @@ fn build_taxonomy_index(
             name: term.name.clone(),
             slug: term.slug.clone(),
             url: format!("{base_path}/{}/", term.slug),
-            pages: pages.clone(),
+            pages: into_page_summaries(pages.iter().cloned()),
         })
         .collect();
 
@@ -468,14 +492,14 @@ fn build_term_pages(
     ctx: &BuildContext,
     kind: TaxonomyKind,
     term: &Term,
-    page_summaries: &[PageSummary],
+    listed_pages: &[ListedPage],
     per_page: usize,
     output_dir: &Path,
 ) -> Result<()> {
     let term_base = format!("/{}/{}", kind.plural(), term.slug);
 
     write_paginated(
-        page_summaries,
+        listed_pages,
         per_page,
         &term_base,
         output_dir,
@@ -504,15 +528,16 @@ fn build_term_pages(
 /// For each page of the paginator, collects the items, creates pagination
 /// vars, calls the render closure to produce HTML, and writes the result.
 /// Always generates at least one page (even when empty).
-fn write_paginated<F>(
-    items: &[PageSummary],
+fn write_paginated<T, F>(
+    items: &[T],
     per_page: usize,
     base_path: &str,
     output_dir: &Path,
     mut render: F,
 ) -> Result<()>
 where
-    F: FnMut(Vec<PageSummary>, PaginationVars) -> Result<String>,
+    T: Clone,
+    F: FnMut(Vec<T>, PaginationVars) -> Result<String>,
 {
     let paginator = Paginator::new(items, per_page);
 
@@ -533,9 +558,20 @@ where
     Ok(())
 }
 
-/// Sorts page summaries by date descending (newest first, undated last).
-fn sort_by_date_desc(pages: &mut [PageSummary]) {
-    pages.sort_by(|a, b| b.date_sort.cmp(&a.date_sort));
+/// Collects the template-facing page summaries from listed pages.
+fn into_page_summaries<I>(listed_pages: I) -> Vec<PageSummary>
+where
+    I: IntoIterator<Item = ListedPage>,
+{
+    listed_pages
+        .into_iter()
+        .map(ListedPage::into_summary)
+        .collect()
+}
+
+/// Sorts listed pages by date descending (newest first, undated last).
+fn sort_by_date_desc(pages: &mut [ListedPage]) {
+    pages.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
 }
 
 /// Reads a pagination count from a nested TOML params path.
@@ -554,17 +590,12 @@ fn paginate_config(params: &toml::value::Table, path: &[&str]) -> Option<usize> 
 /// Groups pages into year-based sections.
 ///
 /// Assumes pages are already sorted by date descending. Consecutive pages
-/// with the same year are grouped together.
-fn group_by_year(pages: Vec<PageSummary>) -> Vec<PageGroup> {
+/// with the same year in the configured site time zone are grouped together.
+fn group_by_year(pages: Vec<ListedPage>) -> Vec<PageGroup> {
     let mut groups: Vec<PageGroup> = Vec::new();
 
     for page in pages {
-        let year = page
-            .date
-            .as_deref()
-            .and_then(|d| d.get(..4))
-            .unwrap_or("")
-            .to_owned();
+        let year = page.year.clone();
 
         if groups.last().is_none_or(|g| g.key != year) {
             groups.push(PageGroup {
@@ -572,7 +603,11 @@ fn group_by_year(pages: Vec<PageSummary>) -> Vec<PageGroup> {
                 pages: Vec::new(),
             });
         }
-        groups.last_mut().expect("just pushed").pages.push(page);
+        groups
+            .last_mut()
+            .expect("just pushed")
+            .pages
+            .push(page.into_summary());
     }
 
     groups
@@ -1728,16 +1763,22 @@ mod tests {
         );
     }
 
-    // -- Shared summary helper --
+    // -- Shared listing helper --
 
-    fn make_summary(title: &str, date: Option<&str>) -> PageSummary {
-        PageSummary {
-            title: title.into(),
-            url: format!("/{title}/"),
-            date: date.map(Into::into),
-            date_sort: date.map(|date| date.parse().unwrap()),
-            description: String::new(),
-            featured_image: None,
+    fn make_listed_page(title: &str, date: Option<&str>) -> ListedPage {
+        let timestamp = date.map(|date| date.parse().unwrap());
+        ListedPage {
+            summary: PageSummary {
+                title: title.into(),
+                url: format!("/{title}/"),
+                date: timestamp.map(|date: Timestamp| date.to_string()),
+                description: String::new(),
+                featured_image: None,
+            },
+            timestamp,
+            year: timestamp
+                .map(|date| page_year(date, None))
+                .unwrap_or_default(),
         }
     }
 
@@ -1746,36 +1787,44 @@ mod tests {
     #[test]
     fn sort_by_date_desc_basic() {
         let mut pages = vec![
-            make_summary("old", Some("2025-01-01T00:00:00Z")),
-            make_summary("new", Some("2026-06-15T00:00:00Z")),
-            make_summary("mid", Some("2026-01-01T00:00:00Z")),
+            make_listed_page("old", Some("2025-01-01T00:00:00Z")),
+            make_listed_page("new", Some("2026-06-15T00:00:00Z")),
+            make_listed_page("mid", Some("2026-01-01T00:00:00Z")),
         ];
         sort_by_date_desc(&mut pages);
-        assert_eq!(pages[0].title, "new");
-        assert_eq!(pages[1].title, "mid");
-        assert_eq!(pages[2].title, "old");
+        assert_eq!(pages[0].summary.title, "new");
+        assert_eq!(pages[1].summary.title, "mid");
+        assert_eq!(pages[2].summary.title, "old");
     }
 
     #[test]
     fn sort_by_date_desc_undated_last() {
         let mut pages = vec![
-            make_summary("undated", None),
-            make_summary("dated", Some("2026-01-01T00:00:00Z")),
+            make_listed_page("undated", None),
+            make_listed_page("dated", Some("2026-01-01T00:00:00Z")),
         ];
         sort_by_date_desc(&mut pages);
-        assert_eq!(pages[0].title, "dated");
-        assert_eq!(pages[1].title, "undated");
+        assert_eq!(pages[0].summary.title, "dated");
+        assert_eq!(pages[1].summary.title, "undated");
     }
 
     #[test]
     fn sort_by_date_desc_uses_timestamp_not_rendered_string() {
         let mut pages = vec![
-            make_summary("older", Some("2024-11-03T01:30:00-04:00")),
-            make_summary("newer", Some("2024-11-03T01:15:00-05:00")),
+            make_listed_page("older", Some("2024-11-03T01:30:00-04:00")),
+            make_listed_page("newer", Some("2024-11-03T01:15:00-05:00")),
         ];
         sort_by_date_desc(&mut pages);
-        assert_eq!(pages[0].title, "newer");
-        assert_eq!(pages[1].title, "older");
+        assert_eq!(pages[0].summary.title, "newer");
+        assert_eq!(pages[1].summary.title, "older");
+    }
+
+    #[test]
+    fn page_year_uses_configured_timezone() {
+        let date: Timestamp = "2025-12-31T16:30:00Z".parse().unwrap();
+        let time_zone = TimeZone::get("Asia/Shanghai").unwrap();
+        assert_eq!(page_year(date, Some(&time_zone)), "2026");
+        assert_eq!(page_year(date, None), "2025");
     }
 
     // -- paginate_config --
@@ -1819,9 +1868,9 @@ mod tests {
     #[test]
     fn group_by_year_basic() {
         let pages = vec![
-            make_summary("a", Some("2026-03-01T00:00:00Z")),
-            make_summary("b", Some("2026-01-15T00:00:00Z")),
-            make_summary("c", Some("2025-12-01T00:00:00Z")),
+            make_listed_page("a", Some("2026-03-01T00:00:00Z")),
+            make_listed_page("b", Some("2026-01-15T00:00:00Z")),
+            make_listed_page("c", Some("2025-12-01T00:00:00Z")),
         ];
         let groups = group_by_year(pages);
         assert_eq!(groups.len(), 2);
@@ -1834,8 +1883,8 @@ mod tests {
     #[test]
     fn group_by_year_undated_pages() {
         let pages = vec![
-            make_summary("a", Some("2026-01-01T00:00:00Z")),
-            make_summary("b", None),
+            make_listed_page("a", Some("2026-01-01T00:00:00Z")),
+            make_listed_page("b", None),
         ];
         let groups = group_by_year(pages);
         assert_eq!(groups.len(), 2);
@@ -1846,9 +1895,9 @@ mod tests {
     #[test]
     fn group_by_year_non_consecutive_same_year() {
         let pages = vec![
-            make_summary("a", Some("2026-03-01T00:00:00Z")),
-            make_summary("b", Some("2025-06-01T00:00:00Z")),
-            make_summary("c", Some("2026-01-01T00:00:00Z")),
+            make_listed_page("a", Some("2026-03-01T00:00:00Z")),
+            make_listed_page("b", Some("2025-06-01T00:00:00Z")),
+            make_listed_page("c", Some("2026-01-01T00:00:00Z")),
         ];
         let groups = group_by_year(pages);
         assert_eq!(groups.len(), 3, "groups consecutively, not globally");
