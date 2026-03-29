@@ -4,30 +4,7 @@
 
 kiln is a custom static site generator (SSG) written in Rust, replacing a Hugo + LoveIt theme stack for [hakula.xyz](https://hakula.xyz).
 
-**Status**:
-
-- [x] Workspace scaffold + CLI
-- [x] TOML configuration + content model (frontmatter, pages, discovery)
-- [x] Configurable site time zone for rendered dates
-- [x] Markdown rendering (GFM, syntax highlighting, KaTeX math, images)
-- [x] Directive parser + callout renderer + fenced divs
-- [x] Render pipeline (directive processing → markdown → ToC)
-- [x] MiniJinja template engine (OG / Twitter Card / SEO meta)
-- [x] Single-page build pipeline
-- [x] Multi-page builds + static file copying + pretty URLs + co-located assets
-- [x] Theme system (layered templates, static files, param merging)
-- [x] Pre-processors (image attrs, icon shortcodes, emoji shortcodes)
-- [x] Code block wrapper with header, language label, and max-lines
-- [x] Hugo → kiln content converter (`kiln convert`)
-- [x] Directive template functions (`read_file`, `parse_csv`) + structured arg parsing
-- [x] Directive renderers (site, music, score-table — template-based in theme / site)
-- [x] Dev server with file watching, SSE live reload, and safe rebuild (`kiln serve`)
-- [x] Taxonomy support (tags) with pagination
-- [x] Home page + section pages + standalone page template
-- [ ] Tailwind CSS + dark theme
-- [ ] RSS feed + sitemap
-- [ ] Full-text search (Pagefind)
-- [ ] 404 page + final polish
+User-facing feature positioning belongs in `README.md`. The canonical in-repo roadmap / status summary lives in `docs/roadmap.md`. Do not duplicate long feature checklists in this file.
 
 ### CLI
 
@@ -38,9 +15,7 @@ kiln init-theme <name> [--root]                   # Scaffold a new theme under t
 kiln convert --source <dir> --dest <dir>          # Convert a Hugo site root into a kiln site root
 ```
 
-`kiln convert` expects site roots. It reads `source/content`, writes to
-`dest/content`, and copies `source/static` to `dest/static` without
-overwriting existing destination files.
+`kiln convert` expects site roots. It reads `source/content`, writes to `dest/content`, and copies `source/static` to `dest/static` without overwriting existing destination files.
 
 ### Project Layout
 
@@ -149,7 +124,8 @@ overwriting existing destination files.
 
 ### Documentation Maintenance
 
-- When a feature is completed, update **all** references to it: the status checklist in this file, the README roadmap, and any other docs that mention it.
+- Keep `README.md` user-facing. It should describe value, supported features, and usage, not internal progress tracking.
+- Keep `docs/roadmap.md` as the canonical in-repo roadmap / status summary. Update it when shipped capability areas or planned priorities change.
 - Crate structure diagrams must match the actual filesystem. When adding, removing, or renaming modules, update the tree in this file. Entries are sorted alphabetically; directories sort alongside their parent `.rs` file.
 
 ## Verification
