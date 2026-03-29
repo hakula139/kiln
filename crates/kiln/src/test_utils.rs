@@ -239,6 +239,17 @@ pub fn test_page(title: &str) -> Page {
     }
 }
 
+/// Writes a file at `dir.join(rel_path)`, creating parent directories as needed.
+///
+/// Generic helper for filesystem-based tests (content discovery, build, etc.).
+pub fn write_test_file(dir: &Path, rel_path: &str, content: &str) {
+    let path = dir.join(rel_path);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).unwrap();
+    }
+    fs::write(path, content).unwrap();
+}
+
 /// RAII guard that restores filesystem permissions on drop.
 ///
 /// Ensures cleanup happens even if the test panics, preventing

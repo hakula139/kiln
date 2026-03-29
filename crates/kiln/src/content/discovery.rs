@@ -91,27 +91,18 @@ fn is_excluded(entry: &walkdir::DirEntry) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
-
     use indoc::indoc;
 
     use super::*;
     use crate::content::page::PageKind;
+    use crate::test_utils::write_test_file;
 
     // -- discover_content --
-
-    fn write_page(dir: &Path, rel_path: &str, content: &str) {
-        let path = dir.join(rel_path);
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).unwrap();
-        }
-        fs::write(path, content).unwrap();
-    }
 
     #[test]
     fn discover_content_basic() {
         let root = tempfile::tempdir().unwrap();
-        write_page(
+        write_test_file(
             root.path(),
             "content/posts/hello/index.md",
             indoc! {r#"
@@ -121,7 +112,7 @@ mod tests {
                 Body
             "#},
         );
-        write_page(
+        write_test_file(
             root.path(),
             "content/posts/world/index.md",
             indoc! {r#"
@@ -139,7 +130,7 @@ mod tests {
     #[test]
     fn discover_content_excludes_drafts() {
         let root = tempfile::tempdir().unwrap();
-        write_page(
+        write_test_file(
             root.path(),
             "content/posts/draft/index.md",
             indoc! {r#"
@@ -150,7 +141,7 @@ mod tests {
                 Body
             "#},
         );
-        write_page(
+        write_test_file(
             root.path(),
             "content/posts/published/index.md",
             indoc! {r#"
@@ -169,7 +160,7 @@ mod tests {
     #[test]
     fn discover_content_excludes_underscore_prefixed() {
         let root = tempfile::tempdir().unwrap();
-        write_page(
+        write_test_file(
             root.path(),
             "content/posts/visible/index.md",
             indoc! {r#"
@@ -179,7 +170,7 @@ mod tests {
                 Body
             "#},
         );
-        write_page(
+        write_test_file(
             root.path(),
             "content/posts/_hidden/index.md",
             indoc! {r#"
@@ -198,7 +189,7 @@ mod tests {
     #[test]
     fn discover_content_skips_markdown_without_frontmatter() {
         let root = tempfile::tempdir().unwrap();
-        write_page(
+        write_test_file(
             root.path(),
             "content/posts/hello/index.md",
             indoc! {r#"
@@ -209,7 +200,7 @@ mod tests {
             "#},
         );
         // CLAUDE.md has no frontmatter — should be silently skipped.
-        write_page(
+        write_test_file(
             root.path(),
             "content/posts/hello/CLAUDE.md",
             "# Notes\nSome reference notes.",
@@ -223,7 +214,7 @@ mod tests {
     #[test]
     fn discover_content_ignores_non_markdown_files() {
         let root = tempfile::tempdir().unwrap();
-        write_page(
+        write_test_file(
             root.path(),
             "content/posts/hello/index.md",
             indoc! {r#"
@@ -233,7 +224,7 @@ mod tests {
                 Body
             "#},
         );
-        write_page(root.path(), "content/posts/hello/image.png", "not-a-png");
+        write_test_file(root.path(), "content/posts/hello/image.png", "not-a-png");
 
         let set = discover_content(root.path()).unwrap();
         assert_eq!(set.pages.len(), 1);
@@ -249,7 +240,7 @@ mod tests {
     #[test]
     fn discover_content_sorted_by_date_descending() {
         let root = tempfile::tempdir().unwrap();
-        write_page(
+        write_test_file(
             root.path(),
             "content/posts/old/index.md",
             indoc! {r#"
@@ -260,7 +251,7 @@ mod tests {
                 Body
             "#},
         );
-        write_page(
+        write_test_file(
             root.path(),
             "content/posts/new/index.md",
             indoc! {r#"
@@ -280,7 +271,7 @@ mod tests {
     #[test]
     fn discover_content_undated_pages_sorted_by_path() {
         let root = tempfile::tempdir().unwrap();
-        write_page(
+        write_test_file(
             root.path(),
             "content/posts/beta/index.md",
             indoc! {r#"
@@ -290,7 +281,7 @@ mod tests {
                 Body
             "#},
         );
-        write_page(
+        write_test_file(
             root.path(),
             "content/posts/alpha/index.md",
             indoc! {r#"
@@ -309,7 +300,7 @@ mod tests {
     #[test]
     fn discover_content_assigns_page_kind() {
         let root = tempfile::tempdir().unwrap();
-        write_page(
+        write_test_file(
             root.path(),
             "content/posts/note/sectioned/index.md",
             indoc! {r#"
@@ -319,7 +310,7 @@ mod tests {
                 Body
             "#},
         );
-        write_page(
+        write_test_file(
             root.path(),
             "content/posts/orphan/index.md",
             indoc! {r#"
@@ -329,7 +320,7 @@ mod tests {
                 Body
             "#},
         );
-        write_page(
+        write_test_file(
             root.path(),
             "content/about-me/index.md",
             indoc! {r#"

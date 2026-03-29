@@ -243,7 +243,7 @@ mod tests {
     use indoc::indoc;
 
     use super::*;
-    use crate::test_utils::PermissionGuard;
+    use crate::test_utils::{PermissionGuard, test_page};
 
     // -- from_file: basic --
 
@@ -367,7 +367,7 @@ mod tests {
     }
 
     #[test]
-    fn from_file_standalone_has_no_assets() {
+    fn from_file_non_index_has_no_assets() {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("standalone.md");
         fs::write(
@@ -499,60 +499,32 @@ mod tests {
 
     #[test]
     fn output_path_post() {
-        let page = Page {
-            frontmatter: Frontmatter::default(),
-            raw_content: String::new(),
-            kind: PageKind::Page,
-            slug: "bar".into(),
-            summary: None,
-            source_path: PathBuf::from("/site/content/posts/foo/bar/index.md"),
-            assets: Vec::new(),
-        };
+        let mut page = test_page("bar");
+        page.source_path = PathBuf::from("/site/content/posts/foo/bar/index.md");
         let out = page.output_path(Path::new("/site/content")).unwrap();
         assert_eq!(out, PathBuf::from("foo/bar/index.html"));
     }
 
     #[test]
     fn output_path_non_post() {
-        let page = Page {
-            frontmatter: Frontmatter::default(),
-            raw_content: String::new(),
-            kind: PageKind::Page,
-            slug: "example".into(),
-            summary: None,
-            source_path: PathBuf::from("/site/content/example/index.md"),
-            assets: Vec::new(),
-        };
+        let mut page = test_page("example");
+        page.source_path = PathBuf::from("/site/content/example/index.md");
         let out = page.output_path(Path::new("/site/content")).unwrap();
         assert_eq!(out, PathBuf::from("example/index.html"));
     }
 
     #[test]
-    fn output_path_standalone_pretty_url() {
-        let page = Page {
-            frontmatter: Frontmatter::default(),
-            raw_content: String::new(),
-            kind: PageKind::Page,
-            slug: "hello-world".into(),
-            summary: None,
-            source_path: PathBuf::from("/site/content/posts/hello-world.md"),
-            assets: Vec::new(),
-        };
+    fn output_path_non_index() {
+        let mut page = test_page("hello-world");
+        page.source_path = PathBuf::from("/site/content/posts/hello-world.md");
         let out = page.output_path(Path::new("/site/content")).unwrap();
         assert_eq!(out, PathBuf::from("hello-world/index.html"));
     }
 
     #[test]
     fn output_path_outside_content_dir_returns_error() {
-        let page = Page {
-            frontmatter: Frontmatter::default(),
-            raw_content: String::new(),
-            kind: PageKind::Page,
-            slug: "test".into(),
-            summary: None,
-            source_path: PathBuf::from("/other/dir/test.md"),
-            assets: Vec::new(),
-        };
+        let mut page = test_page("test");
+        page.source_path = PathBuf::from("/other/dir/test.md");
         assert!(page.output_path(Path::new("/site/content")).is_err());
     }
 
@@ -596,7 +568,7 @@ mod tests {
     }
 
     #[test]
-    fn derive_page_kind_orphan_post_standalone() {
+    fn derive_page_kind_orphan_post_non_index() {
         let kind = derive_page_kind(
             Path::new("/site/content/posts/hello.md"),
             Path::new("/site/content"),
@@ -605,7 +577,7 @@ mod tests {
     }
 
     #[test]
-    fn derive_page_kind_standalone_page() {
+    fn derive_page_kind_non_post() {
         let kind = derive_page_kind(
             Path::new("/site/content/about-me/index.md"),
             Path::new("/site/content"),
@@ -628,7 +600,7 @@ mod tests {
     }
 
     #[test]
-    fn derive_slug_standalone_file() {
+    fn derive_slug_non_index() {
         let path = Path::new("content/posts/hello-world.md");
         assert_eq!(derive_slug(path).unwrap(), "hello-world");
     }

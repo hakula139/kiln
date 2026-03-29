@@ -536,13 +536,11 @@ mod tests {
 
     use super::*;
 
-    use crate::test_utils::{PermissionGuard, copy_templates, template_dir};
+    use crate::test_utils::{PermissionGuard, copy_templates, template_dir, write_test_file};
 
     /// Writes a content page at `content/<rel_path>/index.md`.
     fn write_page(root: &Path, rel_path: &str, content: &str) {
-        let dir = root.join("content").join(rel_path);
-        fs::create_dir_all(&dir).unwrap();
-        fs::write(dir.join("index.md"), content).unwrap();
+        write_test_file(root, &format!("content/{rel_path}/index.md"), content);
     }
 
     /// Copies all test templates except those listed in `exclude`.
