@@ -4,13 +4,26 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use walkdir::WalkDir;
 
-use crate::content::frontmatter::{self, Frontmatter};
+use super::frontmatter::{self, Frontmatter};
+
+/// Distinguishes blog posts (under `content/posts/`) from standalone pages.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PageKind {
+    /// A blog post, optionally belonging to a named section (e.g., "note").
+    Post { section: Option<String> },
+    /// A standalone page (e.g., about-me, about-site).
+    Page,
+}
 
 /// A content page with parsed frontmatter, body, and derived metadata.
 #[derive(Debug)]
 pub struct Page {
     pub frontmatter: Frontmatter,
     pub raw_content: String,
+    /// Whether this is a blog post or a standalone page.
+    /// Set by content discovery based on the file's position in the content
+    /// directory; defaults to `PageKind::Page` when created via `from_content`.
+    pub kind: PageKind,
     pub slug: String,
     pub summary: Option<String>,
     pub source_path: PathBuf,
@@ -23,6 +36,12 @@ pub struct Page {
 const SUMMARY_SEPARATOR: &str = "<!--more-->";
 
 impl Page {
+    /// Returns `true` if this page is a blog post (under `content/posts/`).
+    #[must_use]
+    pub fn is_post(&self) -> bool {
+        matches!(self.kind, PageKind::Post { .. })
+    }
+
     /// Loads a page from a markdown file on disk.
     ///
     /// # Errors
@@ -74,6 +93,7 @@ impl Page {
         Ok(Self {
             frontmatter,
             raw_content: body.to_owned(),
+            kind: PageKind::Page,
             slug,
             summary,
             source_path: path.to_owned(),
@@ -119,6 +139,34 @@ impl Page {
             Ok(stripped.with_extension("").join("index.html"))
         }
     }
+}
+
+/// Derives the page kind from its position in the content directory.
+///
+/// Pages under `content/posts/` are posts. If the relative path after `posts/`
+/// has 3+ components (e.g., `posts/note/my-post/index.md`), the first component
+/// is the section. Posts with fewer components (e.g., `posts/hello/index.md`)
+/// are orphan posts with no section — this avoids URL conflicts between section
+/// index pages and post output paths.
+///
+/// Everything outside `content/posts/` is a standalone page.
+pub fn derive_page_kind(source_path: &Path, content_dir: &Path) -> PageKind {
+    let Ok(relative) = source_path.strip_prefix(content_dir) else {
+        return PageKind::Page;
+    };
+
+    let Ok(after_posts) = relative.strip_prefix("posts") else {
+        return PageKind::Page;
+    };
+
+    let components: Vec<_> = after_posts.components().collect();
+    let section = if components.len() >= 3 {
+        components[0].as_os_str().to_str().map(String::from)
+    } else {
+        None
+    };
+
+    PageKind::Post { section }
 }
 
 /// Returns `true` if the file is a page bundle entry point (`index.md`).
@@ -196,120 +244,6 @@ mod tests {
 
     use super::*;
     use crate::test_utils::PermissionGuard;
-
-    // -- derive_slug --
-
-    #[test]
-    fn slug_from_page_bundle() {
-        let path = Path::new("content/posts/foo/bar/index.md");
-        assert_eq!(derive_slug(path).unwrap(), "bar");
-    }
-
-    #[test]
-    fn slug_from_standalone_file() {
-        let path = Path::new("content/posts/hello-world.md");
-        assert_eq!(derive_slug(path).unwrap(), "hello-world");
-    }
-
-    #[test]
-    fn slug_empty_for_bare_index() {
-        assert!(derive_slug(Path::new("index.md")).is_none());
-    }
-
-    // -- extract_summary --
-
-    #[test]
-    fn extract_summary_basic() {
-        let body = indoc! {r"
-            This is the summary.
-
-            <!--more-->
-
-            Full content here.
-        "};
-        assert_eq!(extract_summary(body).unwrap(), "This is the summary.");
-    }
-
-    #[test]
-    fn extract_summary_no_separator() {
-        let body = "No summary separator in this content.";
-        assert!(extract_summary(body).is_none());
-    }
-
-    #[test]
-    fn extract_summary_empty_before_separator() {
-        let body = "<!--more-->\nContent after.";
-        assert!(extract_summary(body).is_none());
-    }
-
-    // -- strip_posts_prefix --
-
-    #[test]
-    fn strip_posts_prefix_basic() {
-        assert_eq!(
-            strip_posts_prefix(Path::new("posts/foo/bar/index.md")),
-            PathBuf::from("foo/bar/index.md")
-        );
-    }
-
-    #[test]
-    fn strip_posts_prefix_non_post() {
-        assert_eq!(
-            strip_posts_prefix(Path::new("example/index.md")),
-            PathBuf::from("example/index.md")
-        );
-    }
-
-    // -- from_content --
-
-    #[test]
-    fn from_content_basic() {
-        let content = indoc! {r#"
-            +++
-            title = "Test"
-            +++
-
-            Summary here.
-
-            <!--more-->
-
-            Full content here.
-        "#};
-        let page = Page::from_content(content, Path::new("content/posts/test/index.md")).unwrap();
-        assert_eq!(page.frontmatter.title, "Test");
-        assert_eq!(page.slug, "test");
-        assert_eq!(page.summary.unwrap(), "Summary here.");
-    }
-
-    #[test]
-    fn from_content_explicit_slug_overrides_filename() {
-        let content = indoc! {r#"
-            +++
-            title = "My Post"
-            slug = "custom-slug"
-            +++
-            Body
-        "#};
-        let page = Page::from_content(content, Path::new("content/posts/foobar/index.md")).unwrap();
-        assert_eq!(page.slug, "custom-slug");
-    }
-
-    #[test]
-    fn from_content_bare_index_no_slug_returns_error() {
-        let content = indoc! {r#"
-            +++
-            title = "Test"
-            +++
-            Body
-        "#};
-        let err = Page::from_content(content, Path::new("index.md"))
-            .unwrap_err()
-            .to_string();
-        assert!(
-            err.contains("cannot derive slug"),
-            "should report slug derivation failure, got: {err}"
-        );
-    }
 
     // -- from_file: basic --
 
@@ -510,6 +444,57 @@ mod tests {
         );
     }
 
+    // -- from_content --
+
+    #[test]
+    fn from_content_basic() {
+        let content = indoc! {r#"
+            +++
+            title = "Test"
+            +++
+
+            Summary here.
+
+            <!--more-->
+
+            Full content here.
+        "#};
+        let page = Page::from_content(content, Path::new("content/posts/test/index.md")).unwrap();
+        assert_eq!(page.frontmatter.title, "Test");
+        assert_eq!(page.slug, "test");
+        assert_eq!(page.summary.unwrap(), "Summary here.");
+    }
+
+    #[test]
+    fn from_content_explicit_slug_overrides_filename() {
+        let content = indoc! {r#"
+            +++
+            title = "My Post"
+            slug = "custom-slug"
+            +++
+            Body
+        "#};
+        let page = Page::from_content(content, Path::new("content/posts/foobar/index.md")).unwrap();
+        assert_eq!(page.slug, "custom-slug");
+    }
+
+    #[test]
+    fn from_content_bare_index_no_slug_returns_error() {
+        let content = indoc! {r#"
+            +++
+            title = "Test"
+            +++
+            Body
+        "#};
+        let err = Page::from_content(content, Path::new("index.md"))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("cannot derive slug"),
+            "should report slug derivation failure, got: {err}"
+        );
+    }
+
     // -- output_path --
 
     #[test]
@@ -517,6 +502,7 @@ mod tests {
         let page = Page {
             frontmatter: Frontmatter::default(),
             raw_content: String::new(),
+            kind: PageKind::Page,
             slug: "bar".into(),
             summary: None,
             source_path: PathBuf::from("/site/content/posts/foo/bar/index.md"),
@@ -531,6 +517,7 @@ mod tests {
         let page = Page {
             frontmatter: Frontmatter::default(),
             raw_content: String::new(),
+            kind: PageKind::Page,
             slug: "example".into(),
             summary: None,
             source_path: PathBuf::from("/site/content/example/index.md"),
@@ -545,6 +532,7 @@ mod tests {
         let page = Page {
             frontmatter: Frontmatter::default(),
             raw_content: String::new(),
+            kind: PageKind::Page,
             slug: "hello-world".into(),
             summary: None,
             source_path: PathBuf::from("/site/content/posts/hello-world.md"),
@@ -559,11 +547,142 @@ mod tests {
         let page = Page {
             frontmatter: Frontmatter::default(),
             raw_content: String::new(),
+            kind: PageKind::Page,
             slug: "test".into(),
             summary: None,
             source_path: PathBuf::from("/other/dir/test.md"),
             assets: Vec::new(),
         };
         assert!(page.output_path(Path::new("/site/content")).is_err());
+    }
+
+    // -- derive_page_kind --
+
+    #[test]
+    fn derive_page_kind_section_post_deep() {
+        let kind = derive_page_kind(
+            Path::new("/site/content/posts/note/deep/nested/index.md"),
+            Path::new("/site/content"),
+        );
+        assert_eq!(
+            kind,
+            PageKind::Post {
+                section: Some("note".into())
+            }
+        );
+    }
+
+    #[test]
+    fn derive_page_kind_section_post_shallow() {
+        let kind = derive_page_kind(
+            Path::new("/site/content/posts/note/my-post/index.md"),
+            Path::new("/site/content"),
+        );
+        assert_eq!(
+            kind,
+            PageKind::Post {
+                section: Some("note".into())
+            }
+        );
+    }
+
+    #[test]
+    fn derive_page_kind_orphan_post_bundle() {
+        let kind = derive_page_kind(
+            Path::new("/site/content/posts/hello/index.md"),
+            Path::new("/site/content"),
+        );
+        assert_eq!(kind, PageKind::Post { section: None });
+    }
+
+    #[test]
+    fn derive_page_kind_orphan_post_standalone() {
+        let kind = derive_page_kind(
+            Path::new("/site/content/posts/hello.md"),
+            Path::new("/site/content"),
+        );
+        assert_eq!(kind, PageKind::Post { section: None });
+    }
+
+    #[test]
+    fn derive_page_kind_standalone_page() {
+        let kind = derive_page_kind(
+            Path::new("/site/content/about-me/index.md"),
+            Path::new("/site/content"),
+        );
+        assert_eq!(kind, PageKind::Page);
+    }
+
+    #[test]
+    fn derive_page_kind_outside_content_dir() {
+        let kind = derive_page_kind(Path::new("/other/path/page.md"), Path::new("/site/content"));
+        assert_eq!(kind, PageKind::Page);
+    }
+
+    // -- derive_slug --
+
+    #[test]
+    fn derive_slug_page_bundle() {
+        let path = Path::new("content/posts/foo/bar/index.md");
+        assert_eq!(derive_slug(path).unwrap(), "bar");
+    }
+
+    #[test]
+    fn derive_slug_standalone_file() {
+        let path = Path::new("content/posts/hello-world.md");
+        assert_eq!(derive_slug(path).unwrap(), "hello-world");
+    }
+
+    #[test]
+    fn derive_slug_bare_index_returns_none() {
+        assert!(derive_slug(Path::new("index.md")).is_none());
+    }
+
+    // -- extract_summary --
+
+    #[test]
+    fn extract_summary_basic() {
+        let body = indoc! {r"
+            This is the summary.
+
+            <!--more-->
+
+            Full content here.
+        "};
+        assert_eq!(extract_summary(body).unwrap(), "This is the summary.");
+    }
+
+    #[test]
+    fn extract_summary_no_separator() {
+        let body = "No summary separator in this content.";
+        assert!(extract_summary(body).is_none());
+    }
+
+    #[test]
+    fn extract_summary_empty_before_separator() {
+        let body = indoc! {r"
+            <!--more-->
+
+            Content after.
+        "};
+        assert!(extract_summary(body).is_none());
+    }
+
+    // -- strip_posts_prefix --
+
+    #[test]
+    fn strip_posts_prefix_basic() {
+        assert_eq!(
+            strip_posts_prefix(Path::new("posts/foo/bar/index.md")),
+            PathBuf::from("foo/bar/index.md")
+        );
+    }
+
+    #[test]
+    fn strip_posts_prefix_non_post() {
+        assert_eq!(
+            strip_posts_prefix(Path::new("example/index.md")),
+            PathBuf::from("example/index.md")
+        );
     }
 }
