@@ -14,7 +14,6 @@ date = 2026-01-15T12:00:00Z
 updated = 2026-02-01T08:30:00Z
 draft = false
 tags = ["rust", "web"]
-categories = ["programming"]
 slug = "custom-slug"
 featured_image = "/images/hero.jpg"
 +++
@@ -30,7 +29,6 @@ All fields are optional. Defaults:
 | `updated`        | none                  |
 | `draft`          | `false`               |
 | `tags`           | `[]`                  |
-| `categories`     | `[]`                  |
 | `slug`           | derived from filename |
 | `featured_image` | none                  |
 

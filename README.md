@@ -31,7 +31,7 @@ kiln is purpose-built to support the specific needs of hakula.xyz — CJK conten
 - [x] Template functions for data-driven directives (`read_file`, `parse_csv`)
 - [x] Directive templates for link cards, music embeds, and score tables
 - [x] Dev server with file watching and live reload (`kiln serve`)
-- [x] Taxonomy support (tags, categories) with pagination
+- [x] Taxonomy support (tags) with pagination
 - [x] Home page, section pages, and standalone page template
 - [ ] Dark theme with [Tailwind CSS](https://tailwindcss.com)
 - [ ] RSS feed + sitemap
@@ -65,7 +65,7 @@ A kiln site is organized as follows:
 ├── config.toml      # Site configuration (TOML)
 ├── content/         # Markdown content
 │   ├── about-me/    # Standalone pages
-│   └── posts/       # Blog posts organized by category
+│   └── posts/       # Blog posts organized by section
 ├── public/          # Build output (configurable via output_dir)
 ├── static/          # Static assets (copied to output as-is)
 ├── templates/       # MiniJinja templates (site overrides theme)
