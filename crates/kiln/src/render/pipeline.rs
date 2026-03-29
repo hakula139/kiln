@@ -5,15 +5,15 @@ use anyhow::Result;
 use syntect::parsing::SyntaxSet;
 
 use super::RenderOptions;
+use super::emoji::replace_emojis;
+use super::icon::replace_icons;
+use super::image_attrs::extract_image_attrs;
+use super::markdown::render_markdown;
+use super::toc::render_toc_html;
 use crate::directive::callout::render_callout;
 use crate::directive::div::render_div;
 use crate::directive::parser::parse_directives;
 use crate::directive::{DirectiveBlock, DirectiveContext, DirectiveKind};
-use crate::render::emoji::replace_emojis;
-use crate::render::icon::replace_icons;
-use crate::render::image_attrs::extract_image_attrs;
-use crate::render::markdown::render_markdown;
-use crate::render::toc::render_toc_html;
 use crate::template::TemplateEngine;
 
 /// The fully rendered output of a single page.

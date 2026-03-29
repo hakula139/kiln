@@ -43,9 +43,6 @@ pub struct Frontmatter {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
 
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub categories: Vec<String>,
-
     #[serde(default, skip_serializing_if = "is_default")]
     pub draft: bool,
 
@@ -268,7 +265,6 @@ mod tests {
             updated = 2025-07-01T23:59:59Z
             featured_image = "/images/example.webp"
             tags = ["rust", "ssg"]
-            categories = ["tutorial"]
             draft = true
             weight = 10
             license = "CC BY-NC-SA 4.0"
@@ -289,7 +285,6 @@ mod tests {
         );
         assert_eq!(fm.featured_image.as_deref(), Some("/images/example.webp"));
         assert_eq!(fm.tags, vec!["rust", "ssg"]);
-        assert_eq!(fm.categories, vec!["tutorial"]);
         assert!(fm.draft);
         assert_eq!(fm.weight, Some(10));
         assert_eq!(fm.license.as_deref(), Some("CC BY-NC-SA 4.0"));

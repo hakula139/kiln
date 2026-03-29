@@ -8,34 +8,21 @@ A custom static site generator (SSG) written in Rust, replacing a [Hugo](https:/
 
 ## Overview
 
-kiln is purpose-built to support the specific needs of hakula.xyz — CJK content, KaTeX math, custom directive-based shortcodes, and full control over the rendering pipeline. Rather than fighting a general-purpose SSG's assumptions, kiln implements exactly what's needed with no more complexity than necessary.
+kiln is purpose-built for hakula.xyz: strong CJK-friendly authoring, explicit rendering behavior, and a theme system that stays understandable. Instead of chasing broad SSG feature parity, it focuses on a smaller publishing workflow that is easier to reason about and extend.
 
-## Roadmap
+## Highlights
 
-- [x] TOML configuration and frontmatter (`+++` delimited)
-- [x] Markdown with GFM extensions (tables, strikethrough, autolinks, footnotes)
-- [x] KaTeX math support (`$...$` / `$$...$$`)
-- [x] Syntax highlighting via [syntect](https://github.com/trishume/syntect) + [two-face](https://github.com/CosmicHorrorDev/two-face) (200+ languages, CSS classes, no JS runtime)
-- [x] `:::` fenced directive system with callouts and Pandoc fenced divs
-- [x] CJK-aware heading ID generation
-- [x] Table of contents generation
-- [x] Open Graph / Twitter Card / SEO meta tags
-- [x] Template engine with block inheritance ([MiniJinja](https://github.com/mitsuhiko/minijinja))
-- [x] Theme system with site-level overrides
-- [x] Emoji shortcodes and [Font Awesome](https://fontawesome.com) icons
-- [x] Pandoc-style image attributes (`{#id .class width=N}`)
-- [x] Code blocks with language headers and collapsible max-lines
-- [x] Static file handling and co-located content assets
-- [x] Pretty URLs (`/post/` instead of `/post.html`)
-- [x] Hugo content migration tool (`kiln convert`)
-- [x] Template functions for data-driven directives (`read_file`, `parse_csv`)
-- [x] Directive templates for link cards, music embeds, and score tables
-- [x] Dev server with file watching and live reload (`kiln serve`)
-- [x] Taxonomy support (tags, categories) with pagination
-- [ ] Home page, section pages, and special pages
-- [ ] Dark theme with [Tailwind CSS](https://tailwindcss.com)
-- [ ] RSS feed + sitemap
-- [ ] Full-text search via [Pagefind](https://pagefind.app)
+- CJK-friendly authoring with TOML frontmatter, GitHub Flavored Markdown, KaTeX math, heading IDs, and table of contents generation.
+- Rich content primitives via `:::` directives, directive template helpers (`read_file`, `parse_csv`), image attributes, emoji / icon shortcodes, and code-block presentation helpers.
+- Flexible site generation with pretty URLs, static file copying, co-located assets, standalone pages, home pages, section pages, taxonomy indexes, paginated term pages, and configurable site time zones.
+- MiniJinja-based theming with layered site overrides and theme parameter merging.
+- Local developer tooling with live reload (`kiln serve`) and Hugo-to-kiln migration (`kiln convert`).
+
+## Current Focus
+
+- Complete the publishing surface with RSS, sitemap, a 404 page, and full-text search via [Pagefind](https://pagefind.app).
+- Refactor the default theme system around [Tailwind CSS](https://tailwindcss.com), including theme cleanup and dark-theme support.
+- Improve the production pipeline with Rust-native asset minification, i18n groundwork, and further ergonomics polish.
 
 ## Usage
 
@@ -54,7 +41,12 @@ kiln serve --port 3000 --open
 
 # Scaffold a new theme
 kiln init-theme my-theme
+
+# Convert a Hugo site root into a kiln site root
+kiln convert --source /path/to/hugo-site --dest /path/to/kiln-site
 ```
+
+`kiln convert` expects site roots, not `content/` directories. It reads from `source/content`, writes converted markdown and co-located assets to `dest/content`, and copies `source/static` to `dest/static` without overwriting existing destination files.
 
 ## Site Structure
 
@@ -65,7 +57,7 @@ A kiln site is organized as follows:
 ├── config.toml      # Site configuration (TOML)
 ├── content/         # Markdown content
 │   ├── about-me/    # Standalone pages
-│   └── posts/       # Blog posts organized by category
+│   └── posts/       # Blog posts organized by section
 ├── public/          # Build output (configurable via output_dir)
 ├── static/          # Static assets (copied to output as-is)
 ├── templates/       # MiniJinja templates (site overrides theme)
@@ -74,6 +66,7 @@ A kiln site is organized as follows:
 
 ## Documentation
 
+- [docs/roadmap.md](docs/roadmap.md) — Current shipped capability areas and planned work
 - [docs/syntax.md](docs/syntax.md) — Markdown extensions, frontmatter fields, and directive syntax
 - [docs/themes.md](docs/themes.md) — Theme installation, configuration, and creation
 

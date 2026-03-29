@@ -4,29 +4,7 @@
 
 kiln is a custom static site generator (SSG) written in Rust, replacing a Hugo + LoveIt theme stack for [hakula.xyz](https://hakula.xyz).
 
-**Status**:
-
-- [x] Workspace scaffold + CLI
-- [x] TOML configuration + content model (frontmatter, pages, discovery)
-- [x] Markdown rendering (GFM, syntax highlighting, KaTeX math, images)
-- [x] Directive parser + callout renderer + fenced divs
-- [x] Render pipeline (directive processing → markdown → ToC)
-- [x] MiniJinja template engine (OG / Twitter Card / SEO meta)
-- [x] Single-page build pipeline
-- [x] Multi-page builds + static file copying + pretty URLs + co-located assets
-- [x] Theme system (layered templates, static files, param merging)
-- [x] Pre-processors (image attrs, icon shortcodes, emoji shortcodes)
-- [x] Code block wrapper with header, language label, and max-lines
-- [x] Hugo → kiln content converter (`kiln convert`)
-- [x] Directive template functions (`read_file`, `parse_csv`) + structured arg parsing
-- [x] Directive renderers (site, music, score-table — template-based in theme / site)
-- [x] Dev server with file watching, SSE live reload, and safe rebuild (`kiln serve`)
-- [x] Taxonomy support (tags, categories) with pagination
-- [ ] Home page + section pages + special pages
-- [ ] Tailwind CSS + dark theme
-- [ ] RSS feed + sitemap
-- [ ] Full-text search (Pagefind)
-- [ ] 404 page + final polish
+User-facing feature positioning belongs in `README.md`. The canonical in-repo roadmap / status summary lives in `docs/roadmap.md`. Do not duplicate long feature checklists in this file.
 
 ### CLI
 
@@ -34,8 +12,10 @@ kiln is a custom static site generator (SSG) written in Rust, replacing a Hugo +
 kiln build [--root <dir>]                         # Build the site (default root: cwd)
 kiln serve [--root <dir>] [--port 5456] [--open]  # Dev server with live reload
 kiln init-theme <name> [--root]                   # Scaffold a new theme under themes/<name>/
-kiln convert --source <dir> --dest <dir>          # Convert Hugo content to kiln format
+kiln convert --source <dir> --dest <dir>          # Convert a Hugo site root into a kiln site root
 ```
+
+`kiln convert` expects site roots. It reads `source/content`, writes to `dest/content`, and copies `source/static` to `dest/static` without overwriting existing destination files.
 
 ### Project Layout
 
@@ -54,12 +34,12 @@ kiln convert --source <dir> --dest <dir>          # Convert Hugo content to kiln
 
 ```text
 .
-├── build.rs            # BuildContext, per-page rendering, taxonomy page generation, static / asset copying
+├── build.rs            # BuildContext, per-page rendering, home / section / taxonomy page generation, static / asset copying
 ├── config.rs           # TOML site configuration loading, theme resolution, param merging
 ├── content/            # Content model (module declarations in content.rs)
 │   ├── discovery.rs    # Recursive content walking with draft / _-prefix / no-frontmatter exclusion
 │   ├── frontmatter.rs  # TOML frontmatter parsing (+++), Frontmatter with jiff timestamps
-│   └── page.rs         # Page struct, slug derivation, summary, output paths, co-located assets
+│   └── page.rs         # Page struct, PageKind, slug derivation, summary, output paths, co-located assets
 ├── convert.rs          # Hugo → kiln content converter orchestrator
 ├── convert/            # Hugo → kiln converter submodules (orchestrator in convert.rs)
 │   ├── frontmatter.rs  # YAML → TOML frontmatter serde round-trip
@@ -82,10 +62,12 @@ kiln convert --source <dir> --dest <dir>          # Convert Hugo content to kiln
 │   ├── markdown.rs     # pulldown-cmark, GFM, CJK heading IDs, KaTeX, block / inline images
 │   ├── pipeline.rs     # Full pipeline: directives → pre-processors → markdown → ToC
 │   └── toc.rs          # TocEntry struct, nested <nav> table of contents generation
+├── section.rs          # Section struct, collect_sections() from page kinds, _index.md title loading
 ├── serve.rs            # Dev server with file watching, SSE live reload, script injection
 ├── taxonomy.rs         # TaxonomyKind, Taxonomy, Term, TaxonomySet, build_taxonomies()
 ├── template.rs         # MiniJinja layered template engine, directive / taxonomy / term rendering
-└── text.rs             # Shared format-agnostic text utilities (slugify)
+├── test_utils.rs       # Shared test infrastructure (templates, helpers, Page factory)
+└── text.rs             # Shared format-agnostic text utilities (slugify, titlecase)
 ```
 
 ## Coding Conventions
@@ -129,7 +111,7 @@ kiln convert --source <dir> --dest <dir>          # Convert Hugo content to kiln
   - Scope: crate or module name (e.g., `kiln`, `config`, `render`)
 - Feature branches: `feat/<feature-name>`
 - Keep commits atomic — one logical change per commit.
-- PRs: assign to `hakula139`, label `enhancement` for `feat`, `bug` for `fix`.
+- PRs: assign to `hakula139`, label `enhancement` for `feat`, `bug` for `fix`. Do not request review from the PR author (GitHub rejects it).
 
 ### Testing
 
@@ -142,7 +124,8 @@ kiln convert --source <dir> --dest <dir>          # Convert Hugo content to kiln
 
 ### Documentation Maintenance
 
-- When a feature is completed, update **all** references to it: the status checklist in this file, the README roadmap, and any other docs that mention it.
+- Keep `README.md` user-facing. It should describe value, supported features, and usage, not internal progress tracking.
+- Keep `docs/roadmap.md` as the canonical in-repo roadmap / status summary. Update it when shipped capability areas or planned priorities change.
 - Crate structure diagrams must match the actual filesystem. When adding, removing, or renaming modules, update the tree in this file. Entries are sorted alphabetically; directories sort alongside their parent `.rs` file.
 
 ## Verification

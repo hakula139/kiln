@@ -30,7 +30,10 @@ themes/IgnIt/
 │   ├── base.html             # Base layout
 │   ├── directives/           # Directive templates (optional)
 │   │   └── site.html         # Renders ::: site directives
+│   ├── home.html             # Home page with paginated post listing
+│   ├── page.html             # Standalone page (about, etc.)
 │   ├── post.html             # Post page template
+│   ├── section.html          # Section listing page (e.g., /posts/note/)
 │   ├── taxonomy.html         # Taxonomy index page (e.g., /tags/)
 │   └── term.html             # Term page with post list (e.g., /tags/rust/)
 └── theme.toml                # Theme metadata and default parameters
@@ -225,6 +228,8 @@ To create a theme manually instead:
 
 Templates receive the following variables during rendering:
 
+Whenever a template variable includes a page `date`, kiln renders it as an ISO 8601 string in the site's configured `timezone` from `config.toml`. When `timezone` is unset, kiln uses UTC.
+
 #### Post templates (`post.html`)
 
 | Variable          | Type             | Description                     |
@@ -239,6 +244,32 @@ Templates receive the following variables during rendering:
 | `config`          | object           | Site configuration              |
 | `config.base_url` | string           | Site base URL                   |
 | `config.title`    | string           | Site title                      |
+
+#### Standalone page templates (`page.html`)
+
+Uses the same variables as `post.html` (see above). The `page.html` template is used for standalone pages (e.g., "About Me") that live outside the `posts/` directory. If `page.html` is not present, standalone pages fall back to `post.html`.
+
+#### Home page templates (`home.html`)
+
+| Variable     | Type          | Description                                                            |
+| ------------ | ------------- | ---------------------------------------------------------------------- |
+| `pages`      | list of pages | Posts for the current page (see page fields in taxonomy section below) |
+| `pagination` | object        | Pagination metadata (same structure as term pages below)               |
+| `config`     | object        | Site configuration                                                     |
+
+Only posts (`PageKind::Post`) appear on the home page; standalone pages are excluded. The number of posts per page is configurable via `params.home.paginate` or `params.paginate` (default: 10). If `home.html` is not present, no home page is generated.
+
+#### Section listing templates (`section.html`)
+
+| Variable        | Type           | Description                                                              |
+| --------------- | -------------- | ------------------------------------------------------------------------ |
+| `section_title` | string         | Section display title (from `_index.md` or titlecased slug)              |
+| `section_slug`  | string         | URL-safe section slug (e.g., `"note"`)                                   |
+| `page_groups`   | list of groups | Posts grouped by year, newest first (same structure as term pages below) |
+| `pagination`    | object         | Pagination metadata (same structure as term pages below)                 |
+| `config`        | object         | Site configuration                                                       |
+
+Sections are derived from subdirectories under `content/posts/`. A section's display title comes from `content/posts/<section>/_index.md` if present (requires a `title` field in frontmatter), falling back to the titlecased slug (e.g., `"note"` → `"Note"`). The number of posts per page is configurable via `params.section.paginate` or `params.paginate` (default: 10). If `section.html` is not present, no section pages are generated.
 
 #### Taxonomy index templates (`taxonomy.html`)
 
@@ -327,9 +358,19 @@ The number of items per page is configurable via `paginate` in `[params]` (defau
 | `body_raw`        | string              | Raw markdown source of the directive body |
 | `source_dir`      | string or `none`    | Page source directory (for `read_file`)   |
 
-#### Template functions
+### Template Functions
 
-##### `read_file(filename)`
+The following functions are available in all templates.
+
+#### `now()`
+
+Returns the current local timestamp as an ISO 8601 string (e.g., `"2026-03-29T23:00:00+08:00[Asia/Shanghai]"`):
+
+```html
+<footer>&copy; {{ now()[0:4] }} My Site</footer>
+```
+
+#### `read_file(filename)`
 
 Reads a file relative to the page's `source_dir`. Only available in directive templates (where `source_dir` is set). Useful for directives that reference co-located data files (e.g., CSV for score tables):
 
@@ -339,7 +380,7 @@ Reads a file relative to the page's `source_dir`. Only available in directive te
 
 The return value is auto-escaped by MiniJinja. Use `| safe` if the content should be rendered as raw HTML. Path traversal (`..`) and absolute paths are rejected.
 
-##### `parse_csv(text)`
+#### `parse_csv(text)`
 
 Parses CSV text (RFC 4180) into a list of rows, where each row is a list of field strings. Handles quoted fields with embedded commas and escaped quotes. Useful with `read_file` for data-driven directive templates:
 

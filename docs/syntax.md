@@ -14,7 +14,6 @@ date = 2026-01-15T12:00:00Z
 updated = 2026-02-01T08:30:00Z
 draft = false
 tags = ["rust", "web"]
-categories = ["programming"]
 slug = "custom-slug"
 featured_image = "/images/hero.jpg"
 +++
@@ -30,11 +29,16 @@ All fields are optional. Defaults:
 | `updated`        | none                  |
 | `draft`          | `false`               |
 | `tags`           | `[]`                  |
-| `categories`     | `[]`                  |
 | `slug`           | derived from filename |
 | `featured_image` | none                  |
 
 Draft pages (`draft = true`) and pages whose filename starts with `_` are excluded from the build.
+
+Frontmatter `date` / `updated` values are parsed as absolute instants. When kiln exposes a page date to templates, it renders that instant in the site's configured `timezone` from `config.toml`, or in UTC when `timezone` is unset:
+
+```toml
+timezone = "Asia/Shanghai"
+```
 
 ## Markdown
 

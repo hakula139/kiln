@@ -2,6 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
+use jiff::tz::TimeZone;
 use serde::{Deserialize, Serialize};
 
 /// Site-wide configuration loaded from `config.toml`.
@@ -18,6 +19,13 @@ pub struct Config {
 
     #[serde(default = "default_language")]
     pub language: String,
+
+    /// Site time zone used to render page dates exposed to templates.
+    ///
+    /// Uses IANA time zone names such as `Asia/Shanghai`. When unset, kiln
+    /// renders dates in UTC.
+    #[serde(default)]
+    pub timezone: Option<String>,
 
     #[serde(default = "default_output_dir")]
     pub output_dir: String,
@@ -93,6 +101,22 @@ impl Config {
         self.theme
             .as_ref()
             .map(|name| root.join("themes").join(name))
+    }
+
+    /// Resolves the configured site time zone, if present.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `timezone` is set but is not a valid IANA time zone
+    /// name recognized by `jiff`.
+    pub fn time_zone(&self) -> Result<Option<TimeZone>> {
+        self.timezone
+            .as_deref()
+            .map(|time_zone_name| {
+                TimeZone::get(time_zone_name)
+                    .with_context(|| format!("invalid timezone `{time_zone_name}` in config.toml"))
+            })
+            .transpose()
     }
 }
 
@@ -184,6 +208,7 @@ mod tests {
         assert_eq!(config.title, "My Site");
         assert!(config.description.is_empty());
         assert_eq!(config.language, "en");
+        assert!(config.timezone.is_none());
         assert_eq!(config.output_dir, "public");
         assert!(config.theme.is_none());
         assert!(config.params.is_empty());
@@ -199,6 +224,7 @@ mod tests {
             title = "Test Site"
             description = "Test Description"
             language = "zh-CN"
+            timezone = "Asia/Shanghai"
             output_dir = "dist"
             theme = "IgnIt"
 
@@ -215,6 +241,7 @@ mod tests {
         assert_eq!(config.title, "Test Site");
         assert_eq!(config.description, "Test Description");
         assert_eq!(config.language, "zh-CN");
+        assert_eq!(config.timezone.as_deref(), Some("Asia/Shanghai"));
         assert_eq!(config.output_dir, "dist");
         assert_eq!(config.theme.as_deref(), Some("IgnIt"));
         assert_eq!(
@@ -504,6 +531,25 @@ mod tests {
         let config: Config = toml::from_str("").unwrap();
         let root = Path::new("/project");
         assert!(config.theme_dir(root).is_none());
+    }
+
+    // -- time_zone --
+
+    #[test]
+    fn time_zone_resolves_configured_iana_name() {
+        let config: Config = toml::from_str(r#"timezone = "Asia/Shanghai""#).unwrap();
+        let time_zone = config.time_zone().unwrap().unwrap();
+        assert_eq!(time_zone.iana_name(), Some("Asia/Shanghai"));
+    }
+
+    #[test]
+    fn time_zone_invalid_returns_error() {
+        let config: Config = toml::from_str(r#"timezone = "Mars/Base""#).unwrap();
+        let err = config.time_zone().unwrap_err().to_string();
+        assert!(
+            err.contains("invalid timezone `Mars/Base` in config.toml"),
+            "should report invalid timezone, got: {err}"
+        );
     }
 
     // -- merge_params --

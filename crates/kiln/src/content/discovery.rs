@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use walkdir::WalkDir;
 
-use crate::content::page::Page;
+use super::page::{Page, derive_page_kind};
 
 /// All content discovered from the content directory.
 #[derive(Debug)]
@@ -49,8 +49,9 @@ pub fn discover_content(root: &Path) -> Result<ContentSet> {
 
         let path = entry.path();
         if path.extension().is_some_and(|ext| ext == "md") && has_frontmatter(path) {
-            let page = Page::from_file(path)?;
+            let mut page = Page::from_file(path)?;
             if !page.frontmatter.draft {
+                page.kind = derive_page_kind(&page.source_path, &content_dir);
                 pages.push(page);
             }
         }
@@ -90,26 +91,18 @@ fn is_excluded(entry: &walkdir::DirEntry) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
-
     use indoc::indoc;
 
     use super::*;
+    use crate::content::page::PageKind;
+    use crate::test_utils::write_test_file;
 
     // -- discover_content --
 
-    fn write_page(dir: &Path, rel_path: &str, content: &str) {
-        let path = dir.join(rel_path);
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).unwrap();
-        }
-        fs::write(path, content).unwrap();
-    }
-
     #[test]
-    fn discovers_markdown_files() {
+    fn discover_content_basic() {
         let root = tempfile::tempdir().unwrap();
-        write_page(
+        write_test_file(
             root.path(),
             "content/posts/hello/index.md",
             indoc! {r#"
@@ -119,7 +112,7 @@ mod tests {
                 Body
             "#},
         );
-        write_page(
+        write_test_file(
             root.path(),
             "content/posts/world/index.md",
             indoc! {r#"
@@ -135,9 +128,9 @@ mod tests {
     }
 
     #[test]
-    fn excludes_drafts() {
+    fn discover_content_excludes_drafts() {
         let root = tempfile::tempdir().unwrap();
-        write_page(
+        write_test_file(
             root.path(),
             "content/posts/draft/index.md",
             indoc! {r#"
@@ -148,7 +141,7 @@ mod tests {
                 Body
             "#},
         );
-        write_page(
+        write_test_file(
             root.path(),
             "content/posts/published/index.md",
             indoc! {r#"
@@ -165,9 +158,9 @@ mod tests {
     }
 
     #[test]
-    fn excludes_underscore_prefixed() {
+    fn discover_content_excludes_underscore_prefixed() {
         let root = tempfile::tempdir().unwrap();
-        write_page(
+        write_test_file(
             root.path(),
             "content/posts/visible/index.md",
             indoc! {r#"
@@ -177,7 +170,7 @@ mod tests {
                 Body
             "#},
         );
-        write_page(
+        write_test_file(
             root.path(),
             "content/posts/_hidden/index.md",
             indoc! {r#"
@@ -194,9 +187,9 @@ mod tests {
     }
 
     #[test]
-    fn skips_markdown_without_frontmatter() {
+    fn discover_content_skips_markdown_without_frontmatter() {
         let root = tempfile::tempdir().unwrap();
-        write_page(
+        write_test_file(
             root.path(),
             "content/posts/hello/index.md",
             indoc! {r#"
@@ -207,7 +200,7 @@ mod tests {
             "#},
         );
         // CLAUDE.md has no frontmatter — should be silently skipped.
-        write_page(
+        write_test_file(
             root.path(),
             "content/posts/hello/CLAUDE.md",
             "# Notes\nSome reference notes.",
@@ -219,9 +212,9 @@ mod tests {
     }
 
     #[test]
-    fn ignores_non_markdown_files() {
+    fn discover_content_ignores_non_markdown_files() {
         let root = tempfile::tempdir().unwrap();
-        write_page(
+        write_test_file(
             root.path(),
             "content/posts/hello/index.md",
             indoc! {r#"
@@ -231,23 +224,23 @@ mod tests {
                 Body
             "#},
         );
-        write_page(root.path(), "content/posts/hello/image.png", "not-a-png");
+        write_test_file(root.path(), "content/posts/hello/image.png", "not-a-png");
 
         let set = discover_content(root.path()).unwrap();
         assert_eq!(set.pages.len(), 1);
     }
 
     #[test]
-    fn missing_content_dir_returns_empty() {
+    fn discover_content_missing_dir_returns_empty() {
         let root = tempfile::tempdir().unwrap();
         let set = discover_content(root.path()).unwrap();
         assert!(set.pages.is_empty());
     }
 
     #[test]
-    fn sorted_by_date_descending() {
+    fn discover_content_sorted_by_date_descending() {
         let root = tempfile::tempdir().unwrap();
-        write_page(
+        write_test_file(
             root.path(),
             "content/posts/old/index.md",
             indoc! {r#"
@@ -258,7 +251,7 @@ mod tests {
                 Body
             "#},
         );
-        write_page(
+        write_test_file(
             root.path(),
             "content/posts/new/index.md",
             indoc! {r#"
@@ -276,9 +269,9 @@ mod tests {
     }
 
     #[test]
-    fn undated_pages_sorted_by_path() {
+    fn discover_content_undated_pages_sorted_by_path() {
         let root = tempfile::tempdir().unwrap();
-        write_page(
+        write_test_file(
             root.path(),
             "content/posts/beta/index.md",
             indoc! {r#"
@@ -288,7 +281,7 @@ mod tests {
                 Body
             "#},
         );
-        write_page(
+        write_test_file(
             root.path(),
             "content/posts/alpha/index.md",
             indoc! {r#"
@@ -302,5 +295,69 @@ mod tests {
         let set = discover_content(root.path()).unwrap();
         assert_eq!(set.pages[0].frontmatter.title, "Alpha");
         assert_eq!(set.pages[1].frontmatter.title, "Beta");
+    }
+
+    #[test]
+    fn discover_content_assigns_page_kind() {
+        let root = tempfile::tempdir().unwrap();
+        write_test_file(
+            root.path(),
+            "content/posts/note/sectioned/index.md",
+            indoc! {r#"
+                +++
+                title = "Sectioned Post"
+                +++
+                Body
+            "#},
+        );
+        write_test_file(
+            root.path(),
+            "content/posts/orphan/index.md",
+            indoc! {r#"
+                +++
+                title = "Orphan Post"
+                +++
+                Body
+            "#},
+        );
+        write_test_file(
+            root.path(),
+            "content/about-me/index.md",
+            indoc! {r#"
+                +++
+                title = "About Me"
+                +++
+                Body
+            "#},
+        );
+
+        let set = discover_content(root.path()).unwrap();
+        assert_eq!(set.pages.len(), 3);
+
+        let section_post = set
+            .pages
+            .iter()
+            .find(|p| p.frontmatter.title == "Sectioned Post")
+            .unwrap();
+        assert_eq!(
+            section_post.kind,
+            PageKind::Post {
+                section: Some("note".into())
+            }
+        );
+
+        let orphan = set
+            .pages
+            .iter()
+            .find(|p| p.frontmatter.title == "Orphan Post")
+            .unwrap();
+        assert_eq!(orphan.kind, PageKind::Post { section: None });
+
+        let about = set
+            .pages
+            .iter()
+            .find(|p| p.frontmatter.title == "About Me")
+            .unwrap();
+        assert_eq!(about.kind, PageKind::Page);
     }
 }

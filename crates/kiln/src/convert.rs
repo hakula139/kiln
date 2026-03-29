@@ -2,28 +2,38 @@ mod frontmatter;
 mod shortcode;
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, ensure};
 use walkdir::WalkDir;
 
-/// Converts a Hugo content directory to kiln format.
+/// Converts a Hugo site root to kiln format.
 ///
-/// Walks `source` recursively. For each `.md` file, converts YAML frontmatter
-/// to TOML and translates shortcodes to kiln directives. Non-markdown files
-/// (co-located assets) are copied as-is.
+/// Converts `source/content` into `dest/content`. If `source/static` exists,
+/// copies it to `dest/static`.
 ///
-/// Taxonomy term files (`categories/<slug>/_index.md`, `tags/<slug>/_index.md`)
-/// are converted with their frontmatter. Other `_index.md` files (Hugo section
-/// files) are skipped since kiln has no equivalent.
+/// Hugo category index files (`categories/<slug>/_index.md`) are converted to
+/// kiln section indexes at `posts/<slug>/_index.md`. Tag index files
+/// (`tags/<slug>/_index.md`) are converted in place. Other `_index.md` files
+/// (Hugo section files) are skipped since kiln derives sections from directory
+/// structure.
 ///
 /// Existing files in `dest` are never overwritten.
 ///
 /// # Errors
 ///
-/// Returns an error if any file cannot be read, converted, or written.
+/// Returns an error if `source/content` is missing or any file cannot be read,
+/// converted, or written.
 pub fn convert(source: &Path, dest: &Path) -> Result<()> {
-    for entry in WalkDir::new(source) {
+    let content_source = source.join("content");
+    let content_dest = dest.join("content");
+    ensure!(
+        content_source.is_dir(),
+        "convert source must contain content/: {}",
+        source.display()
+    );
+
+    for entry in WalkDir::new(&content_source) {
         let entry = entry?;
         if entry.file_type().is_dir() {
             continue;
@@ -31,17 +41,26 @@ pub fn convert(source: &Path, dest: &Path) -> Result<()> {
 
         let rel_path = entry
             .path()
-            .strip_prefix(source)
+            .strip_prefix(&content_source)
             .context("failed to compute relative path")?;
 
         let file_name = rel_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
-        // Skip Hugo section _index.md files, but convert taxonomy term ones.
-        if file_name == "_index.md" && !is_taxonomy_term_index(rel_path) {
+        // Handle _index.md files: convert category / tag term indexes,
+        // redirect category indexes to section indexes, skip others.
+        if file_name == "_index.md" {
+            if let Some(dest_path) = index_dest_path(rel_path, &content_dest)
+                && !dest_path.exists()
+            {
+                if let Some(parent) = dest_path.parent() {
+                    fs::create_dir_all(parent)?;
+                }
+                convert_or_copy_markdown(entry.path(), &dest_path)?;
+            }
             continue;
         }
 
-        let dest_path = dest.join(rel_path);
+        let dest_path = content_dest.join(rel_path);
 
         // Never overwrite existing files.
         if dest_path.exists() {
@@ -62,19 +81,60 @@ pub fn convert(source: &Path, dest: &Path) -> Result<()> {
         }
     }
 
+    let static_source = source.join("static");
+    if static_source.is_dir() {
+        copy_dir(&static_source, &dest.join("static"))?;
+    }
+
     Ok(())
 }
 
-/// Returns `true` for taxonomy term `_index.md` files like
-/// `categories/<slug>/_index.md` or `tags/<slug>/_index.md`.
-fn is_taxonomy_term_index(rel_path: &Path) -> bool {
+/// Copies a `static/` tree without overwriting existing destination files.
+fn copy_dir(source: &Path, dest: &Path) -> Result<()> {
+    for entry in WalkDir::new(source) {
+        let entry = entry?;
+        if entry.file_type().is_dir() {
+            continue;
+        }
+
+        let rel_path = entry
+            .path()
+            .strip_prefix(source)
+            .context("failed to compute relative path")?;
+        let dest_path = dest.join(rel_path);
+
+        if dest_path.exists() {
+            continue;
+        }
+
+        if let Some(parent) = dest_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        fs::copy(entry.path(), &dest_path)?;
+    }
+
+    Ok(())
+}
+
+/// Computes the destination path for an `_index.md` file, or `None` to skip.
+///
+/// - `categories/<slug>/_index.md` → `posts/<slug>/_index.md` (section index)
+/// - `tags/<slug>/_index.md` → `tags/<slug>/_index.md` (tag term index)
+/// - Everything else → `None` (skipped)
+fn index_dest_path(rel_path: &Path, dest: &Path) -> Option<PathBuf> {
     let components: Vec<_> = rel_path.components().collect();
-    // Expect exactly: <taxonomy_kind>/<slug>/_index.md (3 components).
+    // Expect exactly: <kind>/<slug>/_index.md (3 components).
     if components.len() != 3 {
-        return false;
+        return None;
     }
     let kind = components[0].as_os_str().to_str().unwrap_or("");
-    kind == "categories" || kind == "tags"
+    let slug = components[1].as_os_str();
+    match kind {
+        "categories" => Some(dest.join("posts").join(slug).join("_index.md")),
+        "tags" => Some(dest.join(rel_path)),
+        _ => None,
+    }
 }
 
 /// Converts a markdown file if it has YAML frontmatter, otherwise copies it as-is.
@@ -113,8 +173,345 @@ mod tests {
 
     use super::*;
 
+    // -- convert --
+
     #[test]
-    fn convert_markdown_file_basic() {
+    fn convert_directory_structure() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source");
+        let dest = dir.path().join("dest");
+        let content_source = source.join("content");
+
+        // Create page bundle.
+        let bundle = content_source.join("posts/my-post");
+        fs::create_dir_all(&bundle).unwrap();
+        fs::write(
+            bundle.join("index.md"),
+            indoc! {r"
+                ---
+                title: Post
+                ---
+                Content
+            "},
+        )
+        .unwrap();
+        fs::write(bundle.join("image.webp"), "fake-image").unwrap();
+
+        // Create standalone file.
+        fs::create_dir_all(content_source.join("pages")).unwrap();
+        fs::write(
+            content_source.join("pages/about.md"),
+            indoc! {r"
+                ---
+                title: About
+                ---
+                About page
+            "},
+        )
+        .unwrap();
+
+        // Create Hugo section file (should be skipped).
+        fs::write(
+            content_source.join("posts/_index.md"),
+            indoc! {r"
+                ---
+                title: Section
+                ---
+            "},
+        )
+        .unwrap();
+
+        fs::create_dir_all(source.join("static/images")).unwrap();
+        fs::write(source.join("static/images/logo.webp"), "site-image").unwrap();
+
+        convert(&source, &dest).unwrap();
+
+        // Verify converted markdown.
+        let post = fs::read_to_string(dest.join("content/posts/my-post/index.md")).unwrap();
+        assert_eq!(
+            post,
+            indoc! {r#"
+                +++
+                title = "Post"
+                +++
+                Content
+            "#}
+        );
+
+        // Verify asset copied.
+        assert!(dest.join("content/posts/my-post/image.webp").exists());
+        assert_eq!(
+            fs::read_to_string(dest.join("static/images/logo.webp")).unwrap(),
+            "site-image"
+        );
+
+        // Verify standalone.
+        let about = fs::read_to_string(dest.join("content/pages/about.md")).unwrap();
+        assert_eq!(
+            about,
+            indoc! {r#"
+                +++
+                title = "About"
+                +++
+                About page
+            "#}
+        );
+
+        // Verify section file skipped.
+        assert!(!dest.join("content/posts/_index.md").exists());
+    }
+
+    #[test]
+    fn convert_category_index_to_section_index() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source");
+        let dest = dir.path().join("dest");
+        let content_source = source.join("content");
+
+        // Category _index.md → should become section index at posts/<slug>/.
+        let cat_dir = content_source.join("categories/anime");
+        fs::create_dir_all(&cat_dir).unwrap();
+        fs::write(
+            cat_dir.join("_index.md"),
+            indoc! {r"
+                ---
+                title: 动画
+                ---
+            "},
+        )
+        .unwrap();
+
+        // Tag _index.md → should be converted in place.
+        let tag_dir = content_source.join("tags/rust");
+        fs::create_dir_all(&tag_dir).unwrap();
+        fs::write(
+            tag_dir.join("_index.md"),
+            indoc! {r"
+                ---
+                title: Rust
+                ---
+            "},
+        )
+        .unwrap();
+
+        // Section _index.md → should be skipped.
+        fs::create_dir_all(content_source.join("posts")).unwrap();
+        fs::write(
+            content_source.join("posts/_index.md"),
+            indoc! {r"
+                ---
+                title: Posts
+                ---
+            "},
+        )
+        .unwrap();
+
+        // Unknown kind _index.md → should be skipped.
+        let other_dir = content_source.join("other/slug");
+        fs::create_dir_all(&other_dir).unwrap();
+        fs::write(
+            other_dir.join("_index.md"),
+            indoc! {r"
+                ---
+                title: Other
+                ---
+            "},
+        )
+        .unwrap();
+
+        convert(&source, &dest).unwrap();
+
+        // Category index redirected to section index.
+        let section = fs::read_to_string(dest.join("content/posts/anime/_index.md")).unwrap();
+        assert_eq!(
+            section,
+            indoc! {r#"
+                +++
+                title = "动画"
+                +++
+            "#}
+        );
+        assert!(!dest.join("content/categories/anime/_index.md").exists());
+
+        // Tag term converted in place.
+        let tag = fs::read_to_string(dest.join("content/tags/rust/_index.md")).unwrap();
+        assert_eq!(
+            tag,
+            indoc! {r#"
+                +++
+                title = "Rust"
+                +++
+            "#}
+        );
+
+        // Section _index.md still skipped.
+        assert!(!dest.join("content/posts/_index.md").exists());
+
+        // Unknown kind _index.md skipped.
+        assert!(!dest.join("content/other/slug/_index.md").exists());
+    }
+
+    #[test]
+    fn convert_does_not_overwrite_existing_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source");
+        let dest = dir.path().join("dest");
+        let content_source = source.join("content");
+
+        // Source markdown + asset.
+        let post_dir = content_source.join("posts/hello");
+        fs::create_dir_all(&post_dir).unwrap();
+        fs::write(
+            post_dir.join("index.md"),
+            indoc! {r"
+                ---
+                title: New
+                ---
+                New content
+            "},
+        )
+        .unwrap();
+        fs::write(post_dir.join("image.webp"), "new-image").unwrap();
+
+        // Pre-existing files at dest with different content.
+        let dest_post_dir = dest.join("content/posts/hello");
+        fs::create_dir_all(&dest_post_dir).unwrap();
+        fs::write(dest_post_dir.join("index.md"), "existing markdown").unwrap();
+        fs::write(dest_post_dir.join("image.webp"), "existing image").unwrap();
+
+        convert(&source, &dest).unwrap();
+
+        // Neither markdown nor asset should be overwritten.
+        assert_eq!(
+            fs::read_to_string(dest.join("content/posts/hello/index.md")).unwrap(),
+            "existing markdown",
+            "should not overwrite existing markdown"
+        );
+        assert_eq!(
+            fs::read_to_string(dest.join("content/posts/hello/image.webp")).unwrap(),
+            "existing image",
+            "should not overwrite existing asset"
+        );
+    }
+
+    #[test]
+    fn convert_does_not_overwrite_existing_static_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source");
+        let dest = dir.path().join("dest");
+
+        fs::create_dir_all(source.join("content")).unwrap();
+        fs::create_dir_all(source.join("static/images")).unwrap();
+        fs::create_dir_all(dest.join("static/images")).unwrap();
+        fs::write(source.join("static/images/logo.webp"), "new static").unwrap();
+        fs::write(dest.join("static/images/logo.webp"), "existing static").unwrap();
+
+        convert(&source, &dest).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(dest.join("static/images/logo.webp")).unwrap(),
+            "existing static",
+            "should not overwrite existing static asset"
+        );
+    }
+
+    #[test]
+    fn convert_missing_content_dir_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source");
+        let dest = dir.path().join("dest");
+
+        fs::create_dir_all(&source).unwrap();
+
+        let err = convert(&source, &dest).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("convert source must contain content/"),
+            "got: {err}"
+        );
+    }
+
+    // -- copy_dir --
+
+    #[test]
+    fn copy_dir_copies_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source");
+        let dest = dir.path().join("dest");
+
+        fs::create_dir_all(source.join("images/icons")).unwrap();
+        fs::write(source.join("images/icons/logo.webp"), "site-image").unwrap();
+
+        copy_dir(&source, &dest).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(dest.join("images/icons/logo.webp")).unwrap(),
+            "site-image"
+        );
+    }
+
+    #[test]
+    fn copy_dir_does_not_overwrite_existing_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source");
+        let dest = dir.path().join("dest");
+
+        fs::create_dir_all(source.join("images")).unwrap();
+        fs::create_dir_all(dest.join("images")).unwrap();
+        fs::write(source.join("images/logo.webp"), "new static").unwrap();
+        fs::write(dest.join("images/logo.webp"), "existing static").unwrap();
+
+        copy_dir(&source, &dest).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(dest.join("images/logo.webp")).unwrap(),
+            "existing static"
+        );
+    }
+
+    // -- index_dest_path --
+
+    #[test]
+    fn index_dest_path_categories_returns_posts_section_path() {
+        let dest = Path::new("/tmp/dest");
+
+        assert_eq!(
+            index_dest_path(Path::new("categories/anime/_index.md"), dest),
+            Some(dest.join("posts/anime/_index.md"))
+        );
+    }
+
+    #[test]
+    fn index_dest_path_tags_returns_same_relative_path() {
+        let dest = Path::new("/tmp/dest");
+
+        assert_eq!(
+            index_dest_path(Path::new("tags/rust/_index.md"), dest),
+            Some(dest.join("tags/rust/_index.md"))
+        );
+    }
+
+    #[test]
+    fn index_dest_path_non_term_layout_returns_none() {
+        let dest = Path::new("/tmp/dest");
+
+        assert_eq!(index_dest_path(Path::new("posts/_index.md"), dest), None);
+    }
+
+    #[test]
+    fn index_dest_path_unknown_kind_returns_none() {
+        let dest = Path::new("/tmp/dest");
+
+        assert_eq!(
+            index_dest_path(Path::new("series/rust/_index.md"), dest),
+            None
+        );
+    }
+
+    // -- convert_or_copy_markdown --
+
+    #[test]
+    fn convert_or_copy_markdown_converts_yaml_frontmatter() {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("input.md");
         let dest = dir.path().join("output.md");
@@ -150,7 +547,7 @@ mod tests {
                 title = "Hello, world!"
                 tags = ["rust"]
                 +++
-
+                
                 Summary
 
                 <!--more-->
@@ -165,7 +562,7 @@ mod tests {
     }
 
     #[test]
-    fn convert_markdown_file_no_frontmatter_copies_as_is() {
+    fn convert_or_copy_markdown_no_frontmatter_copies_as_is() {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("raw.md");
         let dest = dir.path().join("out.md");
@@ -177,7 +574,7 @@ mod tests {
     }
 
     #[test]
-    fn convert_markdown_file_unreadable_returns_error() {
+    fn convert_or_copy_markdown_unreadable_returns_error() {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("missing.md");
         let dest = dir.path().join("output.md");
@@ -187,7 +584,7 @@ mod tests {
     }
 
     #[test]
-    fn convert_markdown_file_invalid_yaml_returns_error() {
+    fn convert_or_copy_markdown_invalid_yaml_returns_error() {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("bad.md");
         let dest = dir.path().join("output.md");
@@ -211,195 +608,55 @@ mod tests {
         );
     }
 
+    // -- convert_markdown_file --
+
     #[test]
-    fn convert_directory_structure() {
+    fn convert_markdown_file_basic() {
         let dir = tempfile::tempdir().unwrap();
-        let source = dir.path().join("source");
-        let dest = dir.path().join("dest");
+        let dest = dir.path().join("output.md");
 
-        // Create page bundle.
-        let bundle = source.join("posts/my-post");
-        fs::create_dir_all(&bundle).unwrap();
-        fs::write(
-            bundle.join("index.md"),
+        convert_markdown_file(
             indoc! {r"
-                ---
-                title: Post
-                ---
-                Content
+                title: Hello, world!
+                tags: [rust]
             "},
-        )
-        .unwrap();
-        fs::write(bundle.join("image.webp"), "fake-image").unwrap();
+            indoc! {r"
+                Summary
 
-        // Create standalone file.
-        fs::create_dir_all(source.join("pages")).unwrap();
-        fs::write(
-            source.join("pages/about.md"),
-            indoc! {r"
-                ---
-                title: About
-                ---
-                About page
+                <!--more-->
+
+                Full content
             "},
+            &dest,
         )
         .unwrap();
 
-        // Create Hugo section file (should be skipped).
-        fs::write(
-            source.join("posts/_index.md"),
-            indoc! {r"
-                ---
-                title: Section
-                ---
-            "},
-        )
-        .unwrap();
-
-        convert(&source, &dest).unwrap();
-
-        // Verify converted markdown.
-        let post = fs::read_to_string(dest.join("posts/my-post/index.md")).unwrap();
+        let result = fs::read_to_string(&dest).unwrap();
         assert_eq!(
-            post,
+            result,
             indoc! {r#"
                 +++
-                title = "Post"
+                title = "Hello, world!"
+                tags = ["rust"]
                 +++
-                Content
+                Summary
+
+                <!--more-->
+
+                Full content
             "#}
         );
-
-        // Verify asset copied.
-        assert!(dest.join("posts/my-post/image.webp").exists());
-
-        // Verify standalone.
-        let about = fs::read_to_string(dest.join("pages/about.md")).unwrap();
-        assert_eq!(
-            about,
-            indoc! {r#"
-                +++
-                title = "About"
-                +++
-                About page
-            "#}
-        );
-
-        // Verify section file skipped.
-        assert!(!dest.join("posts/_index.md").exists());
     }
 
     #[test]
-    fn convert_taxonomy_term_index() {
+    fn convert_markdown_file_invalid_yaml_returns_error() {
         let dir = tempfile::tempdir().unwrap();
-        let source = dir.path().join("source");
-        let dest = dir.path().join("dest");
+        let dest = dir.path().join("output.md");
 
-        // Category _index.md (should be converted).
-        let cat_dir = source.join("categories/anime");
-        fs::create_dir_all(&cat_dir).unwrap();
-        fs::write(
-            cat_dir.join("_index.md"),
-            indoc! {r"
-                ---
-                title: 动画
-                ---
-            "},
-        )
-        .unwrap();
-
-        // Tag _index.md (should be converted).
-        let tag_dir = source.join("tags/rust");
-        fs::create_dir_all(&tag_dir).unwrap();
-        fs::write(
-            tag_dir.join("_index.md"),
-            indoc! {r"
-                ---
-                title: Rust
-                ---
-            "},
-        )
-        .unwrap();
-
-        // Section _index.md (should be skipped).
-        fs::create_dir_all(source.join("posts")).unwrap();
-        fs::write(
-            source.join("posts/_index.md"),
-            indoc! {r"
-                ---
-                title: Posts
-                ---
-            "},
-        )
-        .unwrap();
-
-        convert(&source, &dest).unwrap();
-
-        // Category term converted.
-        let cat = fs::read_to_string(dest.join("categories/anime/_index.md")).unwrap();
-        assert_eq!(
-            cat,
-            indoc! {r#"
-                +++
-                title = "动画"
-                +++
-            "#}
-        );
-
-        // Tag term converted.
-        let tag = fs::read_to_string(dest.join("tags/rust/_index.md")).unwrap();
-        assert_eq!(
-            tag,
-            indoc! {r#"
-                +++
-                title = "Rust"
-                +++
-            "#}
-        );
-
-        // Section _index.md still skipped.
-        assert!(!dest.join("posts/_index.md").exists());
-    }
-
-    #[test]
-    fn convert_does_not_overwrite_existing_files() {
-        let dir = tempfile::tempdir().unwrap();
-        let source = dir.path().join("source");
-        let dest = dir.path().join("dest");
-
-        // Source markdown + asset.
-        let post_dir = source.join("posts/hello");
-        fs::create_dir_all(&post_dir).unwrap();
-        fs::write(
-            post_dir.join("index.md"),
-            indoc! {r"
-                ---
-                title: New
-                ---
-                New content
-            "},
-        )
-        .unwrap();
-        fs::write(post_dir.join("image.webp"), "new-image").unwrap();
-
-        // Pre-existing files at dest with different content.
-        let dest_post_dir = dest.join("posts/hello");
-        fs::create_dir_all(&dest_post_dir).unwrap();
-        fs::write(dest_post_dir.join("index.md"), "existing markdown").unwrap();
-        fs::write(dest_post_dir.join("image.webp"), "existing image").unwrap();
-
-        convert(&source, &dest).unwrap();
-
-        // Neither markdown nor asset should be overwritten.
-        assert_eq!(
-            fs::read_to_string(dest.join("posts/hello/index.md")).unwrap(),
-            "existing markdown",
-            "should not overwrite existing markdown"
-        );
-        assert_eq!(
-            fs::read_to_string(dest.join("posts/hello/image.webp")).unwrap(),
-            "existing image",
-            "should not overwrite existing asset"
+        let err = convert_markdown_file(":\n  invalid: [yaml", "Body\n", &dest).unwrap_err();
+        assert!(
+            err.to_string().contains("failed to convert frontmatter"),
+            "got: {err}"
         );
     }
 }
