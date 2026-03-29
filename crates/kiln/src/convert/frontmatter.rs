@@ -96,6 +96,7 @@ mod tests {
             license: CC BY-NC-SA 4.0
         "};
         let toml = convert_frontmatter(yaml).unwrap();
+        // categories is silently dropped (not in kiln's Frontmatter struct).
         assert_eq!(
             toml,
             indoc! {r#"
@@ -108,7 +109,6 @@ mod tests {
                     "a",
                     "b",
                 ]
-                categories = ["tutorial"]
                 draft = true
                 weight = -3
                 license = "CC BY-NC-SA 4.0"

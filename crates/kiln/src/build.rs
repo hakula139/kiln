@@ -572,10 +572,6 @@ mod tests {
             output_dir.join("tags").join("index.html").exists(),
             "should generate empty tags index"
         );
-        assert!(
-            output_dir.join("categories").join("index.html").exists(),
-            "should generate empty categories index"
-        );
     }
 
     #[test]
@@ -1259,7 +1255,6 @@ mod tests {
                 +++
                 title = "Hello"
                 tags = ["rust", "web"]
-                categories = ["tutorial"]
                 +++
                 Body
             "#},
@@ -1274,17 +1269,6 @@ mod tests {
         assert!(
             html.contains("rust") && html.contains("web"),
             "tags index should list terms, html:\n{html}"
-        );
-
-        let cats_index = output_dir.join("categories").join("index.html");
-        assert!(
-            cats_index.exists(),
-            "should generate /categories/index.html"
-        );
-        let html = fs::read_to_string(&cats_index).unwrap();
-        assert!(
-            html.contains("tutorial"),
-            "categories index should list terms, html:\n{html}"
         );
     }
 

@@ -791,12 +791,12 @@ mod tests {
             })
             .collect();
         let vars = TaxonomyIndexVars {
-            kind: "categories",
-            singular: "category",
+            kind: "tags",
+            singular: "tag",
             terms: vec![TermSummary {
                 name: "Big".into(),
                 slug: "big".into(),
-                url: "/categories/big/".into(),
+                url: "/tags/big/".into(),
                 pages,
             }],
             config: &config,

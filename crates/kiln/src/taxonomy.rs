@@ -7,29 +7,26 @@ use crate::content::frontmatter;
 use crate::content::page::Page;
 use crate::text::slugify;
 
-/// The two built-in taxonomy kinds.
+/// Built-in taxonomy kinds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumIter)]
 pub enum TaxonomyKind {
     Tags,
-    Categories,
 }
 
 impl TaxonomyKind {
-    /// Returns the singular form (e.g., `"tag"`, `"category"`).
+    /// Returns the singular form (e.g., `"tag"`).
     #[must_use]
     pub fn singular(self) -> &'static str {
         match self {
             Self::Tags => "tag",
-            Self::Categories => "category",
         }
     }
 
-    /// Returns the plural form (e.g., `"tags"`, `"categories"`).
+    /// Returns the plural form (e.g., `"tags"`).
     #[must_use]
     pub fn plural(self) -> &'static str {
         match self {
             Self::Tags => "tags",
-            Self::Categories => "categories",
         }
     }
 }
@@ -63,13 +60,12 @@ pub struct TaxonomySet {
 
 /// Builds taxonomies from the given page collection.
 ///
-/// Groups pages by their tag / category values, deduplicates terms by slug,
-/// and sorts terms by page count descending (then name ascending).
-/// Page indices within each term are in the same order as the input (newest first).
+/// Groups pages by their tag values, deduplicates terms by slug, and sorts
+/// terms by page count descending (then name ascending). Page indices within
+/// each term are in the same order as the input (newest first).
 ///
 /// When `content_dir` is provided, looks for `<kind>/<slug>/_index.md` files
-/// with a `title` field to override the display name (e.g., category "anime"
-/// can display as "动画" via `content/categories/anime/_index.md`).
+/// with a `title` field to override the display name.
 #[must_use]
 pub fn build_taxonomies(pages: &[Page], content_dir: Option<&Path>) -> TaxonomySet {
     // Collect (kind, slug) → (display_name, Vec<page_index>).
@@ -79,12 +75,6 @@ pub fn build_taxonomies(pages: &[Page], content_dir: Option<&Path>) -> TaxonomyS
         collect_terms(
             &page.frontmatter.tags,
             TaxonomyKind::Tags,
-            idx,
-            &mut grouped,
-        );
-        collect_terms(
-            &page.frontmatter.categories,
-            TaxonomyKind::Categories,
             idx,
             &mut grouped,
         );
@@ -168,10 +158,9 @@ mod tests {
     use super::*;
     use crate::test_utils::test_page;
 
-    fn make_page(title: &str, tags: &[&str], categories: &[&str]) -> Page {
+    fn make_page(title: &str, tags: &[&str]) -> Page {
         let mut page = test_page(title);
         page.frontmatter.tags = tags.iter().map(|s| (*s).to_owned()).collect();
-        page.frontmatter.categories = categories.iter().map(|s| (*s).to_owned()).collect();
         page
     }
 
@@ -180,15 +169,15 @@ mod tests {
     #[test]
     fn build_taxonomies_empty() {
         let set = build_taxonomies(&[], None);
-        // Always produces one Taxonomy per kind (Tags + Categories), even with no pages.
-        assert_eq!(set.taxonomies.len(), 2);
+        // Always produces one Taxonomy per kind, even with no pages.
+        assert_eq!(set.taxonomies.len(), 1);
+        assert_eq!(set.taxonomies[0].kind, TaxonomyKind::Tags);
         assert!(set.taxonomies[0].terms.is_empty());
-        assert!(set.taxonomies[1].terms.is_empty());
     }
 
     #[test]
     fn build_taxonomies_single_tag() {
-        let pages = [make_page("Post 1", &["rust"], &[])];
+        let pages = [make_page("Post 1", &["rust"])];
         let set = build_taxonomies(&pages, None);
 
         let tags = set
@@ -205,9 +194,9 @@ mod tests {
     #[test]
     fn build_taxonomies_multiple_tags_shared() {
         let pages = [
-            make_page("Post 1", &["rust", "web"], &[]),
-            make_page("Post 2", &["rust"], &[]),
-            make_page("Post 3", &["web"], &[]),
+            make_page("Post 1", &["rust", "web"]),
+            make_page("Post 2", &["rust"]),
+            make_page("Post 3", &["web"]),
         ];
         let set = build_taxonomies(&pages, None);
 
@@ -227,8 +216,8 @@ mod tests {
     #[test]
     fn build_taxonomies_case_insensitive_slugs() {
         let pages = [
-            make_page("Post 1", &["Rust"], &[]),
-            make_page("Post 2", &["rust"], &[]),
+            make_page("Post 1", &["Rust"]),
+            make_page("Post 2", &["rust"]),
         ];
         let set = build_taxonomies(&pages, None);
 
@@ -248,9 +237,9 @@ mod tests {
     #[test]
     fn build_taxonomies_sorted_by_count_then_name() {
         let pages = [
-            make_page("Post 1", &["zebra"], &[]),
-            make_page("Post 2", &["common", "alpha"], &[]),
-            make_page("Post 3", &["common"], &[]),
+            make_page("Post 1", &["zebra"]),
+            make_page("Post 2", &["common", "alpha"]),
+            make_page("Post 3", &["common"]),
         ];
         let set = build_taxonomies(&pages, None);
 
@@ -272,8 +261,8 @@ mod tests {
     #[test]
     fn build_taxonomies_preserves_page_order() {
         let pages = [
-            make_page("Newest", &["rust"], &[]),
-            make_page("Oldest", &["rust"], &[]),
+            make_page("Newest", &["rust"]),
+            make_page("Oldest", &["rust"]),
         ];
         let set = build_taxonomies(&pages, None);
 
@@ -287,7 +276,7 @@ mod tests {
 
     #[test]
     fn build_taxonomies_empty_tags_ignored() {
-        let pages = [make_page("Post 1", &["", "  ", "rust"], &[])];
+        let pages = [make_page("Post 1", &["", "  ", "rust"])];
         let set = build_taxonomies(&pages, None);
 
         let tags = set
@@ -299,35 +288,6 @@ mod tests {
         assert_eq!(tags.terms[0].name, "rust");
     }
 
-    #[test]
-    fn build_taxonomies_both_kinds() {
-        let pages = [
-            make_page("Post 1", &["rust"], &["tutorial"]),
-            make_page("Post 2", &["rust"], &["tutorial", "note"]),
-        ];
-        let set = build_taxonomies(&pages, None);
-
-        let tags = set
-            .taxonomies
-            .iter()
-            .find(|t| t.kind == TaxonomyKind::Tags)
-            .unwrap();
-        assert_eq!(tags.terms.len(), 1);
-        assert_eq!(tags.terms[0].page_count, 2);
-
-        // Categories also grouped and sorted by count.
-        let cats = set
-            .taxonomies
-            .iter()
-            .find(|t| t.kind == TaxonomyKind::Categories)
-            .unwrap();
-        assert_eq!(cats.terms.len(), 2);
-        assert_eq!(cats.terms[0].name, "tutorial");
-        assert_eq!(cats.terms[0].page_count, 2);
-        assert_eq!(cats.terms[1].name, "note");
-        assert_eq!(cats.terms[1].page_count, 1);
-    }
-
     // -- load_term_title --
 
     #[test]
@@ -336,31 +296,31 @@ mod tests {
         let content_dir = dir.path().join("content");
 
         // Create _index.md with display name override.
-        let cat_dir = content_dir.join("categories").join("anime");
-        std::fs::create_dir_all(&cat_dir).unwrap();
+        let tag_dir = content_dir.join("tags").join("ml");
+        std::fs::create_dir_all(&tag_dir).unwrap();
         std::fs::write(
-            cat_dir.join("_index.md"),
+            tag_dir.join("_index.md"),
             indoc! {r#"
                 +++
-                title = "动画"
+                title = "Machine Learning"
                 +++
             "#},
         )
         .unwrap();
 
-        let pages = [make_page("Post 1", &[], &["anime"])];
+        let pages = [make_page("Post 1", &["ml"])];
         let set = build_taxonomies(&pages, Some(&content_dir));
 
-        let cats = set
+        let tags = set
             .taxonomies
             .iter()
-            .find(|t| t.kind == TaxonomyKind::Categories)
+            .find(|t| t.kind == TaxonomyKind::Tags)
             .unwrap();
         assert_eq!(
-            cats.terms[0].name, "动画",
+            tags.terms[0].name, "Machine Learning",
             "should use title from _index.md"
         );
-        assert_eq!(cats.terms[0].slug, "anime", "slug should stay as-is");
+        assert_eq!(tags.terms[0].slug, "ml", "slug should stay as-is");
     }
 
     #[test]
@@ -370,16 +330,16 @@ mod tests {
         // No _index.md files — display name comes from frontmatter.
         std::fs::create_dir_all(&content_dir).unwrap();
 
-        let pages = [make_page("Post 1", &[], &["anime"])];
+        let pages = [make_page("Post 1", &["rust"])];
         let set = build_taxonomies(&pages, Some(&content_dir));
 
-        let cats = set
+        let tags = set
             .taxonomies
             .iter()
-            .find(|t| t.kind == TaxonomyKind::Categories)
+            .find(|t| t.kind == TaxonomyKind::Tags)
             .unwrap();
         assert_eq!(
-            cats.terms[0].name, "anime",
+            tags.terms[0].name, "rust",
             "should fall back to frontmatter value"
         );
     }
@@ -390,10 +350,10 @@ mod tests {
         let content_dir = dir.path().join("content");
 
         // _index.md with empty title — should fall back.
-        let cat_dir = content_dir.join("categories").join("anime");
-        std::fs::create_dir_all(&cat_dir).unwrap();
+        let tag_dir = content_dir.join("tags").join("rust");
+        std::fs::create_dir_all(&tag_dir).unwrap();
         std::fs::write(
-            cat_dir.join("_index.md"),
+            tag_dir.join("_index.md"),
             indoc! {r"
                 +++
                 +++
@@ -401,16 +361,16 @@ mod tests {
         )
         .unwrap();
 
-        let pages = [make_page("Post 1", &[], &["anime"])];
+        let pages = [make_page("Post 1", &["rust"])];
         let set = build_taxonomies(&pages, Some(&content_dir));
 
-        let cats = set
+        let tags = set
             .taxonomies
             .iter()
-            .find(|t| t.kind == TaxonomyKind::Categories)
+            .find(|t| t.kind == TaxonomyKind::Tags)
             .unwrap();
         assert_eq!(
-            cats.terms[0].name, "anime",
+            tags.terms[0].name, "rust",
             "should fall back when _index.md has empty title"
         );
     }
@@ -421,7 +381,5 @@ mod tests {
     fn kind_names() {
         assert_eq!(TaxonomyKind::Tags.singular(), "tag");
         assert_eq!(TaxonomyKind::Tags.plural(), "tags");
-        assert_eq!(TaxonomyKind::Categories.singular(), "category");
-        assert_eq!(TaxonomyKind::Categories.plural(), "categories");
     }
 }
