@@ -312,7 +312,7 @@ fn build_home_pages(
         output_dir,
         |pages, pagination| {
             let vars = HomePageVars {
-                pages: into_page_summaries(pages),
+                pages: collect_page_summaries(pages),
                 pagination,
                 config: &ctx.config,
             };
@@ -465,7 +465,7 @@ fn build_taxonomy_index(
             name: term.name.clone(),
             slug: term.slug.clone(),
             url: format!("{base_path}/{}/", term.slug),
-            pages: into_page_summaries(pages.iter().cloned()),
+            pages: collect_page_summaries(pages.iter().cloned()),
         })
         .collect();
 
@@ -559,7 +559,7 @@ where
 }
 
 /// Collects the template-facing page summaries from listed pages.
-fn into_page_summaries<I>(listed_pages: I) -> Vec<PageSummary>
+fn collect_page_summaries<I>(listed_pages: I) -> Vec<PageSummary>
 where
     I: IntoIterator<Item = ListedPage>,
 {
@@ -1818,6 +1818,8 @@ mod tests {
         assert_eq!(pages[0].summary.title, "newer");
         assert_eq!(pages[1].summary.title, "older");
     }
+
+    // -- page_year --
 
     #[test]
     fn page_year_uses_configured_timezone() {
