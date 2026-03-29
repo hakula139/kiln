@@ -1,6 +1,7 @@
 use std::path::{Component, Path};
 
 use anyhow::{Context, Result, ensure};
+use jiff::Timestamp;
 use minijinja::path_loader;
 use serde::Serialize;
 
@@ -287,6 +288,8 @@ pub struct PageSummary {
     pub title: String,
     pub url: String,
     pub date: Option<String>,
+    #[serde(skip_serializing)]
+    pub(crate) date_sort: Option<Timestamp>,
     pub description: String,
     pub featured_image: Option<String>,
 }
@@ -628,6 +631,7 @@ mod tests {
                 title: "Hello World".into(),
                 url: "/hello/".into(),
                 date: Some("2026-01-01T00:00:00Z".into()),
+                date_sort: None,
                 description: String::new(),
                 featured_image: None,
             }],
@@ -650,6 +654,7 @@ mod tests {
                 title: "Post".into(),
                 url: "/post/".into(),
                 date: None,
+                date_sort: None,
                 description: String::new(),
                 featured_image: None,
             }],
@@ -695,6 +700,7 @@ mod tests {
                     title: "Hello Rust".into(),
                     url: "/note/hello-rust/".into(),
                     date: Some("2026-01-15T00:00:00Z".into()),
+                    date_sort: None,
                     description: String::new(),
                     featured_image: None,
                 }],
@@ -754,6 +760,7 @@ mod tests {
                         title: "Hello Rust".into(),
                         url: "/hello-rust/".into(),
                         date: None,
+                        date_sort: None,
                         description: String::new(),
                         featured_image: None,
                     }],
@@ -795,6 +802,7 @@ mod tests {
                 title: format!("Post {i}"),
                 url: format!("/post-{i}/"),
                 date: None,
+                date_sort: None,
                 description: String::new(),
                 featured_image: None,
             })
@@ -856,6 +864,7 @@ mod tests {
                     title: "Hello Rust".into(),
                     url: "/hello-rust/".into(),
                     date: Some("2026-01-15T00:00:00Z".into()),
+                    date_sort: None,
                     description: "A post about Rust".into(),
                     featured_image: None,
                 }],
@@ -893,6 +902,7 @@ mod tests {
                     title: "Post".into(),
                     url: "/post/".into(),
                     date: Some("2025-06-01T00:00:00Z".into()),
+                    date_sort: None,
                     description: String::new(),
                     featured_image: None,
                 }],

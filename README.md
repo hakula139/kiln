@@ -13,6 +13,7 @@ kiln is purpose-built to support the specific needs of hakula.xyz — CJK conten
 ## Roadmap
 
 - [x] TOML configuration and frontmatter (`+++` delimited)
+- [x] Configurable site time zone for rendered dates
 - [x] Markdown with GFM extensions (tables, strikethrough, autolinks, footnotes)
 - [x] KaTeX math support (`$...$` / `$$...$$`)
 - [x] Syntax highlighting via [syntect](https://github.com/trishume/syntect) + [two-face](https://github.com/CosmicHorrorDev/two-face) (200+ languages, CSS classes, no JS runtime)
@@ -54,7 +55,12 @@ kiln serve --port 3000 --open
 
 # Scaffold a new theme
 kiln init-theme my-theme
+
+# Convert a Hugo site root into a kiln site root
+kiln convert --source /path/to/hugo-site --dest /path/to/kiln-site
 ```
+
+`kiln convert` expects site roots, not `content/` directories. It reads from `source/content`, writes converted markdown and co-located assets to `dest/content`, and copies `source/static` to `dest/static` without overwriting existing destination files.
 
 ## Site Structure
 

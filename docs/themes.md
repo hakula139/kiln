@@ -228,6 +228,8 @@ To create a theme manually instead:
 
 Templates receive the following variables during rendering:
 
+Whenever a template variable includes a page `date`, kiln renders it as an ISO 8601 string in the site's configured `timezone` from `config.toml`. When `timezone` is unset, kiln uses UTC.
+
 #### Post templates (`post.html`)
 
 | Variable          | Type             | Description                     |

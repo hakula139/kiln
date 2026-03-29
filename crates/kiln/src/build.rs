@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use anyhow::{Context, Result};
+use jiff::{Timestamp, tz::TimeZone};
 use syntect::parsing::SyntaxSet;
 
 use crate::config::Config;
@@ -21,6 +22,7 @@ use crate::template::{
 /// Shared build state, created once per build invocation.
 struct BuildContext {
     config: Config,
+    time_zone: Option<TimeZone>,
     syntax_set: SyntaxSet,
     template_engine: TemplateEngine,
 }
@@ -39,6 +41,9 @@ pub fn build(root: &Path, base_url_override: Option<&str>) -> Result<()> {
     if let Some(base_url) = base_url_override {
         base_url.clone_into(&mut config.base_url);
     }
+    let time_zone = config
+        .time_zone()
+        .context("failed to resolve configured time zone")?;
     let syntax_set = two_face::syntax::extra_newlines();
 
     let site_templates = root.join("templates");
@@ -57,6 +62,7 @@ pub fn build(root: &Path, base_url_override: Option<&str>) -> Result<()> {
 
     let ctx = BuildContext {
         config,
+        time_zone,
         syntax_set,
         template_engine,
     };
@@ -72,20 +78,23 @@ pub fn build(root: &Path, base_url_override: Option<&str>) -> Result<()> {
     }
     copy_static(&root.join("static"), &output_dir)?;
 
-    // All page summaries (indexed by position in content.pages) for taxonomy lookups.
-    let page_summaries: Vec<PageSummary> = content
-        .pages
-        .iter()
-        .filter_map(|page| page_summary(page, &content.content_dir, &ctx.config.base_url))
-        .collect();
-
-    // Post-only summaries for home / section listings.
-    let post_summaries: Vec<PageSummary> = content
-        .pages
-        .iter()
-        .filter(|page| page.is_post())
-        .filter_map(|page| page_summary(page, &content.content_dir, &ctx.config.base_url))
-        .collect();
+    // All page summaries are used for taxonomy lookups.
+    let mut post_summaries = Vec::new();
+    let mut page_summaries = Vec::new();
+    for page in &content.pages {
+        let Some(summary) = page_summary(
+            page,
+            &content.content_dir,
+            &ctx.config.base_url,
+            ctx.time_zone.as_ref(),
+        ) else {
+            continue;
+        };
+        if page.is_post() {
+            post_summaries.push(summary.clone());
+        }
+        page_summaries.push(summary);
+    }
 
     for page in &content.pages {
         build_page(&ctx, page, &content.content_dir, &output_dir)?;
@@ -119,16 +128,52 @@ pub fn build(root: &Path, base_url_override: Option<&str>) -> Result<()> {
 ///
 /// Returns `None` if the output path cannot be computed (shouldn't happen
 /// for pages that passed discovery).
-fn page_summary(page: &Page, content_dir: &Path, base_url: &str) -> Option<PageSummary> {
+fn page_summary(
+    page: &Page,
+    content_dir: &Path,
+    base_url: &str,
+    time_zone: Option<&TimeZone>,
+) -> Option<PageSummary> {
     let output_path = page.output_path(content_dir).ok()?;
     let url = page_url(base_url, &output_path);
     Some(PageSummary {
         title: page.frontmatter.title.clone(),
         url,
-        date: page.frontmatter.date.map(|d| d.to_string()),
+        date: page
+            .frontmatter
+            .date
+            .map(|date| format_page_date(date, time_zone)),
+        date_sort: page.frontmatter.date,
         description: page.frontmatter.description.clone().unwrap_or_default(),
         featured_image: page.frontmatter.featured_image.clone(),
     })
+}
+
+/// Returns the section slug and summary for posts that belong to a section.
+fn section_post_summary<'a>(
+    page: &'a Page,
+    content_dir: &Path,
+    base_url: &str,
+    time_zone: Option<&TimeZone>,
+) -> Option<(&'a str, PageSummary)> {
+    let PageKind::Post {
+        section: Some(section),
+    } = &page.kind
+    else {
+        return None;
+    };
+    let summary = page_summary(page, content_dir, base_url, time_zone)?;
+    Some((section.as_str(), summary))
+}
+
+/// Formats a page date for templates using the configured site time zone,
+/// falling back to UTC when no site time zone is set.
+fn format_page_date(date: Timestamp, time_zone: Option<&TimeZone>) -> String {
+    let Some(time_zone) = time_zone else {
+        return date.to_string();
+    };
+    let zoned = date.to_zoned(time_zone.clone());
+    date.display_with_offset(zoned.offset()).to_string()
 }
 
 /// Renders a single page and writes it to the output directory.
@@ -162,7 +207,10 @@ fn build_page(
         description: page.frontmatter.description.as_deref().unwrap_or(""),
         url: &url,
         featured_image: page.frontmatter.featured_image.as_deref(),
-        date: page.frontmatter.date.map(|d| d.to_string()),
+        date: page
+            .frontmatter
+            .date
+            .map(|date| format_page_date(date, ctx.time_zone.as_ref())),
         content: &rendered.content_html,
         toc: &rendered.toc_html,
         config: &ctx.config,
@@ -272,13 +320,15 @@ fn build_section_pages(
     // Build section → page summaries map.
     let mut section_posts: HashMap<&str, Vec<PageSummary>> = HashMap::new();
     for page in pages {
-        if let PageKind::Post {
-            section: Some(ref s),
-        } = page.kind
-            && let Some(summary) = page_summary(page, content_dir, &ctx.config.base_url)
-        {
-            section_posts.entry(s.as_str()).or_default().push(summary);
-        }
+        let Some((section, summary)) = section_post_summary(
+            page,
+            content_dir,
+            &ctx.config.base_url,
+            ctx.time_zone.as_ref(),
+        ) else {
+            continue;
+        };
+        section_posts.entry(section).or_default().push(summary);
     }
 
     for section in sections {
@@ -485,7 +535,7 @@ where
 
 /// Sorts page summaries by date descending (newest first, undated last).
 fn sort_by_date_desc(pages: &mut [PageSummary]) {
-    pages.sort_by(|a, b| b.date.cmp(&a.date));
+    pages.sort_by(|a, b| b.date_sort.cmp(&a.date_sort));
 }
 
 /// Reads a pagination count from a nested TOML params path.
@@ -868,6 +918,50 @@ mod tests {
         assert!(
             html.contains(r#"<article class="page">"#),
             "should use page.html template, html:\n{html}"
+        );
+    }
+
+    #[test]
+    fn build_renders_dates_in_configured_timezone() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(
+            root.path().join("config.toml"),
+            indoc! {r#"
+                timezone = "Asia/Shanghai"
+            "#},
+        )
+        .unwrap();
+        copy_templates(&root.path().join("templates"));
+
+        write_page(
+            root.path(),
+            "posts/note/hello",
+            indoc! {r#"
+                +++
+                title = "Hello"
+                date = "2026-03-13T09:36:00Z"
+                +++
+                Body
+            "#},
+        );
+
+        build(root.path(), None).unwrap();
+
+        let html = fs::read_to_string(
+            root.path()
+                .join("public")
+                .join("note")
+                .join("hello")
+                .join("index.html"),
+        )
+        .unwrap();
+        assert!(
+            html.contains("2026-03-13T17:36:00+08:00"),
+            "should render the configured time zone offset, html:\n{html}"
+        );
+        assert!(
+            !html.contains("2026-03-13T09:36:00Z"),
+            "should not leave the date in UTC, html:\n{html}"
         );
     }
 
@@ -1478,10 +1572,25 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         fs::write(root.path().join("config.toml"), "{{invalid toml").unwrap();
 
-        let err = build(root.path(), None).unwrap_err().to_string();
+        let err = format!("{:#}", build(root.path(), None).unwrap_err());
         assert!(
             err.contains("failed to load config"),
             "should report config failure, got: {err}"
+        );
+    }
+
+    #[test]
+    fn build_invalid_timezone_returns_error() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("config.toml"), r#"timezone = "Mars/Base""#).unwrap();
+
+        let err = build(root.path(), None).unwrap_err();
+        let chain: Vec<String> = err.chain().map(ToString::to_string).collect();
+        assert!(
+            chain
+                .iter()
+                .any(|message| message.contains("invalid timezone `Mars/Base` in config.toml")),
+            "should report invalid timezone, got: {chain:?}"
         );
     }
 
@@ -1626,6 +1735,7 @@ mod tests {
             title: title.into(),
             url: format!("/{title}/"),
             date: date.map(Into::into),
+            date_sort: date.map(|date| date.parse().unwrap()),
             description: String::new(),
             featured_image: None,
         }
@@ -1655,6 +1765,17 @@ mod tests {
         sort_by_date_desc(&mut pages);
         assert_eq!(pages[0].title, "dated");
         assert_eq!(pages[1].title, "undated");
+    }
+
+    #[test]
+    fn sort_by_date_desc_uses_timestamp_not_rendered_string() {
+        let mut pages = vec![
+            make_summary("older", Some("2024-11-03T01:30:00-04:00")),
+            make_summary("newer", Some("2024-11-03T01:15:00-05:00")),
+        ];
+        sort_by_date_desc(&mut pages);
+        assert_eq!(pages[0].title, "newer");
+        assert_eq!(pages[1].title, "older");
     }
 
     // -- paginate_config --

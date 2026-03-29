@@ -8,6 +8,7 @@ kiln is a custom static site generator (SSG) written in Rust, replacing a Hugo +
 
 - [x] Workspace scaffold + CLI
 - [x] TOML configuration + content model (frontmatter, pages, discovery)
+- [x] Configurable site time zone for rendered dates
 - [x] Markdown rendering (GFM, syntax highlighting, KaTeX math, images)
 - [x] Directive parser + callout renderer + fenced divs
 - [x] Render pipeline (directive processing → markdown → ToC)
@@ -34,8 +35,12 @@ kiln is a custom static site generator (SSG) written in Rust, replacing a Hugo +
 kiln build [--root <dir>]                         # Build the site (default root: cwd)
 kiln serve [--root <dir>] [--port 5456] [--open]  # Dev server with live reload
 kiln init-theme <name> [--root]                   # Scaffold a new theme under themes/<name>/
-kiln convert --source <dir> --dest <dir>          # Convert Hugo content to kiln format
+kiln convert --source <dir> --dest <dir>          # Convert a Hugo site root into a kiln site root
 ```
+
+`kiln convert` expects site roots. It reads `source/content`, writes to
+`dest/content`, and copies `source/static` to `dest/static` without
+overwriting existing destination files.
 
 ### Project Layout
 
