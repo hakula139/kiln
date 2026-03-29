@@ -163,28 +163,16 @@ fn collect_terms(
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
     use indoc::indoc;
 
-    use crate::content::frontmatter::Frontmatter;
-
     use super::*;
+    use crate::test_utils::test_page;
 
     fn make_page(title: &str, tags: &[&str], categories: &[&str]) -> Page {
-        Page {
-            frontmatter: Frontmatter {
-                title: title.to_owned(),
-                tags: tags.iter().map(|s| (*s).to_owned()).collect(),
-                categories: categories.iter().map(|s| (*s).to_owned()).collect(),
-                ..Frontmatter::default()
-            },
-            raw_content: String::new(),
-            slug: title.to_lowercase().replace(' ', "-"),
-            summary: None,
-            source_path: PathBuf::from(format!("content/posts/{title}/index.md")),
-            assets: Vec::new(),
-        }
+        let mut page = test_page(title);
+        page.frontmatter.tags = tags.iter().map(|s| (*s).to_owned()).collect();
+        page.frontmatter.categories = categories.iter().map(|s| (*s).to_owned()).collect();
+        page
     }
 
     // -- build_taxonomies --
