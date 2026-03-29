@@ -352,6 +352,19 @@ mod tests {
         )
         .unwrap();
 
+        // Unknown kind _index.md → should be skipped.
+        let other_dir = source.join("other/slug");
+        fs::create_dir_all(&other_dir).unwrap();
+        fs::write(
+            other_dir.join("_index.md"),
+            indoc! {r"
+                ---
+                title: Other
+                ---
+            "},
+        )
+        .unwrap();
+
         convert(&source, &dest).unwrap();
 
         // Category index redirected to section index.
@@ -382,6 +395,9 @@ mod tests {
 
         // Section _index.md still skipped.
         assert!(!dest.join("posts/_index.md").exists());
+
+        // Unknown kind _index.md skipped.
+        assert!(!dest.join("other/slug/_index.md").exists());
     }
 
     #[test]

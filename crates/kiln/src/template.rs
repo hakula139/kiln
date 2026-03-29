@@ -1299,7 +1299,6 @@ mod tests {
         .unwrap();
 
         let engine = TemplateEngine::new(Some(dir.path()), None).unwrap();
-
         let ctx = crate::directive::DirectiveContext {
             name: "csv-test".into(),
             positional_args: Vec::new(),
@@ -1313,5 +1312,39 @@ mod tests {
 
         let html = engine.render_directive("csv-test", ctx).unwrap().unwrap();
         assert_eq!(html, "0");
+    }
+
+    #[test]
+    fn parse_csv_malformed_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let directives_dir = dir.path().join("directives");
+        test_fs::create_dir_all(&directives_dir).unwrap();
+        test_fs::write(
+            directives_dir.join("csv-test.html"),
+            r"{% set rows = parse_csv(read_file(positional_args[0])) %}{{ rows | length }}",
+        )
+        .unwrap();
+
+        let source = tempfile::tempdir().unwrap();
+        test_fs::write(source.path().join("bad.csv"), "a,b\n\"unclosed").unwrap();
+
+        let engine = TemplateEngine::new(Some(dir.path()), None).unwrap();
+        let ctx = crate::directive::DirectiveContext {
+            name: "csv-test".into(),
+            positional_args: vec!["bad.csv".into()],
+            named_args: BTreeMap::default(),
+            id: None,
+            classes: Vec::new(),
+            body_html: String::new(),
+            body_raw: String::new(),
+            source_dir: Some(source.path().to_string_lossy().into_owned()),
+        };
+
+        let result = engine.render_directive("csv-test", ctx);
+        let err = format!("{:#}", result.unwrap().unwrap_err());
+        assert!(
+            err.contains("CSV parse error"),
+            "should report CSV error, got: {err}"
+        );
     }
 }
