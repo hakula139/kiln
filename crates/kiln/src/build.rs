@@ -1637,6 +1637,44 @@ mod tests {
         );
     }
 
+    // -- Shared summary helper --
+
+    fn make_summary(title: &str, date: Option<&str>) -> PageSummary {
+        PageSummary {
+            title: title.into(),
+            url: format!("/{title}/"),
+            date: date.map(Into::into),
+            description: String::new(),
+            featured_image: None,
+        }
+    }
+
+    // -- sort_by_date_desc --
+
+    #[test]
+    fn sort_by_date_desc_basic() {
+        let mut pages = vec![
+            make_summary("old", Some("2025-01-01T00:00:00Z")),
+            make_summary("new", Some("2026-06-15T00:00:00Z")),
+            make_summary("mid", Some("2026-01-01T00:00:00Z")),
+        ];
+        sort_by_date_desc(&mut pages);
+        assert_eq!(pages[0].title, "new");
+        assert_eq!(pages[1].title, "mid");
+        assert_eq!(pages[2].title, "old");
+    }
+
+    #[test]
+    fn sort_by_date_desc_undated_last() {
+        let mut pages = vec![
+            make_summary("undated", None),
+            make_summary("dated", Some("2026-01-01T00:00:00Z")),
+        ];
+        sort_by_date_desc(&mut pages);
+        assert_eq!(pages[0].title, "dated");
+        assert_eq!(pages[1].title, "undated");
+    }
+
     // -- paginate_config --
 
     #[test]
@@ -1674,16 +1712,6 @@ mod tests {
     }
 
     // -- group_by_year --
-
-    fn make_summary(title: &str, date: Option<&str>) -> PageSummary {
-        PageSummary {
-            title: title.into(),
-            url: format!("/{title}/"),
-            date: date.map(Into::into),
-            description: String::new(),
-            featured_image: None,
-        }
-    }
 
     #[test]
     fn group_by_year_basic() {
