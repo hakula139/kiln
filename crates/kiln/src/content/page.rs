@@ -103,15 +103,13 @@ impl Page {
 
     /// Computes the output path relative to the build output directory.
     ///
-    /// Strips the `content/` prefix and the `posts/` segment to match a
-    /// site-specific permalink layout (Hugo `:sections[2:]`). Standalone
-    /// files get pretty URLs (`slug/index.html` instead of `slug.html`).
+    /// Strips the `content/` prefix and keeps the remaining directory
+    /// structure. Standalone files get pretty URLs (`slug/index.html`
+    /// instead of `slug.html`).
     ///
-    /// - `content/posts/foo/bar/index.md` → `foo/bar/index.html`
-    /// - `content/posts/hello-world.md` → `hello-world/index.html`
+    /// - `content/posts/foo/bar/index.md` → `posts/foo/bar/index.html`
+    /// - `content/posts/hello-world.md` → `posts/hello-world/index.html`
     /// - `content/example/index.md` → `example/index.html`
-    ///
-    /// TODO: Make this configurable via `[permalinks]` in `config.toml`.
     ///
     /// # Errors
     ///
@@ -128,15 +126,13 @@ impl Page {
                 )
             })?;
 
-        let stripped = strip_posts_prefix(relative);
-
         // Page bundles (index.md) keep their directory structure.
         // Standalone files get pretty URLs: slug.md → slug/index.html.
-        let stem = stripped.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+        let stem = relative.file_stem().and_then(|s| s.to_str()).unwrap_or("");
         if stem == "index" {
-            Ok(stripped.with_extension("html"))
+            Ok(relative.with_extension("html"))
         } else {
-            Ok(stripped.with_extension("").join("index.html"))
+            Ok(relative.with_extension("").join("index.html"))
         }
     }
 }
@@ -146,8 +142,7 @@ impl Page {
 /// Pages under `content/posts/` are posts. If the relative path after `posts/`
 /// has 3+ components (e.g., `posts/note/my-post/index.md`), the first component
 /// is the section. Posts with fewer components (e.g., `posts/hello/index.md`)
-/// are orphan posts with no section — this avoids URL conflicts between section
-/// index pages and post output paths.
+/// are orphan posts with no section.
 ///
 /// Everything outside `content/posts/` is a standalone page.
 pub fn derive_page_kind(source_path: &Path, content_dir: &Path) -> PageKind {
@@ -229,11 +224,6 @@ fn extract_summary(body: &str) -> Option<String> {
     } else {
         Some(summary.to_owned())
     }
-}
-
-/// Strips the `posts/` prefix from a content-relative path.
-fn strip_posts_prefix(path: &Path) -> PathBuf {
-    path.strip_prefix("posts").unwrap_or(path).to_owned()
 }
 
 #[cfg(test)]
@@ -502,7 +492,7 @@ mod tests {
         let mut page = test_page("bar");
         page.source_path = PathBuf::from("/site/content/posts/foo/bar/index.md");
         let out = page.output_path(Path::new("/site/content")).unwrap();
-        assert_eq!(out, PathBuf::from("foo/bar/index.html"));
+        assert_eq!(out, PathBuf::from("posts/foo/bar/index.html"));
     }
 
     #[test]
@@ -518,7 +508,7 @@ mod tests {
         let mut page = test_page("hello-world");
         page.source_path = PathBuf::from("/site/content/posts/hello-world.md");
         let out = page.output_path(Path::new("/site/content")).unwrap();
-        assert_eq!(out, PathBuf::from("hello-world/index.html"));
+        assert_eq!(out, PathBuf::from("posts/hello-world/index.html"));
     }
 
     #[test]
@@ -638,23 +628,5 @@ mod tests {
             Content after.
         "};
         assert!(extract_summary(body).is_none());
-    }
-
-    // -- strip_posts_prefix --
-
-    #[test]
-    fn strip_posts_prefix_basic() {
-        assert_eq!(
-            strip_posts_prefix(Path::new("posts/foo/bar/index.md")),
-            PathBuf::from("foo/bar/index.md")
-        );
-    }
-
-    #[test]
-    fn strip_posts_prefix_non_post() {
-        assert_eq!(
-            strip_posts_prefix(Path::new("example/index.md")),
-            PathBuf::from("example/index.md")
-        );
     }
 }

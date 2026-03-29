@@ -693,7 +693,7 @@ mod tests {
                 key: "2026".into(),
                 pages: vec![PageSummary {
                     title: "Hello Rust".into(),
-                    url: "/note/hello-rust/".into(),
+                    url: "/posts/note/hello-rust/".into(),
                     date: Some("2026-01-15T00:00:00Z".into()),
                     description: String::new(),
                     featured_image: None,
@@ -712,7 +712,7 @@ mod tests {
             "should have year group, html:\n{html}"
         );
         assert!(
-            html.contains(r#"<a href="/note/hello-rust/">Hello Rust</a>"#),
+            html.contains(r#"<a href="/posts/note/hello-rust/">Hello Rust</a>"#),
             "should list pages, html:\n{html}"
         );
     }

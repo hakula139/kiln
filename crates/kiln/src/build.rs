@@ -694,7 +694,12 @@ mod tests {
 
         build(root.path(), None).unwrap();
 
-        let output = root.path().join("public").join("hello").join("index.html");
+        let output = root
+            .path()
+            .join("public")
+            .join("posts")
+            .join("hello")
+            .join("index.html");
         assert!(output.exists(), "output file should exist");
 
         let html = fs::read_to_string(&output).unwrap();
@@ -709,7 +714,7 @@ mod tests {
             "should have meta description, html:\n{html}"
         );
         assert!(
-            html.contains(r#"<link rel="canonical" href="https://example.com/hello/">"#),
+            html.contains(r#"<link rel="canonical" href="https://example.com/posts/hello/">"#),
             "should have canonical URL, html:\n{html}"
         );
 
@@ -757,10 +762,16 @@ mod tests {
 
         build(root.path(), Some("http://localhost:5456")).unwrap();
 
-        let html = fs::read_to_string(root.path().join("public").join("hello").join("index.html"))
-            .unwrap();
+        let html = fs::read_to_string(
+            root.path()
+                .join("public")
+                .join("posts")
+                .join("hello")
+                .join("index.html"),
+        )
+        .unwrap();
         assert!(
-            html.contains("http://localhost:5456/hello/"),
+            html.contains("http://localhost:5456/posts/hello/"),
             "canonical URL should use overridden base_url, html:\n{html}"
         );
         assert!(
@@ -816,7 +827,7 @@ mod tests {
 
         build(root.path(), None).unwrap();
 
-        let output_dir = root.path().join("public").join("hello");
+        let output_dir = root.path().join("public").join("posts").join("hello");
         assert_eq!(
             fs::read_to_string(output_dir.join("cover.webp")).unwrap(),
             "cover-data"
@@ -883,7 +894,12 @@ mod tests {
 
         build(root.path(), None).unwrap();
 
-        let output = root.path().join("public").join("hello").join("index.html");
+        let output = root
+            .path()
+            .join("public")
+            .join("posts")
+            .join("hello")
+            .join("index.html");
         assert!(output.exists(), "output file should exist");
         let html = fs::read_to_string(&output).unwrap();
         assert!(
@@ -985,6 +1001,7 @@ mod tests {
         let html = fs::read_to_string(
             root.path()
                 .join("public")
+                .join("posts")
                 .join("note")
                 .join("hello")
                 .join("index.html"),
@@ -1028,6 +1045,10 @@ mod tests {
         assert!(
             html.contains("Hello"),
             "home page should list posts, html:\n{html}"
+        );
+        assert!(
+            html.contains(r#"<a href="http://localhost:5456/posts/note/hello/">Hello</a>"#),
+            "home page should link to the post under /posts/, html:\n{html}"
         );
     }
 
@@ -1249,6 +1270,10 @@ mod tests {
         assert!(
             html.contains("post-a") && html.contains("post-b"),
             "should list section posts, html:\n{html}"
+        );
+        assert!(
+            html.contains(r#"<a href="http://localhost:5456/posts/note/post-a/">post-a</a>"#),
+            "section page should link to posts under /posts/, html:\n{html}"
         );
 
         let essay_index = output_dir.join("essay").join("index.html");
@@ -1685,7 +1710,7 @@ mod tests {
 
         build(root.path(), None).unwrap();
 
-        let page_output = root.path().join("public").join("hello");
+        let page_output = root.path().join("public").join("posts").join("hello");
         let _guard = PermissionGuard::restrict(&page_output, 0o555);
 
         let err = build(root.path(), None).unwrap_err().to_string();

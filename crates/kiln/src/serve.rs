@@ -472,7 +472,9 @@ mod tests {
         let (addr, shutdown_tx) = spawn_server(root.path()).await;
         wait_for_server(addr).await;
 
-        let resp = reqwest::get(format!("http://{addr}/hello/")).await.unwrap();
+        let resp = reqwest::get(format!("http://{addr}/posts/hello/"))
+            .await
+            .unwrap();
         assert_eq!(resp.status(), 200);
         let body = resp.text().await.unwrap();
         assert!(body.contains("Hello"), "should contain page content");
@@ -741,7 +743,12 @@ mod tests {
 
         // First build to create output with known content.
         crate::build(root.path(), None).unwrap();
-        let output = root.path().join("public").join("hello").join("index.html");
+        let output = root
+            .path()
+            .join("public")
+            .join("posts")
+            .join("hello")
+            .join("index.html");
         let original = fs::read_to_string(&output).unwrap();
 
         // Break the template so the next build fails.
