@@ -356,9 +356,19 @@ The number of items per page is configurable via `paginate` in `[params]` (defau
 | `body_raw`        | string              | Raw markdown source of the directive body |
 | `source_dir`      | string or `none`    | Page source directory (for `read_file`)   |
 
-#### Template functions
+### Template Functions
 
-##### `read_file(filename)`
+The following functions are available in all templates.
+
+#### `now()`
+
+Returns the current local timestamp as an ISO 8601 string (e.g., `"2026-03-29T23:00:00+08:00[Asia/Shanghai]"`):
+
+```html
+<footer>&copy; {{ now()[0:4] }} My Site</footer>
+```
+
+#### `read_file(filename)`
 
 Reads a file relative to the page's `source_dir`. Only available in directive templates (where `source_dir` is set). Useful for directives that reference co-located data files (e.g., CSV for score tables):
 
@@ -368,7 +378,7 @@ Reads a file relative to the page's `source_dir`. Only available in directive te
 
 The return value is auto-escaped by MiniJinja. Use `| safe` if the content should be rendered as raw HTML. Path traversal (`..`) and absolute paths are rejected.
 
-##### `parse_csv(text)`
+#### `parse_csv(text)`
 
 Parses CSV text (RFC 4180) into a list of rows, where each row is a list of field strings. Handles quoted fields with embedded commas and escaped quotes. Useful with `read_file` for data-driven directive templates:
 
