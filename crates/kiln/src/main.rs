@@ -21,10 +21,10 @@ enum Command {
     },
     /// Convert Hugo content to kiln format.
     Convert {
-        /// Path to Hugo content directory.
+        /// Path to Hugo site root.
         #[arg(long)]
         source: PathBuf,
-        /// Path to kiln content directory.
+        /// Path to kiln site root.
         #[arg(long)]
         dest: PathBuf,
     },
