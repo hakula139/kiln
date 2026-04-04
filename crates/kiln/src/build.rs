@@ -158,6 +158,7 @@ fn listed_page(
             date: timestamp.map(|date| format_page_date(date, time_zone)),
             description: page.frontmatter.description.clone().unwrap_or_default(),
             featured_image: page.frontmatter.featured_image.clone(),
+            featured_image_position: page.frontmatter.featured_image_position.clone(),
             tags: page.frontmatter.tags.clone(),
         },
         timestamp,
@@ -232,6 +233,7 @@ fn build_page(
         description: page.frontmatter.description.as_deref().unwrap_or(""),
         url: &url,
         featured_image: page.frontmatter.featured_image.as_deref(),
+        featured_image_position: page.frontmatter.featured_image_position.as_deref(),
         date: page
             .frontmatter
             .date
@@ -1824,6 +1826,7 @@ mod tests {
                 date: timestamp.map(|date: Timestamp| date.to_string()),
                 description: String::new(),
                 featured_image: None,
+                featured_image_position: None,
                 tags: Vec::new(),
             },
             timestamp,

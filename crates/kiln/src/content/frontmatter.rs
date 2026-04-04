@@ -40,6 +40,11 @@ pub struct Frontmatter {
     )]
     pub featured_image: Option<String>,
 
+    /// CSS `background-position` for the featured image (e.g., `"top"`, `"30% 20%"`).
+    /// Defaults to `center` in templates when unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub featured_image_position: Option<String>,
+
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
 
@@ -264,6 +269,7 @@ mod tests {
             date = "2024-06-15T12:34:56+08:00"
             updated = 2025-07-01T23:59:59Z
             featured_image = "/images/example.webp"
+            featured_image_position = "top"
             tags = ["rust", "ssg"]
             draft = true
             weight = 10
@@ -284,6 +290,7 @@ mod tests {
             "2025-07-01T23:59:59Z".parse::<Timestamp>().unwrap()
         );
         assert_eq!(fm.featured_image.as_deref(), Some("/images/example.webp"));
+        assert_eq!(fm.featured_image_position.as_deref(), Some("top"));
         assert_eq!(fm.tags, vec!["rust", "ssg"]);
         assert!(fm.draft);
         assert_eq!(fm.weight, Some(10));
