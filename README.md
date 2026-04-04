@@ -21,8 +21,8 @@ kiln is purpose-built for hakula.xyz: strong CJK-friendly authoring, explicit re
 ## Current Focus
 
 - Complete the publishing surface with RSS, sitemap, a 404 page, and full-text search via [Pagefind](https://pagefind.app).
-- Refactor the default theme system around [Tailwind CSS](https://tailwindcss.com), including theme cleanup and dark-theme support.
 - Improve the production pipeline with Rust-native asset minification, i18n groundwork, and further ergonomics polish.
+- Make the taxonomy system config-driven (replace hardcoded `TaxonomyKind` with `[[taxonomies]]` config).
 
 ## Usage
 

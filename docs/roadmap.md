@@ -31,6 +31,8 @@ The project direction is simple:
 - Layered MiniJinja templates with site-level overrides
 - Theme parameter merging
 - Directive template helpers such as `read_file()` and `parse_csv()`
+- Navigation menu via `[[menu.main]]` config (sorted by weight, external link support)
+- Page summaries with tags for list templates (home, section, term)
 
 ### Tooling
 
@@ -51,9 +53,9 @@ These are the most important remaining gaps for a complete, self-hosted publishi
 
 ### Refactor the Theme System
 
-- Rebuild the default theme around Tailwind CSS
-- Use that refactor to simplify theme authoring and cleanup template / style structure
-- Add dark-theme support as part of the new theme system, if it stays coherent
+- ~~Rebuild the default theme around Tailwind CSS~~ — shipped via [IgnIt](https://github.com/hakula139/IgnIt) theme (Tailwind CSS v4, glassmorphism panels, responsive layout)
+- ~~Dark-theme support~~ — shipped (system preference detection + manual toggle, flash-free via `<head>` script)
+- Config-driven taxonomies (replace hardcoded `TaxonomyKind` enum with `[[taxonomies]]` config)
 
 ## Next Phase
 
