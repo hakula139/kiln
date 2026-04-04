@@ -158,6 +158,7 @@ fn listed_page(
             date: timestamp.map(|date| format_page_date(date, time_zone)),
             description: page.frontmatter.description.clone().unwrap_or_default(),
             featured_image: page.frontmatter.featured_image.clone(),
+            tags: page.frontmatter.tags.clone(),
         },
         timestamp,
         year: timestamp
@@ -1823,6 +1824,7 @@ mod tests {
                 date: timestamp.map(|date: Timestamp| date.to_string()),
                 description: String::new(),
                 featured_image: None,
+                tags: Vec::new(),
             },
             timestamp,
             year: timestamp

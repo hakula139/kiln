@@ -289,6 +289,7 @@ pub struct PageSummary {
     pub date: Option<String>,
     pub description: String,
     pub featured_image: Option<String>,
+    pub tags: Vec<String>,
 }
 
 /// A group of pages sharing a common key (e.g., year).
@@ -630,6 +631,7 @@ mod tests {
                 date: Some("2026-01-01T00:00:00Z".into()),
                 description: String::new(),
                 featured_image: None,
+                tags: Vec::new(),
             }],
             pagination: PaginationVars::new("", 1, 1),
             config: &config,
@@ -652,6 +654,7 @@ mod tests {
                 date: None,
                 description: String::new(),
                 featured_image: None,
+                tags: Vec::new(),
             }],
             pagination: PaginationVars::new("", 2, 3),
             config: &config,
@@ -697,6 +700,7 @@ mod tests {
                     date: Some("2026-01-15T00:00:00Z".into()),
                     description: String::new(),
                     featured_image: None,
+                    tags: Vec::new(),
                 }],
             }],
             pagination: PaginationVars::new("/posts/note", 1, 1),
@@ -756,6 +760,7 @@ mod tests {
                         date: None,
                         description: String::new(),
                         featured_image: None,
+                        tags: Vec::new(),
                     }],
                 },
                 TermSummary {
@@ -797,6 +802,7 @@ mod tests {
                 date: None,
                 description: String::new(),
                 featured_image: None,
+                tags: Vec::new(),
             })
             .collect();
         let vars = TaxonomyIndexVars {
@@ -858,6 +864,7 @@ mod tests {
                     date: Some("2026-01-15T00:00:00Z".into()),
                     description: "A post about Rust".into(),
                     featured_image: None,
+                    tags: Vec::new(),
                 }],
             }],
             pagination: PaginationVars::new("/tags/rust", 1, 1),
@@ -895,6 +902,7 @@ mod tests {
                     date: Some("2025-06-01T00:00:00Z".into()),
                     description: String::new(),
                     featured_image: None,
+                    tags: Vec::new(),
                 }],
             }],
             pagination: PaginationVars::new("/tags/rust", 2, 3),
