@@ -84,7 +84,7 @@ pub struct MenuItem {
     #[serde(default)]
     pub icon: Option<String>,
 
-    /// Sort order (ascending). Items without a weight sort last.
+    /// Sort order (ascending). Items without a weight default to 0.
     #[serde(default)]
     pub weight: i32,
 
@@ -284,6 +284,60 @@ mod tests {
         assert_eq!(config.author.link, "https://alice.example.com");
     }
 
+    #[test]
+    fn menu_from_toml() {
+        let config: Config = toml::from_str(indoc! {r#"
+            [[menu.main]]
+            name = "Posts"
+            url = "/posts/"
+            icon = "fas fa-archive"
+            weight = 1
+
+            [[menu.main]]
+            name = "GitHub"
+            url = "https://github.com/user"
+            weight = 10
+            external = true
+
+            [[menu.main]]
+            name = "About"
+            url = "/about/"
+            weight = 5
+        "#})
+        .unwrap();
+
+        assert_eq!(config.menu.main.len(), 3);
+        assert_eq!(config.menu.main[0].name, "Posts");
+        assert_eq!(config.menu.main[0].url, "/posts/");
+        assert_eq!(config.menu.main[0].icon.as_deref(), Some("fas fa-archive"));
+        assert_eq!(config.menu.main[0].weight, 1);
+        assert!(!config.menu.main[0].external);
+        assert_eq!(config.menu.main[1].name, "GitHub");
+        assert_eq!(config.menu.main[1].url, "https://github.com/user");
+        assert_eq!(config.menu.main[1].weight, 10);
+        assert!(config.menu.main[1].external);
+        assert_eq!(config.menu.main[2].url, "/about/");
+        assert!(config.menu.main[2].icon.is_none());
+    }
+
+    #[test]
+    fn menu_item_defaults() {
+        let config: Config = toml::from_str(indoc! {r#"
+            [[menu.main]]
+            name = "Home"
+            url = "/"
+        "#})
+        .unwrap();
+
+        assert_eq!(config.menu.main.len(), 1);
+        let item = &config.menu.main[0];
+        assert_eq!(item.name, "Home");
+        assert_eq!(item.url, "/");
+        assert!(item.icon.is_none());
+        assert_eq!(item.weight, 0);
+        assert!(!item.external);
+    }
+
     // -- load --
 
     #[test]
@@ -319,6 +373,35 @@ mod tests {
 
         let result = Config::load(dir.path());
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn menu_sorts_by_weight_on_load() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("config.toml"),
+            indoc! {r#"
+                [[menu.main]]
+                name = "Last"
+                url = "/last/"
+                weight = 10
+
+                [[menu.main]]
+                name = "First"
+                url = "/first/"
+                weight = 1
+
+                [[menu.main]]
+                name = "Middle"
+                url = "/middle/"
+                weight = 5
+            "#},
+        )
+        .unwrap();
+
+        let config = Config::load(dir.path()).unwrap();
+        let names: Vec<&str> = config.menu.main.iter().map(|m| m.name.as_str()).collect();
+        assert_eq!(names, ["First", "Middle", "Last"]);
     }
 
     // -- load (theme) --
@@ -608,70 +691,6 @@ mod tests {
         merge_params(&mut site, &theme).unwrap();
         assert_eq!(site.get("key"), Some(&toml::Value::String("site".into())));
     }
-
-    // -- deserialization (menu) --
-
-    #[test]
-    fn menu_from_toml() {
-        let config: Config = toml::from_str(indoc! {r#"
-            [[menu.main]]
-            name = "Posts"
-            url = "/posts/"
-            icon = "fas fa-archive"
-            weight = 1
-
-            [[menu.main]]
-            name = "GitHub"
-            url = "https://github.com/user"
-            weight = 10
-            external = true
-
-            [[menu.main]]
-            name = "About"
-            url = "/about/"
-            weight = 5
-        "#})
-        .unwrap();
-
-        assert_eq!(config.menu.main.len(), 3);
-        assert_eq!(config.menu.main[0].name, "Posts");
-        assert_eq!(config.menu.main[0].icon.as_deref(), Some("fas fa-archive"));
-        assert!(!config.menu.main[0].external);
-        assert_eq!(config.menu.main[1].name, "GitHub");
-        assert!(config.menu.main[1].external);
-        assert!(config.menu.main[2].icon.is_none());
-    }
-
-    #[test]
-    fn menu_sorts_by_weight_on_load() {
-        let dir = tempfile::tempdir().unwrap();
-        fs::write(
-            dir.path().join("config.toml"),
-            indoc! {r#"
-                [[menu.main]]
-                name = "Last"
-                url = "/last/"
-                weight = 10
-
-                [[menu.main]]
-                name = "First"
-                url = "/first/"
-                weight = 1
-
-                [[menu.main]]
-                name = "Middle"
-                url = "/middle/"
-                weight = 5
-            "#},
-        )
-        .unwrap();
-
-        let config = Config::load(dir.path()).unwrap();
-        let names: Vec<&str> = config.menu.main.iter().map(|m| m.name.as_str()).collect();
-        assert_eq!(names, ["First", "Middle", "Last"]);
-    }
-
-    // -- merge_params --
 
     #[test]
     fn merge_params_rejects_type_mismatch() {
