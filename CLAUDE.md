@@ -121,6 +121,7 @@ kiln convert --source <dir> --dest <dir>          # Convert a Hugo site root int
 - Test name prefixes should match the section's function name (or a clear shortening).
 - Error-case test names use a return-type suffix: `_returns_error` (`Result`), `_returns_none` (`Option`), `_returns_false` (`bool`).
 - Use `indoc!` for multi-line test inputs whenever possible.
+- Use generic, fictional test data (e.g., `example.com`, `"Hello"`, `"Post A"`). Avoid real names, URLs, or branded content.
 
 ### Documentation Maintenance
 
