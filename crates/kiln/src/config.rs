@@ -284,8 +284,13 @@ mod tests {
         assert_eq!(config.author.link, "https://alice.example.com");
     }
 
+    /// Verifies TOML field parsing for menu items.
+    ///
+    /// Items appear in TOML source order here because this test uses
+    /// `toml::from_str` directly, bypassing `Config::load()` which sorts
+    /// by weight. See `menu_sorts_by_weight_on_load` for the sorting test.
     #[test]
-    fn menu_from_toml() {
+    fn menu_from_toml_parses_fields() {
         let config: Config = toml::from_str(indoc! {r#"
             [[menu.main]]
             name = "Posts"
@@ -306,6 +311,7 @@ mod tests {
         "#})
         .unwrap();
 
+        // Items in TOML source order (not sorted by weight).
         assert_eq!(config.menu.main.len(), 3);
         assert_eq!(config.menu.main[0].name, "Posts");
         assert_eq!(config.menu.main[0].url, "/posts/");
@@ -316,7 +322,9 @@ mod tests {
         assert_eq!(config.menu.main[1].url, "https://github.com/user");
         assert_eq!(config.menu.main[1].weight, 10);
         assert!(config.menu.main[1].external);
+        assert_eq!(config.menu.main[2].name, "About");
         assert_eq!(config.menu.main[2].url, "/about/");
+        assert_eq!(config.menu.main[2].weight, 5);
         assert!(config.menu.main[2].icon.is_none());
     }
 
