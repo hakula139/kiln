@@ -242,8 +242,7 @@ fn resolve_featured_image(image: Option<&str>, page_url: &str) -> Option<String>
     if image.starts_with('/') {
         return Some(image.to_owned());
     }
-    // page_url is like "http://localhost:5456/posts/avg/on-looker/"
-    // We need just the path portion: "/posts/avg/on-looker/"
+    // Strip the scheme + authority to get the path component.
     let path = page_url
         .find("://")
         .and_then(|i| page_url[i + 3..].find('/'))
