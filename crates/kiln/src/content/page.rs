@@ -2,6 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
+use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 use walkdir::WalkDir;
 
 use super::frontmatter::{self, Frontmatter};
@@ -216,14 +217,61 @@ fn derive_slug(path: &Path) -> Option<String> {
 }
 
 /// Extracts the summary from markdown content (text before `<!--more-->`).
+///
+/// The raw markdown is stripped to plain text so that link syntax, formatting,
+/// and reference definitions do not leak into descriptions.
+///
+/// Parses the **full** body so that reference link definitions (typically at
+/// the end of the file) are available for resolution, but only collects text
+/// from events whose source range starts before the separator.
 fn extract_summary(body: &str) -> Option<String> {
-    let idx = body.find(SUMMARY_SEPARATOR)?;
-    let summary = body[..idx].trim();
-    if summary.is_empty() {
-        None
-    } else {
-        Some(summary.to_owned())
+    let separator_offset = body.find(SUMMARY_SEPARATOR)?;
+    let raw = body[..separator_offset].trim();
+    if raw.is_empty() {
+        return None;
     }
+    let plain = strip_markdown(body, separator_offset);
+    if plain.is_empty() { None } else { Some(plain) }
+}
+
+/// Strips markdown syntax from the region before `summary_end`, producing a
+/// plain-text representation.
+///
+/// Parses `full_text` so pulldown-cmark can resolve reference links whose
+/// definitions appear after the summary region. Only text events with source
+/// offsets before `summary_end` are collected.
+fn strip_markdown(full_text: &str, summary_end: usize) -> String {
+    let parser = Parser::new_ext(full_text, Options::all()).into_offset_iter();
+
+    let mut plain = String::with_capacity(summary_end);
+    let mut in_image = false;
+
+    for (event, range) in parser {
+        if range.start >= summary_end {
+            continue;
+        }
+
+        match event {
+            Event::Text(t) | Event::Code(t) | Event::InlineMath(t) | Event::DisplayMath(t)
+                if !in_image =>
+            {
+                plain.push_str(&t);
+            }
+            Event::SoftBreak | Event::HardBreak if !in_image => plain.push(' '),
+            Event::Start(Tag::Image { .. }) => in_image = true,
+            Event::End(TagEnd::Image) => in_image = false,
+            Event::Start(Tag::Paragraph) if !plain.is_empty() => plain.push('\n'),
+            _ => {}
+        }
+    }
+
+    // Collapse whitespace runs within each line and trim.
+    plain
+        .lines()
+        .map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 #[cfg(test)]
@@ -628,5 +676,91 @@ mod tests {
             Content after.
         "};
         assert!(extract_summary(body).is_none());
+    }
+
+    #[test]
+    fn extract_summary_strips_reference_links() {
+        let body = indoc! {r"
+            See [the docs][docs-ref] and the [home page].
+
+            [docs-ref]: https://example.com/docs
+            [home page]: https://example.com
+
+            <!--more-->
+
+            Full content here.
+        "};
+        assert_eq!(
+            extract_summary(body).unwrap(),
+            "See the docs and the home page."
+        );
+    }
+
+    #[test]
+    fn extract_summary_strips_inline_links_and_formatting() {
+        let body = indoc! {r"
+            A **bold** and *italic* intro with [a link](https://example.com).
+
+            <!--more-->
+        "};
+        assert_eq!(
+            extract_summary(body).unwrap(),
+            "A bold and italic intro with a link."
+        );
+    }
+
+    #[test]
+    fn extract_summary_strips_images() {
+        let body = indoc! {r"
+            Text before ![an image](photo.jpg) and after.
+
+            <!--more-->
+        "};
+        assert_eq!(extract_summary(body).unwrap(), "Text before and after.");
+    }
+
+    #[test]
+    fn extract_summary_preserves_inline_code() {
+        let body = indoc! {r"
+            Use `strip_markdown` to clean text.
+
+            <!--more-->
+        "};
+        assert_eq!(
+            extract_summary(body).unwrap(),
+            "Use strip_markdown to clean text."
+        );
+    }
+
+    #[test]
+    fn extract_summary_resolves_reference_links_after_separator() {
+        let body = indoc! {r"
+            See [the project][project-ref] for details.
+
+            <!--more-->
+
+            Full content here.
+
+            [project-ref]: https://example.com/project
+        "};
+        assert_eq!(
+            extract_summary(body).unwrap(),
+            "See the project for details."
+        );
+    }
+
+    #[test]
+    fn extract_summary_preserves_paragraph_breaks() {
+        let body = indoc! {r"
+            First paragraph.
+
+            Second paragraph.
+
+            <!--more-->
+        "};
+        assert_eq!(
+            extract_summary(body).unwrap(),
+            "First paragraph.\nSecond paragraph."
+        );
     }
 }

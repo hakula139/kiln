@@ -232,18 +232,20 @@ Whenever a template variable includes a page `date`, kiln renders it as an ISO 8
 
 #### Post templates (`post.html`)
 
-| Variable          | Type             | Description                     |
-| ----------------- | ---------------- | ------------------------------- |
-| `title`           | string           | Post title from frontmatter     |
-| `description`     | string           | Post description                |
-| `url`             | string           | Canonical URL of the post       |
-| `featured_image`  | string or `none` | Featured image path             |
-| `date`            | string or `none` | Publication date (ISO 8601)     |
-| `content`         | string           | Rendered HTML content           |
-| `toc`             | string           | Rendered table of contents HTML |
-| `config`          | object           | Site configuration              |
-| `config.base_url` | string           | Site base URL                   |
-| `config.title`    | string           | Site title                      |
+| Variable                  | Type             | Description                                 |
+| ------------------------- | ---------------- | ------------------------------------------- |
+| `title`                   | string           | Post title from frontmatter                 |
+| `description`             | string           | Post description                            |
+| `url`                     | string           | Canonical URL of the post                   |
+| `featured_image`          | string or `none` | Featured image path                         |
+| `featured_image_position` | string or `none` | CSS `object-position` value (e.g., `"top"`) |
+| `date`                    | string or `none` | Publication date (ISO 8601)                 |
+| `section`                 | object or `none` | Section the post belongs to (see below)     |
+| `content`                 | string           | Rendered HTML content                       |
+| `toc`                     | string           | Rendered table of contents HTML             |
+| `config`                  | object           | Site configuration                          |
+| `config.base_url`         | string           | Site base URL                               |
+| `config.title`            | string           | Site title                                  |
 
 #### Standalone page templates (`page.html`)
 
@@ -251,11 +253,14 @@ Uses the same variables as `post.html` (see above). The `page.html` template is 
 
 #### Home page templates (`home.html`)
 
-| Variable     | Type          | Description                                                            |
-| ------------ | ------------- | ---------------------------------------------------------------------- |
-| `pages`      | list of pages | Posts for the current page (see page fields in taxonomy section below) |
-| `pagination` | object        | Pagination metadata (same structure as term pages below)               |
-| `config`     | object        | Site configuration                                                     |
+| Variable      | Type          | Description                                                            |
+| ------------- | ------------- | ---------------------------------------------------------------------- |
+| `title`       | string        | Site title (from `config.title`)                                       |
+| `description` | string        | Site description (from `config.description`)                           |
+| `url`         | string        | Canonical home page URL                                                |
+| `pages`       | list of pages | Posts for the current page (see page fields in taxonomy section below) |
+| `pagination`  | object        | Pagination metadata (same structure as term pages below)               |
+| `config`      | object        | Site configuration                                                     |
 
 Only posts (`PageKind::Post`) appear on the home page; standalone pages are excluded. The number of posts per page is configurable via `params.home.paginate` or `params.paginate` (default: 10). If `home.html` is not present, no home page is generated.
 
@@ -293,13 +298,23 @@ Use `term.pages | length` to get the page count.
 
 Each page in `pages` has:
 
-| Field            | Type             | Description         |
-| ---------------- | ---------------- | ------------------- |
-| `title`          | string           | Post title          |
-| `url`            | string           | Canonical URL       |
-| `date`           | string or `none` | Publication date    |
-| `description`    | string           | Post description    |
-| `featured_image` | string or `none` | Featured image path |
+| Field                     | Type             | Description                                 |
+| ------------------------- | ---------------- | ------------------------------------------- |
+| `title`                   | string           | Post title                                  |
+| `url`                     | string           | Canonical URL                               |
+| `date`                    | string or `none` | Publication date                            |
+| `description`             | string           | Post description                            |
+| `featured_image`          | string or `none` | Featured image path                         |
+| `featured_image_position` | string or `none` | CSS `object-position` value (e.g., `"top"`) |
+| `tags`                    | list of objects  | Tags with `name` and `url` fields           |
+| `section`                 | object or `none` | Section with `name` and `url` fields        |
+
+`section` and each tag entry have:
+
+| Field  | Type   | Description                                             |
+| ------ | ------ | ------------------------------------------------------- |
+| `name` | string | Display name (e.g., `"Rust"`, `"笔记"`)                 |
+| `url`  | string | Canonical URL (e.g., `"/tags/rust/"`, `"/posts/note/"`) |
 
 #### Term page templates (`term.html`)
 

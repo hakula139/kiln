@@ -275,10 +275,19 @@ pub struct PostTemplateVars<'a> {
     pub description: &'a str,
     pub url: &'a str,
     pub featured_image: Option<&'a str>,
+    pub featured_image_position: Option<&'a str>,
     pub date: Option<String>,
+    pub section: Option<LinkedTerm>,
     pub content: &'a str,
     pub toc: &'a str,
     pub config: &'a Config,
+}
+
+/// A named item with a URL, used for tags and sections in page summaries.
+#[derive(Debug, Clone, Serialize)]
+pub struct LinkedTerm {
+    pub name: String,
+    pub url: String,
 }
 
 /// Lightweight page summary for list / taxonomy templates.
@@ -289,6 +298,9 @@ pub struct PageSummary {
     pub date: Option<String>,
     pub description: String,
     pub featured_image: Option<String>,
+    pub featured_image_position: Option<String>,
+    pub tags: Vec<LinkedTerm>,
+    pub section: Option<LinkedTerm>,
 }
 
 /// A group of pages sharing a common key (e.g., year).
@@ -301,6 +313,9 @@ pub struct PageGroup {
 /// Template variables for the home page.
 #[derive(Debug, Serialize)]
 pub struct HomePageVars<'a> {
+    pub title: &'a str,
+    pub description: &'a str,
+    pub url: String,
     pub pages: Vec<PageSummary>,
     pub pagination: PaginationVars,
     pub config: &'a Config,
@@ -434,7 +449,9 @@ mod tests {
             description: "A test post",
             url: "https://example.com/posts/hello-world/",
             featured_image: Some("/images/hello.webp"),
+            featured_image_position: None,
             date: Some("2026-02-24T12:34:56Z".into()),
+            section: None,
             content: "<p>Body</p>",
             toc: "",
             config: &config,
@@ -501,7 +518,9 @@ mod tests {
             description: "",
             url: "",
             featured_image: None,
+            featured_image_position: None,
             date: None,
+            section: None,
             content: "<strong>bold</strong>",
             toc: r#"<nav class="toc">ToC</nav>"#,
             config: &config,
@@ -526,7 +545,9 @@ mod tests {
             description: "",
             url: "",
             featured_image: None,
+            featured_image_position: None,
             date: None,
+            section: None,
             content: "",
             toc: "",
             config: &config,
@@ -552,7 +573,9 @@ mod tests {
             description: "",
             url: "",
             featured_image: None,
+            featured_image_position: None,
             date: None,
+            section: None,
             content: "",
             toc: "",
             config: &config,
@@ -575,7 +598,9 @@ mod tests {
             description: "A page about me",
             url: "https://example.com/about-me/",
             featured_image: None,
+            featured_image_position: None,
             date: None,
+            section: None,
             content: "<p>Hello</p>",
             toc: "",
             config: &config,
@@ -605,7 +630,9 @@ mod tests {
             description: "",
             url: "",
             featured_image: None,
+            featured_image_position: None,
             date: None,
+            section: None,
             content: "",
             toc: "",
             config: &config,
@@ -624,12 +651,18 @@ mod tests {
         let engine = test_engine();
         let config = test_config();
         let vars = HomePageVars {
+            title: &config.title,
+            description: &config.description,
+            url: format!("{}/", config.base_url),
             pages: vec![PageSummary {
                 title: "Hello World".into(),
                 url: "/hello/".into(),
                 date: Some("2026-01-01T00:00:00Z".into()),
                 description: String::new(),
                 featured_image: None,
+                featured_image_position: None,
+                tags: Vec::new(),
+                section: None,
             }],
             pagination: PaginationVars::new("", 1, 1),
             config: &config,
@@ -646,12 +679,18 @@ mod tests {
         let engine = test_engine();
         let config = test_config();
         let vars = HomePageVars {
+            title: &config.title,
+            description: &config.description,
+            url: format!("{}/", config.base_url),
             pages: vec![PageSummary {
                 title: "Post".into(),
                 url: "/post/".into(),
                 date: None,
                 description: String::new(),
                 featured_image: None,
+                featured_image_position: None,
+                tags: Vec::new(),
+                section: None,
             }],
             pagination: PaginationVars::new("", 2, 3),
             config: &config,
@@ -669,6 +708,9 @@ mod tests {
         let engine = TemplateEngine::new(Some(dir.path()), None).unwrap();
         let config = test_config();
         let vars = HomePageVars {
+            title: &config.title,
+            description: &config.description,
+            url: format!("{}/", config.base_url),
             pages: Vec::new(),
             pagination: PaginationVars::new("", 1, 1),
             config: &config,
@@ -697,6 +739,9 @@ mod tests {
                     date: Some("2026-01-15T00:00:00Z".into()),
                     description: String::new(),
                     featured_image: None,
+                    featured_image_position: None,
+                    tags: Vec::new(),
+                    section: None,
                 }],
             }],
             pagination: PaginationVars::new("/posts/note", 1, 1),
@@ -756,6 +801,9 @@ mod tests {
                         date: None,
                         description: String::new(),
                         featured_image: None,
+                        featured_image_position: None,
+                        tags: Vec::new(),
+                        section: None,
                     }],
                 },
                 TermSummary {
@@ -797,6 +845,9 @@ mod tests {
                 date: None,
                 description: String::new(),
                 featured_image: None,
+                featured_image_position: None,
+                tags: Vec::new(),
+                section: None,
             })
             .collect();
         let vars = TaxonomyIndexVars {
@@ -858,6 +909,9 @@ mod tests {
                     date: Some("2026-01-15T00:00:00Z".into()),
                     description: "A post about Rust".into(),
                     featured_image: None,
+                    featured_image_position: None,
+                    tags: Vec::new(),
+                    section: None,
                 }],
             }],
             pagination: PaginationVars::new("/tags/rust", 1, 1),
@@ -895,6 +949,9 @@ mod tests {
                     date: Some("2025-06-01T00:00:00Z".into()),
                     description: String::new(),
                     featured_image: None,
+                    featured_image_position: None,
+                    tags: Vec::new(),
+                    section: None,
                 }],
             }],
             pagination: PaginationVars::new("/tags/rust", 2, 3),

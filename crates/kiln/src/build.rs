@@ -12,12 +12,13 @@ use crate::output::{clean_output_dir, copy_file, copy_static, write_output};
 use crate::pagination::{PaginationVars, Paginator, page_url as pagination_url};
 use crate::render::RenderOptions;
 use crate::render::pipeline::render_page;
-use crate::section::{Section, collect_sections};
+use crate::section::{Section, collect_sections, load_index_title};
 use crate::taxonomy::{TaxonomyKind, TaxonomySet, Term, build_taxonomies};
 use crate::template::{
-    HomePageVars, PageGroup, PageSummary, PostTemplateVars, SectionPageVars, TaxonomyIndexVars,
-    TemplateEngine, TermPageVars, TermSummary,
+    HomePageVars, LinkedTerm, PageGroup, PageSummary, PostTemplateVars, SectionPageVars,
+    TaxonomyIndexVars, TemplateEngine, TermPageVars, TermSummary,
 };
+use crate::text::slugify;
 
 /// Shared build state, created once per build invocation.
 struct BuildContext {
@@ -92,6 +93,13 @@ pub fn build(root: &Path, base_url_override: Option<&str>) -> Result<()> {
     }
     copy_static(&root.join("static"), &output_dir)?;
 
+    // Collect sections first so listed_page() can resolve section titles.
+    let sections = collect_sections(&content.pages, &content.content_dir);
+    let section_titles: HashMap<&str, &str> = sections
+        .iter()
+        .map(|s| (s.slug.as_str(), s.title.as_str()))
+        .collect();
+
     // All listed pages are used for taxonomy lookups; posts are also reused
     // for the home page.
     let mut listed_posts = Vec::new();
@@ -102,6 +110,7 @@ pub fn build(root: &Path, base_url_override: Option<&str>) -> Result<()> {
             &content.content_dir,
             &ctx.config.base_url,
             ctx.time_zone.as_ref(),
+            &section_titles,
         ) else {
             continue;
         };
@@ -112,17 +121,23 @@ pub fn build(root: &Path, base_url_override: Option<&str>) -> Result<()> {
     }
 
     for page in &content.pages {
-        build_page(&ctx, page, &content.content_dir, &output_dir)?;
+        build_page(
+            &ctx,
+            page,
+            &content.content_dir,
+            &output_dir,
+            &section_titles,
+        )?;
     }
-
-    let sections = collect_sections(&content.pages, &content.content_dir);
     build_home_pages(&ctx, &listed_posts, &output_dir)?;
+    build_posts_index(&ctx, &listed_posts, &content.content_dir, &output_dir)?;
     build_section_pages(
         &ctx,
         &sections,
         &content.pages,
         &content.content_dir,
         &output_dir,
+        &section_titles,
     )?;
     build_taxonomy_pages(
         &ctx,
@@ -147,17 +162,28 @@ fn listed_page(
     content_dir: &Path,
     base_url: &str,
     time_zone: Option<&TimeZone>,
+    section_titles: &HashMap<&str, &str>,
 ) -> Option<ListedPage> {
     let output_path = page.output_path(content_dir).ok()?;
     let url = page_url(base_url, &output_path);
     let timestamp = page.frontmatter.date;
+    let section = page_section(page, base_url, section_titles);
+    let featured_image = resolve_featured_image(page.frontmatter.featured_image.as_deref(), &url);
     Some(ListedPage {
         summary: PageSummary {
             title: page.frontmatter.title.clone(),
             url,
             date: timestamp.map(|date| format_page_date(date, time_zone)),
-            description: page.frontmatter.description.clone().unwrap_or_default(),
-            featured_image: page.frontmatter.featured_image.clone(),
+            description: page
+                .frontmatter
+                .description
+                .clone()
+                .or_else(|| page.summary.clone())
+                .unwrap_or_default(),
+            featured_image,
+            featured_image_position: page.frontmatter.featured_image_position.clone(),
+            tags: linked_tags(&page.frontmatter.tags, base_url),
+            section,
         },
         timestamp,
         year: timestamp
@@ -172,6 +198,7 @@ fn section_listed_page<'a>(
     content_dir: &Path,
     base_url: &str,
     time_zone: Option<&TimeZone>,
+    section_titles: &HashMap<&str, &str>,
 ) -> Option<(&'a str, ListedPage)> {
     let PageKind::Post {
         section: Some(section),
@@ -179,8 +206,63 @@ fn section_listed_page<'a>(
     else {
         return None;
     };
-    let listed_page = listed_page(page, content_dir, base_url, time_zone)?;
+    let listed_page = listed_page(page, content_dir, base_url, time_zone, section_titles)?;
     Some((section.as_str(), listed_page))
+}
+
+/// Builds a `LinkedTerm` for the page's section, if any.
+fn page_section(
+    page: &Page,
+    base_url: &str,
+    section_titles: &HashMap<&str, &str>,
+) -> Option<LinkedTerm> {
+    let PageKind::Post {
+        section: Some(ref slug),
+    } = page.kind
+    else {
+        return None;
+    };
+    let title = section_titles
+        .get(slug.as_str())
+        .copied()
+        .unwrap_or(slug.as_str());
+    Some(LinkedTerm {
+        name: title.to_owned(),
+        url: format!("{base_url}/posts/{slug}/"),
+    })
+}
+
+/// Resolves a `featured_image` path against the page's output URL.
+///
+/// Absolute paths (starting with `/`) and external URLs (containing `://`)
+/// are returned as-is. Relative paths are resolved against the page's
+/// directory URL so that co-located assets like `assets/cover.webp` become
+/// `/posts/section/slug/assets/cover.webp`.
+fn resolve_featured_image(image: Option<&str>, page_url: &str) -> Option<String> {
+    let image = image?;
+    if image.starts_with('/') || image.contains("://") {
+        return Some(image.to_owned());
+    }
+    // Strip the scheme + authority to get the path component.
+    let path = if let Some(scheme_end) = page_url.find("://") {
+        let after_scheme = scheme_end + 3;
+        page_url[after_scheme..]
+            .find('/')
+            .map_or(page_url, |i| &page_url[after_scheme + i..])
+    } else {
+        page_url
+    };
+    Some(format!("{path}{image}"))
+}
+
+/// Converts raw tag strings into `LinkedTerm`s with pre-computed URLs.
+fn linked_tags(tags: &[String], base_url: &str) -> Vec<LinkedTerm> {
+    tags.iter()
+        .map(|tag| LinkedTerm {
+            name: tag.clone(),
+            url: format!("{base_url}/tags/{}/", slugify(tag)),
+        })
+        .collect()
 }
 
 /// Formats a page date for templates using the configured site time zone,
@@ -206,6 +288,7 @@ fn build_page(
     page: &Page,
     content_dir: &Path,
     output_dir: &Path,
+    section_titles: &HashMap<&str, &str>,
 ) -> Result<()> {
     let options = RenderOptions::from_params(&ctx.config.params);
 
@@ -226,15 +309,23 @@ fn build_page(
     })?;
     let url = page_url(&ctx.config.base_url, &output_path);
 
+    let featured_image = resolve_featured_image(page.frontmatter.featured_image.as_deref(), &url);
     let vars = PostTemplateVars {
         title: &page.frontmatter.title,
-        description: page.frontmatter.description.as_deref().unwrap_or(""),
+        description: page
+            .frontmatter
+            .description
+            .as_deref()
+            .or(page.summary.as_deref())
+            .unwrap_or(""),
         url: &url,
-        featured_image: page.frontmatter.featured_image.as_deref(),
+        featured_image: featured_image.as_deref(),
+        featured_image_position: page.frontmatter.featured_image_position.as_deref(),
         date: page
             .frontmatter
             .date
             .map(|date| format_page_date(date, ctx.time_zone.as_ref())),
+        section: page_section(page, &ctx.config.base_url, section_titles),
         content: &rendered.content_html,
         toc: &rendered.toc_html,
         config: &ctx.config,
@@ -305,6 +396,8 @@ fn build_home_pages(
         .or_else(|| paginate_config(&ctx.config.params, &["paginate"]))
         .unwrap_or(10);
 
+    let home_url = format!("{}/", ctx.config.base_url.trim_end_matches('/'));
+
     write_paginated(
         listed_posts,
         per_page,
@@ -312,6 +405,9 @@ fn build_home_pages(
         output_dir,
         |pages, pagination| {
             let vars = HomePageVars {
+                title: &ctx.config.title,
+                description: &ctx.config.description,
+                url: home_url.clone(),
                 pages: collect_page_summaries(pages),
                 pagination,
                 config: &ctx.config,
@@ -319,6 +415,53 @@ fn build_home_pages(
             ctx.template_engine
                 .render_home(&vars)
                 .context("failed to render home page")
+        },
+    )
+}
+
+/// Generates the root `/posts/` index page listing all posts.
+///
+/// Uses the `section.html` template. The page title is read from
+/// `content/posts/_index.md` if present, falling back to "Posts".
+///
+/// Skipped when `section.html` is not present in the template set.
+fn build_posts_index(
+    ctx: &BuildContext,
+    listed_posts: &[ListedPage],
+    content_dir: &Path,
+    output_dir: &Path,
+) -> Result<()> {
+    if !ctx.template_engine.has_template("section.html") {
+        return Ok(());
+    }
+
+    let per_page = paginate_config(&ctx.config.params, &["section", "paginate"])
+        .or_else(|| paginate_config(&ctx.config.params, &["paginate"]))
+        .unwrap_or(10);
+
+    let posts_dir = content_dir.join("posts");
+    let title = load_index_title(&posts_dir).unwrap_or_else(|| "Posts".to_owned());
+
+    let mut posts = listed_posts.to_vec();
+    sort_by_date_desc(&mut posts);
+
+    write_paginated(
+        &posts,
+        per_page,
+        "/posts",
+        output_dir,
+        |pages, pagination| {
+            let page_groups = group_by_year(pages);
+            let vars = SectionPageVars {
+                section_title: &title,
+                section_slug: "posts",
+                page_groups,
+                pagination,
+                config: &ctx.config,
+            };
+            ctx.template_engine
+                .render_section(&vars)
+                .context("failed to render posts index")
         },
     )
 }
@@ -332,6 +475,7 @@ fn build_section_pages(
     pages: &[Page],
     content_dir: &Path,
     output_dir: &Path,
+    section_titles: &HashMap<&str, &str>,
 ) -> Result<()> {
     if !ctx.template_engine.has_template("section.html") {
         return Ok(());
@@ -349,6 +493,7 @@ fn build_section_pages(
             content_dir,
             &ctx.config.base_url,
             ctx.time_zone.as_ref(),
+            section_titles,
         ) else {
             continue;
         };
@@ -1238,6 +1383,115 @@ mod tests {
         );
     }
 
+    // -- build: posts index --
+
+    #[test]
+    fn build_generates_posts_index() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("config.toml"), "").unwrap();
+        copy_templates(&root.path().join("templates"));
+
+        write_page(
+            root.path(),
+            "posts/note/post-a",
+            indoc! {r#"
+                +++
+                title = "Post A"
+                date = "2026-01-01T00:00:00Z"
+                +++
+                Body
+            "#},
+        );
+        write_page(
+            root.path(),
+            "posts/essay/post-b",
+            indoc! {r#"
+                +++
+                title = "Post B"
+                date = "2026-01-02T00:00:00Z"
+                +++
+                Body
+            "#},
+        );
+
+        build(root.path(), None).unwrap();
+
+        let posts_index = root.path().join("public").join("posts").join("index.html");
+        assert!(posts_index.exists(), "should generate /posts/index.html");
+        let html = fs::read_to_string(&posts_index).unwrap();
+        assert!(
+            html.contains("Post A") && html.contains("Post B"),
+            "posts index should list all posts across sections, html:\n{html}"
+        );
+    }
+
+    #[test]
+    fn build_posts_index_uses_index_title() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("config.toml"), "").unwrap();
+        copy_templates(&root.path().join("templates"));
+
+        let posts_dir = root.path().join("content").join("posts");
+        fs::create_dir_all(&posts_dir).unwrap();
+        fs::write(
+            posts_dir.join("_index.md"),
+            indoc! {r#"
+                +++
+                title = "文章"
+                +++
+            "#},
+        )
+        .unwrap();
+
+        write_page(
+            root.path(),
+            "posts/note/hello",
+            indoc! {r#"
+                +++
+                title = "Hello"
+                date = "2026-01-01T00:00:00Z"
+                +++
+                Body
+            "#},
+        );
+
+        build(root.path(), None).unwrap();
+
+        let html = fs::read_to_string(root.path().join("public").join("posts").join("index.html"))
+            .unwrap();
+        assert!(
+            html.contains("文章"),
+            "should use _index.md title for posts index, html:\n{html}"
+        );
+    }
+
+    #[test]
+    fn build_posts_index_generated_even_when_empty() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("config.toml"), "").unwrap();
+        copy_templates(&root.path().join("templates"));
+
+        // Only standalone pages, no posts.
+        write_page(
+            root.path(),
+            "about-me",
+            indoc! {r#"
+                +++
+                title = "About Me"
+                +++
+                Bio
+            "#},
+        );
+
+        build(root.path(), None).unwrap();
+
+        let posts_index = root.path().join("public").join("posts").join("index.html");
+        assert!(
+            posts_index.exists(),
+            "should generate /posts/index.html even with no posts"
+        );
+    }
+
     // -- build: section pages --
 
     #[test]
@@ -1812,6 +2066,46 @@ mod tests {
         );
     }
 
+    // -- resolve_featured_image --
+
+    #[test]
+    fn resolve_featured_image_absolute_path() {
+        assert_eq!(
+            resolve_featured_image(Some("/images/cover.webp"), "https://example.com/posts/foo/"),
+            Some("/images/cover.webp".into()),
+        );
+    }
+
+    #[test]
+    fn resolve_featured_image_relative_path() {
+        assert_eq!(
+            resolve_featured_image(
+                Some("assets/cover.webp"),
+                "https://example.com/posts/avg/on-looker/"
+            ),
+            Some("/posts/avg/on-looker/assets/cover.webp".into()),
+        );
+    }
+
+    #[test]
+    fn resolve_featured_image_external_url() {
+        assert_eq!(
+            resolve_featured_image(
+                Some("https://cdn.example.com/img.jpg"),
+                "https://example.com/posts/foo/"
+            ),
+            Some("https://cdn.example.com/img.jpg".into()),
+        );
+    }
+
+    #[test]
+    fn resolve_featured_image_none() {
+        assert_eq!(
+            resolve_featured_image(None, "https://example.com/posts/foo/"),
+            None,
+        );
+    }
+
     // -- Shared listing helper --
 
     fn make_listed_page(title: &str, date: Option<&str>) -> ListedPage {
@@ -1823,6 +2117,9 @@ mod tests {
                 date: timestamp.map(|date: Timestamp| date.to_string()),
                 description: String::new(),
                 featured_image: None,
+                featured_image_position: None,
+                tags: Vec::new(),
+                section: None,
             },
             timestamp,
             year: timestamp

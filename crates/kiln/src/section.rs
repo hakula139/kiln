@@ -36,7 +36,8 @@ pub fn collect_sections(pages: &[Page], content_dir: &Path) -> Vec<Section> {
     counts
         .into_iter()
         .map(|(slug, page_count)| {
-            let title = load_section_title(content_dir, &slug).unwrap_or_else(|| titlecase(&slug));
+            let section_dir = content_dir.join("posts").join(&slug);
+            let title = load_index_title(&section_dir).unwrap_or_else(|| titlecase(&slug));
             Section {
                 slug,
                 title,
@@ -46,10 +47,12 @@ pub fn collect_sections(pages: &[Page], content_dir: &Path) -> Vec<Section> {
         .collect()
 }
 
-/// Loads the display title from `content/posts/<section>/_index.md`.
-fn load_section_title(content_dir: &Path, slug: &str) -> Option<String> {
-    let path = content_dir.join("posts").join(slug).join("_index.md");
-    let content = std::fs::read_to_string(&path).ok()?;
+/// Loads the display title from `_index.md` in the given directory.
+///
+/// Returns `None` if the file is missing, has invalid frontmatter, or an
+/// empty title.
+pub(crate) fn load_index_title(dir: &Path) -> Option<String> {
+    let content = std::fs::read_to_string(dir.join("_index.md")).ok()?;
     let (fm, _) = frontmatter::parse(&content).ok()?;
     if fm.title.is_empty() {
         None
