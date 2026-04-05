@@ -234,22 +234,24 @@ fn page_section(
 
 /// Resolves a `featured_image` path against the page's output URL.
 ///
-/// Absolute paths (starting with `/`) are returned as-is. Relative paths
-/// are resolved against the page's directory URL so that co-located assets
-/// like `assets/cover.webp` become `/posts/section/slug/assets/cover.webp`.
+/// Absolute paths (starting with `/`) and external URLs (containing `://`)
+/// are returned as-is. Relative paths are resolved against the page's
+/// directory URL so that co-located assets like `assets/cover.webp` become
+/// `/posts/section/slug/assets/cover.webp`.
 fn resolve_featured_image(image: Option<&str>, page_url: &str) -> Option<String> {
     let image = image?;
-    if image.starts_with('/') {
+    if image.starts_with('/') || image.contains("://") {
         return Some(image.to_owned());
     }
     // Strip the scheme + authority to get the path component.
-    let path = page_url
-        .find("://")
-        .and_then(|i| page_url[i + 3..].find('/'))
-        .map_or(page_url.as_ref(), |i| {
-            let scheme_end = page_url.find("://").unwrap() + 3;
-            &page_url[scheme_end + i..]
-        });
+    let path = if let Some(scheme_end) = page_url.find("://") {
+        let after_scheme = scheme_end + 3;
+        page_url[after_scheme..]
+            .find('/')
+            .map_or(page_url, |i| &page_url[after_scheme + i..])
+    } else {
+        page_url
+    };
     Some(format!("{path}{image}"))
 }
 
@@ -2082,6 +2084,17 @@ mod tests {
                 "https://example.com/posts/avg/on-looker/"
             ),
             Some("/posts/avg/on-looker/assets/cover.webp".into()),
+        );
+    }
+
+    #[test]
+    fn resolve_featured_image_external_url() {
+        assert_eq!(
+            resolve_featured_image(
+                Some("https://cdn.example.com/img.jpg"),
+                "https://example.com/posts/foo/"
+            ),
+            Some("https://cdn.example.com/img.jpg".into()),
         );
     }
 
