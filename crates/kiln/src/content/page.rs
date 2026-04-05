@@ -2,6 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
+use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 use walkdir::WalkDir;
 
 use super::frontmatter::{self, Frontmatter};
@@ -216,14 +217,48 @@ fn derive_slug(path: &Path) -> Option<String> {
 }
 
 /// Extracts the summary from markdown content (text before `<!--more-->`).
+///
+/// The raw markdown is stripped to plain text so that link syntax, formatting,
+/// and reference definitions do not leak into descriptions.
 fn extract_summary(body: &str) -> Option<String> {
     let idx = body.find(SUMMARY_SEPARATOR)?;
-    let summary = body[..idx].trim();
-    if summary.is_empty() {
+    let raw = body[..idx].trim();
+    if raw.is_empty() {
         None
     } else {
-        Some(summary.to_owned())
+        let plain = strip_markdown(raw);
+        if plain.is_empty() { None } else { Some(plain) }
     }
+}
+
+/// Strips markdown syntax, producing a plain-text representation.
+///
+/// Uses pulldown-cmark to parse the markdown and extracts only text content.
+/// Link display text is preserved; reference definitions, images, and
+/// formatting syntax are removed.
+fn strip_markdown(text: &str) -> String {
+    let parser = Parser::new_ext(text, Options::all());
+
+    let mut plain = String::with_capacity(text.len());
+    let mut in_image = false;
+
+    for event in parser {
+        match event {
+            Event::Text(t) | Event::Code(t) | Event::InlineMath(t) | Event::DisplayMath(t)
+                if !in_image =>
+            {
+                plain.push_str(&t);
+            }
+            Event::SoftBreak | Event::HardBreak if !in_image => plain.push(' '),
+            Event::Start(Tag::Image { .. }) => in_image = true,
+            Event::End(TagEnd::Image) => in_image = false,
+            Event::Start(Tag::Paragraph) if !plain.is_empty() => plain.push(' '),
+            _ => {}
+        }
+    }
+
+    // Collapse whitespace runs and trim.
+    plain.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 #[cfg(test)]
@@ -628,5 +663,74 @@ mod tests {
             Content after.
         "};
         assert!(extract_summary(body).is_none());
+    }
+
+    #[test]
+    fn extract_summary_strips_reference_links() {
+        let body = indoc! {r"
+            See [the docs][docs-ref] and the [home page].
+
+            [docs-ref]: https://example.com/docs
+            [home page]: https://example.com
+
+            <!--more-->
+
+            Full content here.
+        "};
+        assert_eq!(
+            extract_summary(body).unwrap(),
+            "See the docs and the home page."
+        );
+    }
+
+    #[test]
+    fn extract_summary_strips_inline_links_and_formatting() {
+        let body = indoc! {r"
+            A **bold** and *italic* intro with [a link](https://example.com).
+
+            <!--more-->
+        "};
+        assert_eq!(
+            extract_summary(body).unwrap(),
+            "A bold and italic intro with a link."
+        );
+    }
+
+    #[test]
+    fn extract_summary_strips_images() {
+        let body = indoc! {r"
+            Text before ![an image](photo.jpg) and after.
+
+            <!--more-->
+        "};
+        assert_eq!(extract_summary(body).unwrap(), "Text before and after.");
+    }
+
+    #[test]
+    fn extract_summary_preserves_inline_code() {
+        let body = indoc! {r"
+            Use `strip_markdown` to clean text.
+
+            <!--more-->
+        "};
+        assert_eq!(
+            extract_summary(body).unwrap(),
+            "Use strip_markdown to clean text."
+        );
+    }
+
+    #[test]
+    fn extract_summary_joins_paragraphs() {
+        let body = indoc! {r"
+            First paragraph.
+
+            Second paragraph.
+
+            <!--more-->
+        "};
+        assert_eq!(
+            extract_summary(body).unwrap(),
+            "First paragraph. Second paragraph."
+        );
     }
 }
