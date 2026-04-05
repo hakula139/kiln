@@ -157,7 +157,12 @@ fn listed_page(
             title: page.frontmatter.title.clone(),
             url,
             date: timestamp.map(|date| format_page_date(date, time_zone)),
-            description: page.frontmatter.description.clone().unwrap_or_default(),
+            description: page
+                .frontmatter
+                .description
+                .clone()
+                .or_else(|| page.summary.clone())
+                .unwrap_or_default(),
             featured_image: page.frontmatter.featured_image.clone(),
             featured_image_position: page.frontmatter.featured_image_position.clone(),
             tags: page.frontmatter.tags.clone(),
@@ -231,7 +236,12 @@ fn build_page(
 
     let vars = PostTemplateVars {
         title: &page.frontmatter.title,
-        description: page.frontmatter.description.as_deref().unwrap_or(""),
+        description: page
+            .frontmatter
+            .description
+            .as_deref()
+            .or(page.summary.as_deref())
+            .unwrap_or(""),
         url: &url,
         featured_image: page.frontmatter.featured_image.as_deref(),
         featured_image_position: page.frontmatter.featured_image_position.as_deref(),
@@ -339,7 +349,7 @@ fn build_posts_index(
     content_dir: &Path,
     output_dir: &Path,
 ) -> Result<()> {
-    if !ctx.template_engine.has_template("section.html") || listed_posts.is_empty() {
+    if !ctx.template_engine.has_template("section.html") {
         return Ok(());
     }
 
@@ -1372,7 +1382,7 @@ mod tests {
     }
 
     #[test]
-    fn build_posts_index_empty_when_no_posts() {
+    fn build_posts_index_generated_even_when_empty() {
         let root = tempfile::tempdir().unwrap();
         fs::write(root.path().join("config.toml"), "").unwrap();
         copy_templates(&root.path().join("templates"));
@@ -1393,8 +1403,8 @@ mod tests {
 
         let posts_index = root.path().join("public").join("posts").join("index.html");
         assert!(
-            !posts_index.exists(),
-            "should NOT generate /posts/index.html when there are no posts"
+            posts_index.exists(),
+            "should generate /posts/index.html even with no posts"
         );
     }
 
