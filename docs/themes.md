@@ -232,18 +232,19 @@ Whenever a template variable includes a page `date`, kiln renders it as an ISO 8
 
 #### Post templates (`post.html`)
 
-| Variable          | Type             | Description                     |
-| ----------------- | ---------------- | ------------------------------- |
-| `title`           | string           | Post title from frontmatter     |
-| `description`     | string           | Post description                |
-| `url`             | string           | Canonical URL of the post       |
-| `featured_image`  | string or `none` | Featured image path             |
-| `date`            | string or `none` | Publication date (ISO 8601)     |
-| `content`         | string           | Rendered HTML content           |
-| `toc`             | string           | Rendered table of contents HTML |
-| `config`          | object           | Site configuration              |
-| `config.base_url` | string           | Site base URL                   |
-| `config.title`    | string           | Site title                      |
+| Variable                  | Type             | Description                                 |
+| ------------------------- | ---------------- | ------------------------------------------- |
+| `title`                   | string           | Post title from frontmatter                 |
+| `description`             | string           | Post description                            |
+| `url`                     | string           | Canonical URL of the post                   |
+| `featured_image`          | string or `none` | Featured image path                         |
+| `featured_image_position` | string or `none` | CSS `object-position` value (e.g., `"top"`) |
+| `date`                    | string or `none` | Publication date (ISO 8601)                 |
+| `content`                 | string           | Rendered HTML content                       |
+| `toc`                     | string           | Rendered table of contents HTML             |
+| `config`                  | object           | Site configuration                          |
+| `config.base_url`         | string           | Site base URL                               |
+| `config.title`            | string           | Site title                                  |
 
 #### Standalone page templates (`page.html`)
 
@@ -293,13 +294,15 @@ Use `term.pages | length` to get the page count.
 
 Each page in `pages` has:
 
-| Field            | Type             | Description         |
-| ---------------- | ---------------- | ------------------- |
-| `title`          | string           | Post title          |
-| `url`            | string           | Canonical URL       |
-| `date`           | string or `none` | Publication date    |
-| `description`    | string           | Post description    |
-| `featured_image` | string or `none` | Featured image path |
+| Field                     | Type             | Description                                 |
+| ------------------------- | ---------------- | ------------------------------------------- |
+| `title`                   | string           | Post title                                  |
+| `url`                     | string           | Canonical URL                               |
+| `date`                    | string or `none` | Publication date                            |
+| `description`             | string           | Post description                            |
+| `featured_image`          | string or `none` | Featured image path                         |
+| `featured_image_position` | string or `none` | CSS `object-position` value (e.g., `"top"`) |
+| `tags`                    | list of strings  | Tags from frontmatter                       |
 
 #### Term page templates (`term.html`)
 

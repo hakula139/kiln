@@ -16,21 +16,23 @@ draft = false
 tags = ["rust", "web"]
 slug = "custom-slug"
 featured_image = "/images/hero.jpg"
+featured_image_position = "top"
 +++
 ```
 
 All fields are optional. Defaults:
 
-| Field            | Default               |
-| ---------------- | --------------------- |
-| `title`          | `""`                  |
-| `description`    | none                  |
-| `date`           | none                  |
-| `updated`        | none                  |
-| `draft`          | `false`               |
-| `tags`           | `[]`                  |
-| `slug`           | derived from filename |
-| `featured_image` | none                  |
+| Field                     | Default               |
+| ------------------------- | --------------------- |
+| `title`                   | `""`                  |
+| `description`             | none                  |
+| `date`                    | none                  |
+| `updated`                 | none                  |
+| `draft`                   | `false`               |
+| `tags`                    | `[]`                  |
+| `slug`                    | derived from filename |
+| `featured_image`          | none                  |
+| `featured_image_position` | none                  |
 
 Draft pages (`draft = true`) and pages whose filename starts with `_` are excluded from the build.
 

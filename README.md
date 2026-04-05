@@ -15,7 +15,7 @@ kiln is purpose-built for hakula.xyz: strong CJK-friendly authoring, explicit re
 - CJK-friendly authoring with TOML frontmatter, GitHub Flavored Markdown, KaTeX math, heading IDs, and table of contents generation.
 - Rich content primitives via `:::` directives, directive template helpers (`read_file`, `parse_csv`), image attributes, emoji / icon shortcodes, and code-block presentation helpers.
 - Flexible site generation with pretty URLs, static file copying, co-located assets, standalone pages, home pages, section pages, taxonomy indexes, paginated term pages, and configurable site time zones.
-- MiniJinja-based theming with layered site overrides and theme parameter merging.
+- MiniJinja-based theming with layered site overrides and theme parameter merging. Ships with [IgnIt](https://github.com/hakula139/IgnIt), a Tailwind CSS v4 theme featuring glassmorphism panels, dark mode, and responsive layout.
 - Local developer tooling with live reload (`kiln serve`) and Hugo-to-kiln migration (`kiln convert`).
 
 ## Current Focus
