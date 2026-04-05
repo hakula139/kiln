@@ -342,7 +342,7 @@ fn build_home_pages(
 /// Uses the `section.html` template. The page title is read from
 /// `content/posts/_index.md` if present, falling back to "Posts".
 ///
-/// Skipped when `section.html` is not present or there are no posts.
+/// Skipped when `section.html` is not present in the template set.
 fn build_posts_index(
     ctx: &BuildContext,
     listed_posts: &[ListedPage],
