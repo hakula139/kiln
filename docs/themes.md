@@ -253,11 +253,14 @@ Uses the same variables as `post.html` (see above). The `page.html` template is 
 
 #### Home page templates (`home.html`)
 
-| Variable     | Type          | Description                                                            |
-| ------------ | ------------- | ---------------------------------------------------------------------- |
-| `pages`      | list of pages | Posts for the current page (see page fields in taxonomy section below) |
-| `pagination` | object        | Pagination metadata (same structure as term pages below)               |
-| `config`     | object        | Site configuration                                                     |
+| Variable      | Type          | Description                                                            |
+| ------------- | ------------- | ---------------------------------------------------------------------- |
+| `title`       | string        | Site title (from `config.title`)                                       |
+| `description` | string        | Site description (from `config.description`)                           |
+| `url`         | string        | Canonical home page URL                                                |
+| `pages`       | list of pages | Posts for the current page (see page fields in taxonomy section below) |
+| `pagination`  | object        | Pagination metadata (same structure as term pages below)               |
+| `config`      | object        | Site configuration                                                     |
 
 Only posts (`PageKind::Post`) appear on the home page; standalone pages are excluded. The number of posts per page is configurable via `params.home.paginate` or `params.paginate` (default: 10). If `home.html` is not present, no home page is generated.
 
