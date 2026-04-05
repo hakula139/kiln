@@ -252,13 +252,18 @@ fn strip_markdown(text: &str) -> String {
             Event::SoftBreak | Event::HardBreak if !in_image => plain.push(' '),
             Event::Start(Tag::Image { .. }) => in_image = true,
             Event::End(TagEnd::Image) => in_image = false,
-            Event::Start(Tag::Paragraph) if !plain.is_empty() => plain.push(' '),
+            Event::Start(Tag::Paragraph) if !plain.is_empty() => plain.push('\n'),
             _ => {}
         }
     }
 
-    // Collapse whitespace runs and trim.
-    plain.split_whitespace().collect::<Vec<_>>().join(" ")
+    // Collapse whitespace runs within each line and trim.
+    plain
+        .lines()
+        .map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 #[cfg(test)]
@@ -720,7 +725,7 @@ mod tests {
     }
 
     #[test]
-    fn extract_summary_joins_paragraphs() {
+    fn extract_summary_preserves_paragraph_breaks() {
         let body = indoc! {r"
             First paragraph.
 
@@ -730,7 +735,7 @@ mod tests {
         "};
         assert_eq!(
             extract_summary(body).unwrap(),
-            "First paragraph. Second paragraph."
+            "First paragraph.\nSecond paragraph."
         );
     }
 }
