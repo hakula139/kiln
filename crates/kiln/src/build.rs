@@ -394,6 +394,8 @@ fn build_home_pages(
         .or_else(|| paginate_config(&ctx.config.params, &["paginate"]))
         .unwrap_or(10);
 
+    let home_url = format!("{}/", ctx.config.base_url.trim_end_matches('/'));
+
     write_paginated(
         listed_posts,
         per_page,
@@ -401,6 +403,9 @@ fn build_home_pages(
         output_dir,
         |pages, pagination| {
             let vars = HomePageVars {
+                title: &ctx.config.title,
+                description: &ctx.config.description,
+                url: home_url.clone(),
                 pages: collect_page_summaries(pages),
                 pagination,
                 config: &ctx.config,

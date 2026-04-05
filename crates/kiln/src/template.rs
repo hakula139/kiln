@@ -313,6 +313,9 @@ pub struct PageGroup {
 /// Template variables for the home page.
 #[derive(Debug, Serialize)]
 pub struct HomePageVars<'a> {
+    pub title: &'a str,
+    pub description: &'a str,
+    pub url: String,
     pub pages: Vec<PageSummary>,
     pub pagination: PaginationVars,
     pub config: &'a Config,
@@ -648,6 +651,9 @@ mod tests {
         let engine = test_engine();
         let config = test_config();
         let vars = HomePageVars {
+            title: &config.title,
+            description: &config.description,
+            url: format!("{}/", config.base_url),
             pages: vec![PageSummary {
                 title: "Hello World".into(),
                 url: "/hello/".into(),
@@ -673,6 +679,9 @@ mod tests {
         let engine = test_engine();
         let config = test_config();
         let vars = HomePageVars {
+            title: &config.title,
+            description: &config.description,
+            url: format!("{}/", config.base_url),
             pages: vec![PageSummary {
                 title: "Post".into(),
                 url: "/post/".into(),
@@ -699,6 +708,9 @@ mod tests {
         let engine = TemplateEngine::new(Some(dir.path()), None).unwrap();
         let config = test_config();
         let vars = HomePageVars {
+            title: &config.title,
+            description: &config.description,
+            url: format!("{}/", config.base_url),
             pages: Vec::new(),
             pagination: PaginationVars::new("", 1, 1),
             config: &config,
