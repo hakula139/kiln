@@ -37,8 +37,7 @@ pub fn collect_sections(pages: &[Page], content_dir: &Path) -> Vec<Section> {
         .into_iter()
         .map(|(slug, page_count)| {
             let section_dir = content_dir.join("posts").join(&slug);
-            let title =
-                load_index_title(&section_dir).unwrap_or_else(|| titlecase(&slug));
+            let title = load_index_title(&section_dir).unwrap_or_else(|| titlecase(&slug));
             Section {
                 slug,
                 title,
