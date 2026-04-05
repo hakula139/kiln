@@ -220,29 +220,37 @@ fn derive_slug(path: &Path) -> Option<String> {
 ///
 /// The raw markdown is stripped to plain text so that link syntax, formatting,
 /// and reference definitions do not leak into descriptions.
+///
+/// Parses the **full** body so that reference link definitions (typically at
+/// the end of the file) are available for resolution, but only collects text
+/// from events whose source range starts before the separator.
 fn extract_summary(body: &str) -> Option<String> {
-    let idx = body.find(SUMMARY_SEPARATOR)?;
-    let raw = body[..idx].trim();
+    let separator_offset = body.find(SUMMARY_SEPARATOR)?;
+    let raw = body[..separator_offset].trim();
     if raw.is_empty() {
-        None
-    } else {
-        let plain = strip_markdown(raw);
-        if plain.is_empty() { None } else { Some(plain) }
+        return None;
     }
+    let plain = strip_markdown(body, separator_offset);
+    if plain.is_empty() { None } else { Some(plain) }
 }
 
-/// Strips markdown syntax, producing a plain-text representation.
+/// Strips markdown syntax from the region before `summary_end`, producing a
+/// plain-text representation.
 ///
-/// Uses pulldown-cmark to parse the markdown and extracts only text content.
-/// Link display text is preserved; reference definitions, images, and
-/// formatting syntax are removed.
-fn strip_markdown(text: &str) -> String {
-    let parser = Parser::new_ext(text, Options::all());
+/// Parses `full_text` so pulldown-cmark can resolve reference links whose
+/// definitions appear after the summary region. Only text events with source
+/// offsets before `summary_end` are collected.
+fn strip_markdown(full_text: &str, summary_end: usize) -> String {
+    let parser = Parser::new_ext(full_text, Options::all()).into_offset_iter();
 
-    let mut plain = String::with_capacity(text.len());
+    let mut plain = String::with_capacity(summary_end);
     let mut in_image = false;
 
-    for event in parser {
+    for (event, range) in parser {
+        if range.start >= summary_end {
+            continue;
+        }
+
         match event {
             Event::Text(t) | Event::Code(t) | Event::InlineMath(t) | Event::DisplayMath(t)
                 if !in_image =>
@@ -721,6 +729,23 @@ mod tests {
         assert_eq!(
             extract_summary(body).unwrap(),
             "Use strip_markdown to clean text."
+        );
+    }
+
+    #[test]
+    fn extract_summary_resolves_reference_links_after_separator() {
+        let body = indoc! {r"
+            See [the project][project-ref] for details.
+
+            <!--more-->
+
+            Full content here.
+
+            [project-ref]: https://example.com/project
+        "};
+        assert_eq!(
+            extract_summary(body).unwrap(),
+            "See the project for details."
         );
     }
 
