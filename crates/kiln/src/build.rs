@@ -12,7 +12,7 @@ use crate::output::{clean_output_dir, copy_file, copy_static, write_output};
 use crate::pagination::{PaginationVars, Paginator, page_url as pagination_url};
 use crate::render::RenderOptions;
 use crate::render::pipeline::render_page;
-use crate::section::{Section, collect_sections};
+use crate::section::{Section, collect_sections, load_index_title};
 use crate::taxonomy::{TaxonomyKind, TaxonomySet, Term, build_taxonomies};
 use crate::template::{
     HomePageVars, PageGroup, PageSummary, PostTemplateVars, SectionPageVars, TaxonomyIndexVars,
@@ -117,6 +117,7 @@ pub fn build(root: &Path, base_url_override: Option<&str>) -> Result<()> {
 
     let sections = collect_sections(&content.pages, &content.content_dir);
     build_home_pages(&ctx, &listed_posts, &output_dir)?;
+    build_posts_index(&ctx, &listed_posts, &content.content_dir, &output_dir)?;
     build_section_pages(
         &ctx,
         &sections,
@@ -322,6 +323,53 @@ fn build_home_pages(
             ctx.template_engine
                 .render_home(&vars)
                 .context("failed to render home page")
+        },
+    )
+}
+
+/// Generates the root `/posts/` index page listing all posts.
+///
+/// Uses the `section.html` template. The page title is read from
+/// `content/posts/_index.md` if present, falling back to "Posts".
+///
+/// Skipped when `section.html` is not present or there are no posts.
+fn build_posts_index(
+    ctx: &BuildContext,
+    listed_posts: &[ListedPage],
+    content_dir: &Path,
+    output_dir: &Path,
+) -> Result<()> {
+    if !ctx.template_engine.has_template("section.html") || listed_posts.is_empty() {
+        return Ok(());
+    }
+
+    let per_page = paginate_config(&ctx.config.params, &["section", "paginate"])
+        .or_else(|| paginate_config(&ctx.config.params, &["paginate"]))
+        .unwrap_or(10);
+
+    let posts_dir = content_dir.join("posts");
+    let title = load_index_title(&posts_dir).unwrap_or_else(|| "Posts".to_owned());
+
+    let mut posts = listed_posts.to_vec();
+    sort_by_date_desc(&mut posts);
+
+    write_paginated(
+        &posts,
+        per_page,
+        "/posts",
+        output_dir,
+        |pages, pagination| {
+            let page_groups = group_by_year(pages);
+            let vars = SectionPageVars {
+                section_title: &title,
+                section_slug: "posts",
+                page_groups,
+                pagination,
+                config: &ctx.config,
+            };
+            ctx.template_engine
+                .render_section(&vars)
+                .context("failed to render posts index")
         },
     )
 }
@@ -1238,6 +1286,115 @@ mod tests {
         assert!(
             !html.contains("About Me"),
             "home page should NOT list standalone pages, html:\n{html}"
+        );
+    }
+
+    // -- build: posts index --
+
+    #[test]
+    fn build_generates_posts_index() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("config.toml"), "").unwrap();
+        copy_templates(&root.path().join("templates"));
+
+        write_page(
+            root.path(),
+            "posts/note/post-a",
+            indoc! {r#"
+                +++
+                title = "Post A"
+                date = "2026-01-01T00:00:00Z"
+                +++
+                Body
+            "#},
+        );
+        write_page(
+            root.path(),
+            "posts/essay/post-b",
+            indoc! {r#"
+                +++
+                title = "Post B"
+                date = "2026-01-02T00:00:00Z"
+                +++
+                Body
+            "#},
+        );
+
+        build(root.path(), None).unwrap();
+
+        let posts_index = root.path().join("public").join("posts").join("index.html");
+        assert!(posts_index.exists(), "should generate /posts/index.html");
+        let html = fs::read_to_string(&posts_index).unwrap();
+        assert!(
+            html.contains("Post A") && html.contains("Post B"),
+            "posts index should list all posts across sections, html:\n{html}"
+        );
+    }
+
+    #[test]
+    fn build_posts_index_uses_index_title() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("config.toml"), "").unwrap();
+        copy_templates(&root.path().join("templates"));
+
+        let posts_dir = root.path().join("content").join("posts");
+        fs::create_dir_all(&posts_dir).unwrap();
+        fs::write(
+            posts_dir.join("_index.md"),
+            indoc! {r#"
+                +++
+                title = "文章"
+                +++
+            "#},
+        )
+        .unwrap();
+
+        write_page(
+            root.path(),
+            "posts/note/hello",
+            indoc! {r#"
+                +++
+                title = "Hello"
+                date = "2026-01-01T00:00:00Z"
+                +++
+                Body
+            "#},
+        );
+
+        build(root.path(), None).unwrap();
+
+        let html = fs::read_to_string(root.path().join("public").join("posts").join("index.html"))
+            .unwrap();
+        assert!(
+            html.contains("文章"),
+            "should use _index.md title for posts index, html:\n{html}"
+        );
+    }
+
+    #[test]
+    fn build_posts_index_empty_when_no_posts() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("config.toml"), "").unwrap();
+        copy_templates(&root.path().join("templates"));
+
+        // Only standalone pages, no posts.
+        write_page(
+            root.path(),
+            "about-me",
+            indoc! {r#"
+                +++
+                title = "About Me"
+                +++
+                Bio
+            "#},
+        );
+
+        build(root.path(), None).unwrap();
+
+        let posts_index = root.path().join("public").join("posts").join("index.html");
+        assert!(
+            !posts_index.exists(),
+            "should NOT generate /posts/index.html when there are no posts"
         );
     }
 
