@@ -168,6 +168,7 @@ fn listed_page(
     let url = page_url(base_url, &output_path);
     let timestamp = page.frontmatter.date;
     let section = page_section(page, base_url, section_titles);
+    let featured_image = resolve_featured_image(page.frontmatter.featured_image.as_deref(), &url);
     Some(ListedPage {
         summary: PageSummary {
             title: page.frontmatter.title.clone(),
@@ -179,7 +180,7 @@ fn listed_page(
                 .clone()
                 .or_else(|| page.summary.clone())
                 .unwrap_or_default(),
-            featured_image: page.frontmatter.featured_image.clone(),
+            featured_image,
             featured_image_position: page.frontmatter.featured_image_position.clone(),
             tags: linked_tags(&page.frontmatter.tags, base_url),
             section,
@@ -229,6 +230,28 @@ fn page_section(
         name: title.to_owned(),
         url: format!("{base_url}/posts/{slug}/"),
     })
+}
+
+/// Resolves a `featured_image` path against the page's output URL.
+///
+/// Absolute paths (starting with `/`) are returned as-is. Relative paths
+/// are resolved against the page's directory URL so that co-located assets
+/// like `assets/cover.webp` become `/posts/section/slug/assets/cover.webp`.
+fn resolve_featured_image(image: Option<&str>, page_url: &str) -> Option<String> {
+    let image = image?;
+    if image.starts_with('/') {
+        return Some(image.to_owned());
+    }
+    // page_url is like "http://localhost:5456/posts/avg/on-looker/"
+    // We need just the path portion: "/posts/avg/on-looker/"
+    let path = page_url
+        .find("://")
+        .and_then(|i| page_url[i + 3..].find('/'))
+        .map_or(page_url.as_ref(), |i| {
+            let scheme_end = page_url.find("://").unwrap() + 3;
+            &page_url[scheme_end + i..]
+        });
+    Some(format!("{path}{image}"))
 }
 
 /// Converts raw tag strings into `LinkedTerm`s with pre-computed URLs.
@@ -285,6 +308,7 @@ fn build_page(
     })?;
     let url = page_url(&ctx.config.base_url, &output_path);
 
+    let featured_image = resolve_featured_image(page.frontmatter.featured_image.as_deref(), &url);
     let vars = PostTemplateVars {
         title: &page.frontmatter.title,
         description: page
@@ -294,7 +318,7 @@ fn build_page(
             .or(page.summary.as_deref())
             .unwrap_or(""),
         url: &url,
-        featured_image: page.frontmatter.featured_image.as_deref(),
+        featured_image: featured_image.as_deref(),
         featured_image_position: page.frontmatter.featured_image_position.as_deref(),
         date: page
             .frontmatter
@@ -2033,6 +2057,35 @@ mod tests {
         assert_eq!(
             page_url("https://example.com/", Path::new("foo/index.html")),
             "https://example.com/foo/"
+        );
+    }
+
+    // -- resolve_featured_image --
+
+    #[test]
+    fn resolve_featured_image_absolute_path() {
+        assert_eq!(
+            resolve_featured_image(Some("/images/cover.webp"), "https://example.com/posts/foo/"),
+            Some("/images/cover.webp".into()),
+        );
+    }
+
+    #[test]
+    fn resolve_featured_image_relative_path() {
+        assert_eq!(
+            resolve_featured_image(
+                Some("assets/cover.webp"),
+                "https://example.com/posts/avg/on-looker/"
+            ),
+            Some("/posts/avg/on-looker/assets/cover.webp".into()),
+        );
+    }
+
+    #[test]
+    fn resolve_featured_image_none() {
+        assert_eq!(
+            resolve_featured_image(None, "https://example.com/posts/foo/"),
+            None,
         );
     }
 
