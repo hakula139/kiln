@@ -15,9 +15,10 @@ use crate::render::pipeline::render_page;
 use crate::section::{Section, collect_sections, load_index_title};
 use crate::taxonomy::{TaxonomyKind, TaxonomySet, Term, build_taxonomies};
 use crate::template::{
-    HomePageVars, PageGroup, PageSummary, PostTemplateVars, SectionPageVars, TaxonomyIndexVars,
-    TemplateEngine, TermPageVars, TermSummary,
+    HomePageVars, LinkedTerm, PageGroup, PageSummary, PostTemplateVars, SectionPageVars,
+    TaxonomyIndexVars, TemplateEngine, TermPageVars, TermSummary,
 };
+use crate::text::slugify;
 
 /// Shared build state, created once per build invocation.
 struct BuildContext {
@@ -92,6 +93,13 @@ pub fn build(root: &Path, base_url_override: Option<&str>) -> Result<()> {
     }
     copy_static(&root.join("static"), &output_dir)?;
 
+    // Collect sections first so listed_page() can resolve section titles.
+    let sections = collect_sections(&content.pages, &content.content_dir);
+    let section_titles: HashMap<&str, &str> = sections
+        .iter()
+        .map(|s| (s.slug.as_str(), s.title.as_str()))
+        .collect();
+
     // All listed pages are used for taxonomy lookups; posts are also reused
     // for the home page.
     let mut listed_posts = Vec::new();
@@ -102,6 +110,7 @@ pub fn build(root: &Path, base_url_override: Option<&str>) -> Result<()> {
             &content.content_dir,
             &ctx.config.base_url,
             ctx.time_zone.as_ref(),
+            &section_titles,
         ) else {
             continue;
         };
@@ -112,10 +121,14 @@ pub fn build(root: &Path, base_url_override: Option<&str>) -> Result<()> {
     }
 
     for page in &content.pages {
-        build_page(&ctx, page, &content.content_dir, &output_dir)?;
+        build_page(
+            &ctx,
+            page,
+            &content.content_dir,
+            &output_dir,
+            &section_titles,
+        )?;
     }
-
-    let sections = collect_sections(&content.pages, &content.content_dir);
     build_home_pages(&ctx, &listed_posts, &output_dir)?;
     build_posts_index(&ctx, &listed_posts, &content.content_dir, &output_dir)?;
     build_section_pages(
@@ -124,6 +137,7 @@ pub fn build(root: &Path, base_url_override: Option<&str>) -> Result<()> {
         &content.pages,
         &content.content_dir,
         &output_dir,
+        &section_titles,
     )?;
     build_taxonomy_pages(
         &ctx,
@@ -148,10 +162,12 @@ fn listed_page(
     content_dir: &Path,
     base_url: &str,
     time_zone: Option<&TimeZone>,
+    section_titles: &HashMap<&str, &str>,
 ) -> Option<ListedPage> {
     let output_path = page.output_path(content_dir).ok()?;
     let url = page_url(base_url, &output_path);
     let timestamp = page.frontmatter.date;
+    let section = page_section(page, base_url, section_titles);
     Some(ListedPage {
         summary: PageSummary {
             title: page.frontmatter.title.clone(),
@@ -165,7 +181,8 @@ fn listed_page(
                 .unwrap_or_default(),
             featured_image: page.frontmatter.featured_image.clone(),
             featured_image_position: page.frontmatter.featured_image_position.clone(),
-            tags: page.frontmatter.tags.clone(),
+            tags: linked_tags(&page.frontmatter.tags, base_url),
+            section,
         },
         timestamp,
         year: timestamp
@@ -180,6 +197,7 @@ fn section_listed_page<'a>(
     content_dir: &Path,
     base_url: &str,
     time_zone: Option<&TimeZone>,
+    section_titles: &HashMap<&str, &str>,
 ) -> Option<(&'a str, ListedPage)> {
     let PageKind::Post {
         section: Some(section),
@@ -187,8 +205,40 @@ fn section_listed_page<'a>(
     else {
         return None;
     };
-    let listed_page = listed_page(page, content_dir, base_url, time_zone)?;
+    let listed_page = listed_page(page, content_dir, base_url, time_zone, section_titles)?;
     Some((section.as_str(), listed_page))
+}
+
+/// Builds a `LinkedTerm` for the page's section, if any.
+fn page_section(
+    page: &Page,
+    base_url: &str,
+    section_titles: &HashMap<&str, &str>,
+) -> Option<LinkedTerm> {
+    let PageKind::Post {
+        section: Some(ref slug),
+    } = page.kind
+    else {
+        return None;
+    };
+    let title = section_titles
+        .get(slug.as_str())
+        .copied()
+        .unwrap_or(slug.as_str());
+    Some(LinkedTerm {
+        name: title.to_owned(),
+        url: format!("{base_url}/posts/{slug}/"),
+    })
+}
+
+/// Converts raw tag strings into `LinkedTerm`s with pre-computed URLs.
+fn linked_tags(tags: &[String], base_url: &str) -> Vec<LinkedTerm> {
+    tags.iter()
+        .map(|tag| LinkedTerm {
+            name: tag.clone(),
+            url: format!("{base_url}/tags/{}/", slugify(tag)),
+        })
+        .collect()
 }
 
 /// Formats a page date for templates using the configured site time zone,
@@ -214,6 +264,7 @@ fn build_page(
     page: &Page,
     content_dir: &Path,
     output_dir: &Path,
+    section_titles: &HashMap<&str, &str>,
 ) -> Result<()> {
     let options = RenderOptions::from_params(&ctx.config.params);
 
@@ -249,6 +300,7 @@ fn build_page(
             .frontmatter
             .date
             .map(|date| format_page_date(date, ctx.time_zone.as_ref())),
+        section: page_section(page, &ctx.config.base_url, section_titles),
         content: &rendered.content_html,
         toc: &rendered.toc_html,
         config: &ctx.config,
@@ -393,6 +445,7 @@ fn build_section_pages(
     pages: &[Page],
     content_dir: &Path,
     output_dir: &Path,
+    section_titles: &HashMap<&str, &str>,
 ) -> Result<()> {
     if !ctx.template_engine.has_template("section.html") {
         return Ok(());
@@ -410,6 +463,7 @@ fn build_section_pages(
             content_dir,
             &ctx.config.base_url,
             ctx.time_zone.as_ref(),
+            section_titles,
         ) else {
             continue;
         };
@@ -1995,6 +2049,7 @@ mod tests {
                 featured_image: None,
                 featured_image_position: None,
                 tags: Vec::new(),
+                section: None,
             },
             timestamp,
             year: timestamp

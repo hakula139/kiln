@@ -277,9 +277,17 @@ pub struct PostTemplateVars<'a> {
     pub featured_image: Option<&'a str>,
     pub featured_image_position: Option<&'a str>,
     pub date: Option<String>,
+    pub section: Option<LinkedTerm>,
     pub content: &'a str,
     pub toc: &'a str,
     pub config: &'a Config,
+}
+
+/// A named item with a URL, used for tags and sections in page summaries.
+#[derive(Debug, Clone, Serialize)]
+pub struct LinkedTerm {
+    pub name: String,
+    pub url: String,
 }
 
 /// Lightweight page summary for list / taxonomy templates.
@@ -291,7 +299,8 @@ pub struct PageSummary {
     pub description: String,
     pub featured_image: Option<String>,
     pub featured_image_position: Option<String>,
-    pub tags: Vec<String>,
+    pub tags: Vec<LinkedTerm>,
+    pub section: Option<LinkedTerm>,
 }
 
 /// A group of pages sharing a common key (e.g., year).
@@ -439,6 +448,7 @@ mod tests {
             featured_image: Some("/images/hello.webp"),
             featured_image_position: None,
             date: Some("2026-02-24T12:34:56Z".into()),
+            section: None,
             content: "<p>Body</p>",
             toc: "",
             config: &config,
@@ -507,6 +517,7 @@ mod tests {
             featured_image: None,
             featured_image_position: None,
             date: None,
+            section: None,
             content: "<strong>bold</strong>",
             toc: r#"<nav class="toc">ToC</nav>"#,
             config: &config,
@@ -533,6 +544,7 @@ mod tests {
             featured_image: None,
             featured_image_position: None,
             date: None,
+            section: None,
             content: "",
             toc: "",
             config: &config,
@@ -560,6 +572,7 @@ mod tests {
             featured_image: None,
             featured_image_position: None,
             date: None,
+            section: None,
             content: "",
             toc: "",
             config: &config,
@@ -584,6 +597,7 @@ mod tests {
             featured_image: None,
             featured_image_position: None,
             date: None,
+            section: None,
             content: "<p>Hello</p>",
             toc: "",
             config: &config,
@@ -615,6 +629,7 @@ mod tests {
             featured_image: None,
             featured_image_position: None,
             date: None,
+            section: None,
             content: "",
             toc: "",
             config: &config,
@@ -641,6 +656,7 @@ mod tests {
                 featured_image: None,
                 featured_image_position: None,
                 tags: Vec::new(),
+                section: None,
             }],
             pagination: PaginationVars::new("", 1, 1),
             config: &config,
@@ -665,6 +681,7 @@ mod tests {
                 featured_image: None,
                 featured_image_position: None,
                 tags: Vec::new(),
+                section: None,
             }],
             pagination: PaginationVars::new("", 2, 3),
             config: &config,
@@ -712,6 +729,7 @@ mod tests {
                     featured_image: None,
                     featured_image_position: None,
                     tags: Vec::new(),
+                    section: None,
                 }],
             }],
             pagination: PaginationVars::new("/posts/note", 1, 1),
@@ -773,6 +791,7 @@ mod tests {
                         featured_image: None,
                         featured_image_position: None,
                         tags: Vec::new(),
+                        section: None,
                     }],
                 },
                 TermSummary {
@@ -816,6 +835,7 @@ mod tests {
                 featured_image: None,
                 featured_image_position: None,
                 tags: Vec::new(),
+                section: None,
             })
             .collect();
         let vars = TaxonomyIndexVars {
@@ -879,6 +899,7 @@ mod tests {
                     featured_image: None,
                     featured_image_position: None,
                     tags: Vec::new(),
+                    section: None,
                 }],
             }],
             pagination: PaginationVars::new("/tags/rust", 1, 1),
@@ -918,6 +939,7 @@ mod tests {
                     featured_image: None,
                     featured_image_position: None,
                     tags: Vec::new(),
+                    section: None,
                 }],
             }],
             pagination: PaginationVars::new("/tags/rust", 2, 3),

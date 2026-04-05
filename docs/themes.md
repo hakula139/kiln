@@ -240,6 +240,7 @@ Whenever a template variable includes a page `date`, kiln renders it as an ISO 8
 | `featured_image`          | string or `none` | Featured image path                         |
 | `featured_image_position` | string or `none` | CSS `object-position` value (e.g., `"top"`) |
 | `date`                    | string or `none` | Publication date (ISO 8601)                 |
+| `section`                 | object or `none` | Section the post belongs to (see below)     |
 | `content`                 | string           | Rendered HTML content                       |
 | `toc`                     | string           | Rendered table of contents HTML             |
 | `config`                  | object           | Site configuration                          |
@@ -302,7 +303,15 @@ Each page in `pages` has:
 | `description`             | string           | Post description                            |
 | `featured_image`          | string or `none` | Featured image path                         |
 | `featured_image_position` | string or `none` | CSS `object-position` value (e.g., `"top"`) |
-| `tags`                    | list of strings  | Tags from frontmatter                       |
+| `tags`                    | list of objects  | Tags with `name` and `url` fields           |
+| `section`                 | object or `none` | Section with `name` and `url` fields        |
+
+`section` and each tag entry have:
+
+| Field  | Type   | Description                                             |
+| ------ | ------ | ------------------------------------------------------- |
+| `name` | string | Display name (e.g., `"Rust"`, `"笔记"`)                 |
+| `url`  | string | Canonical URL (e.g., `"/tags/rust/"`, `"/posts/note/"`) |
 
 #### Term page templates (`term.html`)
 
