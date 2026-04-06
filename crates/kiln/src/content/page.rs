@@ -283,7 +283,7 @@ mod tests {
     use super::*;
     use crate::test_utils::{PermissionGuard, test_page};
 
-    // -- from_file: basic --
+    // ── from_file: basic ──
 
     #[test]
     fn from_file_basic() {
@@ -343,7 +343,7 @@ mod tests {
         );
     }
 
-    // -- from_file: asset discovery --
+    // ── from_file: asset discovery ──
 
     #[test]
     fn from_file_page_bundle_discovers_assets_recursively() {
@@ -482,7 +482,7 @@ mod tests {
         );
     }
 
-    // -- from_content --
+    // ── from_content ──
 
     #[test]
     fn from_content_basic() {
@@ -533,7 +533,7 @@ mod tests {
         );
     }
 
-    // -- output_path --
+    // ── output_path ──
 
     #[test]
     fn output_path_post() {
@@ -566,7 +566,7 @@ mod tests {
         assert!(page.output_path(Path::new("/site/content")).is_err());
     }
 
-    // -- derive_page_kind --
+    // ── derive_page_kind ──
 
     #[test]
     fn derive_page_kind_section_post_deep() {
@@ -629,7 +629,7 @@ mod tests {
         assert_eq!(kind, PageKind::Page);
     }
 
-    // -- derive_slug --
+    // ── derive_slug ──
 
     #[test]
     fn derive_slug_page_bundle() {
@@ -648,7 +648,7 @@ mod tests {
         assert!(derive_slug(Path::new("index.md")).is_none());
     }
 
-    // -- extract_summary --
+    // ── extract_summary ──
 
     #[test]
     fn extract_summary_basic() {

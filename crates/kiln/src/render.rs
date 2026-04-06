@@ -42,7 +42,7 @@ mod tests {
 
     use super::*;
 
-    // -- RenderOptions::from_params --
+    // ── RenderOptions::from_params ──
 
     #[test]
     fn render_options_defaults() {

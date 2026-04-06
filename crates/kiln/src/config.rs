@@ -229,7 +229,7 @@ mod tests {
 
     use super::*;
 
-    // -- deserialization --
+    // ── deserialization ──
 
     #[test]
     fn defaults_when_empty() {
@@ -346,7 +346,7 @@ mod tests {
         assert!(!item.external);
     }
 
-    // -- load --
+    // ── load ──
 
     #[test]
     fn load_from_file() {
@@ -412,7 +412,7 @@ mod tests {
         assert_eq!(names, ["First", "Middle", "Last"]);
     }
 
-    // -- load (theme) --
+    // ── load (theme) ──
 
     fn setup_theme(root: &Path, theme_toml: &str) {
         let theme_dir = root.join("themes").join("test-theme");
@@ -636,7 +636,7 @@ mod tests {
         );
     }
 
-    // -- theme_dir --
+    // ── theme_dir ──
 
     #[test]
     fn theme_dir_returns_path_when_configured() {
@@ -655,7 +655,7 @@ mod tests {
         assert!(config.theme_dir(root).is_none());
     }
 
-    // -- time_zone --
+    // ── time_zone ──
 
     #[test]
     fn time_zone_resolves_configured_iana_name() {
@@ -674,7 +674,7 @@ mod tests {
         );
     }
 
-    // -- merge_params --
+    // ── merge_params ──
 
     #[test]
     fn merge_params_empty_site() {

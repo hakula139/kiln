@@ -53,7 +53,7 @@ pub fn titlecase(s: &str) -> String {
 mod tests {
     use super::*;
 
-    // -- slugify --
+    // ── slugify ──
 
     #[test]
     fn slugify_ascii() {
@@ -95,7 +95,7 @@ mod tests {
         assert_eq!(slugify("..."), "");
     }
 
-    // -- titlecase --
+    // ── titlecase ──
 
     #[test]
     fn titlecase_basic() {

@@ -245,7 +245,7 @@ mod tests {
 
     use super::*;
 
-    // -- parse --
+    // ── parse ──
 
     #[test]
     fn parse_minimal() {
@@ -334,7 +334,7 @@ mod tests {
         );
     }
 
-    // -- split_frontmatter --
+    // ── split_frontmatter ──
 
     #[test]
     fn split_basic() {
@@ -460,7 +460,7 @@ mod tests {
         );
     }
 
-    // -- yaml deserialization --
+    // ── yaml deserialization ──
 
     #[test]
     fn yaml_basic() {

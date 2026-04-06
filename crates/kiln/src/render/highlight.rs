@@ -197,7 +197,7 @@ mod tests {
         highlight_code(&SYNTAX_SET, lang, code, None)
     }
 
-    // -- highlight_code (structure) --
+    // ── highlight_code (structure) ──
 
     #[test]
     fn highlight_code_structure() {
@@ -266,7 +266,7 @@ mod tests {
         );
     }
 
-    // -- highlight_code (language resolution) --
+    // ── highlight_code (language resolution) ──
 
     #[test]
     fn highlight_code_empty_input() {
@@ -386,7 +386,7 @@ mod tests {
         );
     }
 
-    // -- capitalize_first --
+    // ── capitalize_first ──
 
     #[test]
     fn capitalize_first_basic() {

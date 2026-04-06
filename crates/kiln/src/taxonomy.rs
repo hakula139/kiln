@@ -164,7 +164,7 @@ mod tests {
         page
     }
 
-    // -- build_taxonomies --
+    // ── build_taxonomies ──
 
     #[test]
     fn build_taxonomies_empty() {
@@ -288,7 +288,7 @@ mod tests {
         assert_eq!(tags.terms[0].name, "rust");
     }
 
-    // -- load_term_title --
+    // ── load_term_title ──
 
     #[test]
     fn build_taxonomies_uses_index_title() {
@@ -375,7 +375,7 @@ mod tests {
         );
     }
 
-    // -- TaxonomyKind --
+    // ── TaxonomyKind ──
 
     #[test]
     fn kind_names() {

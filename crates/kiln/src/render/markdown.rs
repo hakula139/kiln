@@ -3,13 +3,12 @@ use std::collections::{HashMap, HashSet};
 use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use syntect::parsing::SyntaxSet;
 
-use crate::text::slugify;
-
 use super::highlight::highlight_code;
 use super::image::{render_block_image, render_inline_image};
 use super::image_attrs::ImageAttrs;
 use super::toc::TocEntry;
 use crate::html::escape;
+use crate::text::slugify;
 
 /// The result of rendering markdown content.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,7 +56,7 @@ pub(crate) fn render_markdown(
 
     for (event, range) in parser {
         match event {
-            // -- Headings --
+            // ── Headings ──
             Event::Start(Tag::Heading { .. }) => {
                 let entry = &headings[heading_index];
                 heading_index += 1;
@@ -69,7 +68,7 @@ pub(crate) fn render_markdown(
                 output_events.push(Event::Html(format!("</{level}>\n").into()));
             }
 
-            // -- Code blocks: buffer content, highlight on End --
+            // ── Code blocks: buffer content, highlight on End ──
             Event::Start(Tag::CodeBlock(kind)) => {
                 in_code_block = true;
                 code_lang = match kind {
@@ -95,7 +94,7 @@ pub(crate) fn render_markdown(
                 code_buf.push_str(t);
             }
 
-            // -- Paragraphs: buffer to detect sole-image blocks --
+            // ── Paragraphs: buffer to detect sole-image blocks ──
             Event::Start(Tag::Paragraph) => {
                 in_para = true;
                 para_buf.clear();
@@ -115,7 +114,7 @@ pub(crate) fn render_markdown(
                 para_buf.push((event, range));
             }
 
-            // -- Everything else (math, etc.) --
+            // ── Everything else (math, etc.) ──
             other => {
                 output_events.push(transform_math(other));
             }
@@ -343,7 +342,7 @@ mod tests {
         render_markdown(content, &SYNTAX_SET, &HashMap::new(), None)
     }
 
-    // -- deduplicate_id --
+    // ── deduplicate_id ──
 
     #[test]
     fn dedup_first_use_unchanged() {
@@ -375,7 +374,7 @@ mod tests {
         assert_eq!(deduplicate_id(&mut used, "foo-2"), "foo-2-1");
     }
 
-    // -- render_markdown: basic --
+    // ── render_markdown: basic ──
 
     #[test]
     fn render_paragraph() {
@@ -384,7 +383,7 @@ mod tests {
         assert!(out.headings.is_empty());
     }
 
-    // -- render_markdown: headings --
+    // ── render_markdown: headings ──
 
     #[test]
     fn render_heading_with_id() {
@@ -507,7 +506,7 @@ mod tests {
         assert_eq!(out.headings[2].id, "foo-2");
     }
 
-    // -- render_markdown: GFM extensions --
+    // ── render_markdown: GFM extensions ──
 
     #[test]
     fn render_gfm_table() {
@@ -606,7 +605,7 @@ mod tests {
         );
     }
 
-    // -- render_markdown: math --
+    // ── render_markdown: math ──
 
     #[test]
     fn render_inline_math() {
@@ -665,7 +664,7 @@ mod tests {
         );
     }
 
-    // -- render_markdown: code blocks --
+    // ── render_markdown: code blocks ──
 
     #[test]
     fn render_code_block() {
@@ -753,7 +752,7 @@ mod tests {
         );
     }
 
-    // -- render_markdown: images --
+    // ── render_markdown: images ──
 
     #[test]
     fn render_block_image() {

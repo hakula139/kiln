@@ -61,7 +61,7 @@ pub fn init_theme(root: &Path, name: &str) -> Result<()> {
 mod tests {
     use super::*;
 
-    // -- init_theme --
+    // ── init_theme ──
 
     #[test]
     fn init_theme_creates_structure() {

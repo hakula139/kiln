@@ -168,7 +168,7 @@ mod tests {
     use super::*;
     use crate::directive::CalloutKind;
 
-    // -- Callout --
+    // ── Callout ──
 
     #[test]
     fn callout_default_type() {
@@ -273,7 +273,7 @@ mod tests {
         assert_eq!(blocks[0].body, "First paragraph.\n\nSecond paragraph.");
     }
 
-    // -- Unknown directives --
+    // ── Unknown directives ──
 
     #[test]
     fn unknown_name_only() {
@@ -314,7 +314,7 @@ mod tests {
         assert_eq!(blocks[0].body, "Body");
     }
 
-    // -- Pandoc attributes --
+    // ── Pandoc attributes ──
 
     #[test]
     fn pandoc_id_extracted() {
@@ -514,7 +514,7 @@ mod tests {
         assert_eq!(blocks[0].classes, ["real-class"]);
     }
 
-    // -- Nesting --
+    // ── Nesting ──
 
     #[test]
     fn nested_directives() {
@@ -577,7 +577,7 @@ mod tests {
         assert_eq!(blocks[2].body, "Second");
     }
 
-    // -- Closing fence --
+    // ── Closing fence ──
 
     #[test]
     fn unclosed_directive_skipped() {
@@ -635,7 +635,7 @@ mod tests {
         );
     }
 
-    // -- Code fence interaction --
+    // ── Code fence interaction ──
 
     #[test]
     fn directives_inside_code_fences_ignored() {
@@ -759,7 +759,7 @@ mod tests {
         );
     }
 
-    // -- Edge cases --
+    // ── Edge cases ──
 
     #[test]
     fn indented_directive_fence_ignored() {

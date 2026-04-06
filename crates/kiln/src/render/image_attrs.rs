@@ -154,7 +154,7 @@ mod tests {
 
     use super::*;
 
-    // -- extract_image_attrs --
+    // ── extract_image_attrs ──
 
     #[test]
     fn extract_no_attrs_passthrough() {
@@ -322,7 +322,7 @@ mod tests {
         assert!(attrs.is_empty());
     }
 
-    // -- extract_image_attrs (code awareness) --
+    // ── extract_image_attrs (code awareness) ──
 
     #[test]
     fn extract_skips_inline_code() {
@@ -376,7 +376,7 @@ mod tests {
         assert_eq!(a.width.as_deref(), Some("500"));
     }
 
-    // -- ImageAttrs::is_empty --
+    // ── ImageAttrs::is_empty ──
 
     #[test]
     fn is_empty_default() {

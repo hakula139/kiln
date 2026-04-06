@@ -84,7 +84,7 @@ mod tests {
         test_page(title)
     }
 
-    // -- collect_sections --
+    // ── collect_sections ──
 
     #[test]
     fn collect_sections_basic() {

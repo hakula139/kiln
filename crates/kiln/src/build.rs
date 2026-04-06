@@ -151,7 +151,7 @@ pub fn build(root: &Path, base_url_override: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-// -- Single-page rendering --
+// ── Single-page rendering ──
 
 /// Builds an internal listed page model for taxonomy / listing generation.
 ///
@@ -378,7 +378,7 @@ pub(crate) fn page_url(base_url: &str, output_path: &Path) -> String {
     }
 }
 
-// -- Listing page generation --
+// ── Listing page generation ──
 
 /// Generates paginated home pages listing recent posts.
 ///
@@ -666,7 +666,7 @@ fn build_term_pages(
     )
 }
 
-// -- Shared pagination helpers --
+// ── Shared pagination helpers ──
 
 /// Paginates items and writes rendered pages to the output directory.
 ///
@@ -786,7 +786,7 @@ mod tests {
         }
     }
 
-    // -- build --
+    // ── build ──
 
     #[test]
     fn build_no_content() {
@@ -1001,7 +1001,7 @@ mod tests {
         );
     }
 
-    // -- build: theme --
+    // ── build: theme ──
 
     /// Sets up a minimal theme for build tests.
     fn setup_theme(root: &Path, theme_name: &str) {
@@ -1083,7 +1083,7 @@ mod tests {
         );
     }
 
-    // -- build: page template --
+    // ── build: page template ──
 
     #[test]
     fn build_uses_page_template_for_standalone() {
@@ -1162,7 +1162,7 @@ mod tests {
         );
     }
 
-    // -- build: home page --
+    // ── build: home page ──
 
     #[test]
     fn build_generates_home_page() {
@@ -1383,7 +1383,7 @@ mod tests {
         );
     }
 
-    // -- build: posts index --
+    // ── build: posts index ──
 
     #[test]
     fn build_generates_posts_index() {
@@ -1492,7 +1492,7 @@ mod tests {
         );
     }
 
-    // -- build: section pages --
+    // ── build: section pages ──
 
     #[test]
     fn build_generates_section_pages() {
@@ -1672,7 +1672,7 @@ mod tests {
         assert!(page2.exists(), "should generate section page 2");
     }
 
-    // -- build: taxonomies --
+    // ── build: taxonomies ──
 
     #[test]
     fn build_generates_taxonomy_index_pages() {
@@ -1887,7 +1887,7 @@ mod tests {
         );
     }
 
-    // -- build: errors --
+    // ── build: errors ──
 
     /// Creates a minimal site with one page for error-path tests.
     fn setup_site_with_page(root: &Path) {
@@ -2032,7 +2032,7 @@ mod tests {
         );
     }
 
-    // -- page_url --
+    // ── page_url ──
 
     #[test]
     fn page_url_index_html() {
@@ -2066,7 +2066,7 @@ mod tests {
         );
     }
 
-    // -- resolve_featured_image --
+    // ── resolve_featured_image ──
 
     #[test]
     fn resolve_featured_image_absolute_path() {
@@ -2106,7 +2106,7 @@ mod tests {
         );
     }
 
-    // -- Shared listing helper --
+    // ── Shared listing helper ──
 
     fn make_listed_page(title: &str, date: Option<&str>) -> ListedPage {
         let timestamp = date.map(|date| date.parse().unwrap());
@@ -2128,7 +2128,7 @@ mod tests {
         }
     }
 
-    // -- sort_by_date_desc --
+    // ── sort_by_date_desc ──
 
     #[test]
     fn sort_by_date_desc_basic() {
@@ -2165,7 +2165,7 @@ mod tests {
         assert_eq!(pages[1].summary.title, "older");
     }
 
-    // -- page_year --
+    // ── page_year ──
 
     #[test]
     fn page_year_uses_configured_timezone() {
@@ -2175,7 +2175,7 @@ mod tests {
         assert_eq!(page_year(date, None), "2025");
     }
 
-    // -- paginate_config --
+    // ── paginate_config ──
 
     #[test]
     fn paginate_config_nested() {
@@ -2211,7 +2211,7 @@ mod tests {
         assert_eq!(paginate_config(&params, &[]), None);
     }
 
-    // -- group_by_year --
+    // ── group_by_year ──
 
     #[test]
     fn group_by_year_basic() {

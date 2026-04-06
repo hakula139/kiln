@@ -33,7 +33,7 @@ mod tests {
 
     use super::*;
 
-    // -- split_yaml_frontmatter --
+    // ── split_yaml_frontmatter ──
 
     #[test]
     fn split_basic() {
@@ -65,7 +65,7 @@ mod tests {
         assert_eq!(body, "");
     }
 
-    // -- convert_frontmatter --
+    // ── convert_frontmatter ──
 
     #[test]
     fn convert_minimal() {

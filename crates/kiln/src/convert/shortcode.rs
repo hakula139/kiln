@@ -4,7 +4,7 @@ use regex::Regex;
 
 use crate::markdown::for_each_non_code_line;
 
-// -- Shortcode parsing --
+// ── Shortcode parsing ──
 
 /// Matches an opening or self-closing Hugo shortcode: `{{< name args >}}`.
 static SHORTCODE_OPEN_RE: LazyLock<Regex> = LazyLock::new(|| {
@@ -71,7 +71,7 @@ fn parse_shortcode_args(input: &str) -> ShortcodeArgs<'_> {
     ShortcodeArgs { positional, named }
 }
 
-// -- Conversion --
+// ── Conversion ──
 
 /// Converts all shortcodes in the body text, skipping code blocks.
 pub(crate) fn convert_shortcodes(content: &str) -> String {
@@ -126,7 +126,7 @@ fn convert_line(line: &str, out: &mut String) {
     );
 }
 
-// -- Paired shortcodes --
+// ── Paired shortcodes ──
 
 fn emit_closing(name: &str, out: &mut String) {
     match name {
@@ -158,7 +158,7 @@ fn emit_callout(sc: &ShortcodeArgs, out: &mut String) {
     out.push_str(" }\n");
 }
 
-// -- Self-closing shortcodes --
+// ── Self-closing shortcodes ──
 
 fn emit_self_closing(name: &str, sc: &ShortcodeArgs) -> String {
     match name {
@@ -211,7 +211,7 @@ mod tests {
 
     use super::*;
 
-    // -- parse_shortcode_args --
+    // ── parse_shortcode_args ──
 
     #[test]
     fn parse_positional() {
@@ -241,7 +241,7 @@ mod tests {
         assert!(sc.named.is_empty());
     }
 
-    // -- callout (from admonition) --
+    // ── callout (from admonition) ──
 
     #[test]
     fn callout_basic() {
@@ -315,7 +315,7 @@ mod tests {
         );
     }
 
-    // -- image --
+    // ── image ──
 
     #[test]
     fn image_minimal() {
@@ -374,7 +374,7 @@ mod tests {
         );
     }
 
-    // -- style --
+    // ── style ──
 
     #[test]
     fn style_leaves_todo() {
@@ -392,7 +392,7 @@ mod tests {
         assert!(result.contains("<!-- /style -->"), "got:\n{result}");
     }
 
-    // -- mermaid --
+    // ── mermaid ──
 
     #[test]
     fn mermaid_block() {
@@ -414,7 +414,7 @@ mod tests {
         );
     }
 
-    // -- self-closing directives --
+    // ── self-closing directives ──
 
     #[test]
     fn directive_with_positional_args() {
@@ -446,7 +446,7 @@ mod tests {
         );
     }
 
-    // -- unknown closing tag --
+    // ── unknown closing tag ──
 
     #[test]
     fn unknown_closing_tag_dropped() {
@@ -458,7 +458,7 @@ mod tests {
         );
     }
 
-    // -- code block skipping --
+    // ── code block skipping ──
 
     #[test]
     fn shortcode_inside_code_block_skipped() {
