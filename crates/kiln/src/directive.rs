@@ -339,7 +339,7 @@ mod tests {
 
     use super::*;
 
-    // -- CalloutKind --
+    // ── CalloutKind ──
 
     #[test]
     fn all_variants_round_trip() {
@@ -369,7 +369,7 @@ mod tests {
         assert!("".parse::<CalloutKind>().is_err());
     }
 
-    // -- parse_pandoc_attrs --
+    // ── parse_pandoc_attrs ──
 
     fn kvs(input: &str) -> Vec<(&str, String)> {
         parse_pandoc_attrs(input)
@@ -469,7 +469,7 @@ mod tests {
         assert_eq!(kvs(r#"bare title="Title""#), vec![pair("title", "Title")]);
     }
 
-    // -- parse_directive_args --
+    // ── parse_directive_args ──
 
     #[test]
     fn parse_directive_args_empty() {

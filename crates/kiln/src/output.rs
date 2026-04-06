@@ -84,7 +84,7 @@ mod tests {
     use super::*;
     use crate::test_utils::PermissionGuard;
 
-    // -- clean_output_dir --
+    // ── clean_output_dir ──
 
     #[test]
     fn clean_creates_nonexistent_dir() {
@@ -128,7 +128,7 @@ mod tests {
         );
     }
 
-    // -- copy_static --
+    // ── copy_static ──
 
     #[test]
     fn copy_static_copies_recursively() {
@@ -200,7 +200,7 @@ mod tests {
         );
     }
 
-    // -- copy_file --
+    // ── copy_file ──
 
     #[test]
     fn copy_file_creates_parent_and_copies() {
@@ -245,7 +245,7 @@ mod tests {
         );
     }
 
-    // -- write_output --
+    // ── write_output ──
 
     #[test]
     fn write_output_creates_parent_dirs() {

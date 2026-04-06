@@ -44,7 +44,7 @@ mod tests {
 
     use super::*;
 
-    // -- escape --
+    // ── escape ──
 
     #[test]
     fn escape_special_chars() {
@@ -61,7 +61,7 @@ mod tests {
         assert_eq!(escape(""), "");
     }
 
-    // -- indent --
+    // ── indent ──
 
     #[test]
     fn indent_zero_level() {
@@ -77,7 +77,7 @@ mod tests {
         assert_eq!(html, "<p>      ");
     }
 
-    // -- writeln_indented --
+    // ── writeln_indented ──
 
     #[test]
     fn writeln_indented_static() {

@@ -59,7 +59,7 @@ mod tests {
 
     use super::*;
 
-    // -- replace_emojis --
+    // ── replace_emojis ──
 
     #[test]
     fn replace_emojis_single() {
@@ -108,7 +108,7 @@ mod tests {
         assert!(output.contains('\u{1f604}'), "output:\n{output}");
     }
 
-    // -- replace_emojis (code awareness) --
+    // ── replace_emojis (code awareness) ──
 
     #[test]
     fn replace_emojis_skips_inline_code() {

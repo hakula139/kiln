@@ -36,7 +36,7 @@ pub fn render_div(name: &str, id: Option<&str>, classes: &[String], body_html: &
 mod tests {
     use super::*;
 
-    // -- render_div --
+    // ── render_div ──
 
     #[test]
     fn render_with_name() {

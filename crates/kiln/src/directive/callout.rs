@@ -88,7 +88,7 @@ mod tests {
 
     use super::*;
 
-    // -- render_callout --
+    // ── render_callout ──
 
     #[test]
     fn render_default_title_and_empty_body() {
@@ -247,7 +247,7 @@ mod tests {
         );
     }
 
-    // -- parse_named_args --
+    // ── parse_named_args ──
 
     fn named(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
         pairs

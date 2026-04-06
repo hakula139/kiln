@@ -173,7 +173,7 @@ mod tests {
 
     use super::*;
 
-    // -- convert --
+    // ── convert ──
 
     #[test]
     fn convert_directory_structure() {
@@ -431,7 +431,7 @@ mod tests {
         );
     }
 
-    // -- copy_dir --
+    // ── copy_dir ──
 
     #[test]
     fn copy_dir_copies_files() {
@@ -469,7 +469,7 @@ mod tests {
         );
     }
 
-    // -- index_dest_path --
+    // ── index_dest_path ──
 
     #[test]
     fn index_dest_path_categories_returns_posts_section_path() {
@@ -508,7 +508,7 @@ mod tests {
         );
     }
 
-    // -- convert_or_copy_markdown --
+    // ── convert_or_copy_markdown ──
 
     #[test]
     fn convert_or_copy_markdown_converts_yaml_frontmatter() {
@@ -608,7 +608,7 @@ mod tests {
         );
     }
 
-    // -- convert_markdown_file --
+    // ── convert_markdown_file ──
 
     #[test]
     fn convert_markdown_file_basic() {

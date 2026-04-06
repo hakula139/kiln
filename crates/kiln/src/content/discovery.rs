@@ -97,7 +97,7 @@ mod tests {
     use crate::content::page::PageKind;
     use crate::test_utils::write_test_file;
 
-    // -- discover_content --
+    // ── discover_content ──
 
     #[test]
     fn discover_content_basic() {

@@ -90,7 +90,7 @@ fn push_img_tag(
 mod tests {
     use super::*;
 
-    // -- render_block_image --
+    // ── render_block_image ──
 
     #[test]
     fn block_image_produces_figure() {
@@ -184,7 +184,7 @@ mod tests {
         assert!(html.contains(r#"height="300""#), "html:\n{html}");
     }
 
-    // -- render_inline_image --
+    // ── render_inline_image ──
 
     #[test]
     fn inline_image_no_figure() {

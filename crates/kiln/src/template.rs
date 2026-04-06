@@ -376,7 +376,7 @@ mod tests {
     use crate::serve::{DEFAULT_PORT, localhost_url};
     use crate::test_utils::{test_config, test_engine};
 
-    // -- new --
+    // ── new ──
 
     #[test]
     fn new_with_site_dir_only() {
@@ -438,7 +438,7 @@ mod tests {
         );
     }
 
-    // -- render_post --
+    // ── render_post ──
 
     #[test]
     fn render_post_basic() {
@@ -587,7 +587,7 @@ mod tests {
         );
     }
 
-    // -- render_page --
+    // ── render_page ──
 
     #[test]
     fn render_page_basic() {
@@ -644,7 +644,7 @@ mod tests {
         );
     }
 
-    // -- render_home --
+    // ── render_home ──
 
     #[test]
     fn render_home_basic() {
@@ -722,7 +722,7 @@ mod tests {
         );
     }
 
-    // -- render_section --
+    // ── render_section ──
 
     #[test]
     fn render_section_basic() {
@@ -781,7 +781,7 @@ mod tests {
         );
     }
 
-    // -- render_taxonomy --
+    // ── render_taxonomy ──
 
     #[test]
     fn render_taxonomy_basic() {
@@ -890,7 +890,7 @@ mod tests {
         );
     }
 
-    // -- render_term --
+    // ── render_term ──
 
     #[test]
     fn render_term_basic() {
@@ -1005,7 +1005,7 @@ mod tests {
         );
     }
 
-    // -- render_directive --
+    // ── render_directive ──
 
     #[test]
     fn render_directive_renders_template() {
@@ -1086,7 +1086,7 @@ mod tests {
         );
     }
 
-    // -- has_template --
+    // ── has_template ──
 
     #[test]
     fn has_template_existing() {
@@ -1103,7 +1103,7 @@ mod tests {
         assert!(!engine.has_template("nonexistent.html"));
     }
 
-    // -- tpl_read_file --
+    // ── tpl_read_file ──
 
     #[test]
     fn read_file_reads_relative_to_source_dir() {
@@ -1272,7 +1272,7 @@ mod tests {
         );
     }
 
-    // -- tpl_parse_csv --
+    // ── tpl_parse_csv ──
 
     #[test]
     fn parse_csv_basic() {

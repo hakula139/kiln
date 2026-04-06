@@ -183,7 +183,7 @@ mod tests {
         render_page(input, &SYNTAX_SET, engine, &RenderOptions::default(), None).unwrap()
     }
 
-    // -- render_page --
+    // ── render_page ──
 
     #[test]
     fn render_page_no_directives() {
@@ -225,7 +225,7 @@ mod tests {
         );
     }
 
-    // -- render_directives --
+    // ── render_directives ──
 
     #[test]
     fn render_directives_sequential() {
@@ -290,7 +290,7 @@ mod tests {
         );
     }
 
-    // -- render_directive_block --
+    // ── render_directive_block ──
 
     #[test]
     fn render_directive_callout() {
@@ -491,7 +491,7 @@ mod tests {
         );
     }
 
-    // -- top_level_blocks --
+    // ── top_level_blocks ──
 
     #[test]
     fn top_level_blocks_filters_nested() {

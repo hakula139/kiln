@@ -147,7 +147,7 @@ fn build_pagination_items(
 mod tests {
     use super::*;
 
-    // -- Paginator --
+    // ── Paginator ──
 
     /// Exercises `total_pages`, `page_items` (full, partial, out-of-range),
     /// and the page-0 guard in a single paginator instance.
@@ -182,7 +182,7 @@ mod tests {
         assert_eq!(p.total_pages(), 0);
     }
 
-    // -- page_url --
+    // ── page_url ──
 
     #[test]
     fn page_url_canonical_vs_subsequent() {
@@ -195,7 +195,7 @@ mod tests {
         assert_eq!(page_url("/tags/rust/", 2), "/tags/rust/page/2/");
     }
 
-    // -- PaginationVars --
+    // ── PaginationVars ──
 
     #[test]
     fn pagination_vars_boundaries() {

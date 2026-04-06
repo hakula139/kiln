@@ -66,9 +66,11 @@ A kiln site is organized as follows:
 
 ## Documentation
 
-- [docs/roadmap.md](docs/roadmap.md) — Current shipped capability areas and planned work
-- [docs/syntax.md](docs/syntax.md) — Markdown extensions, frontmatter fields, and directive syntax
-- [docs/themes.md](docs/themes.md) — Theme installation, configuration, and creation
+| Document                       | Description                                         |
+| ------------------------------ | --------------------------------------------------- |
+| [Roadmap](docs/roadmap.md)     | Current shipped capability areas and planned work   |
+| [Syntax Guide](docs/syntax.md) | Markdown extensions, frontmatter fields, directives |
+| [Theming](docs/themes.md)      | Theme installation, configuration, and creation     |
 
 ## Building from Source
 

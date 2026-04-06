@@ -107,7 +107,7 @@ mod tests {
 
     use super::*;
 
-    // -- detect_opening_code_fence --
+    // ── detect_opening_code_fence ──
 
     #[test]
     fn detect_opening_backtick_fence() {
@@ -154,7 +154,7 @@ mod tests {
         assert_eq!(detect_opening_code_fence("```foo`bar"), None);
     }
 
-    // -- is_closing_code_fence --
+    // ── is_closing_code_fence ──
 
     #[test]
     fn is_closing_matching_fence() {
@@ -192,7 +192,7 @@ mod tests {
         assert!(!is_closing_code_fence("    ```", b'`', 3));
     }
 
-    // -- strip_fence_indent --
+    // ── strip_fence_indent ──
 
     #[test]
     fn strip_fence_indent_zero_to_three_spaces() {
@@ -212,7 +212,7 @@ mod tests {
         assert_eq!(strip_fence_indent("    ```"), None);
     }
 
-    // -- scan_code_span --
+    // ── scan_code_span ──
 
     #[test]
     fn scan_code_span_matched() {
@@ -234,7 +234,7 @@ mod tests {
         assert_eq!(scan_code_span("`unclosed", 0), (1, "`"));
     }
 
-    // -- for_each_non_code_line --
+    // ── for_each_non_code_line ──
 
     #[test]
     fn for_each_non_code_line_processes_normal_lines() {

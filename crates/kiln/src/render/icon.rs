@@ -60,7 +60,7 @@ mod tests {
 
     use super::*;
 
-    // -- replace_icons --
+    // ── replace_icons ──
 
     #[test]
     fn replace_icons_single() {
@@ -105,7 +105,7 @@ mod tests {
         );
     }
 
-    // -- replace_icons (code awareness) --
+    // ── replace_icons (code awareness) ──
 
     #[test]
     fn replace_icons_skips_inline_code() {

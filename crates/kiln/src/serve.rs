@@ -416,7 +416,7 @@ mod tests {
     use super::*;
     use crate::test_utils::copy_templates;
 
-    // -- serve_until --
+    // ── serve_until ──
 
     /// Creates a minimal site that builds successfully.
     fn setup_site(root: &Path) {
@@ -537,7 +537,7 @@ mod tests {
         _ = shutdown_tx.send(());
     }
 
-    // -- setup_watcher --
+    // ── setup_watcher ──
 
     #[tokio::test]
     async fn setup_watcher_sends_event_on_file_change() {
@@ -563,7 +563,7 @@ mod tests {
         );
     }
 
-    // -- watch_paths --
+    // ── watch_paths ──
 
     #[test]
     fn watch_paths_all_dirs_present() {
@@ -628,7 +628,7 @@ mod tests {
         );
     }
 
-    // -- watch_loop --
+    // ── watch_loop ──
 
     #[tokio::test]
     async fn watch_loop_triggers_reload_on_success() {
@@ -719,7 +719,7 @@ mod tests {
         );
     }
 
-    // -- safe_rebuild --
+    // ── safe_rebuild ──
 
     #[test]
     fn safe_rebuild_success_cleans_backup() {
@@ -781,7 +781,7 @@ mod tests {
         assert!(root.path().join("public").exists());
     }
 
-    // -- build_router --
+    // ── build_router ──
 
     /// Creates a router backed by a directory of static files.
     fn setup_router(dir: &Path) -> Router {
@@ -965,7 +965,7 @@ mod tests {
         );
     }
 
-    // -- inject_script --
+    // ── inject_script ──
 
     #[test]
     fn inject_script_before_body_close() {
