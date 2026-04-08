@@ -43,21 +43,39 @@ const DEBOUNCE: Duration = Duration::from_millis(100);
 
 /// JavaScript snippet injected before `</body>` in HTML responses.
 ///
-/// Reconnects after 1 second on error rather than relying on
-/// `EventSource`'s default backoff, ensuring fast recovery when the
-/// server restarts.
+/// Manages a single `EventSource` connection with:
+/// - Explicit cleanup on `pagehide` to free the browser connection slot
+///   immediately (avoids stalling behind HTTP/1.1's 6-connection limit).
+/// - A guard preventing duplicate connections on bfcache restore.
+/// - 1-second reconnect on error instead of `EventSource`'s default backoff.
 const LIVE_RELOAD_SCRIPT: &str = r#"
 <script>
 (function () {
+  let source = null;
   const connect = () => {
-    const source = new EventSource("/__kiln_live_reload");
+    if (source) {
+      source.close();
+    }
+    source = new EventSource("/__kiln_live_reload");
     source.addEventListener("reload", () => window.location.reload());
     source.onerror = () => {
       source.close();
+      source = null;
       setTimeout(connect, 1000);
     };
   };
   connect();
+  document.addEventListener("pagehide", () => {
+    if (source) {
+      source.close();
+      source = null;
+    }
+  });
+  document.addEventListener("pageshow", (e) => {
+    if (e.persisted && !source) {
+      connect();
+    }
+  });
 })();
 </script>
 "#;
@@ -314,6 +332,14 @@ fn build_router(output_dir: &Path, reload_tx: broadcast::Sender<()>) -> Router {
         .with_state(reload_tx)
 }
 
+/// Keepalive interval for SSE connections.
+///
+/// Shorter than the axum default (15 s) so the server detects dead
+/// connections sooner, freeing resources and — more importantly —
+/// letting hyper close the TCP socket so the browser can reclaim the
+/// connection slot under HTTP/1.1's 6-connection-per-origin limit.
+const SSE_KEEPALIVE: Duration = Duration::from_secs(5);
+
 /// SSE endpoint that streams reload events to connected browsers.
 async fn sse_handler(State(tx): State<broadcast::Sender<()>>) -> impl IntoResponse {
     let rx = tx.subscribe();
@@ -323,7 +349,7 @@ async fn sse_handler(State(tx): State<broadcast::Sender<()>>) -> impl IntoRespon
         )),
         Err(_) => None,
     });
-    Sse::new(stream).keep_alive(KeepAlive::default())
+    Sse::new(stream).keep_alive(KeepAlive::new().interval(SSE_KEEPALIVE))
 }
 
 /// Serves a request from the output directory.
@@ -340,12 +366,7 @@ async fn serve_request(
     request: axum::extract::Request,
 ) -> Response {
     let path = request.uri().path();
-    if !path.ends_with('/')
-        && output_dir
-            .join(path.trim_start_matches('/'))
-            .join("index.html")
-            .is_file()
-    {
+    if !path.ends_with('/') && has_index_html(output_dir, path).await {
         return Response::builder()
             .status(StatusCode::MOVED_PERMANENTLY)
             .header(header::LOCATION, format!("{path}/"))
@@ -380,6 +401,17 @@ async fn serve_request(
     let modified = inject_script(&html);
     parts.headers.remove(header::CONTENT_LENGTH);
     Response::from_parts(parts, Body::from(modified))
+}
+
+/// Checks whether `{output_dir}/{path}/index.html` exists without
+/// blocking the async runtime.
+async fn has_index_html(output_dir: &Path, path: &str) -> bool {
+    let candidate = output_dir
+        .join(path.trim_start_matches('/'))
+        .join("index.html");
+    tokio::fs::metadata(candidate)
+        .await
+        .is_ok_and(|m| m.is_file())
 }
 
 /// Injects the live reload script before `</body>` in HTML content.

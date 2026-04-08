@@ -1,3 +1,4 @@
+bfcache
 clippy
 cmark
 dtolnay
