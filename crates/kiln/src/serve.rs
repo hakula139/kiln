@@ -23,6 +23,7 @@ use tokio_stream::wrappers::BroadcastStream;
 use tower::ServiceExt;
 use tower_http::services::ServeDir;
 
+use crate::build::build_to;
 use crate::config::Config;
 
 /// Default port for `kiln serve` (KILN on a phone keypad: K=5 I=4 L=5 N=6).
@@ -263,40 +264,39 @@ async fn watch_loop(
     }
 }
 
-/// Builds the site, preserving the previous output on failure.
+/// Builds the site into a staging directory, then swaps it into place.
 ///
-/// `build()` calls `clean_output_dir()` which wipes the output directory before
-/// writing. If the build then fails (e.g., template error), the server would be
-/// left serving an empty directory. This wrapper backs up the previous output and
-/// restores it if the build fails, so the last successful build remains available.
+/// The live output directory stays intact while the new build runs, so the
+/// server never serves from a missing or partially written directory. On
+/// success the swap is two back-to-back renames (microseconds). On failure
+/// the staging directory is removed and the live output is untouched.
 fn safe_rebuild(root: &Path, base_url: &str) -> Result<()> {
     let config = Config::load(root).context("failed to load config")?;
     let output_dir = root.join(&config.output_dir);
+    let staging_dir = root.join(format!("{}.staging", config.output_dir));
     let backup_dir = root.join(format!("{}.prev", config.output_dir));
 
-    if output_dir.exists() {
-        if backup_dir.exists() {
-            _ = fs::remove_dir_all(&backup_dir);
-        }
-        fs::rename(&output_dir, &backup_dir).context("failed to back up output directory")?;
+    if staging_dir.exists() {
+        _ = fs::remove_dir_all(&staging_dir);
     }
 
-    match crate::build(root, Some(base_url)) {
-        Ok(()) => {
-            if backup_dir.exists() {
-                _ = fs::remove_dir_all(&backup_dir);
-            }
-            Ok(())
-        }
-        Err(e) => {
-            // Restore the backup so the server keeps serving the last good build.
-            if backup_dir.exists() {
-                _ = fs::remove_dir_all(&output_dir);
-                _ = fs::rename(&backup_dir, &output_dir);
-            }
-            Err(e)
-        }
+    if let Err(e) = build_to(root, Some(base_url), Some(&staging_dir)) {
+        _ = fs::remove_dir_all(&staging_dir);
+        return Err(e);
     }
+
+    // Quick swap: live → backup, staging → live, remove backup.
+    if backup_dir.exists() {
+        _ = fs::remove_dir_all(&backup_dir);
+    }
+    if output_dir.exists() {
+        fs::rename(&output_dir, &backup_dir).context("failed to back up output directory")?;
+    }
+    fs::rename(&staging_dir, &output_dir).context("failed to promote staging directory")?;
+    if backup_dir.exists() {
+        _ = fs::remove_dir_all(&backup_dir);
+    }
+    Ok(())
 }
 
 /// Creates the axum router with SSE live reload and static file serving.
@@ -722,26 +722,24 @@ mod tests {
     // ── safe_rebuild ──
 
     #[test]
-    fn safe_rebuild_success_cleans_backup() {
+    fn safe_rebuild_success_cleans_temp_dirs() {
         let root = tempfile::tempdir().unwrap();
         setup_site(root.path());
 
-        // First build to create output.
         crate::build(root.path(), None).unwrap();
         assert!(root.path().join("public").exists());
 
-        // Rebuild should succeed and clean up the backup.
         safe_rebuild(root.path(), "http://localhost:0").unwrap();
         assert!(root.path().join("public").exists());
+        assert!(!root.path().join("public.staging").exists());
         assert!(!root.path().join("public.prev").exists());
     }
 
     #[test]
-    fn safe_rebuild_failure_restores_backup() {
+    fn safe_rebuild_failure_leaves_output_intact() {
         let root = tempfile::tempdir().unwrap();
         setup_site(root.path());
 
-        // First build to create output with known content.
         crate::build(root.path(), None).unwrap();
         let output = root
             .path()
@@ -751,7 +749,6 @@ mod tests {
             .join("index.html");
         let original = fs::read_to_string(&output).unwrap();
 
-        // Break the template so the next build fails.
         fs::write(
             root.path().join("templates").join("post.html"),
             "{% invalid %}",
@@ -760,12 +757,12 @@ mod tests {
 
         assert!(safe_rebuild(root.path(), "http://localhost:0").is_err());
 
-        // Previous output should be restored.
-        let restored = fs::read_to_string(&output).unwrap();
+        let preserved = fs::read_to_string(&output).unwrap();
         assert_eq!(
-            restored, original,
-            "should restore previous output on failure"
+            preserved, original,
+            "output should be untouched after failed rebuild"
         );
+        assert!(!root.path().join("public.staging").exists());
         assert!(!root.path().join("public.prev").exists());
     }
 
@@ -774,11 +771,41 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         setup_site(root.path());
 
-        // No prior build — output dir doesn't exist yet.
         assert!(!root.path().join("public").exists());
 
         safe_rebuild(root.path(), "http://localhost:0").unwrap();
         assert!(root.path().join("public").exists());
+        assert!(!root.path().join("public.staging").exists());
+    }
+
+    #[test]
+    fn safe_rebuild_cleans_leftover_staging() {
+        let root = tempfile::tempdir().unwrap();
+        setup_site(root.path());
+        crate::build(root.path(), None).unwrap();
+
+        let staging = root.path().join("public.staging");
+        fs::create_dir_all(staging.join("stale")).unwrap();
+        fs::write(staging.join("stale").join("old.html"), "leftover").unwrap();
+
+        safe_rebuild(root.path(), "http://localhost:0").unwrap();
+        assert!(root.path().join("public").exists());
+        assert!(!staging.exists(), "leftover staging dir should be removed");
+    }
+
+    #[test]
+    fn safe_rebuild_cleans_leftover_backup() {
+        let root = tempfile::tempdir().unwrap();
+        setup_site(root.path());
+        crate::build(root.path(), None).unwrap();
+
+        let backup = root.path().join("public.prev");
+        fs::create_dir_all(&backup).unwrap();
+        fs::write(backup.join("old.html"), "leftover").unwrap();
+
+        safe_rebuild(root.path(), "http://localhost:0").unwrap();
+        assert!(root.path().join("public").exists());
+        assert!(!backup.exists(), "leftover backup dir should be removed");
     }
 
     // ── build_router ──
