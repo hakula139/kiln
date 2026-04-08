@@ -51,6 +51,9 @@ pub struct Frontmatter {
     #[serde(default, skip_serializing_if = "is_default")]
     pub draft: bool,
 
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub math: bool,
+
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub weight: Option<i64>,
 
