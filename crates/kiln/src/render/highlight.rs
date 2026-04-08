@@ -12,7 +12,7 @@ use crate::html::{escape, writeln_indented};
 /// Output structure:
 ///
 /// ```html
-/// <div class="code-block">
+/// <div class="code-block" data-lang="rust">
 ///   <div class="code-header">
 ///     <span class="code-lang">Rust</span>
 ///     <button class="copy-btn">Copy</button>
@@ -31,8 +31,7 @@ use crate::html::{escape, writeln_indented};
 /// ```
 ///
 /// Language labels are canonicalized: derived from syntect's syntax name,
-/// lowercased. Empty tags normalize to `"plaintext"`; unrecognized tags
-/// lowercase the original token and fall back to plain text highlighting.
+/// lowercased. Empty and unrecognized tags normalize to `"plaintext"`.
 /// The header's display label uses the original syntax name casing.
 #[must_use]
 pub fn highlight_code(
@@ -124,10 +123,10 @@ pub fn highlight_code(
 /// "Rust", "JavaScript", "C++") for the code block header.
 ///
 /// Unrecognized tokens always get `"plaintext"` as the canonical label (for
-/// consistent CSS targeting) but preserve the original token as the display
-/// label. Known plain text names ("text", "plaintext", "plain") display as
-/// "Plain Text"; silent fallbacks ("mermaid") keep their name without a
-/// warning.
+/// consistent CSS targeting) with a title-cased display label derived from
+/// the lowercased token. Known plain text names ("text", "plaintext",
+/// "plain") display as "Plain Text"; silent fallbacks ("mermaid") keep
+/// their capitalized name without a warning.
 fn find_syntax<'a>(syntax_set: &'a SyntaxSet, lang: &str) -> (&'a SyntaxReference, String, String) {
     if !lang.is_empty() {
         let syntax = syntax_set
@@ -200,18 +199,6 @@ mod tests {
 
     fn highlight(lang: &str, code: &str) -> String {
         highlight_code(&SYNTAX_SET, lang, code, None)
-    }
-
-    // ── capitalize_first ──
-
-    #[test]
-    fn capitalize_first_basic() {
-        assert_eq!(capitalize_first("rust"), "Rust");
-    }
-
-    #[test]
-    fn capitalize_first_empty() {
-        assert_eq!(capitalize_first(""), "");
     }
 
     // ── highlight_code (structure) ──
@@ -341,7 +328,7 @@ mod tests {
         );
         assert!(
             html.contains(r#"<span class="code-lang">Unknown</span>"#),
-            "display label should preserve original token, html:\n{html}"
+            "display label should title-case the lowercased token, html:\n{html}"
         );
     }
 
@@ -374,6 +361,8 @@ mod tests {
             "raw script tag must not appear, html:\n{html}"
         );
     }
+
+    // ── find_syntax ──
 
     #[test]
     fn highlight_code_text_alias() {
@@ -414,5 +403,17 @@ mod tests {
             html.contains(r#"data-lang="toml""#),
             "should resolve toml, html:\n{html}"
         );
+    }
+
+    // ── capitalize_first ──
+
+    #[test]
+    fn capitalize_first_basic() {
+        assert_eq!(capitalize_first("rust"), "Rust");
+    }
+
+    #[test]
+    fn capitalize_first_empty() {
+        assert_eq!(capitalize_first(""), "");
     }
 }

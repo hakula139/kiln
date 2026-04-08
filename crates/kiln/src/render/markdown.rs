@@ -617,8 +617,8 @@ mod tests {
         let out = render(md);
         let count = out.html.matches(r##"<a href="#1">"##).count();
         assert!(
-            count >= 2,
-            "both references should link to the same footnote (found {count}), html:\n{}",
+            count == 2,
+            "exactly two references should link to the same footnote (found {count}), html:\n{}",
             out.html
         );
     }
