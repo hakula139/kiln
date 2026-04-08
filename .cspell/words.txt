@@ -2,6 +2,7 @@ bfcache
 clippy
 cmark
 dtolnay
+ellipsed
 feff
 hakula
 impls
@@ -25,3 +26,4 @@ tmpl
 tracing
 tungstenite
 walkdir
+writeln
