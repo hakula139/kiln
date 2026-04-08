@@ -36,14 +36,10 @@ pub struct Frontmatter {
     #[serde(
         default,
         alias = "featuredImage",
+        deserialize_with = "featured_image_serde::deserialize_option",
         skip_serializing_if = "Option::is_none"
     )]
-    pub featured_image: Option<String>,
-
-    /// CSS `background-position` for the featured image (e.g., `"top"`, `"30% 20%"`).
-    /// Defaults to `center` in templates when unset.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub featured_image_position: Option<String>,
+    pub featured_image: Option<FeaturedImage>,
 
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
@@ -59,6 +55,34 @@ pub struct Frontmatter {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub license: Option<String>,
+}
+
+/// Featured image metadata including source URL, display position, and credit.
+#[derive(Debug, Default, Clone, PartialEq, Deserialize, Serialize)]
+pub struct FeaturedImage {
+    pub src: String,
+
+    /// CSS `background-position` (e.g., `"top"`, `"30% 20%"`).
+    /// Defaults to `center` in templates when unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub position: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub credit: Option<ImageCredit>,
+}
+
+/// Attribution metadata for a featured image.
+#[derive(Debug, Default, Clone, PartialEq, Deserialize, Serialize)]
+pub struct ImageCredit {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub author: Option<String>,
+
+    /// Link to the original work (e.g., a Pixiv artwork page).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
 }
 
 fn is_default<T: Default + PartialEq>(t: &T) -> bool {
@@ -142,6 +166,36 @@ mod timestamp_serde {
                 "invalid timestamp `{s}`: {e} \
                  (dates must include a UTC offset, e.g., 2024-01-15T10:30:00+08:00)"
             )
+        })
+    }
+}
+
+/// Handles deserialization of `FeaturedImage` from either a string (Hugo YAML
+/// compat: `featuredImage: /img.webp`) or a TOML table.
+mod featured_image_serde {
+    use serde::{Deserialize, Deserializer};
+
+    use super::FeaturedImage;
+
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Raw {
+        Simple(String),
+        Detailed(FeaturedImage),
+    }
+
+    pub fn deserialize_option<'de, D>(deserializer: D) -> Result<Option<FeaturedImage>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Option::<Raw>::deserialize(deserializer).map(|opt| {
+            opt.map(|raw| match raw {
+                Raw::Simple(src) => FeaturedImage {
+                    src,
+                    ..Default::default()
+                },
+                Raw::Detailed(fi) => fi,
+            })
         })
     }
 }
@@ -271,12 +325,19 @@ mod tests {
             slug = "my-post"
             date = "2024-06-15T12:34:56+08:00"
             updated = 2025-07-01T23:59:59Z
-            featured_image = "/images/example.webp"
-            featured_image_position = "top"
             tags = ["rust", "ssg"]
             draft = true
             weight = 10
             license = "CC BY-NC-SA 4.0"
+
+            [featured_image]
+            src = "/images/example.webp"
+            position = "top"
+
+            [featured_image.credit]
+            title = "Example"
+            author = "Artist"
+            url = "https://example.com/artworks/123"
             +++
             Content here.
         "#};
@@ -292,13 +353,50 @@ mod tests {
             fm.updated.unwrap(),
             "2025-07-01T23:59:59Z".parse::<Timestamp>().unwrap()
         );
-        assert_eq!(fm.featured_image.as_deref(), Some("/images/example.webp"));
-        assert_eq!(fm.featured_image_position.as_deref(), Some("top"));
+        let fi = fm.featured_image.as_ref().unwrap();
+        assert_eq!(fi.src, "/images/example.webp");
+        assert_eq!(fi.position.as_deref(), Some("top"));
+        let credit = fi.credit.as_ref().unwrap();
+        assert_eq!(credit.title.as_deref(), Some("Example"));
+        assert_eq!(credit.author.as_deref(), Some("Artist"));
+        assert_eq!(
+            credit.url.as_deref(),
+            Some("https://example.com/artworks/123")
+        );
         assert_eq!(fm.tags, vec!["rust", "ssg"]);
         assert!(fm.draft);
         assert_eq!(fm.weight, Some(10));
         assert_eq!(fm.license.as_deref(), Some("CC BY-NC-SA 4.0"));
         assert_eq!(body, "Content here.\n");
+    }
+
+    #[test]
+    fn parse_featured_image_minimal() {
+        let input = indoc! {r#"
+            +++
+            [featured_image]
+            src = "/images/cover.webp"
+            +++
+        "#};
+        let (fm, _) = parse(input).unwrap();
+        let fi = fm.featured_image.as_ref().unwrap();
+        assert_eq!(fi.src, "/images/cover.webp");
+        assert!(fi.position.is_none());
+        assert!(fi.credit.is_none());
+    }
+
+    #[test]
+    fn parse_featured_image_flat_string() {
+        let input = indoc! {r#"
+            +++
+            featured_image = "/images/cover.webp"
+            +++
+        "#};
+        let (fm, _) = parse(input).unwrap();
+        let fi = fm.featured_image.as_ref().unwrap();
+        assert_eq!(fi.src, "/images/cover.webp");
+        assert!(fi.position.is_none());
+        assert!(fi.credit.is_none());
     }
 
     #[test]
@@ -485,7 +583,10 @@ mod tests {
             featuredImage: /img.webp
         "};
         let fm: Frontmatter = serde_yaml::from_str(yaml).unwrap();
-        assert_eq!(fm.featured_image.as_deref(), Some("/img.webp"));
+        let fi = fm.featured_image.as_ref().unwrap();
+        assert_eq!(fi.src, "/img.webp");
+        assert!(fi.position.is_none());
+        assert!(fi.credit.is_none());
     }
 
     #[test]

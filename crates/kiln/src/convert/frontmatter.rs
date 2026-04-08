@@ -96,7 +96,6 @@ mod tests {
             license: CC BY-NC-SA 4.0
         "};
         let toml = convert_frontmatter(yaml).unwrap();
-        // categories is silently dropped (not in kiln's Frontmatter struct).
         assert_eq!(
             toml,
             indoc! {r#"
@@ -104,7 +103,6 @@ mod tests {
                 description = "A description"
                 slug = "my-slug"
                 date = "2024-01-15T02:30:00Z"
-                featured_image = "/img.webp"
                 tags = [
                     "a",
                     "b",
@@ -112,6 +110,9 @@ mod tests {
                 draft = true
                 weight = -3
                 license = "CC BY-NC-SA 4.0"
+
+                [featured_image]
+                src = "/img.webp"
             "#}
         );
     }
@@ -125,7 +126,8 @@ mod tests {
         assert_eq!(
             toml,
             indoc! {r#"
-                featured_image = "https://example.com/img.webp"
+                [featured_image]
+                src = "https://example.com/img.webp"
             "#}
         );
     }

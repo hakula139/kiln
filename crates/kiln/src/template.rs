@@ -5,6 +5,7 @@ use minijinja::path_loader;
 use serde::Serialize;
 
 use crate::config::Config;
+use crate::content::frontmatter::FeaturedImage;
 use crate::pagination::PaginationVars;
 
 #[derive(Debug)]
@@ -274,8 +275,7 @@ pub struct PostTemplateVars<'a> {
     pub title: &'a str,
     pub description: &'a str,
     pub url: &'a str,
-    pub featured_image: Option<&'a str>,
-    pub featured_image_position: Option<&'a str>,
+    pub featured_image: Option<FeaturedImage>,
     pub date: Option<String>,
     pub section: Option<LinkedTerm>,
     pub math: bool,
@@ -298,8 +298,7 @@ pub struct PageSummary {
     pub url: String,
     pub date: Option<String>,
     pub description: String,
-    pub featured_image: Option<String>,
-    pub featured_image_position: Option<String>,
+    pub featured_image: Option<FeaturedImage>,
     pub tags: Vec<LinkedTerm>,
     pub section: Option<LinkedTerm>,
 }
@@ -449,8 +448,10 @@ mod tests {
             title: "Hello World",
             description: "A test post",
             url: "https://example.com/posts/hello-world/",
-            featured_image: Some("/images/hello.webp"),
-            featured_image_position: None,
+            featured_image: Some(FeaturedImage {
+                src: "/images/hello.webp".into(),
+                ..Default::default()
+            }),
             date: Some("2026-02-24T12:34:56Z".into()),
             section: None,
             math: false,
@@ -520,7 +521,6 @@ mod tests {
             description: "",
             url: "",
             featured_image: None,
-            featured_image_position: None,
             date: None,
             section: None,
             math: false,
@@ -548,7 +548,6 @@ mod tests {
             description: "",
             url: "",
             featured_image: None,
-            featured_image_position: None,
             date: None,
             section: None,
             math: false,
@@ -577,7 +576,6 @@ mod tests {
             description: "",
             url: "",
             featured_image: None,
-            featured_image_position: None,
             date: None,
             section: None,
             math: false,
@@ -603,7 +601,6 @@ mod tests {
             description: "A page about me",
             url: "https://example.com/about-me/",
             featured_image: None,
-            featured_image_position: None,
             date: None,
             section: None,
             math: false,
@@ -636,7 +633,6 @@ mod tests {
             description: "",
             url: "",
             featured_image: None,
-            featured_image_position: None,
             date: None,
             section: None,
             math: false,
@@ -667,7 +663,6 @@ mod tests {
                 date: Some("2026-01-01T00:00:00Z".into()),
                 description: String::new(),
                 featured_image: None,
-                featured_image_position: None,
                 tags: Vec::new(),
                 section: None,
             }],
@@ -695,7 +690,6 @@ mod tests {
                 date: None,
                 description: String::new(),
                 featured_image: None,
-                featured_image_position: None,
                 tags: Vec::new(),
                 section: None,
             }],
@@ -746,7 +740,6 @@ mod tests {
                     date: Some("2026-01-15T00:00:00Z".into()),
                     description: String::new(),
                     featured_image: None,
-                    featured_image_position: None,
                     tags: Vec::new(),
                     section: None,
                 }],
@@ -808,7 +801,6 @@ mod tests {
                         date: None,
                         description: String::new(),
                         featured_image: None,
-                        featured_image_position: None,
                         tags: Vec::new(),
                         section: None,
                     }],
@@ -852,7 +844,6 @@ mod tests {
                 date: None,
                 description: String::new(),
                 featured_image: None,
-                featured_image_position: None,
                 tags: Vec::new(),
                 section: None,
             })
@@ -916,7 +907,6 @@ mod tests {
                     date: Some("2026-01-15T00:00:00Z".into()),
                     description: "A post about Rust".into(),
                     featured_image: None,
-                    featured_image_position: None,
                     tags: Vec::new(),
                     section: None,
                 }],
@@ -956,7 +946,6 @@ mod tests {
                     date: Some("2025-06-01T00:00:00Z".into()),
                     description: String::new(),
                     featured_image: None,
-                    featured_image_position: None,
                     tags: Vec::new(),
                     section: None,
                 }],

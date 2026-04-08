@@ -42,7 +42,7 @@ static POST_HTML: &str = indoc! {r#"
       <meta property="og:type" content="article">
       <meta property="og:site_name" content="{{ config.title }}">
       {%- if featured_image %}
-      <meta property="og:image" content="{{ config.base_url | safe }}{{ featured_image | safe }}">
+      <meta property="og:image" content="{{ config.base_url | safe }}{{ featured_image.src | safe }}">
       {%- endif %}
       <meta name="twitter:card" content="{% if featured_image %}summary_large_image{% else %}summary{% endif %}">
     {% endblock %}

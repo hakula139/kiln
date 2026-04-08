@@ -7,6 +7,7 @@ use syntect::parsing::SyntaxSet;
 
 use crate::config::Config;
 use crate::content::discovery::discover_content;
+use crate::content::frontmatter::FeaturedImage;
 use crate::content::page::{Page, PageKind};
 use crate::output::{clean_output_dir, copy_file, copy_static, write_output};
 use crate::pagination::{PaginationVars, Paginator, page_url as pagination_url};
@@ -181,7 +182,7 @@ fn listed_page(
     let url = page_url(base_url, &output_path);
     let timestamp = page.frontmatter.date;
     let section = page_section(page, base_url, section_titles);
-    let featured_image = resolve_featured_image(page.frontmatter.featured_image.as_deref(), &url);
+    let featured_image = resolve_featured_image(page.frontmatter.featured_image.as_ref(), &url);
     Some(ListedPage {
         summary: PageSummary {
             title: page.frontmatter.title.clone(),
@@ -194,7 +195,6 @@ fn listed_page(
                 .or_else(|| page.summary.clone())
                 .unwrap_or_default(),
             featured_image,
-            featured_image_position: page.frontmatter.featured_image_position.clone(),
             tags: linked_tags(&page.frontmatter.tags, base_url),
             section,
         },
@@ -245,18 +245,28 @@ fn page_section(
     })
 }
 
-/// Resolves a `featured_image` path against the page's output URL.
+/// Resolves a `FeaturedImage`'s `src` path against the page's output URL.
 ///
 /// Absolute paths (starting with `/`) and external URLs (containing `://`)
 /// are returned as-is. Relative paths are resolved against the page's
 /// directory URL so that co-located assets like `assets/cover.webp` become
 /// `/posts/section/slug/assets/cover.webp`.
-fn resolve_featured_image(image: Option<&str>, page_url: &str) -> Option<String> {
-    let image = image?;
-    if image.starts_with('/') || image.contains("://") {
-        return Some(image.to_owned());
+fn resolve_featured_image(
+    featured_image: Option<&FeaturedImage>,
+    page_url: &str,
+) -> Option<FeaturedImage> {
+    let fi = featured_image?;
+    let resolved_src = resolve_image_src(&fi.src, page_url);
+    Some(FeaturedImage {
+        src: resolved_src,
+        ..fi.clone()
+    })
+}
+
+fn resolve_image_src(src: &str, page_url: &str) -> String {
+    if src.starts_with('/') || src.contains("://") {
+        return src.to_owned();
     }
-    // Strip the scheme + authority to get the path component.
     let path = if let Some(scheme_end) = page_url.find("://") {
         let after_scheme = scheme_end + 3;
         page_url[after_scheme..]
@@ -265,7 +275,7 @@ fn resolve_featured_image(image: Option<&str>, page_url: &str) -> Option<String>
     } else {
         page_url
     };
-    Some(format!("{path}{image}"))
+    format!("{path}{src}")
 }
 
 /// Converts raw tag strings into `LinkedTerm`s with pre-computed URLs.
@@ -322,7 +332,7 @@ fn build_page(
     })?;
     let url = page_url(&ctx.config.base_url, &output_path);
 
-    let featured_image = resolve_featured_image(page.frontmatter.featured_image.as_deref(), &url);
+    let featured_image = resolve_featured_image(page.frontmatter.featured_image.as_ref(), &url);
     let vars = PostTemplateVars {
         title: &page.frontmatter.title,
         description: page
@@ -332,8 +342,7 @@ fn build_page(
             .or(page.summary.as_deref())
             .unwrap_or(""),
         url: &url,
-        featured_image: featured_image.as_deref(),
-        featured_image_position: page.frontmatter.featured_image_position.as_deref(),
+        featured_image,
         date: page
             .frontmatter
             .date
@@ -2082,42 +2091,58 @@ mod tests {
 
     // ── resolve_featured_image ──
 
+    fn make_featured_image(src: &str) -> FeaturedImage {
+        FeaturedImage {
+            src: src.into(),
+            ..Default::default()
+        }
+    }
+
     #[test]
     fn resolve_featured_image_absolute_path() {
-        assert_eq!(
-            resolve_featured_image(Some("/images/cover.webp"), "https://example.com/posts/foo/"),
-            Some("/images/cover.webp".into()),
-        );
+        let fi = make_featured_image("/images/cover.webp");
+        let resolved = resolve_featured_image(Some(&fi), "https://example.com/posts/foo/").unwrap();
+        assert_eq!(resolved.src, "/images/cover.webp");
     }
 
     #[test]
     fn resolve_featured_image_relative_path() {
-        assert_eq!(
-            resolve_featured_image(
-                Some("assets/cover.webp"),
-                "https://example.com/posts/avg/on-looker/"
-            ),
-            Some("/posts/avg/on-looker/assets/cover.webp".into()),
-        );
+        let fi = make_featured_image("assets/cover.webp");
+        let resolved =
+            resolve_featured_image(Some(&fi), "https://example.com/posts/avg/on-looker/").unwrap();
+        assert_eq!(resolved.src, "/posts/avg/on-looker/assets/cover.webp");
     }
 
     #[test]
     fn resolve_featured_image_external_url() {
-        assert_eq!(
-            resolve_featured_image(
-                Some("https://cdn.example.com/img.jpg"),
-                "https://example.com/posts/foo/"
-            ),
-            Some("https://cdn.example.com/img.jpg".into()),
-        );
+        let fi = make_featured_image("https://cdn.example.com/img.jpg");
+        let resolved = resolve_featured_image(Some(&fi), "https://example.com/posts/foo/").unwrap();
+        assert_eq!(resolved.src, "https://cdn.example.com/img.jpg");
+    }
+
+    #[test]
+    fn resolve_featured_image_preserves_metadata() {
+        let fi = FeaturedImage {
+            src: "/images/cover.webp".into(),
+            position: Some("top".into()),
+            credit: Some(crate::content::frontmatter::ImageCredit {
+                title: Some("Work".into()),
+                author: Some("Artist".into()),
+                url: Some("https://example.com".into()),
+            }),
+        };
+        let resolved = resolve_featured_image(Some(&fi), "https://example.com/posts/foo/").unwrap();
+        assert_eq!(resolved.src, "/images/cover.webp");
+        assert_eq!(resolved.position.as_deref(), Some("top"));
+        let credit = resolved.credit.as_ref().unwrap();
+        assert_eq!(credit.title.as_deref(), Some("Work"));
+        assert_eq!(credit.author.as_deref(), Some("Artist"));
+        assert_eq!(credit.url.as_deref(), Some("https://example.com"));
     }
 
     #[test]
     fn resolve_featured_image_none() {
-        assert_eq!(
-            resolve_featured_image(None, "https://example.com/posts/foo/"),
-            None,
-        );
+        assert!(resolve_featured_image(None, "https://example.com/posts/foo/").is_none());
     }
 
     // ── Shared listing helper ──
@@ -2131,7 +2156,6 @@ mod tests {
                 date: timestamp.map(|date: Timestamp| date.to_string()),
                 description: String::new(),
                 featured_image: None,
-                featured_image_position: None,
                 tags: Vec::new(),
                 section: None,
             },
