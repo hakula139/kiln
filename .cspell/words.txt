@@ -9,6 +9,7 @@ indoc
 infty
 jiff
 katex
+onclose
 onig
 println
 pulldown
@@ -22,4 +23,5 @@ swatinem
 syntect
 tmpl
 tracing
+tungstenite
 walkdir
