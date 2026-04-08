@@ -38,7 +38,7 @@ kiln convert --source <dir> --dest <dir>          # Convert a Hugo site root int
 ├── config.rs           # TOML site configuration loading, theme resolution, param merging
 ├── content/            # Content model (module declarations in content.rs)
 │   ├── discovery.rs    # Recursive content walking with draft / _-prefix / no-frontmatter exclusion
-│   ├── frontmatter.rs  # TOML frontmatter parsing (+++), Frontmatter with jiff timestamps
+│   ├── frontmatter.rs  # TOML frontmatter parsing (+++), Frontmatter / FeaturedImage / ImageCredit
 │   └── page.rs         # Page struct, PageKind, slug derivation, summary, output paths, co-located assets
 ├── convert.rs          # Hugo → kiln content converter orchestrator
 ├── convert/            # Hugo → kiln converter submodules (orchestrator in convert.rs)

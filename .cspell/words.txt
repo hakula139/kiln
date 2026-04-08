@@ -12,6 +12,7 @@ jiff
 katex
 onclose
 onig
+pixiv
 println
 pulldown
 raii
