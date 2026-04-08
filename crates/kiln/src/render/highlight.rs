@@ -58,8 +58,14 @@ pub fn highlight_code(
     let mut html =
         String::with_capacity(highlighted.len() + line_count * 8 + 2 * effective_lang.len() + 512);
 
+    let escaped_lang = escape(&effective_lang);
+
     // Outer wrapper + header.
-    writeln_indented!(&mut html, 0, r#"<div class="code-block">"#);
+    writeln_indented!(
+        &mut html,
+        0,
+        r#"<div class="code-block" data-lang="{escaped_lang}">"#
+    );
     writeln_indented!(&mut html, 1, r#"<div class="code-header">"#);
     writeln_indented!(
         &mut html,
@@ -93,7 +99,6 @@ pub fn highlight_code(
     );
 
     // Code column.
-    let escaped_lang = escape(&effective_lang);
     writeln_indented!(
         &mut html,
         5,
@@ -203,8 +208,8 @@ mod tests {
     fn highlight_code_structure() {
         let html = highlight("rs", "fn main() {}\n");
         assert!(
-            html.starts_with(r#"<div class="code-block">"#),
-            "should start with code-block wrapper, html:\n{html}"
+            html.starts_with(r#"<div class="code-block" data-lang="rust">"#),
+            "should start with code-block wrapper with data-lang, html:\n{html}"
         );
         assert!(
             html.contains(r#"<div class="code-header">"#),
