@@ -52,6 +52,18 @@ impl ListedPage {
 /// Returns an error if configuration loading, content discovery, rendering,
 /// or output writing fails.
 pub fn build(root: &Path, base_url_override: Option<&str>) -> Result<()> {
+    build_to(root, base_url_override, None)
+}
+
+/// Builds the site, optionally writing to a custom output directory.
+///
+/// Used by the dev server to build into a staging directory so the live
+/// output stays intact until the new build succeeds.
+pub(crate) fn build_to(
+    root: &Path,
+    base_url_override: Option<&str>,
+    output_dir_override: Option<&Path>,
+) -> Result<()> {
     let mut config = Config::load(root).context("failed to load config")?;
     if let Some(base_url) = base_url_override {
         base_url.clone_into(&mut config.base_url);
@@ -83,7 +95,8 @@ pub fn build(root: &Path, base_url_override: Option<&str>) -> Result<()> {
     };
 
     let content = discover_content(root)?;
-    let output_dir = root.join(&ctx.config.output_dir);
+    let output_dir =
+        output_dir_override.map_or_else(|| root.join(&ctx.config.output_dir), Path::to_owned);
 
     clean_output_dir(&output_dir)?;
 
