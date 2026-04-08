@@ -12,7 +12,7 @@ use crate::html::{escape, writeln_indented};
 /// Output structure:
 ///
 /// ```html
-/// <div class="code-block">
+/// <div class="code-block" data-lang="rust">
 ///   <div class="code-header">
 ///     <span class="code-lang">Rust</span>
 ///     <button class="copy-btn">Copy</button>
@@ -31,8 +31,7 @@ use crate::html::{escape, writeln_indented};
 /// ```
 ///
 /// Language labels are canonicalized: derived from syntect's syntax name,
-/// lowercased. Empty tags normalize to `"plaintext"`; unrecognized tags
-/// lowercase the original token and fall back to plain text highlighting.
+/// lowercased. Empty and unrecognized tags normalize to `"plaintext"`.
 /// The header's display label uses the original syntax name casing.
 #[must_use]
 pub fn highlight_code(
@@ -58,8 +57,14 @@ pub fn highlight_code(
     let mut html =
         String::with_capacity(highlighted.len() + line_count * 8 + 2 * effective_lang.len() + 512);
 
+    let escaped_lang = escape(&effective_lang);
+
     // Outer wrapper + header.
-    writeln_indented!(&mut html, 0, r#"<div class="code-block">"#);
+    writeln_indented!(
+        &mut html,
+        0,
+        r#"<div class="code-block" data-lang="{escaped_lang}">"#
+    );
     writeln_indented!(&mut html, 1, r#"<div class="code-header">"#);
     writeln_indented!(
         &mut html,
@@ -93,7 +98,6 @@ pub fn highlight_code(
     );
 
     // Code column.
-    let escaped_lang = escape(&effective_lang);
     writeln_indented!(
         &mut html,
         5,
@@ -118,44 +122,44 @@ pub fn highlight_code(
 /// attributes. The display label uses the original syntax name casing (e.g.,
 /// "Rust", "JavaScript", "C++") for the code block header.
 ///
-/// Unrecognized non-empty tokens are lowercased and logged at debug level.
+/// Unrecognized tokens always get `"plaintext"` as the canonical label (for
+/// consistent CSS targeting) with a title-cased display label derived from
+/// the lowercased token. Known plain text names ("text", "plaintext",
+/// "plain") display as "Plain Text"; silent fallbacks ("mermaid") keep
+/// their capitalized name without a warning.
 fn find_syntax<'a>(syntax_set: &'a SyntaxSet, lang: &str) -> (&'a SyntaxReference, String, String) {
-    if lang.is_empty() {
-        return (
-            syntax_set.find_syntax_plain_text(),
-            "plaintext".into(),
-            "Plain Text".into(),
-        );
+    if !lang.is_empty() {
+        let syntax = syntax_set
+            .find_syntax_by_extension(lang)
+            .or_else(|| syntax_set.find_syntax_by_name(lang))
+            .or_else(|| {
+                syntax_set
+                    .syntaxes()
+                    .iter()
+                    .find(|s| s.name.eq_ignore_ascii_case(lang))
+            });
+
+        if let Some(s) = syntax {
+            return (s, canonical_lang(&s.name), s.name.clone());
+        }
     }
 
-    let syntax = syntax_set
-        .find_syntax_by_extension(lang)
-        .or_else(|| syntax_set.find_syntax_by_name(lang))
-        .or_else(|| {
-            syntax_set
-                .syntaxes()
-                .iter()
-                .find(|s| s.name.eq_ignore_ascii_case(lang))
-        });
-
-    if let Some(s) = syntax {
-        return (s, canonical_lang(&s.name), s.name.clone());
-    }
-
+    // No syntax found or empty tag — fall back to plain text.
     let lower = lang.to_ascii_lowercase();
-    let display = capitalize_first(&lower);
+    let display = match lower.as_str() {
+        "" | "text" | "plaintext" | "plain" => "Plain Text".into(),
+        "mermaid" => capitalize_first(&lower),
+        _ => {
+            debug!(lang, "unrecognized language, falling back to plain text");
+            capitalize_first(&lower)
+        }
+    };
 
-    if !is_plain_text_alias(lang) {
-        debug!(lang, "unrecognized language, falling back to plain text");
-    }
-
-    (syntax_set.find_syntax_plain_text(), lower, display)
-}
-
-/// Returns `true` for language tokens that are intentionally not highlighted
-/// (e.g., diagram DSLs) and should not trigger an "unrecognized" warning.
-fn is_plain_text_alias(lang: &str) -> bool {
-    lang.eq_ignore_ascii_case("mermaid")
+    (
+        syntax_set.find_syntax_plain_text(),
+        "plaintext".into(),
+        display,
+    )
 }
 
 /// Derives a canonical HTML-safe language label from a syntect syntax name.
@@ -203,8 +207,8 @@ mod tests {
     fn highlight_code_structure() {
         let html = highlight("rs", "fn main() {}\n");
         assert!(
-            html.starts_with(r#"<div class="code-block">"#),
-            "should start with code-block wrapper, html:\n{html}"
+            html.starts_with(r#"<div class="code-block" data-lang="rust">"#),
+            "should start with code-block wrapper with data-lang, html:\n{html}"
         );
         assert!(
             html.contains(r#"<div class="code-header">"#),
@@ -319,12 +323,12 @@ mod tests {
     fn highlight_code_unknown_language() {
         let html = highlight("Unknown", "hello\n");
         assert!(
-            html.contains(r#"data-lang="unknown""#),
-            "should lowercase unknown token, html:\n{html}"
+            html.contains(r#"data-lang="plaintext""#),
+            "should normalize unrecognized token to plaintext, html:\n{html}"
         );
         assert!(
             html.contains(r#"<span class="code-lang">Unknown</span>"#),
-            "display label should capitalize first char, html:\n{html}"
+            "display label should title-case the lowercased token, html:\n{html}"
         );
     }
 
@@ -345,12 +349,12 @@ mod tests {
     fn highlight_code_html_chars_in_language() {
         let html = highlight("<script>", "alert(1)\n");
         assert!(
-            html.contains(r#"data-lang="&lt;script&gt;""#),
-            "should escape HTML chars, html:\n{html}"
+            html.contains(r#"data-lang="plaintext""#),
+            "should normalize to plaintext, html:\n{html}"
         );
         assert!(
             html.contains(r#"<span class="code-lang">&lt;script&gt;</span>"#),
-            "display label should also be escaped, html:\n{html}"
+            "display label should be escaped, html:\n{html}"
         );
         assert!(
             !html.contains("<script>"),
@@ -358,16 +362,31 @@ mod tests {
         );
     }
 
+    // ── find_syntax ──
+
+    #[test]
+    fn highlight_code_text_alias() {
+        let html = highlight("text", "hello\n");
+        assert!(
+            html.contains(r#"data-lang="plaintext""#),
+            "should normalize 'text' to plaintext, html:\n{html}"
+        );
+        assert!(
+            html.contains(r#"<span class="code-lang">Plain Text</span>"#),
+            "display label should be Plain Text, html:\n{html}"
+        );
+    }
+
     #[test]
     fn highlight_code_mermaid() {
         let html = highlight("mermaid", "graph TD\n");
         assert!(
-            html.contains(r#"data-lang="mermaid""#),
-            "should treat mermaid as plain text alias, html:\n{html}"
+            html.contains(r#"data-lang="plaintext""#),
+            "should normalize mermaid to plaintext, html:\n{html}"
         );
         assert!(
             html.contains(r#"<span class="code-lang">Mermaid</span>"#),
-            "display label should be Mermaid, html:\n{html}"
+            "display label should preserve tool name, html:\n{html}"
         );
     }
 
