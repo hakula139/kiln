@@ -514,11 +514,7 @@ mod tests {
     #[tokio::test]
     async fn serve_until_with_theme() {
         let root = tempfile::tempdir().unwrap();
-        fs::write(
-            root.path().join("config.toml"),
-            r#"theme = "test-theme""#,
-        )
-        .unwrap();
+        fs::write(root.path().join("config.toml"), r#"theme = "test-theme""#).unwrap();
         let theme_dir = root.path().join("themes").join("test-theme");
         copy_templates(&theme_dir.join("templates"));
         fs::write(theme_dir.join("theme.toml"), "").unwrap();
