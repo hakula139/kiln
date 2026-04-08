@@ -1,6 +1,5 @@
 //! Dev server with file watching, auto-rebuild, and live reload.
 
-use std::convert::Infallible;
 use std::fs;
 use std::future::Future;
 use std::net::SocketAddr;
@@ -11,15 +10,13 @@ use anyhow::{Context, Result};
 use axum::Router;
 use axum::body::Body;
 use axum::extract::State;
+use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::http::{StatusCode, header};
-use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use http_body_util::BodyExt;
 use notify::{RecursiveMode, Watcher};
 use tokio::sync::{broadcast, mpsc};
-use tokio_stream::StreamExt;
-use tokio_stream::wrappers::BroadcastStream;
 use tower::ServiceExt;
 use tower_http::services::ServeDir;
 
@@ -35,7 +32,7 @@ pub fn localhost_url(port: u16) -> String {
     format!("http://localhost:{port}")
 }
 
-/// SSE endpoint path — prefixed to avoid conflicts with site content.
+/// WebSocket endpoint path — prefixed to avoid conflicts with site content.
 const LIVE_RELOAD_PATH: &str = "/__kiln_live_reload";
 
 /// Debounce duration for file watcher events.
@@ -43,36 +40,41 @@ const DEBOUNCE: Duration = Duration::from_millis(100);
 
 /// JavaScript snippet injected before `</body>` in HTML responses.
 ///
-/// Manages a single `EventSource` connection with:
-/// - Explicit cleanup on `pagehide` to free the browser connection slot
-///   immediately (avoids stalling behind HTTP/1.1's 6-connection limit).
-/// - A guard preventing duplicate connections on bfcache restore.
-/// - 1-second reconnect on error instead of `EventSource`'s default backoff.
+/// Uses a WebSocket instead of `EventSource` (SSE) for live reload.
+/// SSE connections count against Chrome's 6-connection-per-origin HTTP/1.1
+/// limit and create "zombie" sockets on navigation that silently block
+/// subsequent requests for tens of seconds. WebSocket connections are
+/// upgraded out of the HTTP pool, avoiding the limit entirely.
 const LIVE_RELOAD_SCRIPT: &str = r#"
 <script>
 (function () {
-  let source = null;
+  let ws = null;
   const connect = () => {
-    if (source) {
-      source.close();
+    if (ws) {
+      ws.close();
     }
-    source = new EventSource("/__kiln_live_reload");
-    source.addEventListener("reload", () => window.location.reload());
-    source.onerror = () => {
-      source.close();
-      source = null;
+    const url = (location.protocol === "https:" ? "wss://" : "ws://")
+      + location.host + "/__kiln_live_reload";
+    ws = new WebSocket(url);
+    ws.onmessage = (e) => {
+      if (e.data === "reload") {
+        window.location.reload();
+      }
+    };
+    ws.onclose = () => {
+      ws = null;
       setTimeout(connect, 1000);
     };
   };
   connect();
   document.addEventListener("pagehide", () => {
-    if (source) {
-      source.close();
-      source = null;
+    if (ws) {
+      ws.close();
+      ws = null;
     }
   });
   document.addEventListener("pageshow", (e) => {
-    if (e.persisted && !source) {
+    if (e.persisted && !ws) {
       connect();
     }
   });
@@ -153,9 +155,9 @@ async fn serve_until(
     }
 
     // Race the server against the shutdown signal. `with_graceful_shutdown`
-    // would wait for all connections to close, but SSE live-reload connections
-    // stay open indefinitely, causing the server to hang on Ctrl+C. For a dev
-    // server, dropping connections immediately is acceptable.
+    // would wait for all connections to close, but WebSocket live-reload
+    // connections stay open indefinitely, causing the server to hang on
+    // Ctrl+C. For a dev server, dropping connections immediately is acceptable.
     tokio::select! {
         result = axum::serve(listener, app).into_future() => {
             result.context("server error")?;
@@ -249,7 +251,7 @@ fn watch_paths(root: &Path, config: &Config) -> Vec<WatchEntry> {
     paths
 }
 
-/// Debounced rebuild loop: waits for watcher events, rebuilds, and notifies SSE clients.
+/// Debounced rebuild loop: waits for watcher events, rebuilds, and notifies WebSocket clients.
 async fn watch_loop(
     root: PathBuf,
     base_url: String,
@@ -317,13 +319,13 @@ fn safe_rebuild(root: &Path, base_url: &str) -> Result<()> {
     Ok(())
 }
 
-/// Creates the axum router with SSE live reload and static file serving.
+/// Creates the axum router with WebSocket live reload and static file serving.
 fn build_router(output_dir: &Path, reload_tx: broadcast::Sender<()>) -> Router {
     let serve_dir = ServeDir::new(output_dir).append_index_html_on_directories(true);
     let root = output_dir.to_owned();
 
     Router::new()
-        .route(LIVE_RELOAD_PATH, get(sse_handler))
+        .route(LIVE_RELOAD_PATH, get(ws_handler))
         .fallback(move |request: axum::extract::Request| {
             let sd = serve_dir.clone();
             let root = root.clone();
@@ -332,24 +334,42 @@ fn build_router(output_dir: &Path, reload_tx: broadcast::Sender<()>) -> Router {
         .with_state(reload_tx)
 }
 
-/// Keepalive interval for SSE connections.
+/// WebSocket upgrade handler for live reload.
 ///
-/// Shorter than the axum default (15 s) so the server detects dead
-/// connections sooner, freeing resources and — more importantly —
-/// letting hyper close the TCP socket so the browser can reclaim the
-/// connection slot under HTTP/1.1's 6-connection-per-origin limit.
-const SSE_KEEPALIVE: Duration = Duration::from_secs(5);
+/// Accepts the upgrade, then forwards rebuild notifications from the
+/// broadcast channel as `"reload"` text messages. The connection lives
+/// outside Chrome's HTTP/1.1 connection pool, so it never competes with
+/// regular page / asset requests.
+async fn ws_handler(
+    ws: WebSocketUpgrade,
+    State(tx): State<broadcast::Sender<()>>,
+) -> impl IntoResponse {
+    ws.on_upgrade(move |socket| ws_relay(socket, tx))
+}
 
-/// SSE endpoint that streams reload events to connected browsers.
-async fn sse_handler(State(tx): State<broadcast::Sender<()>>) -> impl IntoResponse {
-    let rx = tx.subscribe();
-    let stream = BroadcastStream::new(rx).filter_map(|result| match result {
-        Ok(()) => Some(Ok::<_, Infallible>(
-            Event::default().event("reload").data("reload"),
-        )),
-        Err(_) => None,
-    });
-    Sse::new(stream).keep_alive(KeepAlive::new().interval(SSE_KEEPALIVE))
+/// Relays broadcast reload events to a single WebSocket client.
+async fn ws_relay(mut socket: WebSocket, tx: broadcast::Sender<()>) {
+    let mut rx = tx.subscribe();
+    loop {
+        tokio::select! {
+            result = rx.recv() => {
+                match result {
+                    Ok(()) => {
+                        if socket.send(Message::Text("reload".into())).await.is_err() {
+                            break;
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(_)) => {}
+                    Err(broadcast::error::RecvError::Closed) => break,
+                }
+            }
+            msg = socket.recv() => {
+                if msg.is_none() || msg.is_some_and(|r| r.is_err()) {
+                    break;
+                }
+            }
+        }
+    }
 }
 
 /// Serves a request from the output directory.
@@ -575,26 +595,59 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn serve_until_sse_endpoint() {
+    async fn serve_until_ws_endpoint() {
         let root = tempfile::tempdir().unwrap();
         setup_site(root.path());
 
         let (addr, shutdown_tx) = spawn_server(root.path()).await;
         wait_for_server(addr).await;
 
-        let resp = reqwest::get(format!("http://{addr}{LIVE_RELOAD_PATH}"))
+        let url = format!("ws://{addr}{LIVE_RELOAD_PATH}");
+        let (ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+        drop(ws);
+
+        _ = shutdown_tx.send(());
+    }
+
+    #[tokio::test]
+    async fn serve_until_ws_sends_reload_on_file_change() {
+        use tokio_stream::StreamExt;
+
+        let root = tempfile::tempdir().unwrap();
+        setup_site(root.path());
+
+        let (addr, shutdown_tx) = spawn_server(root.path()).await;
+        wait_for_server(addr).await;
+
+        let url = format!("ws://{addr}{LIVE_RELOAD_PATH}");
+        let (mut ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+
+        // Touch a watched file to trigger a rebuild → reload.
+        fs::write(
+            root.path()
+                .join("content")
+                .join("posts")
+                .join("hello")
+                .join("index.md"),
+            indoc! {r#"
+                +++
+                title = "Hello"
+                +++
+                Updated
+            "#},
+        )
+        .unwrap();
+
+        let msg = tokio::time::timeout(Duration::from_secs(10), ws.next())
             .await
-            .unwrap();
-        assert_eq!(resp.status(), 200);
-        let ct = resp
-            .headers()
-            .get("content-type")
-            .unwrap()
-            .to_str()
-            .unwrap();
-        assert!(
-            ct.starts_with("text/event-stream"),
-            "should return text/event-stream, got: {ct}"
+            .expect("should receive message within timeout")
+            .expect("stream should produce a message")
+            .expect("message should not error");
+
+        assert_eq!(
+            msg.into_text().unwrap(),
+            "reload",
+            "should receive reload message after rebuild"
         );
 
         _ = shutdown_tx.send(());
@@ -1001,7 +1054,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn build_router_sse_endpoint() {
+    async fn build_router_ws_rejects_plain_http() {
         let dir = tempfile::tempdir().unwrap();
         let (tx, _) = broadcast::channel::<()>(16);
         let app = build_router(dir.path(), tx);
@@ -1011,81 +1064,10 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(response.status(), StatusCode::OK);
-        let content_type = response
-            .headers()
-            .get(header::CONTENT_TYPE)
-            .unwrap()
-            .to_str()
-            .unwrap();
-        assert!(
-            content_type.starts_with("text/event-stream"),
-            "should return text/event-stream, got: {content_type}"
-        );
-    }
-
-    #[tokio::test]
-    async fn build_router_sse_sends_reload_event() {
-        let dir = tempfile::tempdir().unwrap();
-        let (tx, _) = broadcast::channel::<()>(16);
-        let app = build_router(dir.path(), tx.clone());
-
-        let response = app
-            .oneshot(Request::get(LIVE_RELOAD_PATH).body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-
-        let mut body = response.into_body();
-
-        // Send a reload event after the handler has subscribed.
-        tx.send(()).unwrap();
-
-        // First frame should be the SSE reload event.
-        let frame = tokio::time::timeout(Duration::from_secs(2), body.frame())
-            .await
-            .expect("should receive frame within timeout")
-            .expect("stream should produce a frame")
-            .expect("frame should not error");
-
-        let data = frame.into_data().expect("frame should be a data frame");
-        let text = String::from_utf8(data.to_vec()).unwrap();
-        assert!(
-            text.contains("event: reload"),
-            "should contain SSE reload event, got: {text}"
-        );
-    }
-
-    #[tokio::test]
-    async fn build_router_sse_skips_lagged_events() {
-        let dir = tempfile::tempdir().unwrap();
-        let (tx, _) = broadcast::channel::<()>(1);
-        let app = build_router(dir.path(), tx.clone());
-
-        let response = app
-            .oneshot(Request::get(LIVE_RELOAD_PATH).body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-
-        let mut body = response.into_body();
-
-        // Overflow the capacity-1 channel so the subscriber lags.
-        for _ in 0..3 {
-            tx.send(()).unwrap();
-        }
-
-        // The handler's filter_map skips Lagged errors and emits the
-        // surviving event, so the stream should still produce a frame.
-        let frame = tokio::time::timeout(Duration::from_secs(2), body.frame())
-            .await
-            .expect("should receive frame within timeout")
-            .expect("stream should produce a frame")
-            .expect("frame should not error");
-
-        let data = frame.into_data().expect("frame should be a data frame");
-        let text = String::from_utf8(data.to_vec()).unwrap();
-        assert!(
-            text.contains("event: reload"),
-            "should recover from lag and deliver event, got: {text}"
+        assert_eq!(
+            response.status(),
+            StatusCode::BAD_REQUEST,
+            "plain HTTP to WS endpoint should be rejected"
         );
     }
 

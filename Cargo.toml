@@ -16,7 +16,7 @@ pedantic = { level = "warn", priority = -1 }
 
 [workspace.dependencies]
 anyhow = "1"
-axum = "0.8"
+axum = { version = "0.8", features = ["ws"] }
 clap = { version = "4", features = ["derive"] }
 csv = "1"
 gh-emoji = "1"
@@ -37,6 +37,7 @@ syntect = { version = "5", default-features = false, features = [
   "html",
   "regex-onig",
 ] }
+tokio-tungstenite = "0.29"
 tokio = { version = "1", features = [
   "fs",
   "rt-multi-thread",
