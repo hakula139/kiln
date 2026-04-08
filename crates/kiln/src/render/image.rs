@@ -5,7 +5,7 @@ use crate::html::escape;
 
 /// Renders a standalone (block-level) image as a `<figure>` element.
 ///
-/// The image gets `loading="lazy"`. If `alt` is non-empty, a `<figcaption>` is
+/// The image gets `loading="lazy" decoding="async"`. If `alt` is non-empty, a `<figcaption>` is
 /// included. The `title` attribute is omitted when empty. Optional `attrs`
 /// apply `id` CSS classes to `<figure>`, and `width` / `height` to `<img>`.
 #[must_use]
@@ -35,7 +35,7 @@ pub fn render_block_image(src: &str, alt: &str, title: &str, attrs: Option<&Imag
     html
 }
 
-/// Renders an inline image as a plain `<img>` element with `loading="lazy"`.
+/// Renders an inline image as a plain `<img>` element with `loading="lazy" decoding="async"`.
 ///
 /// The `title` attribute is omitted when empty. Optional `attrs` apply `id`,
 /// CSS classes, `width`, and `height` directly to the `<img>` element.
@@ -83,7 +83,7 @@ fn push_img_tag(
         }
     }
 
-    html.push_str(r#" loading="lazy" />"#);
+    html.push_str(r#" loading="lazy" decoding="async" />"#);
 }
 
 #[cfg(test)]
@@ -99,6 +99,7 @@ mod tests {
         assert!(html.contains(r#"src="img.png""#), "html:\n{html}");
         assert!(html.contains(r#"alt="A photo""#), "html:\n{html}");
         assert!(html.contains(r#"loading="lazy""#), "html:\n{html}");
+        assert!(html.contains(r#"decoding="async""#), "html:\n{html}");
         assert!(
             html.contains("<figcaption>A photo</figcaption>"),
             "html:\n{html}"
@@ -194,6 +195,7 @@ mod tests {
         assert!(html.contains(r#"src="img.png""#), "html:\n{html}");
         assert!(html.contains(r#"alt="alt text""#), "html:\n{html}");
         assert!(html.contains(r#"loading="lazy""#), "html:\n{html}");
+        assert!(html.contains(r#"decoding="async""#), "html:\n{html}");
     }
 
     #[test]
