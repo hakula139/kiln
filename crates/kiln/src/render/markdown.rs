@@ -579,6 +579,8 @@ mod tests {
         );
     }
 
+    // ── render_markdown: footnotes ──
+
     #[test]
     fn render_footnotes() {
         let md = indoc! {"
@@ -601,6 +603,44 @@ mod tests {
         assert!(
             out.html.contains("Footnote content."),
             "should include footnote body, html:\n{}",
+            out.html
+        );
+    }
+
+    #[test]
+    fn render_footnotes_multi_reference() {
+        let md = indoc! {"
+            First[^1] and second[^1].
+
+            [^1]: Shared footnote.
+        "};
+        let out = render(md);
+        let count = out.html.matches(r##"<a href="#1">"##).count();
+        assert!(
+            count >= 2,
+            "both references should link to the same footnote (found {count}), html:\n{}",
+            out.html
+        );
+    }
+
+    #[test]
+    fn render_footnotes_multi_paragraph() {
+        let md = indoc! {"
+            Text[^1].
+
+            [^1]: First paragraph.
+
+                Second paragraph.
+        "};
+        let out = render(md);
+        assert!(
+            out.html.contains("First paragraph."),
+            "should include first paragraph, html:\n{}",
+            out.html
+        );
+        assert!(
+            out.html.contains("Second paragraph."),
+            "should include second paragraph, html:\n{}",
             out.html
         );
     }
