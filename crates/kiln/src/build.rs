@@ -339,6 +339,7 @@ fn build_page(
             .date
             .map(|date| format_page_date(date, ctx.time_zone.as_ref())),
         section: page_section(page, &ctx.config.base_url, section_titles),
+        math: page.frontmatter.math,
         content: &rendered.content_html,
         toc: &rendered.toc_html,
         config: &ctx.config,
