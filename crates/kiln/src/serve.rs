@@ -512,6 +512,41 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn serve_until_with_theme() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(
+            root.path().join("config.toml"),
+            r#"theme = "test-theme""#,
+        )
+        .unwrap();
+        let theme_dir = root.path().join("themes").join("test-theme");
+        copy_templates(&theme_dir.join("templates"));
+        fs::write(theme_dir.join("theme.toml"), "").unwrap();
+        let page_dir = root.path().join("content").join("posts").join("hello");
+        fs::create_dir_all(&page_dir).unwrap();
+        fs::write(
+            page_dir.join("index.md"),
+            indoc! {r#"
+                +++
+                title = "Hello"
+                +++
+                Body
+            "#},
+        )
+        .unwrap();
+
+        let (addr, shutdown_tx) = spawn_server(root.path()).await;
+        wait_for_server(addr).await;
+
+        let resp = reqwest::get(format!("http://{addr}/posts/hello/"))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+
+        _ = shutdown_tx.send(());
+    }
+
+    #[tokio::test]
     async fn serve_until_sse_endpoint() {
         let root = tempfile::tempdir().unwrap();
         setup_site(root.path());
@@ -989,6 +1024,40 @@ mod tests {
         assert!(
             text.contains("event: reload"),
             "should contain SSE reload event, got: {text}"
+        );
+    }
+
+    #[tokio::test]
+    async fn build_router_sse_skips_lagged_events() {
+        let dir = tempfile::tempdir().unwrap();
+        let (tx, _) = broadcast::channel::<()>(1);
+        let app = build_router(dir.path(), tx.clone());
+
+        let response = app
+            .oneshot(Request::get(LIVE_RELOAD_PATH).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        let mut body = response.into_body();
+
+        // Overflow the capacity-1 channel so the subscriber lags.
+        for _ in 0..3 {
+            tx.send(()).unwrap();
+        }
+
+        // The handler's filter_map skips Lagged errors and emits the
+        // surviving event, so the stream should still produce a frame.
+        let frame = tokio::time::timeout(Duration::from_secs(2), body.frame())
+            .await
+            .expect("should receive frame within timeout")
+            .expect("stream should produce a frame")
+            .expect("frame should not error");
+
+        let data = frame.into_data().expect("frame should be a data frame");
+        let text = String::from_utf8(data.to_vec()).unwrap();
+        assert!(
+            text.contains("event: reload"),
+            "should recover from lag and deliver event, got: {text}"
         );
     }
 
