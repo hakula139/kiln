@@ -1,6 +1,8 @@
+bfcache
 clippy
 cmark
 dtolnay
+ellipsed
 feff
 hakula
 impls
@@ -8,6 +10,7 @@ indoc
 infty
 jiff
 katex
+onclose
 onig
 println
 pulldown
@@ -21,4 +24,6 @@ swatinem
 syntect
 tmpl
 tracing
+tungstenite
 walkdir
+writeln
