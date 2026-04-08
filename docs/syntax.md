@@ -15,24 +15,30 @@ updated = 2026-02-01T08:30:00Z
 draft = false
 tags = ["rust", "web"]
 slug = "custom-slug"
-featured_image = "/images/hero.jpg"
-featured_image_position = "top"
+
+[featured_image]
+src = "/images/hero.jpg"
+position = "top"
+
+[featured_image.credit]
+title = "Work Title"
+author = "Artist"
+url = "https://example.com/artworks/123"
 +++
 ```
 
 All fields are optional. Defaults:
 
-| Field                     | Default               |
-| ------------------------- | --------------------- |
-| `title`                   | `""`                  |
-| `description`             | none                  |
-| `date`                    | none                  |
-| `updated`                 | none                  |
-| `draft`                   | `false`               |
-| `tags`                    | `[]`                  |
-| `slug`                    | derived from filename |
-| `featured_image`          | none                  |
-| `featured_image_position` | none                  |
+| Field            | Default               |
+| ---------------- | --------------------- |
+| `title`          | `""`                  |
+| `description`    | none                  |
+| `date`           | none                  |
+| `updated`        | none                  |
+| `draft`          | `false`               |
+| `tags`           | `[]`                  |
+| `slug`           | derived from filename |
+| `featured_image` | none (table)          |
 
 Draft pages (`draft = true`) and pages whose filename starts with `_` are excluded from the build.
 
