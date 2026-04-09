@@ -489,9 +489,12 @@ fn build_posts_index(
     )
 }
 
-/// Generates paginated section listing pages.
+/// Generates the sections index page and paginated per-section listing pages.
 ///
-/// Skipped when `section.html` is not present in the template set.
+/// The sections index (`/sections/`) reuses the taxonomy template to show all
+/// sections with their recent posts. Individual section pages (`/posts/<slug>/`)
+/// use `section.html`. Either page type is independently skipped when its
+/// template is missing.
 fn build_section_pages(
     ctx: &BuildContext,
     sections: &[Section],
@@ -500,15 +503,13 @@ fn build_section_pages(
     output_dir: &Path,
     section_titles: &HashMap<&str, &str>,
 ) -> Result<()> {
-    if !ctx.template_engine.has_template("section.html") {
+    let has_section = ctx.template_engine.has_template("section.html");
+    let has_taxonomy = ctx.template_engine.has_template("taxonomy.html");
+    if !has_section && !has_taxonomy {
         return Ok(());
     }
 
-    let per_page = paginate_config(&ctx.config.params, &["section", "paginate"])
-        .or_else(|| paginate_config(&ctx.config.params, &["paginate"]))
-        .unwrap_or(10);
-
-    // Build section → listed pages map.
+    // Build section → listed pages map (shared by index and per-section pages).
     let mut section_posts: HashMap<&str, Vec<ListedPage>> = HashMap::new();
     for page in pages {
         let Some((section, listed_page)) = section_listed_page(
@@ -523,35 +524,75 @@ fn build_section_pages(
         section_posts.entry(section).or_default().push(listed_page);
     }
 
-    for section in sections {
-        let mut posts = section_posts
-            .remove(section.slug.as_str())
-            .unwrap_or_default();
-        sort_by_date_desc(&mut posts);
+    if has_taxonomy {
+        build_sections_index(ctx, sections, &section_posts, output_dir)?;
+    }
 
-        let section_base = format!("/posts/{}", section.slug);
-        write_paginated(
-            &posts,
-            per_page,
-            &section_base,
-            output_dir,
-            |pages, pagination| {
-                let page_groups = group_by_year(pages);
-                let vars = SectionPageVars {
-                    section_title: &section.title,
-                    section_slug: &section.slug,
-                    page_groups,
-                    pagination,
-                    config: &ctx.config,
-                };
-                ctx.template_engine
-                    .render_section(&vars)
-                    .with_context(|| format!("failed to render section {}", section.slug))
-            },
-        )?;
+    if has_section {
+        let per_page = paginate_config(&ctx.config.params, &["section", "paginate"])
+            .or_else(|| paginate_config(&ctx.config.params, &["paginate"]))
+            .unwrap_or(10);
+
+        for section in sections {
+            let mut posts = section_posts
+                .remove(section.slug.as_str())
+                .unwrap_or_default();
+            sort_by_date_desc(&mut posts);
+
+            let section_base = format!("/posts/{}", section.slug);
+            write_paginated(
+                &posts,
+                per_page,
+                &section_base,
+                output_dir,
+                |pages, pagination| {
+                    let page_groups = group_by_year(pages);
+                    let vars = SectionPageVars {
+                        section_title: &section.title,
+                        section_slug: &section.slug,
+                        page_groups,
+                        pagination,
+                        config: &ctx.config,
+                    };
+                    ctx.template_engine
+                        .render_section(&vars)
+                        .with_context(|| format!("failed to render section {}", section.slug))
+                },
+            )?;
+        }
     }
 
     Ok(())
+}
+
+/// Renders the `/sections/` index page listing all post sections.
+///
+/// Clones each section's posts from the shared map so per-section pages can
+/// still consume them.
+fn build_sections_index(
+    ctx: &BuildContext,
+    sections: &[Section],
+    section_posts: &HashMap<&str, Vec<ListedPage>>,
+    output_dir: &Path,
+) -> Result<()> {
+    let term_summaries: Vec<TermSummary> = sections
+        .iter()
+        .map(|section| {
+            let mut posts = section_posts
+                .get(section.slug.as_str())
+                .cloned()
+                .unwrap_or_default();
+            sort_by_date_desc(&mut posts);
+            TermSummary {
+                name: section.title.clone(),
+                slug: section.slug.clone(),
+                url: format!("/posts/{}/", section.slug),
+                pages: collect_page_summaries(posts),
+            }
+        })
+        .collect();
+
+    build_taxonomy_index(ctx, "sections", "section", term_summaries, output_dir)
 }
 
 /// Generates taxonomy index pages and paginated term pages.
@@ -562,6 +603,10 @@ fn build_taxonomy_pages(
     content_dir: &Path,
     output_dir: &Path,
 ) -> Result<()> {
+    if !ctx.template_engine.has_template("taxonomy.html") {
+        return Ok(());
+    }
+
     let taxonomy_set = build_taxonomies(pages, Some(content_dir));
 
     let per_page = paginate_config(&ctx.config.params, &["paginate"]).unwrap_or(10);
@@ -577,12 +622,23 @@ fn build_taxonomy_pages(
             .map(|term| resolve_term_pages(&taxonomy_set, kind, &term.slug, listed_pages))
             .collect();
 
+        let term_summaries: Vec<TermSummary> = taxonomy
+            .terms
+            .iter()
+            .zip(&term_pages)
+            .map(|(term, pages)| TermSummary {
+                name: term.name.clone(),
+                slug: term.slug.clone(),
+                url: format!("{base_path}/{}/", term.slug),
+                pages: collect_page_summaries(pages.iter().cloned()),
+            })
+            .collect();
+
         build_taxonomy_index(
             ctx,
-            kind,
-            &base_path,
-            &taxonomy.terms,
-            &term_pages,
+            kind.plural(),
+            kind.singular(),
+            term_summaries,
             output_dir,
         )?;
 
@@ -617,39 +673,29 @@ fn resolve_term_pages(
     pages
 }
 
-/// Renders a taxonomy index page (e.g., `/tags/index.html`).
+/// Renders a taxonomy-style index page (e.g., `/tags/index.html`, `/sections/index.html`).
+///
+/// Reused by both taxonomy and sections index generation.
 fn build_taxonomy_index(
     ctx: &BuildContext,
-    kind: TaxonomyKind,
-    base_path: &str,
-    terms: &[Term],
-    term_pages: &[Vec<ListedPage>],
+    kind: &str,
+    singular: &str,
+    terms: Vec<TermSummary>,
     output_dir: &Path,
 ) -> Result<()> {
-    let term_summaries: Vec<TermSummary> = terms
-        .iter()
-        .zip(term_pages)
-        .map(|(term, pages)| TermSummary {
-            name: term.name.clone(),
-            slug: term.slug.clone(),
-            url: format!("{base_path}/{}/", term.slug),
-            pages: collect_page_summaries(pages.iter().cloned()),
-        })
-        .collect();
-
     let vars = TaxonomyIndexVars {
-        kind: kind.plural(),
-        singular: kind.singular(),
-        terms: term_summaries,
+        kind,
+        singular,
+        terms,
         config: &ctx.config,
     };
 
     let html = ctx
         .template_engine
         .render_taxonomy(&vars)
-        .with_context(|| format!("failed to render {} index", kind.plural()))?;
+        .with_context(|| format!("failed to render {kind} index"))?;
 
-    let dest = output_dir.join(kind.plural()).join("index.html");
+    let dest = output_dir.join(kind).join("index.html");
     write_output(&dest, &html).with_context(|| format!("failed to write {}", dest.display()))
 }
 
@@ -1693,6 +1739,89 @@ mod tests {
             .join("2")
             .join("index.html");
         assert!(page2.exists(), "should generate section page 2");
+    }
+
+    // ── build_sections_index ──
+
+    #[test]
+    fn build_sections_index_generates_page() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("config.toml"), "").unwrap();
+        copy_templates(&root.path().join("templates"));
+
+        write_page(
+            root.path(),
+            "posts/note/post-a",
+            indoc! {r#"
+                +++
+                title = "Post A"
+                date = "2026-01-01T00:00:00Z"
+                +++
+                Body
+            "#},
+        );
+        write_page(
+            root.path(),
+            "posts/essay/post-b",
+            indoc! {r#"
+                +++
+                title = "Post B"
+                date = "2026-01-02T00:00:00Z"
+                +++
+                Body
+            "#},
+        );
+
+        build(root.path(), None).unwrap();
+
+        let sections_index = root
+            .path()
+            .join("public")
+            .join("sections")
+            .join("index.html");
+        assert!(
+            sections_index.exists(),
+            "should generate /sections/index.html"
+        );
+        let html = fs::read_to_string(&sections_index).unwrap();
+        assert!(
+            html.contains("Essay") && html.contains("Note"),
+            "should list section names, html:\n{html}"
+        );
+        assert!(
+            html.contains("Post A") && html.contains("Post B"),
+            "should list section posts, html:\n{html}"
+        );
+    }
+
+    #[test]
+    fn build_sections_index_skipped_without_taxonomy_template() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("config.toml"), "").unwrap();
+        copy_templates_except(&root.path().join("templates"), &["taxonomy.html"]);
+
+        write_page(
+            root.path(),
+            "posts/note/post-a",
+            indoc! {r#"
+                +++
+                title = "Post A"
+                +++
+                Body
+            "#},
+        );
+
+        build(root.path(), None).unwrap();
+
+        let sections_index = root
+            .path()
+            .join("public")
+            .join("sections")
+            .join("index.html");
+        assert!(
+            !sections_index.exists(),
+            "should NOT generate sections index without taxonomy.html"
+        );
     }
 
     // ── build: taxonomies ──
