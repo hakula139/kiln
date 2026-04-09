@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::path::Path;
 
 use anyhow::Result;
@@ -81,12 +80,11 @@ fn render_directives(
     let top_level = top_level_blocks(&all_blocks);
     let mut result = content.to_owned();
 
-    let empty_attrs = HashMap::new();
-
     // Replace right-to-left so earlier ranges remain valid.
     for block in top_level.into_iter().rev() {
         let inner = render_directives(&block.body, syntax_set, engine, source_dir)?;
-        let md_output = render_markdown(&inner, syntax_set, &empty_attrs, None);
+        let (cleaned, image_attrs) = extract_image_attrs(&inner);
+        let md_output = render_markdown(&cleaned, syntax_set, &image_attrs, None);
         let html = render_directive_block(block, &md_output.html, engine, source_dir)?;
 
         // Blank-line padding: <details> / <div> are CommonMark type 6 HTML
@@ -253,6 +251,25 @@ mod tests {
         assert!(
             page.content_html.contains("<p>Some text between.</p>"),
             "text between directives preserved, html:\n{}",
+            page.content_html
+        );
+    }
+
+    #[test]
+    fn render_directives_with_image_attrs() {
+        let page = render(indoc! {"
+            ::: callout
+            ![A photo](img.png){width=240}
+            :::
+        "});
+        assert!(
+            page.content_html.contains(r#"width="240""#),
+            "image inside directive should have width attribute, html:\n{}",
+            page.content_html
+        );
+        assert!(
+            !page.content_html.contains("{width=240}"),
+            "raw attr block should be stripped, html:\n{}",
             page.content_html
         );
     }
