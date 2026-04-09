@@ -394,11 +394,17 @@ async fn serve_request(
             .expect("redirect response is valid");
     }
 
-    let response = serve_dir
+    let mut response = serve_dir
         .oneshot(request)
         .await
         .expect("ServeDir is infallible")
         .map(Body::new);
+
+    // Force revalidation so live reload always serves fresh CSS / JS / images.
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        header::HeaderValue::from_static("no-cache"),
+    );
 
     let is_html = response
         .headers()
