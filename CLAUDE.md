@@ -34,7 +34,13 @@ kiln convert --source <dir> --dest <dir>          # Convert a Hugo site root int
 
 ```text
 .
-├── build.rs            # BuildContext, per-page rendering, home / section / taxonomy page generation, static / asset copying
+├── build.rs            # BuildContext, build orchestration, per-page rendering, static / asset copying
+├── build/              # Listing pipeline and output generators (submodules of build.rs)
+│   ├── archive.rs      # Paginated year-grouped archive pages (/posts/, /posts/<section>/, /tags/<slug>/)
+│   ├── home.rs         # Paginated home page generation
+│   ├── listing.rs      # ListedPage model, single-pass ListingArtifacts construction, sorting / grouping helpers
+│   ├── overview.rs     # Bucket overview index pages (/sections/, /tags/)
+│   └── paginate.rs     # Generic write_paginated, paginate_config
 ├── config.rs           # TOML site configuration loading, theme resolution, param merging
 ├── content/            # Content model (module declarations in content.rs)
 │   ├── discovery.rs    # Recursive content walking with draft / _-prefix / no-frontmatter exclusion
@@ -65,7 +71,7 @@ kiln convert --source <dir> --dest <dir>          # Convert a Hugo site root int
 ├── section.rs          # Section struct, collect_sections() from page kinds, _index.md title loading
 ├── serve.rs            # Dev server with file watching, WebSocket live reload, script injection
 ├── taxonomy.rs         # TaxonomyKind, Taxonomy, Term, TaxonomySet, build_taxonomies()
-├── template.rs         # MiniJinja layered template engine, directive / taxonomy / term rendering
+├── template.rs         # MiniJinja layered template engine, directive / archive / overview rendering
 ├── test_utils.rs       # Shared test infrastructure (templates, helpers, Page factory)
 └── text.rs             # Shared format-agnostic text utilities (slugify, titlecase)
 ```

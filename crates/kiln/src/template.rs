@@ -111,49 +111,34 @@ impl TemplateEngine {
             .context("failed to render home template")
     }
 
-    /// Renders a section listing page using the `section.html` template.
+    /// Renders an archive page using the `archive.html` template.
     ///
     /// # Errors
     ///
     /// Returns an error if the template is missing or rendering fails.
-    pub fn render_section(&self, vars: &SectionPageVars<'_>) -> Result<String> {
+    pub fn render_archive(&self, vars: &ArchivePageVars<'_>) -> Result<String> {
         let template = self
             .env
-            .get_template("section.html")
-            .context("failed to load section.html template")?;
+            .get_template("archive.html")
+            .context("failed to load archive.html template")?;
         template
             .render(vars)
-            .context("failed to render section template")
+            .context("failed to render archive template")
     }
 
-    /// Renders a taxonomy index page (e.g., `/tags/` listing all tags).
+    /// Renders a bucket overview page (e.g., `/tags/`, `/sections/`).
     ///
     /// # Errors
     ///
     /// Returns an error if the template is missing or rendering fails.
-    pub fn render_taxonomy(&self, vars: &TaxonomyIndexVars<'_>) -> Result<String> {
+    pub fn render_overview(&self, vars: &OverviewPageVars<'_>) -> Result<String> {
         let template = self
             .env
-            .get_template("taxonomy.html")
-            .context("failed to load taxonomy.html template")?;
+            .get_template("overview.html")
+            .context("failed to load overview.html template")?;
         template
             .render(vars)
-            .context("failed to render taxonomy template")
-    }
-
-    /// Renders a term page (e.g., `/tags/rust/` listing posts with tag "rust").
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the template is missing or rendering fails.
-    pub fn render_term(&self, vars: &TermPageVars<'_>) -> Result<String> {
-        let template = self
-            .env
-            .get_template("term.html")
-            .context("failed to load term.html template")?;
-        template
-            .render(vars)
-            .context("failed to render term template")
+            .context("failed to render overview template")
     }
 
     /// Tries to render a directive using a theme template at
@@ -321,47 +306,40 @@ pub struct HomePageVars<'a> {
     pub config: &'a Config,
 }
 
-/// Template variables for a section listing page (e.g., `/posts/note/`).
+/// Template variables for a paginated, year-grouped archive page.
+///
+/// Used for the posts index (`/posts/`), per-section archives
+/// (`/posts/<slug>/`), and per-tag archives (`/tags/<slug>/`).
 #[derive(Debug, Serialize)]
-pub struct SectionPageVars<'a> {
-    pub section_title: &'a str,
-    pub section_slug: &'a str,
+pub struct ArchivePageVars<'a> {
+    pub kind: &'a str,
+    pub singular: &'a str,
+    pub name: &'a str,
+    pub slug: &'a str,
     pub page_groups: Vec<PageGroup>,
     pub pagination: PaginationVars,
     pub config: &'a Config,
 }
 
-/// Template variables for a taxonomy index page (e.g., `/tags/`).
+/// Template variables for a bucket overview page (e.g., `/tags/`, `/sections/`).
 #[derive(Debug, Serialize)]
-pub struct TaxonomyIndexVars<'a> {
+pub struct OverviewPageVars<'a> {
     pub kind: &'a str,
     pub singular: &'a str,
-    pub terms: Vec<TermSummary>,
+    pub buckets: Vec<BucketSummary>,
     pub config: &'a Config,
 }
 
-/// A term entry for the taxonomy index template.
+/// A bucket entry for overview pages.
 ///
-/// Templates can use `term.pages | length` to get the page count.
+/// Templates can use `bucket.pages | length` to get the page count.
 #[derive(Debug, Clone, Serialize)]
-pub struct TermSummary {
+pub struct BucketSummary {
     pub name: String,
     pub slug: String,
     pub url: String,
-    /// All pages with this term, sorted by date descending.
+    /// All pages in this bucket, sorted by date descending.
     pub pages: Vec<PageSummary>,
-}
-
-/// Template variables for a term page (e.g., `/tags/rust/`).
-#[derive(Debug, Serialize)]
-pub struct TermPageVars<'a> {
-    pub kind: &'a str,
-    pub singular: &'a str,
-    pub term_name: &'a str,
-    pub term_slug: &'a str,
-    pub page_groups: Vec<PageGroup>,
-    pub pagination: PaginationVars,
-    pub config: &'a Config,
 }
 
 #[cfg(test)]
@@ -723,15 +701,17 @@ mod tests {
         );
     }
 
-    // ── render_section ──
+    // ── render_archive ──
 
     #[test]
-    fn render_section_basic() {
+    fn render_archive_basic() {
         let engine = test_engine();
         let config = test_config();
-        let vars = SectionPageVars {
-            section_title: "笔记",
-            section_slug: "note",
+        let vars = ArchivePageVars {
+            kind: "sections",
+            singular: "section",
+            name: "笔记",
+            slug: "note",
             page_groups: vec![PageGroup {
                 key: "2026".into(),
                 pages: vec![PageSummary {
@@ -747,10 +727,10 @@ mod tests {
             pagination: PaginationVars::new("/posts/note", 1, 1),
             config: &config,
         };
-        let html = engine.render_section(&vars).unwrap();
+        let html = engine.render_archive(&vars).unwrap();
         assert!(
             html.contains("<h1>笔记</h1>"),
-            "should have section title, html:\n{html}"
+            "should have archive name, html:\n{html}"
         );
         assert!(
             html.contains("<h3>2026</h3>"),
@@ -763,181 +743,14 @@ mod tests {
     }
 
     #[test]
-    fn render_section_missing_template_returns_error() {
-        let dir = tempfile::tempdir().unwrap();
-        let engine = TemplateEngine::new(Some(dir.path()), None).unwrap();
-        let config = test_config();
-        let vars = SectionPageVars {
-            section_title: "Note",
-            section_slug: "note",
-            page_groups: Vec::new(),
-            pagination: PaginationVars::new("/posts/note", 1, 1),
-            config: &config,
-        };
-        let err = engine.render_section(&vars).unwrap_err().to_string();
-        assert!(
-            err.contains("failed to load section.html template"),
-            "should report missing template, got: {err}"
-        );
-    }
-
-    // ── render_taxonomy ──
-
-    #[test]
-    fn render_taxonomy_basic() {
+    fn render_archive_with_pagination() {
         let engine = test_engine();
         let config = test_config();
-        let vars = TaxonomyIndexVars {
+        let vars = ArchivePageVars {
             kind: "tags",
             singular: "tag",
-            terms: vec![
-                TermSummary {
-                    name: "Rust".into(),
-                    slug: "rust".into(),
-                    url: "/tags/rust/".into(),
-                    pages: vec![PageSummary {
-                        title: "Hello Rust".into(),
-                        url: "/hello-rust/".into(),
-                        date: None,
-                        description: String::new(),
-                        featured_image: None,
-                        tags: Vec::new(),
-                        section: None,
-                    }],
-                },
-                TermSummary {
-                    name: "Web".into(),
-                    slug: "web".into(),
-                    url: "/tags/web/".into(),
-                    pages: Vec::new(),
-                },
-            ],
-            config: &config,
-        };
-        let html = engine.render_taxonomy(&vars).unwrap();
-        assert!(
-            html.contains("<h1>All tags</h1>"),
-            "should have taxonomy heading, html:\n{html}"
-        );
-        assert!(
-            html.contains(r#"<a href="/tags/rust/">Rust</a> (1)"#),
-            "should list terms with counts, html:\n{html}"
-        );
-        assert!(
-            html.contains(r#"<a href="/hello-rust/">Hello Rust</a>"#),
-            "should include term pages, html:\n{html}"
-        );
-        assert!(
-            html.contains(r#"<a href="/tags/web/">Web</a> (0)"#),
-            "should list all terms, html:\n{html}"
-        );
-    }
-
-    #[test]
-    fn render_taxonomy_truncates_pages() {
-        let engine = test_engine();
-        let config = test_config();
-        let pages: Vec<PageSummary> = (1..=7)
-            .map(|i| PageSummary {
-                title: format!("Post {i}"),
-                url: format!("/post-{i}/"),
-                date: None,
-                description: String::new(),
-                featured_image: None,
-                tags: Vec::new(),
-                section: None,
-            })
-            .collect();
-        let vars = TaxonomyIndexVars {
-            kind: "tags",
-            singular: "tag",
-            terms: vec![TermSummary {
-                name: "Big".into(),
-                slug: "big".into(),
-                url: "/tags/big/".into(),
-                pages,
-            }],
-            config: &config,
-        };
-        let html = engine.render_taxonomy(&vars).unwrap();
-        assert!(
-            html.contains("Post 5"),
-            "should include 5th page, html:\n{html}"
-        );
-        assert!(
-            !html.contains("Post 6"),
-            "should truncate after 5 pages, html:\n{html}"
-        );
-    }
-
-    #[test]
-    fn render_taxonomy_missing_template_returns_error() {
-        let dir = tempfile::tempdir().unwrap();
-        let engine = TemplateEngine::new(Some(dir.path()), None).unwrap();
-        let config = test_config();
-        let vars = TaxonomyIndexVars {
-            kind: "tags",
-            singular: "tag",
-            terms: Vec::new(),
-            config: &config,
-        };
-        let err = engine.render_taxonomy(&vars).unwrap_err().to_string();
-        assert!(
-            err.contains("failed to load taxonomy.html template"),
-            "should report missing template, got: {err}"
-        );
-    }
-
-    // ── render_term ──
-
-    #[test]
-    fn render_term_basic() {
-        let engine = test_engine();
-        let config = test_config();
-        let vars = TermPageVars {
-            kind: "tags",
-            singular: "tag",
-            term_name: "Rust",
-            term_slug: "rust",
-            page_groups: vec![PageGroup {
-                key: "2026".into(),
-                pages: vec![PageSummary {
-                    title: "Hello Rust".into(),
-                    url: "/hello-rust/".into(),
-                    date: Some("2026-01-15T00:00:00Z".into()),
-                    description: "A post about Rust".into(),
-                    featured_image: None,
-                    tags: Vec::new(),
-                    section: None,
-                }],
-            }],
-            pagination: PaginationVars::new("/tags/rust", 1, 1),
-            config: &config,
-        };
-        let html = engine.render_term(&vars).unwrap();
-        assert!(
-            html.contains("<h1>Tag: Rust</h1>"),
-            "should have term heading, html:\n{html}"
-        );
-        assert!(
-            html.contains("<h3>2026</h3>"),
-            "should have year group heading, html:\n{html}"
-        );
-        assert!(
-            html.contains(r#"<a href="/hello-rust/">Hello Rust</a>"#),
-            "should list page, html:\n{html}"
-        );
-    }
-
-    #[test]
-    fn render_term_with_pagination() {
-        let engine = test_engine();
-        let config = test_config();
-        let vars = TermPageVars {
-            kind: "tags",
-            singular: "tag",
-            term_name: "Rust",
-            term_slug: "rust",
+            name: "Rust",
+            slug: "rust",
             page_groups: vec![PageGroup {
                 key: "2025".into(),
                 pages: vec![PageSummary {
@@ -953,7 +766,7 @@ mod tests {
             pagination: PaginationVars::new("/tags/rust", 2, 3),
             config: &config,
         };
-        let html = engine.render_term(&vars).unwrap();
+        let html = engine.render_archive(&vars).unwrap();
         assert!(
             html.contains(r#"<a href="/tags/rust/">← Prev</a>"#),
             "should have prev link, html:\n{html}"
@@ -981,22 +794,129 @@ mod tests {
     }
 
     #[test]
-    fn render_term_missing_template_returns_error() {
+    fn render_archive_missing_template_returns_error() {
         let dir = tempfile::tempdir().unwrap();
         let engine = TemplateEngine::new(Some(dir.path()), None).unwrap();
         let config = test_config();
-        let vars = TermPageVars {
-            kind: "tags",
-            singular: "tag",
-            term_name: "Rust",
-            term_slug: "rust",
+        let vars = ArchivePageVars {
+            kind: "sections",
+            singular: "section",
+            name: "Note",
+            slug: "note",
             page_groups: Vec::new(),
-            pagination: PaginationVars::new("/tags/rust", 1, 1),
+            pagination: PaginationVars::new("/posts/note", 1, 1),
             config: &config,
         };
-        let err = engine.render_term(&vars).unwrap_err().to_string();
+        let err = engine.render_archive(&vars).unwrap_err().to_string();
         assert!(
-            err.contains("failed to load term.html template"),
+            err.contains("failed to load archive.html template"),
+            "should report missing template, got: {err}"
+        );
+    }
+
+    // ── render_overview ──
+
+    #[test]
+    fn render_overview_basic() {
+        let engine = test_engine();
+        let config = test_config();
+        let vars = OverviewPageVars {
+            kind: "tags",
+            singular: "tag",
+            buckets: vec![
+                BucketSummary {
+                    name: "Rust".into(),
+                    slug: "rust".into(),
+                    url: "/tags/rust/".into(),
+                    pages: vec![PageSummary {
+                        title: "Hello Rust".into(),
+                        url: "/hello-rust/".into(),
+                        date: None,
+                        description: String::new(),
+                        featured_image: None,
+                        tags: Vec::new(),
+                        section: None,
+                    }],
+                },
+                BucketSummary {
+                    name: "Web".into(),
+                    slug: "web".into(),
+                    url: "/tags/web/".into(),
+                    pages: Vec::new(),
+                },
+            ],
+            config: &config,
+        };
+        let html = engine.render_overview(&vars).unwrap();
+        assert!(
+            html.contains("<h1>All tags</h1>"),
+            "should have overview heading, html:\n{html}"
+        );
+        assert!(
+            html.contains(r#"<a href="/tags/rust/">Rust</a> (1)"#),
+            "should list buckets with counts, html:\n{html}"
+        );
+        assert!(
+            html.contains(r#"<a href="/hello-rust/">Hello Rust</a>"#),
+            "should include bucket pages, html:\n{html}"
+        );
+        assert!(
+            html.contains(r#"<a href="/tags/web/">Web</a> (0)"#),
+            "should list all buckets, html:\n{html}"
+        );
+    }
+
+    #[test]
+    fn render_overview_truncates_pages() {
+        let engine = test_engine();
+        let config = test_config();
+        let pages: Vec<PageSummary> = (1..=7)
+            .map(|i| PageSummary {
+                title: format!("Post {i}"),
+                url: format!("/post-{i}/"),
+                date: None,
+                description: String::new(),
+                featured_image: None,
+                tags: Vec::new(),
+                section: None,
+            })
+            .collect();
+        let vars = OverviewPageVars {
+            kind: "tags",
+            singular: "tag",
+            buckets: vec![BucketSummary {
+                name: "Big".into(),
+                slug: "big".into(),
+                url: "/tags/big/".into(),
+                pages,
+            }],
+            config: &config,
+        };
+        let html = engine.render_overview(&vars).unwrap();
+        assert!(
+            html.contains("Post 5"),
+            "should include 5th page, html:\n{html}"
+        );
+        assert!(
+            !html.contains("Post 6"),
+            "should truncate after 5 pages, html:\n{html}"
+        );
+    }
+
+    #[test]
+    fn render_overview_missing_template_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine = TemplateEngine::new(Some(dir.path()), None).unwrap();
+        let config = test_config();
+        let vars = OverviewPageVars {
+            kind: "tags",
+            singular: "tag",
+            buckets: Vec::new(),
+            config: &config,
+        };
+        let err = engine.render_overview(&vars).unwrap_err().to_string();
+        assert!(
+            err.contains("failed to load overview.html template"),
             "should report missing template, got: {err}"
         );
     }
@@ -1090,7 +1010,8 @@ mod tests {
         assert!(engine.has_template("post.html"));
         assert!(engine.has_template("page.html"));
         assert!(engine.has_template("home.html"));
-        assert!(engine.has_template("section.html"));
+        assert!(engine.has_template("archive.html"));
+        assert!(engine.has_template("overview.html"));
     }
 
     #[test]

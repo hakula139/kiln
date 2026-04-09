@@ -30,12 +30,11 @@ themes/IgnIt/
 │   ├── base.html             # Base layout
 │   ├── directives/           # Directive templates (optional)
 │   │   └── site.html         # Renders ::: site directives
+│   ├── archive.html          # Year-grouped archive page (e.g., /posts/, /tags/rust/)
 │   ├── home.html             # Home page with paginated post listing
+│   ├── overview.html         # Bucket overview page (e.g., /tags/, /sections/)
 │   ├── page.html             # Standalone page (about, etc.)
-│   ├── post.html             # Post page template
-│   ├── section.html          # Section listing page (e.g., /posts/note/)
-│   ├── taxonomy.html         # Taxonomy index page (e.g., /tags/)
-│   └── term.html             # Term page with post list (e.g., /tags/rust/)
+│   └── post.html             # Post page template
 └── theme.toml                # Theme metadata and default parameters
 ```
 
@@ -257,43 +256,51 @@ Uses the same variables as `post.html` (see above). The `page.html` template is 
 | `title`       | string        | Site title (from `config.title`)                                       |
 | `description` | string        | Site description (from `config.description`)                           |
 | `url`         | string        | Canonical home page URL                                                |
-| `pages`       | list of pages | Posts for the current page (see page fields in taxonomy section below) |
-| `pagination`  | object        | Pagination metadata (same structure as term pages below)               |
+| `pages`       | list of pages | Posts for the current page (see page fields in overview section below) |
+| `pagination`  | object        | Pagination metadata (same structure as archive pages below)            |
 | `config`      | object        | Site configuration                                                     |
 
 Only posts (`PageKind::Post`) appear on the home page; standalone pages are excluded. The number of posts per page is configurable via `params.home.paginate` or `params.paginate` (default: 10). If `home.html` is not present, no home page is generated.
 
-#### Section listing templates (`section.html`)
+#### Archive page templates (`archive.html`)
 
-| Variable        | Type           | Description                                                              |
-| --------------- | -------------- | ------------------------------------------------------------------------ |
-| `section_title` | string         | Section display title (from `_index.md` or titlecased slug)              |
-| `section_slug`  | string         | URL-safe section slug (e.g., `"note"`)                                   |
-| `page_groups`   | list of groups | Posts grouped by year, newest first (same structure as term pages below) |
-| `pagination`    | object         | Pagination metadata (same structure as term pages below)                 |
-| `config`        | object         | Site configuration                                                       |
+| Variable      | Type           | Description                                                    |
+| ------------- | -------------- | -------------------------------------------------------------- |
+| `kind`        | string         | Archive scope plural (e.g., `"posts"`, `"sections"`, `"tags"`) |
+| `singular`    | string         | Archive scope singular (e.g., `"post"`, `"section"`, `"tag"`)  |
+| `name`        | string         | Display name (e.g., `"Posts"`, `"Note"`, `"Rust"`)             |
+| `slug`        | string         | URL-safe slug (e.g., `"posts"`, `"note"`, `"rust"`)            |
+| `page_groups` | list of groups | Posts grouped by year, newest first                            |
+| `pagination`  | object         | Pagination metadata (see below)                                |
+| `config`      | object         | Site configuration                                             |
 
-Sections are derived from subdirectories under `content/posts/`. A section's display title comes from `content/posts/<section>/_index.md` if present (requires a `title` field in frontmatter), falling back to the titlecased slug (e.g., `"note"` → `"Note"`). The number of posts per page is configurable via `params.section.paginate` or `params.paginate` (default: 10). If `section.html` is not present, no section pages are generated.
+Archive pages are generated for:
 
-#### Taxonomy index templates (`taxonomy.html`)
+- **Posts index** (`/posts/`): `kind="posts"`, `singular="post"`. Title from `content/posts/_index.md` or `"All Posts"`.
+- **Section archives** (`/posts/<slug>/`): `kind="sections"`, `singular="section"`. Title from `content/posts/<section>/_index.md` or titlecased slug.
+- **Tag archives** (`/tags/<slug>/`): `kind="tags"`, `singular="tag"`. Title from frontmatter or `content/tags/<slug>/_index.md`.
 
-| Variable   | Type          | Description                                                                     |
-| ---------- | ------------- | ------------------------------------------------------------------------------- |
-| `kind`     | string        | Taxonomy kind plural (e.g., `"tags"`)                                           |
-| `singular` | string        | Taxonomy kind singular (e.g., `"tag"`)                                          |
-| `terms`    | list of terms | All terms in this taxonomy, sorted by page count descending then name ascending |
-| `config`   | object        | Site configuration                                                              |
+Posts per page: `params.section.paginate` or `params.paginate` (default: 10) for posts / sections; `params.paginate` (default: 10) for tags. If `archive.html` is not present, no archive pages are generated.
 
-Each term in `terms` has:
+#### Overview page templates (`overview.html`)
+
+| Variable   | Type            | Description                                                                    |
+| ---------- | --------------- | ------------------------------------------------------------------------------ |
+| `kind`     | string          | Overview scope plural (e.g., `"sections"`, `"tags"`)                           |
+| `singular` | string          | Overview scope singular (e.g., `"section"`, `"tag"`)                           |
+| `buckets`  | list of buckets | All buckets in this scope, sorted by page count descending then name ascending |
+| `config`   | object          | Site configuration                                                             |
+
+Each bucket in `buckets` has:
 
 | Field   | Type          | Description                                         |
 | ------- | ------------- | --------------------------------------------------- |
 | `name`  | string        | Display name (e.g., `"Rust"`)                       |
 | `slug`  | string        | URL-safe slug (e.g., `"rust"`)                      |
-| `url`   | string        | URL to the term page (e.g., `"/tags/rust/"`)        |
-| `pages` | list of pages | All pages with this term, sorted by date descending |
+| `url`   | string        | URL to the archive page (e.g., `"/tags/rust/"`)     |
+| `pages` | list of pages | All pages in this bucket, sorted by date descending |
 
-Use `term.pages | length` to get the page count.
+Use `bucket.pages | length` to get the page count.
 
 Each page in `pages` has:
 
@@ -329,18 +336,6 @@ Each page in `pages` has:
 | ------ | ------ | ------------------------------------------------------- |
 | `name` | string | Display name (e.g., `"Rust"`, `"笔记"`)                 |
 | `url`  | string | Canonical URL (e.g., `"/tags/rust/"`, `"/posts/note/"`) |
-
-#### Term page templates (`term.html`)
-
-| Variable      | Type           | Description                               |
-| ------------- | -------------- | ----------------------------------------- |
-| `kind`        | string         | Taxonomy kind plural (e.g., `"tags"`)     |
-| `singular`    | string         | Taxonomy kind singular (e.g., `"tag"`)    |
-| `term_name`   | string         | Display name of the term (e.g., `"Rust"`) |
-| `term_slug`   | string         | URL-safe slug (e.g., `"rust"`)            |
-| `page_groups` | list of groups | Pages grouped by year, newest first       |
-| `pagination`  | object         | Pagination metadata                       |
-| `config`      | object         | Site configuration                        |
 
 Each group in `page_groups` has:
 

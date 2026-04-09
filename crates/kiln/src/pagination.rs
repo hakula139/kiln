@@ -47,7 +47,7 @@ impl<'a, T> Paginator<'a, T> {
 /// Page 1 is the canonical URL (just `base_path`).
 /// Page N>1 appends `page/{n}/`.
 #[must_use]
-pub fn page_url(base_path: &str, page_num: usize) -> String {
+pub fn paginated_url(base_path: &str, page_num: usize) -> String {
     let base = base_path.trim_end_matches('/');
     if page_num <= 1 {
         format!("{base}/")
@@ -92,8 +92,9 @@ impl PaginationVars {
     #[must_use]
     pub fn new(base_path: &str, current_page: usize, total_pages: usize) -> Self {
         let base_url = base_path.trim_end_matches('/').to_owned();
-        let prev_url = (current_page > 1).then(|| page_url(base_path, current_page - 1));
-        let next_url = (current_page < total_pages).then(|| page_url(base_path, current_page + 1));
+        let prev_url = (current_page > 1).then(|| paginated_url(base_path, current_page - 1));
+        let next_url =
+            (current_page < total_pages).then(|| paginated_url(base_path, current_page + 1));
         let items = build_pagination_items(base_path, current_page, total_pages);
 
         Self {
@@ -127,7 +128,7 @@ fn build_pagination_items(
             ellipsed = false;
             items.push(PaginationItem {
                 number: Some(n),
-                url: Some(page_url(base_path, n)),
+                url: Some(paginated_url(base_path, n)),
                 is_current: n == current_page,
             });
         } else if !ellipsed {
@@ -182,17 +183,17 @@ mod tests {
         assert_eq!(p.total_pages(), 0);
     }
 
-    // ── page_url ──
+    // ── paginated_url ──
 
     #[test]
-    fn page_url_canonical_vs_subsequent() {
-        assert_eq!(page_url("/tags/rust", 1), "/tags/rust/");
-        assert_eq!(page_url("/tags/rust", 2), "/tags/rust/page/2/");
+    fn paginated_url_canonical_vs_subsequent() {
+        assert_eq!(paginated_url("/tags/rust", 1), "/tags/rust/");
+        assert_eq!(paginated_url("/tags/rust", 2), "/tags/rust/page/2/");
     }
 
     #[test]
-    fn page_url_strips_trailing_slash() {
-        assert_eq!(page_url("/tags/rust/", 2), "/tags/rust/page/2/");
+    fn paginated_url_strips_trailing_slash() {
+        assert_eq!(paginated_url("/tags/rust/", 2), "/tags/rust/page/2/");
     }
 
     // ── PaginationVars ──
