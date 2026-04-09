@@ -276,7 +276,7 @@ Only posts (`PageKind::Post`) appear on the home page; standalone pages are excl
 
 Archive pages are generated for:
 
-- **Posts index** (`/posts/`): `kind="posts"`, `singular="post"`. Title from `content/posts/_index.md` or `"Posts"`.
+- **Posts index** (`/posts/`): `kind="posts"`, `singular="post"`. Title from `content/posts/_index.md` or `"All Posts"`.
 - **Section archives** (`/posts/<slug>/`): `kind="sections"`, `singular="section"`. Title from `content/posts/<section>/_index.md` or titlecased slug.
 - **Tag archives** (`/tags/<slug>/`): `kind="tags"`, `singular="tag"`. Title from frontmatter or `content/tags/<slug>/_index.md`.
 

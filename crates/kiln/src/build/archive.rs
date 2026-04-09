@@ -30,7 +30,7 @@ pub(crate) fn build_archive_pages(
         .unwrap_or(10);
 
     let posts_title =
-        load_index_title(&content_dir.join("posts")).unwrap_or_else(|| "Posts".to_owned());
+        load_index_title(&content_dir.join("posts")).unwrap_or_else(|| "All Posts".to_owned());
     write_archive(
         ctx,
         &ArchiveSpec::new("posts", "post", &posts_title, "posts", "/posts"),
