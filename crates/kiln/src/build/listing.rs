@@ -22,6 +22,7 @@ pub(crate) struct ListedPage {
 }
 
 impl ListedPage {
+    #[must_use]
     pub(crate) fn into_summary(self) -> PageSummary {
         self.summary
     }
