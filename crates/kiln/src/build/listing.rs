@@ -145,6 +145,7 @@ pub(crate) fn sort_by_date_desc(pages: &mut [ListedPage]) {
 ///
 /// Assumes pages are already sorted by date descending. Consecutive pages
 /// with the same year are grouped together.
+#[must_use]
 pub(crate) fn group_by_year(pages: Vec<ListedPage>) -> Vec<PageGroup> {
     let mut groups: Vec<PageGroup> = Vec::new();
 
@@ -164,6 +165,7 @@ pub(crate) fn group_by_year(pages: Vec<ListedPage>) -> Vec<PageGroup> {
 }
 
 /// Collects the template-facing page summaries from listed pages.
+#[must_use]
 pub(crate) fn collect_page_summaries<I>(listed_pages: I) -> Vec<PageSummary>
 where
     I: IntoIterator<Item = ListedPage>,
@@ -177,6 +179,7 @@ where
 // ── Page metadata helpers ──
 
 /// Builds a `LinkedTerm` for the page's section, if any.
+#[must_use]
 pub(crate) fn page_section(
     page: &Page,
     base_url: &str,
@@ -204,6 +207,7 @@ pub(crate) fn page_section(
 /// are returned as-is. Relative paths are resolved against the page's
 /// directory URL so that co-located assets like `assets/cover.webp` become
 /// `/posts/section/slug/assets/cover.webp`.
+#[must_use]
 pub(crate) fn resolve_featured_image(
     featured_image: Option<&FeaturedImage>,
     page_url: &str,
@@ -243,6 +247,7 @@ fn linked_tags(tags: &[String], base_url: &str) -> Vec<LinkedTerm> {
 
 /// Formats a page date for templates using the configured site time zone,
 /// falling back to UTC when no site time zone is set.
+#[must_use]
 pub(crate) fn format_page_date(date: Timestamp, time_zone: Option<&TimeZone>) -> String {
     let Some(time_zone) = time_zone else {
         return date.to_string();
@@ -252,6 +257,7 @@ pub(crate) fn format_page_date(date: Timestamp, time_zone: Option<&TimeZone>) ->
 }
 
 /// Returns the grouping year for a page date in the configured site time zone.
+#[must_use]
 pub(crate) fn page_year(date: Timestamp, time_zone: Option<&TimeZone>) -> String {
     date.to_zoned(time_zone.cloned().unwrap_or(TimeZone::UTC))
         .year()

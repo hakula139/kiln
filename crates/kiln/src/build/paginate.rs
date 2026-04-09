@@ -44,6 +44,7 @@ where
 ///
 /// `path` specifies the keys to traverse (e.g., `["home", "paginate"]` reads
 /// `params.home.paginate`).
+#[must_use]
 pub(crate) fn paginate_config(params: &toml::value::Table, path: &[&str]) -> Option<usize> {
     let (&first, rest) = path.split_first()?;
     let mut current: &toml::Value = params.get(first)?;
