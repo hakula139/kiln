@@ -1,8 +1,8 @@
+mod archive;
 mod home;
 mod listing;
+mod overview;
 mod paginate;
-mod section;
-mod taxonomy;
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -18,6 +18,7 @@ use crate::output::{clean_output_dir, copy_file, copy_static, write_output};
 use crate::render::RenderOptions;
 use crate::render::pipeline::render_page;
 use crate::section::collect_sections;
+use crate::taxonomy::build_taxonomies;
 use crate::template::{PostTemplateVars, TemplateEngine};
 
 use self::listing::{
@@ -119,21 +120,18 @@ pub(crate) fn build_to(
         )?;
     }
 
+    let taxonomy_set = build_taxonomies(&content.pages, Some(&content.content_dir));
+
     home::build_home_pages(&ctx, &artifacts.listed_posts, &output_dir)?;
-    section::build_posts_index(
+    archive::build_archive_pages(
         &ctx,
-        &artifacts.listed_posts,
+        &artifacts,
+        &sections,
+        &taxonomy_set,
         &content.content_dir,
         &output_dir,
     )?;
-    section::build_section_pages(&ctx, &sections, &artifacts.section_posts, &output_dir)?;
-    taxonomy::build_taxonomy_pages(
-        &ctx,
-        &artifacts.listed_pages,
-        &content.pages,
-        &content.content_dir,
-        &output_dir,
-    )?;
+    overview::build_overview_pages(&ctx, &artifacts, &sections, &taxonomy_set, &output_dir)?;
 
     println!("Build complete: {} page(s).", content.pages.len());
     Ok(())
@@ -1110,10 +1108,10 @@ mod tests {
     }
 
     #[test]
-    fn build_skips_sections_without_template() {
+    fn build_skips_archives_without_template() {
         let root = tempfile::tempdir().unwrap();
         fs::write(root.path().join("config.toml"), "").unwrap();
-        copy_templates_except(&root.path().join("templates"), &["section.html"]);
+        copy_templates_except(&root.path().join("templates"), &["archive.html"]);
 
         write_page(
             root.path(),
@@ -1136,7 +1134,7 @@ mod tests {
             .join("index.html");
         assert!(
             !section_index.exists(),
-            "should NOT generate section pages without section.html template"
+            "should NOT generate archive pages without archive.html template"
         );
     }
 
@@ -1289,10 +1287,10 @@ mod tests {
     }
 
     #[test]
-    fn build_sections_index_skipped_without_taxonomy_template() {
+    fn build_sections_index_skipped_without_overview_template() {
         let root = tempfile::tempdir().unwrap();
         fs::write(root.path().join("config.toml"), "").unwrap();
-        copy_templates_except(&root.path().join("templates"), &["taxonomy.html"]);
+        copy_templates_except(&root.path().join("templates"), &["overview.html"]);
 
         write_page(
             root.path(),
@@ -1314,7 +1312,7 @@ mod tests {
             .join("index.html");
         assert!(
             !sections_index.exists(),
-            "should NOT generate sections index without taxonomy.html"
+            "should NOT generate sections index without overview.html"
         );
     }
 
@@ -1351,7 +1349,7 @@ mod tests {
     }
 
     #[test]
-    fn build_generates_term_pages() {
+    fn build_generates_tag_archive_pages() {
         let root = tempfile::tempdir().unwrap();
         fs::write(root.path().join("config.toml"), "").unwrap();
         copy_templates(&root.path().join("templates"));
@@ -1382,16 +1380,16 @@ mod tests {
         let html = fs::read_to_string(&rust_page).unwrap();
         assert!(
             html.contains("post-1") && html.contains("post-2"),
-            "term page should list posts, html:\n{html}"
+            "tag archive should list posts, html:\n{html}"
         );
         assert!(
             !html.contains("post-3"),
-            "term page should not include unrelated posts, html:\n{html}"
+            "tag archive should not include unrelated posts, html:\n{html}"
         );
     }
 
     #[test]
-    fn build_generates_paginated_term_pages() {
+    fn build_generates_paginated_tag_archive_pages() {
         let root = tempfile::tempdir().unwrap();
         fs::write(
             root.path().join("config.toml"),
@@ -1456,7 +1454,7 @@ mod tests {
     }
 
     #[test]
-    fn build_no_taxonomy_pages_without_tags() {
+    fn build_no_tag_archive_pages_without_tags() {
         let root = tempfile::tempdir().unwrap();
         fs::write(root.path().join("config.toml"), "").unwrap();
         copy_templates(&root.path().join("templates"));
@@ -1483,7 +1481,7 @@ mod tests {
     }
 
     #[test]
-    fn build_taxonomy_correct_with_standalone_pages() {
+    fn build_tag_archive_correct_with_standalone_pages() {
         let root = tempfile::tempdir().unwrap();
         fs::write(root.path().join("config.toml"), "").unwrap();
         copy_templates(&root.path().join("templates"));
@@ -1523,11 +1521,11 @@ mod tests {
         let html = fs::read_to_string(&term_page).unwrap();
         assert!(
             html.contains("Hello Post"),
-            "term page should list the tagged post, html:\n{html}"
+            "tag archive should list the tagged post, html:\n{html}"
         );
         assert!(
             !html.contains("About Me"),
-            "term page should NOT list standalone pages, html:\n{html}"
+            "tag archive should NOT list standalone pages, html:\n{html}"
         );
     }
 
@@ -1590,7 +1588,7 @@ mod tests {
                 .join("rust")
                 .join("index.html")
                 .exists(),
-            "should build taxonomy term page"
+            "should build tag archive page"
         );
     }
 

@@ -36,11 +36,11 @@ kiln convert --source <dir> --dest <dir>          # Convert a Hugo site root int
 .
 ├── build.rs            # BuildContext, build orchestration, per-page rendering, static / asset copying
 ├── build/              # Listing pipeline and output generators (submodules of build.rs)
+│   ├── archive.rs      # Paginated year-grouped archive pages (/posts/, /posts/<section>/, /tags/<slug>/)
 │   ├── home.rs         # Paginated home page generation
 │   ├── listing.rs      # ListedPage model, single-pass ListingArtifacts construction, sorting / grouping helpers
-│   ├── paginate.rs     # Generic write_paginated, paginate_config
-│   ├── section.rs      # Posts index, per-section pages, sections index, shared section listing helper
-│   └── taxonomy.rs     # Taxonomy index pages, paginated term pages, term page resolution
+│   ├── overview.rs     # Bucket overview index pages (/sections/, /tags/)
+│   └── paginate.rs     # Generic write_paginated, paginate_config
 ├── config.rs           # TOML site configuration loading, theme resolution, param merging
 ├── content/            # Content model (module declarations in content.rs)
 │   ├── discovery.rs    # Recursive content walking with draft / _-prefix / no-frontmatter exclusion
