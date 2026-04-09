@@ -3,7 +3,7 @@ use std::path::Path;
 use anyhow::{Context, Result};
 
 use crate::output::write_output;
-use crate::pagination::{PaginationVars, Paginator, page_url as pagination_url};
+use crate::pagination::{PaginationVars, Paginator, paginated_url};
 
 /// Paginates items and writes rendered pages to the output directory.
 ///
@@ -29,7 +29,7 @@ where
 
         let html = render(page_items, pagination)?;
 
-        let rel_path = pagination_url(base_path, page_num);
+        let rel_path = paginated_url(base_path, page_num);
         let dest = output_dir
             .join(rel_path.trim_start_matches('/'))
             .join("index.html");
