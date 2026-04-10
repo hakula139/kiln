@@ -25,6 +25,9 @@ The project direction is simple:
 - Static file copying and co-located content assets
 - Home pages, section pages, standalone pages, taxonomy indexes, and paginated term pages
 - Configurable site time zones for rendered dates
+- RSS 2.0 feeds (main site + per-section + per-taxonomy-term)
+- Sitemap (`sitemap.xml`) and `robots.txt`
+- Custom 404 error page (optional, template-driven)
 
 ### Theming and Extensibility
 
@@ -45,13 +48,9 @@ The project direction is simple:
 
 ### Complete the Publishing Surface
 
-- RSS feeds (main + per-section + per-term)
-- Sitemap (`sitemap.xml`)
-- `robots.txt`
-- 404 page
 - Full-text search via Pagefind
 
-These are the most important remaining gaps for a complete, self-hosted publishing workflow. RSS, sitemap, robots.txt, and the 404 page are being implemented together; Pagefind follows in a separate PR.
+RSS feeds, sitemap, robots.txt, and the 404 page shipped in PR #25. Pagefind is the last remaining gap for a complete, self-hosted publishing workflow.
 
 ### Engine Extensibility
 
