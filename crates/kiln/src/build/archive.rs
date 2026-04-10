@@ -3,11 +3,11 @@ use std::path::Path;
 use anyhow::{Context, Result};
 
 use crate::section::{Section, load_index_title};
-use crate::taxonomy::{TaxonomyKind, TaxonomySet};
+use crate::taxonomy::TaxonomySet;
 use crate::template::ArchivePageVars;
 
 use super::BuildContext;
-use super::listing::{ListedPage, ListingArtifacts, group_by_year, sort_by_date_desc};
+use super::listing::{ListedPage, ListingArtifacts, group_by_year, resolve_term_pages};
 use super::paginate::{paginate_config, write_paginated};
 
 /// Generates all archive pages: `/posts/`, `/posts/<section>/`, and `/tags/<slug>/`.
@@ -142,26 +142,4 @@ fn write_archive(
                 .with_context(|| format!("failed to render archive {}/{}", spec.kind, spec.slug))
         },
     )
-}
-
-fn resolve_term_pages(
-    taxonomy_set: &TaxonomySet,
-    kind: TaxonomyKind,
-    slug: &str,
-    listed_pages: &[ListedPage],
-) -> Vec<ListedPage> {
-    let key = (kind, slug.to_owned());
-    let mut pages: Vec<ListedPage> = taxonomy_set
-        .term_pages
-        .get(&key)
-        .map(|indices| {
-            indices
-                .iter()
-                .filter_map(|&idx| listed_pages.get(idx))
-                .cloned()
-                .collect()
-        })
-        .unwrap_or_default();
-    sort_by_date_desc(&mut pages);
-    pages
 }

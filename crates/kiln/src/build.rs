@@ -1,8 +1,11 @@
 mod archive;
+mod error;
+mod feed;
 mod home;
 mod listing;
 mod overview;
 mod paginate;
+mod sitemap;
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -132,6 +135,17 @@ pub(crate) fn build_to(
         &output_dir,
     )?;
     overview::build_overview_pages(&ctx, &artifacts, &sections, &taxonomy_set, &output_dir)?;
+
+    feed::build_feeds(
+        &ctx,
+        &artifacts,
+        &sections,
+        &taxonomy_set,
+        &content.content_dir,
+        &output_dir,
+    )?;
+    sitemap::build_sitemap_and_robots(&ctx, &artifacts.listed_pages, &output_dir)?;
+    error::build_404(&ctx, &output_dir)?;
 
     println!("Build complete: {} page(s).", content.pages.len());
     Ok(())
@@ -1589,6 +1603,169 @@ mod tests {
                 .join("index.html")
                 .exists(),
             "should build tag archive page"
+        );
+    }
+
+    // ── build: RSS feeds ──
+
+    #[test]
+    fn build_generates_rss_feeds() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(
+            root.path().join("config.toml"),
+            indoc! {r#"
+                base_url = "https://example.com"
+                title = "Test Site"
+            "#},
+        )
+        .unwrap();
+        copy_templates(&root.path().join("templates"));
+
+        write_page(
+            root.path(),
+            "posts/note/hello",
+            indoc! {r#"
+                +++
+                title = "Hello"
+                tags = ["rust"]
+                date = "2026-01-15T00:00:00Z"
+                +++
+                Body
+            "#},
+        );
+
+        build(root.path(), None).unwrap();
+
+        let output_dir = root.path().join("public");
+        let main_feed = fs::read_to_string(output_dir.join("index.xml")).unwrap();
+        assert!(
+            main_feed.contains("<title>Test Site</title>"),
+            "main feed should have site title, xml:\n{main_feed}"
+        );
+        assert!(
+            main_feed.contains("<title>Hello</title>"),
+            "main feed should include post, xml:\n{main_feed}"
+        );
+
+        let section_feed =
+            fs::read_to_string(output_dir.join("posts").join("note").join("index.xml")).unwrap();
+        assert!(
+            section_feed.contains("<title>Hello</title>"),
+            "section feed should include section post, xml:\n{section_feed}"
+        );
+
+        let tag_feed =
+            fs::read_to_string(output_dir.join("tags").join("rust").join("index.xml")).unwrap();
+        assert!(
+            tag_feed.contains("<title>Hello</title>"),
+            "tag feed should include tagged post, xml:\n{tag_feed}"
+        );
+    }
+
+    #[test]
+    fn build_rss_feed_empty_site() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("config.toml"), "").unwrap();
+        copy_templates(&root.path().join("templates"));
+
+        build(root.path(), None).unwrap();
+
+        let output_dir = root.path().join("public");
+        let main_feed = fs::read_to_string(output_dir.join("index.xml")).unwrap();
+        assert!(
+            !main_feed.contains("<item>"),
+            "empty site should have no items, xml:\n{main_feed}"
+        );
+        assert!(
+            !main_feed.contains("<lastBuildDate>"),
+            "empty site should have no lastBuildDate, xml:\n{main_feed}"
+        );
+    }
+
+    // ── build: sitemap + robots.txt ──
+
+    #[test]
+    fn build_generates_sitemap_and_robots() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(
+            root.path().join("config.toml"),
+            indoc! {r#"
+                base_url = "https://example.com"
+            "#},
+        )
+        .unwrap();
+        copy_templates(&root.path().join("templates"));
+
+        write_page(
+            root.path(),
+            "posts/hello",
+            indoc! {r#"
+                +++
+                title = "Hello"
+                date = "2026-01-15T00:00:00Z"
+                +++
+                Body
+            "#},
+        );
+
+        build(root.path(), None).unwrap();
+
+        let output_dir = root.path().join("public");
+
+        let sitemap = fs::read_to_string(output_dir.join("sitemap.xml")).unwrap();
+        assert!(
+            sitemap.contains("<loc>https://example.com/</loc>"),
+            "sitemap should contain home URL, xml:\n{sitemap}"
+        );
+        assert!(
+            sitemap.contains("<loc>https://example.com/posts/hello/</loc>"),
+            "sitemap should contain post URL, xml:\n{sitemap}"
+        );
+        assert!(
+            sitemap.contains("<lastmod>"),
+            "sitemap should have lastmod for dated page, xml:\n{sitemap}"
+        );
+
+        let robots = fs::read_to_string(output_dir.join("robots.txt")).unwrap();
+        assert!(
+            robots.contains("Sitemap: https://example.com/sitemap.xml"),
+            "robots.txt should reference sitemap, txt:\n{robots}"
+        );
+    }
+
+    // ── build: 404 page ──
+
+    #[test]
+    fn build_generates_404_page() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("config.toml"), "").unwrap();
+        copy_templates(&root.path().join("templates"));
+
+        build(root.path(), None).unwrap();
+
+        let output_dir = root.path().join("public");
+        let html = fs::read_to_string(output_dir.join("404.html")).unwrap();
+        assert!(
+            html.contains("404 Not Found"),
+            "should contain error message, html:\n{html}"
+        );
+    }
+
+    #[test]
+    fn build_skips_404_without_template() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("config.toml"), "").unwrap();
+
+        let templates = root.path().join("templates");
+        copy_templates(&templates);
+        fs::remove_file(templates.join("404.html")).unwrap();
+
+        build(root.path(), None).unwrap();
+
+        let output_dir = root.path().join("public");
+        assert!(
+            !output_dir.join("404.html").exists(),
+            "should not generate 404.html without template"
         );
     }
 
