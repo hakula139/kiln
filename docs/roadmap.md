@@ -45,12 +45,13 @@ The project direction is simple:
 
 ### Complete the Publishing Surface
 
-- RSS feeds
-- Sitemap
+- RSS feeds (main + per-section + per-term)
+- Sitemap (`sitemap.xml`)
+- `robots.txt`
 - 404 page
 - Full-text search via Pagefind
 
-These are the most important remaining gaps for a complete, self-hosted publishing workflow.
+These are the most important remaining gaps for a complete, self-hosted publishing workflow. RSS, sitemap, robots.txt, and the 404 page are being implemented together; Pagefind follows in a separate PR.
 
 ### Engine Extensibility
 
@@ -74,16 +75,21 @@ The goal is better production output without making the default build pipeline h
 
 The immediate goal is to remove hardcoded theme strings and make localization practical, not to build a full multi-language site system yet.
 
+### Authoring Enhancements
+
+- Code block attributes: `title="..."`, collapse / fold, line highlighting (`highlight="1,3-5"`)
+- Bundled scripts: `register_script()` mechanism for directive templates (replaces inline `<script>` workaround)
+
 ### Runtime / Ergonomics Polish
 
 - Load optional assets conditionally for features such as KaTeX or Mermaid
-- Add output validation and safety checks where real usage shows gaps
+- Validate `output_dir` is a safe relative path (prevent `remove_dir_all` on absolute paths)
 - Make small authoring and tooling improvements discovered through day-to-day site work
 
 ## Later
 
 - Demo / example site material once the core workflow feels stable
-- Further theme and authoring polish that proves itself during real publishing use
+- Theme polish: standalone page styling, mobile menu animation, back-to-top button, accessibility (focus states, print styles)
 - Additional engine work only when it solves concrete problems in the publishing workflow
 
 ## Not the Goal Right Now
