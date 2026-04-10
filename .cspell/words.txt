@@ -21,6 +21,7 @@ serde
 slugification
 slugified
 slugify
+strftime
 swatinem
 syntect
 tmpl
