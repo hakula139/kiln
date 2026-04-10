@@ -1079,6 +1079,18 @@ mod tests {
         assert!(!engine.has_template("nonexistent.html"));
     }
 
+    // ── tpl_now ──
+
+    #[test]
+    fn now_returns_iso_timestamp() {
+        let engine = test_engine();
+        let result = engine.env.render_str("{{ now() }}", ()).unwrap();
+        assert!(
+            result.contains('T'),
+            "should return ISO 8601 timestamp, got: {result}"
+        );
+    }
+
     // ── tpl_read_file ──
 
     #[test]

@@ -1647,6 +1647,12 @@ mod tests {
             "main feed should include post, xml:\n{main_feed}"
         );
 
+        let posts_feed = fs::read_to_string(output_dir.join("posts").join("index.xml")).unwrap();
+        assert!(
+            posts_feed.contains("<title>Hello</title>"),
+            "all-posts feed should include post, xml:\n{posts_feed}"
+        );
+
         let section_feed =
             fs::read_to_string(output_dir.join("posts").join("note").join("index.xml")).unwrap();
         assert!(
