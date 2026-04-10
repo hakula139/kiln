@@ -76,7 +76,7 @@ kiln convert --source <dir> --dest <dir>          # Convert a Hugo site root int
 ├── serve.rs            # Dev server with file watching, WebSocket live reload, script injection
 ├── sitemap.rs          # Sitemap XML + robots.txt generation
 ├── taxonomy.rs         # TaxonomyKind, Taxonomy, Term, TaxonomySet, build_taxonomies()
-├── template.rs         # MiniJinja layered template engine, directive / archive / overview rendering
+├── template.rs         # MiniJinja layered template engine, directive / archive / overview / error rendering
 ├── test_utils.rs       # Shared test infrastructure (templates, helpers, Page factory)
 └── text.rs             # Shared format-agnostic text utilities (slugify, titlecase)
 ```
