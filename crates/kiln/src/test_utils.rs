@@ -162,6 +162,19 @@ static OVERVIEW_HTML: &str = indoc! {r#"
     {% endblock %}
 "#};
 
+static ERROR_404_HTML: &str = indoc! {r#"
+    {% extends "base.html" %}
+
+    {% block title %}<title>{{ title }} - {{ config.title }}</title>{% endblock %}
+
+    {% block body %}
+      <div class="error-page">
+        <h1>{{ title }}</h1>
+        <p>The page you requested could not be found.</p>
+      </div>
+    {% endblock %}
+"#};
+
 /// Persistent temp directory holding test templates (lives for the process).
 static TEST_TEMPLATE_DIR: LazyLock<TempDir> = LazyLock::new(|| {
     let dir = tempfile::tempdir().unwrap();
@@ -171,6 +184,7 @@ static TEST_TEMPLATE_DIR: LazyLock<TempDir> = LazyLock::new(|| {
     fs::write(dir.path().join("home.html"), HOME_HTML).unwrap();
     fs::write(dir.path().join("archive.html"), ARCHIVE_HTML).unwrap();
     fs::write(dir.path().join("overview.html"), OVERVIEW_HTML).unwrap();
+    fs::write(dir.path().join("404.html"), ERROR_404_HTML).unwrap();
     dir
 });
 

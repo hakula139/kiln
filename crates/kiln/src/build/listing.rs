@@ -6,7 +6,8 @@ use jiff::{Timestamp, tz::TimeZone};
 
 use crate::content::frontmatter::FeaturedImage;
 use crate::content::page::{Page, PageKind};
-use crate::template::{LinkedTerm, PageGroup, PageSummary};
+use crate::taxonomy::{TaxonomyKind, TaxonomySet};
+use crate::template::vars::{LinkedTerm, PageGroup, PageSummary};
 use crate::text::slugify;
 
 use super::page_url;
@@ -140,6 +141,30 @@ fn build_listed_page(
 /// Sorts listed pages by date descending (newest first, undated last).
 pub(crate) fn sort_by_date_desc(pages: &mut [ListedPage]) {
     pages.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+}
+
+/// Resolves the listed pages for a taxonomy term, sorted by date descending.
+#[must_use]
+pub(crate) fn resolve_term_pages(
+    taxonomy_set: &TaxonomySet,
+    kind: TaxonomyKind,
+    slug: &str,
+    listed_pages: &[ListedPage],
+) -> Vec<ListedPage> {
+    let key = (kind, slug.to_owned());
+    let mut pages: Vec<ListedPage> = taxonomy_set
+        .term_pages
+        .get(&key)
+        .map(|indices| {
+            indices
+                .iter()
+                .filter_map(|&idx| listed_pages.get(idx))
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default();
+    sort_by_date_desc(&mut pages);
+    pages
 }
 
 /// Groups pages into year-based sections.

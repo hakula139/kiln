@@ -5,7 +5,7 @@ use anyhow::{Context, Result};
 use crate::output::write_output;
 use crate::section::Section;
 use crate::taxonomy::TaxonomySet;
-use crate::template::{BucketSummary, OverviewPageVars};
+use crate::template::vars::{BucketSummary, OverviewPageVars};
 
 use super::BuildContext;
 use super::listing::{ListingArtifacts, collect_page_summaries};

@@ -37,10 +37,13 @@ kiln convert --source <dir> --dest <dir>          # Convert a Hugo site root int
 ├── build.rs            # BuildContext, build orchestration, per-page rendering, static / asset copying
 ├── build/              # Listing pipeline and output generators (submodules of build.rs)
 │   ├── archive.rs      # Paginated year-grouped archive pages (/posts/, /posts/<section>/, /tags/<slug>/)
+│   ├── error.rs        # 404 error page generation
+│   ├── feed.rs         # RSS feed orchestration (main + per-section + per-term feeds)
 │   ├── home.rs         # Paginated home page generation
 │   ├── listing.rs      # ListedPage model, single-pass ListingArtifacts construction, sorting / grouping helpers
 │   ├── overview.rs     # Bucket overview index pages (/sections/, /tags/)
-│   └── paginate.rs     # Generic write_paginated, paginate_config
+│   ├── paginate.rs     # Generic write_paginated, paginate_config
+│   └── sitemap.rs      # sitemap.xml + robots.txt generation
 ├── config.rs           # TOML site configuration loading, theme resolution, param merging
 ├── content/            # Content model (module declarations in content.rs)
 │   ├── discovery.rs    # Recursive content walking with draft / _-prefix / no-frontmatter exclusion
@@ -54,6 +57,7 @@ kiln convert --source <dir> --dest <dir>          # Convert a Hugo site root int
 │   ├── callout.rs      # 12 callout types (<details> with id / class propagation)
 │   ├── div.rs          # Fenced divs and unknown directives (<div> with id / class propagation)
 │   └── parser.rs       # Line-based stack parser, nesting, single-pass arg + Pandoc attr parsing
+├── feed.rs             # RSS 2.0 XML generation (Channel, generate_rss, RFC 2822 date formatting)
 ├── html.rs             # Shared HTML utilities (escape, indent, writeln_indented)
 ├── init.rs             # Theme scaffolding (kiln init-theme)
 ├── markdown.rs         # Shared raw-markdown text utilities (code fence detection, code span scanning)
@@ -70,8 +74,11 @@ kiln convert --source <dir> --dest <dir>          # Convert a Hugo site root int
 │   └── toc.rs          # TocEntry struct, nested <nav> table of contents generation
 ├── section.rs          # Section struct, collect_sections() from page kinds, _index.md title loading
 ├── serve.rs            # Dev server with file watching, WebSocket live reload, script injection
+├── sitemap.rs          # Sitemap XML + robots.txt generation
 ├── taxonomy.rs         # TaxonomyKind, Taxonomy, Term, TaxonomySet, build_taxonomies()
-├── template.rs         # MiniJinja layered template engine, directive / archive / overview rendering
+├── template.rs         # MiniJinja layered template engine, directive / archive / overview / error rendering
+├── template/           # Template submodules
+│   └── vars.rs         # Template variables structs (PostTemplateVars, PageSummary, etc.)
 ├── test_utils.rs       # Shared test infrastructure (templates, helpers, Page factory)
 └── text.rs             # Shared format-agnostic text utilities (slugify, titlecase)
 ```

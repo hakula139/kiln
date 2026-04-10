@@ -1,12 +1,14 @@
+pub mod vars;
+
 use std::path::{Component, Path};
 
 use anyhow::{Context, Result, ensure};
 use minijinja::path_loader;
 use serde::Serialize;
 
-use crate::config::Config;
-use crate::content::frontmatter::FeaturedImage;
-use crate::pagination::PaginationVars;
+use self::vars::{
+    ArchivePageVars, ErrorPageVars, HomePageVars, OverviewPageVars, PostTemplateVars,
+};
 
 #[derive(Debug)]
 pub struct TemplateEngine {
@@ -141,6 +143,19 @@ impl TemplateEngine {
             .context("failed to render overview template")
     }
 
+    /// Renders the 404 error page using the `404.html` template.
+    ///
+    /// Returns `None` if the template does not exist. Returns `Some(Err(_))`
+    /// if the template exists but rendering fails.
+    pub fn render_404(&self, vars: &ErrorPageVars<'_>) -> Option<Result<String>> {
+        let template = self.env.get_template("404.html").ok()?;
+        Some(
+            template
+                .render(vars)
+                .context("failed to render 404 template"),
+        )
+    }
+
     /// Tries to render a directive using a theme template at
     /// `directives/<name>.html`.
     ///
@@ -250,98 +265,6 @@ fn tpl_parse_csv(text: &str) -> std::result::Result<minijinja::Value, minijinja:
     Ok(minijinja::Value::from(rows))
 }
 
-/// Template variables for rendering a post page.
-///
-/// The `date` field is pre-formatted as a string so the template doesn't need
-/// date logic. HTML fields (`content`, `toc`) use `| safe` in the template to
-/// avoid double-escaping. All other string fields are auto-escaped by `MiniJinja`.
-#[derive(Debug, Serialize)]
-pub struct PostTemplateVars<'a> {
-    pub title: &'a str,
-    pub description: &'a str,
-    pub url: &'a str,
-    pub featured_image: Option<FeaturedImage>,
-    pub date: Option<String>,
-    pub section: Option<LinkedTerm>,
-    pub math: bool,
-    pub content: &'a str,
-    pub toc: &'a str,
-    pub config: &'a Config,
-}
-
-/// A named item with a URL, used for tags and sections in page summaries.
-#[derive(Debug, Clone, Serialize)]
-pub struct LinkedTerm {
-    pub name: String,
-    pub url: String,
-}
-
-/// Lightweight page summary for list / taxonomy templates.
-#[derive(Debug, Clone, Serialize)]
-pub struct PageSummary {
-    pub title: String,
-    pub url: String,
-    pub date: Option<String>,
-    pub description: String,
-    pub featured_image: Option<FeaturedImage>,
-    pub tags: Vec<LinkedTerm>,
-    pub section: Option<LinkedTerm>,
-}
-
-/// A group of pages sharing a common key (e.g., year).
-#[derive(Debug, Clone, Serialize)]
-pub struct PageGroup {
-    pub key: String,
-    pub pages: Vec<PageSummary>,
-}
-
-/// Template variables for the home page.
-#[derive(Debug, Serialize)]
-pub struct HomePageVars<'a> {
-    pub title: &'a str,
-    pub description: &'a str,
-    pub url: String,
-    pub pages: Vec<PageSummary>,
-    pub pagination: PaginationVars,
-    pub config: &'a Config,
-}
-
-/// Template variables for a paginated, year-grouped archive page.
-///
-/// Used for the posts index (`/posts/`), per-section archives
-/// (`/posts/<slug>/`), and per-tag archives (`/tags/<slug>/`).
-#[derive(Debug, Serialize)]
-pub struct ArchivePageVars<'a> {
-    pub kind: &'a str,
-    pub singular: &'a str,
-    pub name: &'a str,
-    pub slug: &'a str,
-    pub page_groups: Vec<PageGroup>,
-    pub pagination: PaginationVars,
-    pub config: &'a Config,
-}
-
-/// Template variables for a bucket overview page (e.g., `/tags/`, `/sections/`).
-#[derive(Debug, Serialize)]
-pub struct OverviewPageVars<'a> {
-    pub kind: &'a str,
-    pub singular: &'a str,
-    pub buckets: Vec<BucketSummary>,
-    pub config: &'a Config,
-}
-
-/// A bucket entry for overview pages.
-///
-/// Templates can use `bucket.pages | length` to get the page count.
-#[derive(Debug, Clone, Serialize)]
-pub struct BucketSummary {
-    pub name: String,
-    pub slug: String,
-    pub url: String,
-    /// All pages in this bucket, sorted by date descending.
-    pub pages: Vec<PageSummary>,
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
@@ -351,7 +274,13 @@ mod tests {
 
     use super::*;
 
+    use crate::content::frontmatter::FeaturedImage;
+    use crate::pagination::PaginationVars;
     use crate::serve::{DEFAULT_PORT, localhost_url};
+    use crate::template::vars::{
+        ArchivePageVars, BucketSummary, ErrorPageVars, HomePageVars, OverviewPageVars, PageGroup,
+        PageSummary, PostTemplateVars,
+    };
     use crate::test_utils::{test_config, test_engine};
 
     // ── new ──
@@ -921,6 +850,44 @@ mod tests {
         );
     }
 
+    // ── render_404 ──
+
+    #[test]
+    fn render_404_basic() {
+        let engine = test_engine();
+        let config = test_config();
+        let vars = ErrorPageVars {
+            title: "404 Not Found",
+            config: &config,
+        };
+        let result = engine.render_404(&vars);
+        assert!(result.is_some(), "should find 404 template");
+        let html = result.unwrap().unwrap();
+        assert!(
+            html.contains("<title>404 Not Found - My Site</title>"),
+            "should have title, html:\n{html}"
+        );
+        assert!(
+            html.contains("<h1>404 Not Found</h1>"),
+            "should have heading, html:\n{html}"
+        );
+    }
+
+    #[test]
+    fn render_404_returns_none_without_template() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine = TemplateEngine::new(Some(dir.path()), None).unwrap();
+        let config = test_config();
+        let vars = ErrorPageVars {
+            title: "404 Not Found",
+            config: &config,
+        };
+        assert!(
+            engine.render_404(&vars).is_none(),
+            "should return None when 404.html is missing"
+        );
+    }
+
     // ── render_directive ──
 
     #[test]
@@ -1012,12 +979,25 @@ mod tests {
         assert!(engine.has_template("home.html"));
         assert!(engine.has_template("archive.html"));
         assert!(engine.has_template("overview.html"));
+        assert!(engine.has_template("404.html"));
     }
 
     #[test]
     fn has_template_missing() {
         let engine = test_engine();
         assert!(!engine.has_template("nonexistent.html"));
+    }
+
+    // ── tpl_now ──
+
+    #[test]
+    fn now_returns_iso_timestamp() {
+        let engine = test_engine();
+        let result = engine.env.render_str("{{ now() }}", ()).unwrap();
+        assert!(
+            result.contains('T'),
+            "should return ISO 8601 timestamp, got: {result}"
+        );
     }
 
     // ── tpl_read_file ──
