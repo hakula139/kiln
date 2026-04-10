@@ -141,6 +141,19 @@ impl TemplateEngine {
             .context("failed to render overview template")
     }
 
+    /// Renders the 404 error page using the `404.html` template.
+    ///
+    /// Returns `None` if the template does not exist. Returns `Some(Err(_))`
+    /// if the template exists but rendering fails.
+    pub fn render_404(&self, vars: &ErrorPageVars<'_>) -> Option<Result<String>> {
+        let template = self.env.get_template("404.html").ok()?;
+        Some(
+            template
+                .render(vars)
+                .context("failed to render 404 template"),
+        )
+    }
+
     /// Tries to render a directive using a theme template at
     /// `directives/<name>.html`.
     ///
@@ -340,6 +353,13 @@ pub struct BucketSummary {
     pub url: String,
     /// All pages in this bucket, sorted by date descending.
     pub pages: Vec<PageSummary>,
+}
+
+/// Template variables for the 404 error page.
+#[derive(Debug, Serialize)]
+pub struct ErrorPageVars<'a> {
+    pub title: &'a str,
+    pub config: &'a Config,
 }
 
 #[cfg(test)]
@@ -921,6 +941,44 @@ mod tests {
         );
     }
 
+    // ── render_404 ──
+
+    #[test]
+    fn render_404_basic() {
+        let engine = test_engine();
+        let config = test_config();
+        let vars = ErrorPageVars {
+            title: "404 Not Found",
+            config: &config,
+        };
+        let result = engine.render_404(&vars);
+        assert!(result.is_some(), "should find 404 template");
+        let html = result.unwrap().unwrap();
+        assert!(
+            html.contains("<title>404 Not Found - My Site</title>"),
+            "should have title, html:\n{html}"
+        );
+        assert!(
+            html.contains("<h1>404 Not Found</h1>"),
+            "should have heading, html:\n{html}"
+        );
+    }
+
+    #[test]
+    fn render_404_returns_none_without_template() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine = TemplateEngine::new(Some(dir.path()), None).unwrap();
+        let config = test_config();
+        let vars = ErrorPageVars {
+            title: "404 Not Found",
+            config: &config,
+        };
+        assert!(
+            engine.render_404(&vars).is_none(),
+            "should return None when 404.html is missing"
+        );
+    }
+
     // ── render_directive ──
 
     #[test]
@@ -1012,6 +1070,7 @@ mod tests {
         assert!(engine.has_template("home.html"));
         assert!(engine.has_template("archive.html"));
         assert!(engine.has_template("overview.html"));
+        assert!(engine.has_template("404.html"));
     }
 
     #[test]
