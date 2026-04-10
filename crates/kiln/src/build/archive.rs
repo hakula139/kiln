@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 
 use crate::section::{Section, load_index_title};
 use crate::taxonomy::TaxonomySet;
-use crate::template::ArchivePageVars;
+use crate::template::vars::ArchivePageVars;
 
 use super::BuildContext;
 use super::listing::{ListedPage, ListingArtifacts, group_by_year, resolve_term_pages};

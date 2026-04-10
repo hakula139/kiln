@@ -22,7 +22,8 @@ use crate::render::RenderOptions;
 use crate::render::pipeline::render_page;
 use crate::section::collect_sections;
 use crate::taxonomy::build_taxonomies;
-use crate::template::{PostTemplateVars, TemplateEngine};
+use crate::template::TemplateEngine;
+use crate::template::vars::PostTemplateVars;
 
 use self::listing::{
     build_listing_artifacts, format_page_date, page_section, resolve_featured_image,

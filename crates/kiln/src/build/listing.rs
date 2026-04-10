@@ -7,7 +7,7 @@ use jiff::{Timestamp, tz::TimeZone};
 use crate::content::frontmatter::FeaturedImage;
 use crate::content::page::{Page, PageKind};
 use crate::taxonomy::{TaxonomyKind, TaxonomySet};
-use crate::template::{LinkedTerm, PageGroup, PageSummary};
+use crate::template::vars::{LinkedTerm, PageGroup, PageSummary};
 use crate::text::slugify;
 
 use super::page_url;

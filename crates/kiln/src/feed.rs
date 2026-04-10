@@ -2,7 +2,7 @@ use jiff::Timestamp;
 use jiff::tz::TimeZone;
 
 use crate::html::{self, writeln_indented};
-use crate::template::PageSummary;
+use crate::template::vars::PageSummary;
 
 const RSS_HEADER: &str = r#"<?xml version="1.0" encoding="utf-8" standalone="yes"?>
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">

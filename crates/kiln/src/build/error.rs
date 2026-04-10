@@ -3,7 +3,7 @@ use std::path::Path;
 use anyhow::{Context, Result};
 
 use crate::output::write_output;
-use crate::template::ErrorPageVars;
+use crate::template::vars::ErrorPageVars;
 
 use super::BuildContext;
 

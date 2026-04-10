@@ -2,7 +2,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
-use crate::template::HomePageVars;
+use crate::template::vars::HomePageVars;
 
 use super::BuildContext;
 use super::listing::{ListedPage, collect_page_summaries};
