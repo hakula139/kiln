@@ -406,6 +406,17 @@ async fn serve_request(
         header::HeaderValue::from_static("no-cache"),
     );
 
+    if response.status() == StatusCode::NOT_FOUND
+        && let Ok(html) = tokio::fs::read_to_string(output_dir.join("404.html")).await
+    {
+        return Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
+            .header(header::CACHE_CONTROL, "no-cache")
+            .body(Body::from(inject_script(&html)))
+            .expect("404 response is valid");
+    }
+
     let is_html = response
         .headers()
         .get(header::CONTENT_TYPE)
@@ -945,6 +956,105 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn build_router_redirects_directory_without_trailing_slash() {
+        let dir = tempfile::tempdir().unwrap();
+        let sub = dir.path().join("about");
+        fs::create_dir(&sub).unwrap();
+        fs::write(sub.join("index.html"), "<html><body>About</body></html>").unwrap();
+
+        let app = setup_router(dir.path());
+        let response = app
+            .oneshot(Request::get("/about").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::MOVED_PERMANENTLY);
+        assert_eq!(response.headers().get(header::LOCATION).unwrap(), "/about/");
+    }
+
+    #[tokio::test]
+    async fn build_router_no_redirect_with_trailing_slash() {
+        let dir = tempfile::tempdir().unwrap();
+        let sub = dir.path().join("about");
+        fs::create_dir(&sub).unwrap();
+        fs::write(sub.join("index.html"), "<html><body>About</body></html>").unwrap();
+
+        let app = setup_router(dir.path());
+        let response = app
+            .oneshot(Request::get("/about/").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = collect_body(response).await;
+        assert!(body.contains("About"), "should serve index.html directly");
+    }
+
+    #[tokio::test]
+    async fn build_router_serves_directory_index() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("index.html"),
+            "<html><body>Home</body></html>",
+        )
+        .unwrap();
+
+        let app = setup_router(dir.path());
+        let response = app
+            .oneshot(Request::get("/").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = collect_body(response).await;
+        assert!(body.contains("Home"), "should serve index.html for /");
+        assert!(
+            body.contains(LIVE_RELOAD_SCRIPT),
+            "should inject into directory index"
+        );
+    }
+
+    #[tokio::test]
+    async fn build_router_returns_not_found() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let app = setup_router(dir.path());
+        let response = app
+            .oneshot(Request::get("/nonexistent").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn build_router_serves_custom_404_page() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("404.html"),
+            "<html><body><h1>Not Found</h1></body></html>",
+        )
+        .unwrap();
+
+        let app = setup_router(dir.path());
+        let response = app
+            .oneshot(Request::get("/nonexistent").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        let body = collect_body(response).await;
+        assert!(
+            body.contains("<h1>Not Found</h1>"),
+            "should serve custom 404 page, got: {body}"
+        );
+        assert!(
+            body.contains("__kiln_live_reload"),
+            "should inject live reload script into 404 page, got: {body}"
+        );
+    }
+
+    #[tokio::test]
     async fn build_router_injects_script_into_html() {
         let dir = tempfile::tempdir().unwrap();
         fs::write(
@@ -985,78 +1095,6 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let body = collect_body(response).await;
         assert_eq!(body, "body { color: red; }");
-    }
-
-    #[tokio::test]
-    async fn build_router_serves_directory_index() {
-        let dir = tempfile::tempdir().unwrap();
-        fs::write(
-            dir.path().join("index.html"),
-            "<html><body>Home</body></html>",
-        )
-        .unwrap();
-
-        let app = setup_router(dir.path());
-        let response = app
-            .oneshot(Request::get("/").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = collect_body(response).await;
-        assert!(body.contains("Home"), "should serve index.html for /");
-        assert!(
-            body.contains(LIVE_RELOAD_SCRIPT),
-            "should inject into directory index"
-        );
-    }
-
-    #[tokio::test]
-    async fn build_router_redirects_directory_without_trailing_slash() {
-        let dir = tempfile::tempdir().unwrap();
-        let sub = dir.path().join("about");
-        fs::create_dir(&sub).unwrap();
-        fs::write(sub.join("index.html"), "<html><body>About</body></html>").unwrap();
-
-        let app = setup_router(dir.path());
-        let response = app
-            .oneshot(Request::get("/about").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::MOVED_PERMANENTLY);
-        assert_eq!(response.headers().get(header::LOCATION).unwrap(), "/about/");
-    }
-
-    #[tokio::test]
-    async fn build_router_no_redirect_with_trailing_slash() {
-        let dir = tempfile::tempdir().unwrap();
-        let sub = dir.path().join("about");
-        fs::create_dir(&sub).unwrap();
-        fs::write(sub.join("index.html"), "<html><body>About</body></html>").unwrap();
-
-        let app = setup_router(dir.path());
-        let response = app
-            .oneshot(Request::get("/about/").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = collect_body(response).await;
-        assert!(body.contains("About"), "should serve index.html directly");
-    }
-
-    #[tokio::test]
-    async fn build_router_returns_not_found() {
-        let dir = tempfile::tempdir().unwrap();
-
-        let app = setup_router(dir.path());
-        let response = app
-            .oneshot(Request::get("/nonexistent").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]
