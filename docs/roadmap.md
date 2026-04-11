@@ -28,10 +28,11 @@ The project direction is simple:
 - RSS 2.0 feeds (main site + per-section + per-taxonomy-term)
 - Sitemap (`sitemap.xml`) and `robots.txt`
 - Custom 404 error page (optional, template-driven)
+- Full-text search via Pagefind (post-build indexing, `[search]` config)
 
 ### Theming and Extensibility
 
-- [IgnIt](https://github.com/hakula139/IgnIt) default theme: Tailwind CSS v4, glassmorphism panels, home page image cards with hover effects, responsive layout, dark mode (system preference + manual toggle, flash-free)
+- [IgnIt](https://github.com/hakula139/IgnIt) default theme: Tailwind CSS v4, glassmorphism panels, home page image cards with hover effects, responsive layout, dark mode (system preference + manual toggle, flash-free), Pagefind search modal
 - Layered MiniJinja templates with site-level overrides
 - Theme parameter merging
 - Directive template helpers such as `read_file()` and `parse_csv()`
@@ -45,12 +46,6 @@ The project direction is simple:
 - `kiln convert` for Hugo-to-kiln content conversion
 
 ## Current Focus
-
-### Complete the Publishing Surface
-
-- Full-text search via Pagefind
-
-RSS feeds, sitemap, robots.txt, and the 404 page shipped in PR #25. Pagefind is the last remaining gap for a complete, self-hosted publishing workflow.
 
 ### Engine Extensibility
 
