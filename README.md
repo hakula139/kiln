@@ -88,16 +88,7 @@ kiln integrates with [Pagefind](https://pagefind.app) for full-text search. Page
    enabled = true
    ```
 
-3. If your theme supports Pagefind (e.g., IgnIt), also set the template flag:
-
-   ```toml
-   [params]
-   search = true
-   ```
-
-4. Build the site — `kiln build` will run Pagefind automatically and write search assets to `{output_dir}/pagefind/`.
-
-**How it works:** `kiln build` and `kiln serve` both invoke the `pagefind` binary with `--site <output_dir>` after all HTML is generated. The `pagefind/` directory it creates is served alongside the rest of the site.
+`kiln build` and `kiln serve` both invoke the `pagefind` binary with `--site <output_dir>` after all HTML is generated. The `pagefind/` directory it creates is served alongside the rest of the site.
 
 **Custom binary path:** If `pagefind` is not on your `$PATH`, specify it in config:
 

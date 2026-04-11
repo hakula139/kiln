@@ -44,7 +44,6 @@ struct BuildContext {
 /// config. This is used by `kiln serve` to match the actual server port.
 ///
 /// Search indexing (Pagefind) runs when `[search] enabled = true` in config.
-/// Pass `search = false` to skip it (used by `kiln serve` for fast rebuilds).
 ///
 /// # Errors
 ///
