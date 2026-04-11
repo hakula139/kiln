@@ -126,7 +126,13 @@ fn parse_directive_head(text: &str) -> DirectiveHead {
     };
 
     // Parse {#id .class key=value "positional"} if present.
-    if let Some(inner) = rest.strip_prefix('{').and_then(|s| s.strip_suffix('}')) {
+    // Use `rfind` instead of `strip_suffix` so trailing content after the
+    // closing brace (e.g. HTML comments like `<!-- cspell:disable-line -->`)
+    // does not silently discard all attributes.
+    if rest.starts_with('{')
+        && let Some(close) = rest.rfind('}')
+    {
+        let inner = &rest[1..close];
         let args = parse_directive_args(inner.trim());
         return DirectiveHead {
             name: name.to_string(),
@@ -776,6 +782,27 @@ mod tests {
         let blocks = parse_directives(input);
         assert_eq!(blocks.len(), 1);
         assert_eq!(blocks[0].body, "Body");
+    }
+
+    #[test]
+    fn trailing_content_after_attrs_preserved() {
+        let input = indoc! {r#"
+            ::: embed { src="example.com" mode="full" } <!-- comment -->
+            :::
+        "#};
+        let blocks = parse_directives(input);
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(
+            blocks[0].kind,
+            DirectiveKind::Unknown {
+                name: "embed".into(),
+                positional_args: Vec::new(),
+                named_args: BTreeMap::from([
+                    ("src".into(), "example.com".into()),
+                    ("mode".into(), "full".into()),
+                ]),
+            }
+        );
     }
 
     #[test]
