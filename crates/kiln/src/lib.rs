@@ -10,6 +10,7 @@ pub mod markdown;
 pub mod output;
 pub mod pagination;
 pub mod render;
+pub mod search;
 pub mod section;
 pub mod serve;
 pub mod sitemap;
