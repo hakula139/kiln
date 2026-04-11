@@ -96,13 +96,13 @@ const LIVE_RELOAD_SCRIPT: &str = r#"
 ///
 /// Panics if the Ctrl+C signal handler cannot be installed.
 #[tokio::main]
-pub async fn serve(root: &Path, port: u16, open: bool) -> Result<()> {
+pub async fn serve(root: &Path, port: u16, open: bool, search: bool) -> Result<()> {
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .with_context(|| format!("failed to bind to port {port} (is it already in use?)"))?;
 
-    serve_until(root, listener, open, shutdown_signal()).await
+    serve_until(root, listener, open, search, shutdown_signal()).await
 }
 
 /// Builds the site, starts file watching, and serves until `shutdown` completes.
@@ -113,13 +113,14 @@ async fn serve_until(
     root: &Path,
     listener: tokio::net::TcpListener,
     open: bool,
+    search: bool,
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> Result<()> {
     let port = listener.local_addr()?.port();
     let base_url = localhost_url(port);
 
     eprintln!("Building site...");
-    crate::build(root, Some(&base_url)).context("initial build failed")?;
+    crate::build(root, Some(&base_url), search).context("initial build failed")?;
 
     let config = Config::load(root).context("failed to load config")?;
     // output_dir is captured once; if config.toml changes output_dir at runtime,
@@ -137,6 +138,7 @@ async fn serve_until(
     tokio::spawn(watch_loop(
         rebuild_root,
         base_url.clone(),
+        search,
         watch_rx,
         rebuild_tx,
     ));
@@ -255,6 +257,7 @@ fn watch_paths(root: &Path, config: &Config) -> Vec<WatchEntry> {
 async fn watch_loop(
     root: PathBuf,
     base_url: String,
+    search: bool,
     mut event_rx: mpsc::UnboundedReceiver<()>,
     reload_tx: broadcast::Sender<()>,
 ) {
@@ -268,7 +271,8 @@ async fn watch_loop(
         eprintln!("\nRebuilding...");
         let root = root.clone();
         let base_url = base_url.clone();
-        let result = tokio::task::spawn_blocking(move || safe_rebuild(&root, &base_url)).await;
+        let result =
+            tokio::task::spawn_blocking(move || safe_rebuild(&root, &base_url, search)).await;
 
         match result {
             Ok(Ok(())) => {
@@ -290,7 +294,7 @@ async fn watch_loop(
 /// server never serves from a missing or partially written directory. On
 /// success the swap is two back-to-back renames (microseconds). On failure
 /// the staging directory is removed and the live output is untouched.
-fn safe_rebuild(root: &Path, base_url: &str) -> Result<()> {
+fn safe_rebuild(root: &Path, base_url: &str, search: bool) -> Result<()> {
     let config = Config::load(root).context("failed to load config")?;
     let output_dir = root.join(&config.output_dir);
     let staging_dir = root.join(format!("{}.staging", config.output_dir));
@@ -300,7 +304,7 @@ fn safe_rebuild(root: &Path, base_url: &str) -> Result<()> {
         _ = fs::remove_dir_all(&staging_dir);
     }
 
-    if let Err(e) = build_to(root, Some(base_url), Some(&staging_dir)) {
+    if let Err(e) = build_to(root, Some(base_url), Some(&staging_dir), search) {
         _ = fs::remove_dir_all(&staging_dir);
         return Err(e);
     }
@@ -528,7 +532,10 @@ mod tests {
         let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
         let root = root.to_owned();
         tokio::spawn(async move {
-            _ = serve_until(&root, listener, false, async { _ = shutdown_rx.await }).await;
+            _ = serve_until(&root, listener, false, false, async {
+                _ = shutdown_rx.await;
+            })
+            .await;
         });
         (addr, shutdown_tx)
     }
@@ -775,6 +782,7 @@ mod tests {
         tokio::spawn(watch_loop(
             root_path,
             "http://localhost:0".to_owned(),
+            false,
             event_rx,
             reload_tx,
         ));
@@ -809,6 +817,7 @@ mod tests {
         tokio::spawn(watch_loop(
             root_path,
             "http://localhost:0".to_owned(),
+            false,
             event_rx,
             reload_tx,
         ));
@@ -837,6 +846,7 @@ mod tests {
         let handle = tokio::spawn(watch_loop(
             root_path,
             "http://localhost:0".to_owned(),
+            false,
             event_rx,
             reload_tx,
         ));
@@ -859,10 +869,10 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         setup_site(root.path());
 
-        crate::build(root.path(), None).unwrap();
+        crate::build(root.path(), None, false).unwrap();
         assert!(root.path().join("public").exists());
 
-        safe_rebuild(root.path(), "http://localhost:0").unwrap();
+        safe_rebuild(root.path(), "http://localhost:0", false).unwrap();
         assert!(root.path().join("public").exists());
         assert!(!root.path().join("public.staging").exists());
         assert!(!root.path().join("public.prev").exists());
@@ -873,7 +883,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         setup_site(root.path());
 
-        crate::build(root.path(), None).unwrap();
+        crate::build(root.path(), None, false).unwrap();
         let output = root
             .path()
             .join("public")
@@ -888,7 +898,7 @@ mod tests {
         )
         .unwrap();
 
-        assert!(safe_rebuild(root.path(), "http://localhost:0").is_err());
+        assert!(safe_rebuild(root.path(), "http://localhost:0", false).is_err());
 
         let preserved = fs::read_to_string(&output).unwrap();
         assert_eq!(
@@ -906,7 +916,7 @@ mod tests {
 
         assert!(!root.path().join("public").exists());
 
-        safe_rebuild(root.path(), "http://localhost:0").unwrap();
+        safe_rebuild(root.path(), "http://localhost:0", false).unwrap();
         assert!(root.path().join("public").exists());
         assert!(!root.path().join("public.staging").exists());
     }
@@ -915,13 +925,13 @@ mod tests {
     fn safe_rebuild_cleans_leftover_staging() {
         let root = tempfile::tempdir().unwrap();
         setup_site(root.path());
-        crate::build(root.path(), None).unwrap();
+        crate::build(root.path(), None, false).unwrap();
 
         let staging = root.path().join("public.staging");
         fs::create_dir_all(staging.join("stale")).unwrap();
         fs::write(staging.join("stale").join("old.html"), "leftover").unwrap();
 
-        safe_rebuild(root.path(), "http://localhost:0").unwrap();
+        safe_rebuild(root.path(), "http://localhost:0", false).unwrap();
         assert!(root.path().join("public").exists());
         assert!(!staging.exists(), "leftover staging dir should be removed");
     }
@@ -930,13 +940,13 @@ mod tests {
     fn safe_rebuild_cleans_leftover_backup() {
         let root = tempfile::tempdir().unwrap();
         setup_site(root.path());
-        crate::build(root.path(), None).unwrap();
+        crate::build(root.path(), None, false).unwrap();
 
         let backup = root.path().join("public.prev");
         fs::create_dir_all(&backup).unwrap();
         fs::write(backup.join("old.html"), "leftover").unwrap();
 
-        safe_rebuild(root.path(), "http://localhost:0").unwrap();
+        safe_rebuild(root.path(), "http://localhost:0", false).unwrap();
         assert!(root.path().join("public").exists());
         assert!(!backup.exists(), "leftover backup dir should be removed");
     }

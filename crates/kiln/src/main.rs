@@ -50,6 +50,14 @@ enum Command {
         /// Open the site in the default browser after starting.
         #[arg(long)]
         open: bool,
+
+        /// Run Pagefind search indexing on each build.
+        ///
+        /// Disabled by default for faster rebuilds. Enable to test search
+        /// locally. Requires `[search] enabled = true` in config.toml and
+        /// the `pagefind` binary installed.
+        #[arg(long)]
+        search: bool,
     },
 }
 
@@ -65,7 +73,7 @@ fn main() -> Result<()> {
     match cli.command {
         Command::Build { root } => {
             let root = root.canonicalize()?;
-            kiln::build(&root, None)?;
+            kiln::build(&root, None, true)?;
         }
         Command::Convert { source, dest } => {
             let source = source.canonicalize()?;
@@ -76,9 +84,14 @@ fn main() -> Result<()> {
             let root = root.canonicalize()?;
             kiln::init_theme(&root, &name)?;
         }
-        Command::Serve { root, port, open } => {
+        Command::Serve {
+            root,
+            port,
+            open,
+            search,
+        } => {
             let root = root.canonicalize()?;
-            kiln::serve(&root, port, open)?;
+            kiln::serve(&root, port, open, search)?;
         }
     }
 
