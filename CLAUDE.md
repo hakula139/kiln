@@ -151,7 +151,7 @@ kiln convert --source <dir> --dest <dir>                     # Convert a Hugo si
 #### Commits
 
 - Messages: `type(scope): description`
-  - Types: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `style`, `perf`
+  - Types: `feat`, `fix`, `refactor`, `docs`, `test`, `ci`, `chore`, `style`, `perf`
   - Scope: the most specific area changed — module (e.g., `config`, `render`, `directive`), doc target (e.g., `CLAUDE`, `roadmap`), or crate name only for cross-module changes.
 - Keep commits atomic — one logical change per commit.
 
