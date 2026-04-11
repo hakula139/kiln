@@ -133,6 +133,7 @@ kiln convert --source <dir> --dest <dir>                     # Convert a Hugo si
 ### String Literals
 
 - Prefer raw strings (`r"..."`) when the string contains characters that would need escaping (e.g., `"`, `\`). Always use the minimum delimiter level needed (`r"..."` → `r#"..."#` → `r##"..."##`).
+- Use `indoc!` / `formatdoc!` for multiline string content so the literal can be indented with surrounding code. Inline at the call site when the string is used once; use a named constant only when it is shared or very large. Avoid `\n` escapes and `\x20` workarounds for multiline content.
 
 ### Enum String Mappings
 

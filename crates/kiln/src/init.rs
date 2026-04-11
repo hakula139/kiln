@@ -2,31 +2,7 @@ use std::fs;
 use std::path::Path;
 
 use anyhow::{Context, Result, bail};
-
-const BASE_HTML: &str = r#"<!DOCTYPE html>
-<html lang="{{ config.language }}">
-  <head>
-    <meta charset="utf-8">
-    {% block title %}<title>{{ config.title }}</title>{% endblock %}
-    {% block head %}{% endblock %}
-  </head>
-  <body>
-    {% block body %}{% endblock %}
-  </body>
-</html>
-"#;
-
-const POST_HTML: &str = r#"{% extends "base.html" %}
-
-{% block title %}<title>{{ title }} - {{ config.title }}</title>{% endblock %}
-
-{% block body %}
-<article>
-  <h1>{{ title }}</h1>
-  <div class="content">{{ content | safe }}</div>
-</article>
-{% endblock %}
-"#;
+use indoc::indoc;
 
 /// Scaffolds a new theme directory under `themes/<name>/`.
 ///
@@ -49,8 +25,40 @@ pub fn init_theme(root: &Path, name: &str) -> Result<()> {
     fs::create_dir_all(theme_dir.join("static")).context("failed to create static directory")?;
 
     fs::write(theme_dir.join("theme.toml"), "").context("failed to write theme.toml")?;
-    fs::write(templates_dir.join("base.html"), BASE_HTML).context("failed to write base.html")?;
-    fs::write(templates_dir.join("post.html"), POST_HTML).context("failed to write post.html")?;
+    fs::write(
+        templates_dir.join("base.html"),
+        indoc! {r#"
+            <!DOCTYPE html>
+            <html lang="{{ config.language }}">
+              <head>
+                <meta charset="utf-8">
+                {% block title %}<title>{{ config.title }}</title>{% endblock %}
+                {% block head %}{% endblock %}
+              </head>
+              <body>
+                {% block body %}{% endblock %}
+              </body>
+            </html>
+        "#},
+    )
+    .context("failed to write base.html")?;
+
+    fs::write(
+        templates_dir.join("post.html"),
+        indoc! {r#"
+            {% extends "base.html" %}
+
+            {% block title %}<title>{{ title }} - {{ config.title }}</title>{% endblock %}
+
+            {% block body %}
+            <article>
+              <h1>{{ title }}</h1>
+              <div class="content">{{ content | safe }}</div>
+            </article>
+            {% endblock %}
+        "#},
+    )
+    .context("failed to write post.html")?;
 
     println!("Theme `{name}` created at {}", theme_dir.display());
     println!("Set `theme = \"{name}\"` in your config.toml to use it.");

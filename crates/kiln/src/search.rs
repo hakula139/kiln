@@ -2,6 +2,7 @@ use std::path::Path;
 use std::process::Command;
 
 use anyhow::{Context, Result, bail};
+use indoc::formatdoc;
 
 const DEFAULT_BINARY: &str = "pagefind";
 
@@ -24,26 +25,31 @@ pub fn run_pagefind(output_dir: &Path, binary: Option<&str>) -> Result<()> {
         .args(["--site", site_arg])
         .output()
         .with_context(|| {
-            format!(
-                "failed to run `{binary}` — is Pagefind installed?\n\
-                 \n\
-                 Install with one of:\n\
-                 \n\
-                 \x20 cargo install pagefind\n\
-                 \x20 npm install -g pagefind\n\
-                 \x20 npx pagefind --site <dir>\n\
-                 \n\
-                 See https://pagefind.app/docs/installation/ for details.",
-            )
+            formatdoc! {"
+                failed to run `{binary}` — is Pagefind installed?
+
+                Install with one of:
+
+                  cargo install pagefind
+                  npm install -g pagefind
+                  npx pagefind --site <dir>
+
+                See https://pagefind.app/docs/installation/ for details."}
         })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stdout = String::from_utf8_lossy(&output.stdout);
-        bail!(
-            "Pagefind exited with {status}\n\nstdout:\n{stdout}\nstderr:\n{stderr}",
+        let msg = formatdoc! {"
+            Pagefind exited with {status}
+
+            stdout:
+            {stdout}
+            stderr:
+            {stderr}",
             status = output.status,
-        );
+        };
+        bail!(msg);
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);

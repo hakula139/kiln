@@ -15,6 +15,7 @@ use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use http_body_util::BodyExt;
+use indoc::indoc;
 use notify::{RecursiveMode, Watcher};
 use tokio::sync::{broadcast, mpsc};
 use tower::ServiceExt;
@@ -45,42 +46,43 @@ const DEBOUNCE: Duration = Duration::from_millis(100);
 /// limit and create "zombie" sockets on navigation that silently block
 /// subsequent requests for tens of seconds. WebSocket connections are
 /// upgraded out of the HTTP pool, avoiding the limit entirely.
-const LIVE_RELOAD_SCRIPT: &str = r#"
-<script>
-(function () {
-  let ws = null;
-  const connect = () => {
-    if (ws) {
-      ws.close();
-    }
-    const url = (location.protocol === "https:" ? "wss://" : "ws://")
-      + location.host + "/__kiln_live_reload";
-    ws = new WebSocket(url);
-    ws.onmessage = (e) => {
-      if (e.data === "reload") {
-        window.location.reload();
-      }
-    };
-    ws.onclose = () => {
-      ws = null;
-      setTimeout(connect, 1000);
-    };
-  };
-  connect();
-  document.addEventListener("pagehide", () => {
-    if (ws) {
-      ws.close();
-      ws = null;
-    }
-  });
-  document.addEventListener("pageshow", (e) => {
-    if (e.persisted && !ws) {
+const LIVE_RELOAD_SCRIPT: &str = indoc! {r#"
+
+    <script>
+    (function () {
+      let ws = null;
+      const connect = () => {
+        if (ws) {
+          ws.close();
+        }
+        const url = (location.protocol === "https:" ? "wss://" : "ws://")
+          + location.host + "/__kiln_live_reload";
+        ws = new WebSocket(url);
+        ws.onmessage = (e) => {
+          if (e.data === "reload") {
+            window.location.reload();
+          }
+        };
+        ws.onclose = () => {
+          ws = null;
+          setTimeout(connect, 1000);
+        };
+      };
       connect();
-    }
-  });
-})();
-</script>
-"#;
+      document.addEventListener("pagehide", () => {
+        if (ws) {
+          ws.close();
+          ws = null;
+        }
+      });
+      document.addEventListener("pageshow", (e) => {
+        if (e.persisted && !ws) {
+          connect();
+        }
+      });
+    })();
+    </script>
+"#};
 
 /// Starts the dev server with file watching and live reload.
 ///

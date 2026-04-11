@@ -1,17 +1,9 @@
+use indoc::indoc;
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
 
 use crate::html::{self, writeln_indented};
 use crate::template::vars::PageSummary;
-
-const RSS_HEADER: &str = r#"<?xml version="1.0" encoding="utf-8" standalone="yes"?>
-<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
-  <channel>
-"#;
-
-const RSS_FOOTER: &str = r"  </channel>
-</rss>
-";
 
 /// RSS channel metadata.
 #[derive(Debug)]
@@ -33,7 +25,11 @@ pub const DEFAULT_FEED_LIMIT: usize = 20;
 /// descending (newest first). The feed limits output to `limit` items.
 #[must_use]
 pub fn generate_rss(channel: &Channel, items: &[PageSummary], limit: usize) -> String {
-    let mut xml = String::from(RSS_HEADER);
+    let mut xml = String::from(indoc! {r#"
+        <?xml version="1.0" encoding="utf-8" standalone="yes"?>
+        <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+          <channel>
+    "#});
 
     write_escaped_element(&mut xml, 2, "title", &channel.title);
     write_escaped_element(&mut xml, 2, "link", &channel.link);
@@ -74,7 +70,10 @@ pub fn generate_rss(channel: &Channel, items: &[PageSummary], limit: usize) -> S
         writeln_indented!(&mut xml, 2, "</item>");
     }
 
-    xml.push_str(RSS_FOOTER);
+    xml.push_str(indoc! {"
+          </channel>
+        </rss>
+    "});
     xml
 }
 
