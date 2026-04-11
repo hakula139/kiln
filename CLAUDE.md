@@ -10,12 +10,12 @@ User-facing feature positioning belongs in `README.md`. The canonical in-repo ro
 
 ```bash
 kiln build [--root <dir>]                                    # Build the site (default root: cwd)
-kiln serve [--root <dir>] [--port 5456] [--open] [--search]  # Dev server with live reload
+kiln serve [--root <dir>] [--port 5456] [--open]             # Dev server with live reload
 kiln init-theme <name> [--root]                              # Scaffold a new theme under themes/<name>/
 kiln convert --source <dir> --dest <dir>                     # Convert a Hugo site root into a kiln site root
 ```
 
-`kiln build` runs Pagefind search indexing when `[search] enabled = true` in `config.toml`. `kiln serve` skips it by default for fast rebuilds; pass `--search` to enable it.
+Both `kiln build` and `kiln serve` run Pagefind search indexing automatically when `[search] enabled = true` in `config.toml`.
 
 `kiln convert` expects site roots. It reads `source/content`, writes to `dest/content`, and copies `source/static` to `dest/static` without overwriting existing destination files.
 

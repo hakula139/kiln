@@ -50,8 +50,8 @@ struct BuildContext {
 ///
 /// Returns an error if configuration loading, content discovery, rendering,
 /// or output writing fails.
-pub fn build(root: &Path, base_url_override: Option<&str>, search: bool) -> Result<()> {
-    build_to(root, base_url_override, None, search)
+pub fn build(root: &Path, base_url_override: Option<&str>) -> Result<()> {
+    build_to(root, base_url_override, None)
 }
 
 /// Builds the site, optionally writing to a custom output directory.
@@ -62,7 +62,6 @@ pub(crate) fn build_to(
     root: &Path,
     base_url_override: Option<&str>,
     output_dir_override: Option<&Path>,
-    search: bool,
 ) -> Result<()> {
     let mut config = Config::load(root).context("failed to load config")?;
     if let Some(base_url) = base_url_override {
@@ -153,7 +152,7 @@ pub(crate) fn build_to(
     sitemap::build_sitemap_and_robots(&ctx, &artifacts.listed_pages, &output_dir)?;
     error::build_404(&ctx, &output_dir)?;
 
-    if search && ctx.config.search.enabled {
+    if ctx.config.search.enabled {
         eprintln!("Running Pagefind...");
         search::run_pagefind(&output_dir, ctx.config.search.binary.as_deref())
             .context("search indexing failed")?;
@@ -296,7 +295,7 @@ mod tests {
         fs::write(root.path().join("config.toml"), "").unwrap();
         copy_templates(&root.path().join("templates"));
 
-        build(root.path(), None, false).unwrap();
+        build(root.path(), None).unwrap();
 
         let output_dir = root.path().join("public");
         assert!(output_dir.exists(), "output directory should exist");
@@ -339,7 +338,7 @@ mod tests {
             "#},
         );
 
-        build(root.path(), None, false).unwrap();
+        build(root.path(), None).unwrap();
 
         let output = root
             .path()
@@ -405,7 +404,7 @@ mod tests {
             "#},
         );
 
-        build(root.path(), Some("http://localhost:5456"), false).unwrap();
+        build(root.path(), Some("http://localhost:5456")).unwrap();
 
         let html = fs::read_to_string(
             root.path()
@@ -436,7 +435,7 @@ mod tests {
         fs::write(static_dir.join("favicon.ico"), "icon").unwrap();
         fs::write(static_dir.join("images").join("logo.png"), "logo").unwrap();
 
-        build(root.path(), None, false).unwrap();
+        build(root.path(), None).unwrap();
 
         let output_dir = root.path().join("public");
         assert_eq!(
@@ -470,7 +469,7 @@ mod tests {
         fs::write(bundle.join("cover.webp"), "cover-data").unwrap();
         fs::write(bundle.join("assets").join("diagram.svg"), "svg-data").unwrap();
 
-        build(root.path(), None, false).unwrap();
+        build(root.path(), None).unwrap();
 
         let output_dir = root.path().join("public").join("posts").join("hello");
         assert_eq!(
@@ -493,7 +492,7 @@ mod tests {
         fs::create_dir_all(output_dir.join("old")).unwrap();
         fs::write(output_dir.join("old").join("stale.html"), "stale").unwrap();
 
-        build(root.path(), None, false).unwrap();
+        build(root.path(), None).unwrap();
 
         assert!(
             !output_dir.join("old").exists(),
@@ -536,7 +535,7 @@ mod tests {
             "#},
         );
 
-        build(root.path(), None, false).unwrap();
+        build(root.path(), None).unwrap();
 
         let output = root
             .path()
@@ -567,7 +566,7 @@ mod tests {
         fs::create_dir_all(&site_static).unwrap();
         fs::write(site_static.join("shared.css"), "from-site").unwrap();
 
-        build(root.path(), None, false).unwrap();
+        build(root.path(), None).unwrap();
 
         let output_dir = root.path().join("public");
         assert_eq!(
@@ -601,7 +600,7 @@ mod tests {
             "#},
         );
 
-        build(root.path(), None, false).unwrap();
+        build(root.path(), None).unwrap();
 
         let output = root
             .path()
@@ -640,7 +639,7 @@ mod tests {
             "#},
         );
 
-        build(root.path(), None, false).unwrap();
+        build(root.path(), None).unwrap();
 
         let html = fs::read_to_string(
             root.path()
@@ -681,7 +680,7 @@ mod tests {
             "#},
         );
 
-        build(root.path(), None, false).unwrap();
+        build(root.path(), None).unwrap();
 
         let home = root.path().join("public").join("index.html");
         assert!(home.exists(), "should generate home page /index.html");
@@ -725,7 +724,7 @@ mod tests {
             "#},
         );
 
-        build(root.path(), None, false).unwrap();
+        build(root.path(), None).unwrap();
 
         let html = fs::read_to_string(root.path().join("public").join("index.html")).unwrap();
         let new_pos = html.find("New Post").expect("should list New Post");
@@ -742,7 +741,7 @@ mod tests {
         fs::write(root.path().join("config.toml"), "").unwrap();
         copy_templates(&root.path().join("templates"));
 
-        build(root.path(), None, false).unwrap();
+        build(root.path(), None).unwrap();
 
         let home = root.path().join("public").join("index.html");
         assert!(
@@ -780,7 +779,7 @@ mod tests {
             "#},
         );
 
-        build(root.path(), None, false).unwrap();
+        build(root.path(), None).unwrap();
 
         let home_html = fs::read_to_string(root.path().join("public").join("index.html")).unwrap();
         assert!(
@@ -827,7 +826,7 @@ mod tests {
             "#},
         );
 
-        build(root.path(), None, false).unwrap();
+        build(root.path(), None).unwrap();
 
         let home = root.path().join("public").join("index.html");
         assert!(
@@ -866,7 +865,7 @@ mod tests {
             );
         }
 
-        build(root.path(), None, false).unwrap();
+        build(root.path(), None).unwrap();
 
         let output_dir = root.path().join("public");
         let page1 = output_dir.join("index.html");
@@ -909,7 +908,7 @@ mod tests {
             "#},
         );
 
-        build(root.path(), None, false).unwrap();
+        build(root.path(), None).unwrap();
 
         let html = fs::read_to_string(root.path().join("public").join("index.html")).unwrap();
         assert!(
@@ -953,7 +952,7 @@ mod tests {
             "#},
         );
 
-        build(root.path(), None, false).unwrap();
+        build(root.path(), None).unwrap();
 
         let posts_index = root.path().join("public").join("posts").join("index.html");
         assert!(posts_index.exists(), "should generate /posts/index.html");
@@ -994,7 +993,7 @@ mod tests {
             "#},
         );
 
-        build(root.path(), None, false).unwrap();
+        build(root.path(), None).unwrap();
 
         let html = fs::read_to_string(root.path().join("public").join("posts").join("index.html"))
             .unwrap();
@@ -1021,7 +1020,7 @@ mod tests {
             "#},
         );
 
-        build(root.path(), None, false).unwrap();
+        build(root.path(), None).unwrap();
 
         let posts_index = root.path().join("public").join("posts").join("index.html");
         assert!(
@@ -1060,7 +1059,7 @@ mod tests {
             );
         }
 
-        build(root.path(), None, false).unwrap();
+        build(root.path(), None).unwrap();
 
         let output_dir = root.path().join("public");
         let page1 = output_dir.join("posts").join("index.html");
@@ -1104,7 +1103,7 @@ mod tests {
             );
         }
 
-        build(root.path(), None, false).unwrap();
+        build(root.path(), None).unwrap();
 
         let output_dir = root.path().join("public");
         let note_index = output_dir.join("posts").join("note").join("index.html");
@@ -1150,7 +1149,7 @@ mod tests {
             "#},
         );
 
-        build(root.path(), None, false).unwrap();
+        build(root.path(), None).unwrap();
 
         let section_index = root
             .path()
@@ -1193,7 +1192,7 @@ mod tests {
             "#},
         );
 
-        build(root.path(), None, false).unwrap();
+        build(root.path(), None).unwrap();
 
         let html = fs::read_to_string(
             root.path()
@@ -1239,7 +1238,7 @@ mod tests {
             );
         }
 
-        build(root.path(), None, false).unwrap();
+        build(root.path(), None).unwrap();
 
         let output_dir = root.path().join("public");
         let page1 = output_dir.join("posts").join("note").join("index.html");
@@ -1290,7 +1289,7 @@ mod tests {
             "#},
         );
 
-        build(root.path(), None, false).unwrap();
+        build(root.path(), None).unwrap();
 
         let sections_index = root
             .path()
@@ -1329,7 +1328,7 @@ mod tests {
             "#},
         );
 
-        build(root.path(), None, false).unwrap();
+        build(root.path(), None).unwrap();
 
         let sections_index = root
             .path()
@@ -1362,7 +1361,7 @@ mod tests {
             "#},
         );
 
-        build(root.path(), None, false).unwrap();
+        build(root.path(), None).unwrap();
 
         let output_dir = root.path().join("public");
         let tags_index = output_dir.join("tags").join("index.html");
@@ -1398,7 +1397,7 @@ mod tests {
             );
         }
 
-        build(root.path(), None, false).unwrap();
+        build(root.path(), None).unwrap();
 
         let output_dir = root.path().join("public");
         let rust_page = output_dir.join("tags").join("rust").join("index.html");
@@ -1445,7 +1444,7 @@ mod tests {
             );
         }
 
-        build(root.path(), None, false).unwrap();
+        build(root.path(), None).unwrap();
 
         let output_dir = root.path().join("public");
 
@@ -1496,7 +1495,7 @@ mod tests {
             "#},
         );
 
-        build(root.path(), None, false).unwrap();
+        build(root.path(), None).unwrap();
 
         let output_dir = root.path().join("public");
         let tags_index = output_dir.join("tags").join("index.html");
@@ -1535,7 +1534,7 @@ mod tests {
             "#},
         );
 
-        build(root.path(), None, false).unwrap();
+        build(root.path(), None).unwrap();
 
         let term_page = root
             .path()
@@ -1589,7 +1588,7 @@ mod tests {
             "#},
         );
 
-        build(root.path(), None, false).unwrap();
+        build(root.path(), None).unwrap();
 
         let output_dir = root.path().join("public");
         assert!(
@@ -1646,7 +1645,7 @@ mod tests {
             "#},
         );
 
-        build(root.path(), None, false).unwrap();
+        build(root.path(), None).unwrap();
 
         let output_dir = root.path().join("public");
         let main_feed = fs::read_to_string(output_dir.join("index.xml")).unwrap();
@@ -1686,7 +1685,7 @@ mod tests {
         fs::write(root.path().join("config.toml"), "").unwrap();
         copy_templates(&root.path().join("templates"));
 
-        build(root.path(), None, false).unwrap();
+        build(root.path(), None).unwrap();
 
         let output_dir = root.path().join("public");
         let main_feed = fs::read_to_string(output_dir.join("index.xml")).unwrap();
@@ -1726,7 +1725,7 @@ mod tests {
             "#},
         );
 
-        build(root.path(), None, false).unwrap();
+        build(root.path(), None).unwrap();
 
         let output_dir = root.path().join("public");
 
@@ -1759,7 +1758,7 @@ mod tests {
         fs::write(root.path().join("config.toml"), "").unwrap();
         copy_templates(&root.path().join("templates"));
 
-        build(root.path(), None, false).unwrap();
+        build(root.path(), None).unwrap();
 
         let output_dir = root.path().join("public");
         let html = fs::read_to_string(output_dir.join("404.html")).unwrap();
@@ -1778,7 +1777,7 @@ mod tests {
         copy_templates(&templates);
         fs::remove_file(templates.join("404.html")).unwrap();
 
-        build(root.path(), None, false).unwrap();
+        build(root.path(), None).unwrap();
 
         let output_dir = root.path().join("public");
         assert!(
@@ -1809,7 +1808,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         fs::write(root.path().join("config.toml"), "{{invalid toml").unwrap();
 
-        let err = format!("{:#}", build(root.path(), None, false).unwrap_err());
+        let err = format!("{:#}", build(root.path(), None).unwrap_err());
         assert!(
             err.contains("failed to load config"),
             "should report config failure, got: {err}"
@@ -1821,7 +1820,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         fs::write(root.path().join("config.toml"), r#"timezone = "Mars/Base""#).unwrap();
 
-        let err = build(root.path(), None, false).unwrap_err();
+        let err = build(root.path(), None).unwrap_err();
         let chain: Vec<String> = err.chain().map(ToString::to_string).collect();
         assert!(
             chain
@@ -1836,7 +1835,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         fs::write(root.path().join("config.toml"), "").unwrap();
 
-        let err = build(root.path(), None, false).unwrap_err().to_string();
+        let err = build(root.path(), None).unwrap_err().to_string();
         assert!(
             err.contains("failed to initialize template engine"),
             "should report template engine failure, got: {err}"
@@ -1854,7 +1853,7 @@ mod tests {
         )
         .unwrap();
 
-        let err = build(root.path(), None, false).unwrap_err().to_string();
+        let err = build(root.path(), None).unwrap_err().to_string();
         assert!(
             err.contains("failed to render"),
             "should report render failure, got: {err}"
@@ -1866,11 +1865,11 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         setup_site_with_page(root.path());
 
-        build(root.path(), None, false).unwrap();
+        build(root.path(), None).unwrap();
         let output_dir = root.path().join("public");
         let _guard = PermissionGuard::restrict(&output_dir, 0o555);
 
-        let err = build(root.path(), None, false).unwrap_err().to_string();
+        let err = build(root.path(), None).unwrap_err().to_string();
         assert!(
             err.contains("failed to write") || err.contains("failed to clean"),
             "should report write or clean failure, got: {err}"
@@ -1885,12 +1884,12 @@ mod tests {
         let page_dir = root.path().join("content").join("posts").join("hello");
         fs::write(page_dir.join("image.png"), "img-data").unwrap();
 
-        build(root.path(), None, false).unwrap();
+        build(root.path(), None).unwrap();
 
         let page_output = root.path().join("public").join("posts").join("hello");
         let _guard = PermissionGuard::restrict(&page_output, 0o555);
 
-        let err = build(root.path(), None, false).unwrap_err().to_string();
+        let err = build(root.path(), None).unwrap_err().to_string();
         assert!(
             err.contains("failed to copy asset") || err.contains("failed to clean"),
             "should report asset copy or clean failure, got: {err}"
@@ -1923,7 +1922,7 @@ mod tests {
             "#},
         );
 
-        let err = build(root.path(), None, false).unwrap_err().to_string();
+        let err = build(root.path(), None).unwrap_err().to_string();
         assert!(
             err.contains("failed to render"),
             "should report render failure, got: {err}"

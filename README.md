@@ -59,9 +59,6 @@ kiln serve
 # Dev server with custom port and auto-open browser
 kiln serve --port 3000 --open
 
-# Dev server with search indexing enabled (slower rebuilds)
-kiln serve --search
-
 # Scaffold a new theme
 kiln init-theme my-theme
 
@@ -100,7 +97,7 @@ kiln integrates with [Pagefind](https://pagefind.app) for full-text search. Page
 
 4. Build the site — `kiln build` will run Pagefind automatically and write search assets to `{output_dir}/pagefind/`.
 
-**How it works:** `kiln build` invokes the `pagefind` binary with `--site <output_dir>` after all HTML is generated. The `pagefind/` directory it creates is served alongside the rest of the site. During development, `kiln serve` skips search indexing for fast rebuilds — use `kiln serve --search` to test search locally.
+**How it works:** `kiln build` and `kiln serve` both invoke the `pagefind` binary with `--site <output_dir>` after all HTML is generated. The `pagefind/` directory it creates is served alongside the rest of the site.
 
 **Custom binary path:** If `pagefind` is not on your `$PATH`, specify it in config:
 
