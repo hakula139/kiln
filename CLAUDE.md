@@ -9,11 +9,13 @@ User-facing feature positioning belongs in `README.md`. The canonical in-repo ro
 ### CLI
 
 ```bash
-kiln build [--root <dir>]                         # Build the site (default root: cwd)
-kiln serve [--root <dir>] [--port 5456] [--open]  # Dev server with live reload
-kiln init-theme <name> [--root]                   # Scaffold a new theme under themes/<name>/
-kiln convert --source <dir> --dest <dir>          # Convert a Hugo site root into a kiln site root
+kiln build [--root <dir>]                                    # Build the site (default root: cwd)
+kiln serve [--root <dir>] [--port 5456] [--open]             # Dev server with live reload
+kiln init-theme <name> [--root]                              # Scaffold a new theme under themes/<name>/
+kiln convert --source <dir> --dest <dir>                     # Convert a Hugo site root into a kiln site root
 ```
+
+Both `kiln build` and `kiln serve` run Pagefind search indexing automatically when `[search] enabled = true` in `config.toml`.
 
 `kiln convert` expects site roots. It reads `source/content`, writes to `dest/content`, and copies `source/static` to `dest/static` without overwriting existing destination files.
 
@@ -72,6 +74,7 @@ kiln convert --source <dir> --dest <dir>          # Convert a Hugo site root int
 │   ├── markdown.rs     # pulldown-cmark, GFM, CJK heading IDs, KaTeX, block / inline images
 │   ├── pipeline.rs     # Full pipeline: directives → pre-processors → markdown → ToC
 │   └── toc.rs          # TocEntry struct, nested <nav> table of contents generation
+├── search.rs           # Pagefind search indexing (external binary invocation)
 ├── section.rs          # Section struct, collect_sections() from page kinds, _index.md title loading
 ├── serve.rs            # Dev server with file watching, WebSocket live reload, script injection
 ├── sitemap.rs          # Sitemap XML + robots.txt generation
@@ -130,6 +133,7 @@ kiln convert --source <dir> --dest <dir>          # Convert a Hugo site root int
 ### String Literals
 
 - Prefer raw strings (`r"..."`) when the string contains characters that would need escaping (e.g., `"`, `\`). Always use the minimum delimiter level needed (`r"..."` → `r#"..."#` → `r##"..."##`).
+- Use `indoc!` / `formatdoc!` for multiline string content so the literal can be indented with surrounding code. Inline at the call site when the string is used once; use a named constant only when it is shared or very large. Avoid `\n` escapes and `\x20` workarounds for multiline content.
 
 ### Enum String Mappings
 
@@ -147,7 +151,7 @@ kiln convert --source <dir> --dest <dir>          # Convert a Hugo site root int
 #### Commits
 
 - Messages: `type(scope): description`
-  - Types: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `style`, `perf`
+  - Types: `feat`, `fix`, `refactor`, `docs`, `test`, `ci`, `chore`, `style`, `perf`
   - Scope: the most specific area changed — module (e.g., `config`, `render`, `directive`), doc target (e.g., `CLAUDE`, `roadmap`), or crate name only for cross-module changes.
 - Keep commits atomic — one logical change per commit.
 

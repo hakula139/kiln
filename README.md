@@ -1,6 +1,7 @@
 # kiln
 
 [![CI](https://github.com/hakula139/kiln/actions/workflows/ci.yml/badge.svg)](https://github.com/hakula139/kiln/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/hakula139/kiln/graph/badge.svg)](https://codecov.io/gh/hakula139/kiln)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/hakula139/kiln)
 
@@ -12,15 +13,34 @@ kiln is purpose-built for hakula.xyz: strong CJK-friendly authoring, explicit re
 
 ## Highlights
 
-- CJK-friendly authoring with TOML frontmatter, GitHub Flavored Markdown, KaTeX math, heading IDs, and table of contents generation.
-- Rich content primitives via `:::` directives, directive template helpers (`read_file`, `parse_csv`), image attributes, emoji / icon shortcodes, and code-block presentation helpers.
-- Flexible site generation with pretty URLs, static file copying, co-located assets, standalone pages, home pages, section pages, taxonomy indexes, paginated term pages, configurable site time zones, RSS feeds, sitemap, and custom 404 page.
-- MiniJinja-based theming with layered site overrides and theme parameter merging. Ships with [IgnIt](https://github.com/hakula139/IgnIt), a Tailwind CSS v4 theme featuring glassmorphism panels, dark mode, and responsive layout.
-- Local developer tooling with live reload (`kiln serve`) and Hugo-to-kiln migration (`kiln convert`).
+### Authoring
+
+- TOML frontmatter, GitHub Flavored Markdown, KaTeX math
+- CJK-friendly heading IDs and table of contents generation
+- `:::` directives with theme-template rendering
+- Directive template helpers (`read_file`, `parse_csv`)
+- Image attributes, emoji / icon shortcodes, and code-block presentation helpers
+
+### Site Generation
+
+- Pretty URLs, static file copying, co-located content assets
+- Home pages, section pages, standalone pages, taxonomy indexes, and paginated term pages
+- Configurable site time zones for rendered dates
+- RSS feeds, sitemap, custom 404 page
+- Full-text search via [Pagefind](https://pagefind.app)
+
+### Theming
+
+- MiniJinja templates with layered site overrides and theme parameter merging
+- Ships with [IgnIt](https://github.com/hakula139/IgnIt): Tailwind CSS v4, glassmorphism panels, dark mode, responsive layout, search modal
+
+### Tooling
+
+- Dev server with live reload (`kiln serve`)
+- Hugo-to-kiln content migration (`kiln convert`)
 
 ## Current Focus
 
-- Complete the publishing surface with full-text search via [Pagefind](https://pagefind.app).
 - Improve the production pipeline with Rust-native asset minification, i18n groundwork, and further ergonomics polish.
 - Make the taxonomy system config-driven (replace hardcoded `TaxonomyKind` with `[[taxonomies]]` config).
 
@@ -47,6 +67,36 @@ kiln convert --source /path/to/hugo-site --dest /path/to/kiln-site
 ```
 
 `kiln convert` expects site roots, not `content/` directories. It reads from `source/content`, writes converted markdown and co-located assets to `dest/content`, and copies `source/static` to `dest/static` without overwriting existing destination files.
+
+### Search
+
+kiln integrates with [Pagefind](https://pagefind.app) for full-text search. Pagefind runs as a post-build step, indexing HTML output and generating client-side search assets.
+
+**Setup:**
+
+1. Install the Pagefind binary (one of):
+
+   ```bash
+   cargo install pagefind
+   npm install -g pagefind
+   ```
+
+2. Enable search in `config.toml`:
+
+   ```toml
+   [search]
+   enabled = true
+   ```
+
+`kiln build` and `kiln serve` both invoke the `pagefind` binary with `--site <output_dir>` after all HTML is generated. The `pagefind/` directory it creates is served alongside the rest of the site.
+
+**Custom binary path:** If `pagefind` is not on your `$PATH`, specify it in config:
+
+```toml
+[search]
+enabled = true
+binary = "/path/to/pagefind"
+```
 
 ## Site Structure
 

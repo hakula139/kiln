@@ -1,10 +1,6 @@
+use indoc::{formatdoc, indoc};
+
 use crate::html::{self, writeln_indented};
-
-const SITEMAP_HEADER: &str = r#"<?xml version="1.0" encoding="utf-8" standalone="yes"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-"#;
-
-const SITEMAP_FOOTER: &str = "</urlset>\n";
 
 /// A single URL entry in the sitemap.
 #[derive(Debug)]
@@ -16,7 +12,10 @@ pub struct SitemapEntry {
 /// Generates an XML sitemap from a list of URL entries.
 #[must_use]
 pub fn generate_sitemap(entries: &[SitemapEntry]) -> String {
-    let mut xml = String::from(SITEMAP_HEADER);
+    let mut xml = String::from(indoc! {r#"
+        <?xml version="1.0" encoding="utf-8" standalone="yes"?>
+        <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+    "#});
 
     for entry in entries {
         writeln_indented!(&mut xml, 1, "<url>");
@@ -29,7 +28,7 @@ pub fn generate_sitemap(entries: &[SitemapEntry]) -> String {
         writeln_indented!(&mut xml, 1, "</url>");
     }
 
-    xml.push_str(SITEMAP_FOOTER);
+    xml.push_str("</urlset>\n");
     xml
 }
 
@@ -37,7 +36,12 @@ pub fn generate_sitemap(entries: &[SitemapEntry]) -> String {
 #[must_use]
 pub fn generate_robots_txt(base_url: &str) -> String {
     let base = base_url.trim_end_matches('/');
-    format!("User-agent: *\nAllow: /\n\nSitemap: {base}/sitemap.xml\n")
+    formatdoc! {"
+        User-agent: *
+        Allow: /
+
+        Sitemap: {base}/sitemap.xml
+    "}
 }
 
 #[cfg(test)]

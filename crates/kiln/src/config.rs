@@ -40,6 +40,9 @@ pub struct Config {
     pub params: toml::Table,
 
     #[serde(default)]
+    pub search: Search,
+
+    #[serde(default)]
     pub menu: Menu,
 
     #[serde(default)]
@@ -66,6 +69,22 @@ pub struct Author {
 
     #[serde(default)]
     pub link: String,
+}
+
+/// Full-text search configuration.
+///
+/// When enabled, kiln runs Pagefind as a post-build step to generate a search
+/// index under `{output_dir}/pagefind/`. The `pagefind` binary must be
+/// installed separately — see <https://pagefind.app/docs/installation/>.
+#[derive(Debug, Default, Deserialize, Serialize)]
+pub struct Search {
+    /// Enable Pagefind search indexing after build.
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// Path or name of the Pagefind binary (defaults to `"pagefind"` on `$PATH`).
+    #[serde(default)]
+    pub binary: Option<String>,
 }
 
 /// Site navigation menus.
@@ -242,6 +261,8 @@ mod tests {
         assert_eq!(config.output_dir, "public");
         assert!(config.theme.is_none());
         assert!(config.params.is_empty());
+        assert!(!config.search.enabled);
+        assert!(config.search.binary.is_none());
         assert!(config.menu.main.is_empty());
         assert!(config.author.name.is_empty());
         assert!(config.author.email.is_empty());
@@ -282,6 +303,21 @@ mod tests {
         assert_eq!(config.author.name, "Alice");
         assert_eq!(config.author.email, "alice@example.com");
         assert_eq!(config.author.link, "https://alice.example.com");
+    }
+
+    #[test]
+    fn search_from_toml() {
+        let config: Config = toml::from_str(indoc! {r#"
+            [search]
+            enabled = true
+            binary = "/usr/local/bin/pagefind"
+        "#})
+        .unwrap();
+        assert!(config.search.enabled);
+        assert_eq!(
+            config.search.binary.as_deref(),
+            Some("/usr/local/bin/pagefind"),
+        );
     }
 
     /// Verifies TOML field parsing for menu items.
@@ -701,7 +737,7 @@ mod tests {
     }
 
     #[test]
-    fn merge_params_rejects_type_mismatch() {
+    fn merge_params_type_mismatch_returns_error() {
         let mut site: toml::Table = toml::from_str(r#"key = "site""#).unwrap();
         let theme: toml::Table = toml::from_str(indoc! {r#"
             [key]

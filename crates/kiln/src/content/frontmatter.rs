@@ -438,7 +438,7 @@ mod tests {
     // ── split_frontmatter ──
 
     #[test]
-    fn split_basic() {
+    fn split_frontmatter_basic() {
         let input = indoc! {r#"
             +++
             title = "Hello"
@@ -451,7 +451,7 @@ mod tests {
     }
 
     #[test]
-    fn split_with_bom() {
+    fn split_frontmatter_with_bom() {
         // BOM (\u{feff}) can't appear in raw strings, so use concat! here.
         let input = concat!("\u{feff}", "+++\ntitle = \"BOM\"\n+++\nBody\n");
         let (fm, body) = split_frontmatter(input).unwrap();
@@ -460,7 +460,7 @@ mod tests {
     }
 
     #[test]
-    fn split_crlf() {
+    fn split_frontmatter_crlf() {
         // Explicit \r\n line endings can't be expressed in indoc.
         let input = "+++\r\ntitle = \"Windows\"\r\n+++\r\nBody\r\n";
         let (fm, body) = split_frontmatter(input).unwrap();
@@ -469,7 +469,7 @@ mod tests {
     }
 
     #[test]
-    fn split_empty_frontmatter() {
+    fn split_frontmatter_empty() {
         let input = indoc! {r"
             +++
             +++
@@ -481,7 +481,7 @@ mod tests {
     }
 
     #[test]
-    fn split_no_body() {
+    fn split_frontmatter_no_body() {
         let input = indoc! {r#"
             +++
             title = "No Body"
@@ -493,7 +493,7 @@ mod tests {
     }
 
     #[test]
-    fn split_closing_delimiter_inside_value_ignored() {
+    fn split_frontmatter_closing_delimiter_inside_value_ignored() {
         // `+++` appears mid-line in a value, should not be treated as closing delimiter.
         let input = indoc! {r#"
             +++
@@ -507,7 +507,7 @@ mod tests {
     }
 
     #[test]
-    fn split_closing_delimiter_must_end_line() {
+    fn split_frontmatter_closing_delimiter_must_end_line() {
         // `+++not_end` should not be treated as a closing delimiter.
         let input = indoc! {r#"
             +++
@@ -522,7 +522,7 @@ mod tests {
     }
 
     #[test]
-    fn split_opening_delimiter_not_on_own_line_returns_error() {
+    fn split_frontmatter_opening_not_on_own_line_returns_error() {
         let input = indoc! {"
             +++extra
             +++
@@ -535,7 +535,7 @@ mod tests {
     }
 
     #[test]
-    fn split_missing_opening_delimiter_returns_error() {
+    fn split_frontmatter_missing_opening_returns_error() {
         let input = indoc! {r#"
             title = "Hello"
             +++
@@ -549,7 +549,7 @@ mod tests {
     }
 
     #[test]
-    fn split_missing_closing_delimiter_returns_error() {
+    fn split_frontmatter_missing_closing_returns_error() {
         let input = indoc! {r#"
             +++
             title = "Hello"

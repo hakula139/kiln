@@ -307,6 +307,25 @@ mod tests {
         );
     }
 
+    // ── top_level_blocks ──
+
+    #[test]
+    fn top_level_blocks_filters_nested() {
+        let input = indoc! {"
+            :::: outer
+            ::: inner
+            Body
+            :::
+            ::::
+        "};
+        let all = parse_directives(input);
+        assert_eq!(all.len(), 2, "parser should find both blocks");
+
+        let top = top_level_blocks(&all);
+        assert_eq!(top.len(), 1, "only outer block is top-level");
+        assert_eq!(top[0].range.start, 0);
+    }
+
     // ── render_directive_block ──
 
     #[test]
@@ -506,24 +525,5 @@ mod tests {
             "table should be rendered inside div, html:\n{}",
             page.content_html
         );
-    }
-
-    // ── top_level_blocks ──
-
-    #[test]
-    fn top_level_blocks_filters_nested() {
-        let input = indoc! {"
-            :::: outer
-            ::: inner
-            Body
-            :::
-            ::::
-        "};
-        let all = parse_directives(input);
-        assert_eq!(all.len(), 2, "parser should find both blocks");
-
-        let top = top_level_blocks(&all);
-        assert_eq!(top.len(), 1, "only outer block is top-level");
-        assert_eq!(top[0].range.start, 0);
     }
 }

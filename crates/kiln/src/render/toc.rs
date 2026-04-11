@@ -85,6 +85,8 @@ mod tests {
 
     use super::*;
 
+    // ── render_toc_html ──
+
     #[test]
     fn empty_entries() {
         assert_eq!(render_toc_html(&[]), "");

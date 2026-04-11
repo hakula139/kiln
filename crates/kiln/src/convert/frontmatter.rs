@@ -36,7 +36,7 @@ mod tests {
     // ── split_yaml_frontmatter ──
 
     #[test]
-    fn split_basic() {
+    fn split_yaml_basic() {
         let input = indoc! {r"
             ---
             title: Hello
@@ -49,12 +49,12 @@ mod tests {
     }
 
     #[test]
-    fn split_no_yaml_returns_error() {
+    fn split_yaml_missing_delimiter_returns_error() {
         assert!(split_yaml_frontmatter("No frontmatter here").is_err());
     }
 
     #[test]
-    fn split_no_body() {
+    fn split_yaml_no_body() {
         let input = indoc! {"
             ---
             title: No Body

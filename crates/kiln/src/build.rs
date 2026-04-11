@@ -20,6 +20,7 @@ use crate::content::page::{Page, PageKind};
 use crate::output::{clean_output_dir, copy_file, copy_static, write_output};
 use crate::render::RenderOptions;
 use crate::render::pipeline::render_page;
+use crate::search;
 use crate::section::collect_sections;
 use crate::taxonomy::build_taxonomies;
 use crate::template::TemplateEngine;
@@ -41,6 +42,8 @@ struct BuildContext {
 ///
 /// When `base_url_override` is provided, it replaces the `base_url` from
 /// config. This is used by `kiln serve` to match the actual server port.
+///
+/// Search indexing (Pagefind) runs when `[search] enabled = true` in config.
 ///
 /// # Errors
 ///
@@ -147,6 +150,12 @@ pub(crate) fn build_to(
     )?;
     sitemap::build_sitemap_and_robots(&ctx, &artifacts.listed_pages, &output_dir)?;
     error::build_404(&ctx, &output_dir)?;
+
+    if ctx.config.search.enabled {
+        eprintln!("Running Pagefind...");
+        search::run_pagefind(&output_dir, ctx.config.search.binary.as_deref())
+            .context("search indexing failed")?;
+    }
 
     println!("Build complete: {} page(s).", content.pages.len());
     Ok(())
