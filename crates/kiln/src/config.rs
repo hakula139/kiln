@@ -737,7 +737,7 @@ mod tests {
     }
 
     #[test]
-    fn merge_params_rejects_type_mismatch() {
+    fn merge_params_type_mismatch_returns_error() {
         let mut site: toml::Table = toml::from_str(r#"key = "site""#).unwrap();
         let theme: toml::Table = toml::from_str(indoc! {r#"
             [key]

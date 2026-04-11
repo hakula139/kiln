@@ -164,6 +164,14 @@ mod tests {
         page
     }
 
+    // ── TaxonomyKind ──
+
+    #[test]
+    fn kind_names() {
+        assert_eq!(TaxonomyKind::Tags.singular(), "tag");
+        assert_eq!(TaxonomyKind::Tags.plural(), "tags");
+    }
+
     // ── build_taxonomies ──
 
     #[test]
@@ -291,7 +299,7 @@ mod tests {
     // ── load_term_title ──
 
     #[test]
-    fn build_taxonomies_uses_index_title() {
+    fn load_term_title_uses_index_title() {
         let dir = tempfile::tempdir().unwrap();
         let content_dir = dir.path().join("content");
 
@@ -324,7 +332,7 @@ mod tests {
     }
 
     #[test]
-    fn build_taxonomies_falls_back_without_index() {
+    fn load_term_title_falls_back_without_index() {
         let dir = tempfile::tempdir().unwrap();
         let content_dir = dir.path().join("content");
         // No _index.md files — display name comes from frontmatter.
@@ -345,7 +353,7 @@ mod tests {
     }
 
     #[test]
-    fn build_taxonomies_ignores_empty_index_title() {
+    fn load_term_title_ignores_empty_index_title() {
         let dir = tempfile::tempdir().unwrap();
         let content_dir = dir.path().join("content");
 
@@ -373,13 +381,5 @@ mod tests {
             tags.terms[0].name, "rust",
             "should fall back when _index.md has empty title"
         );
-    }
-
-    // ── TaxonomyKind ──
-
-    #[test]
-    fn kind_names() {
-        assert_eq!(TaxonomyKind::Tags.singular(), "tag");
-        assert_eq!(TaxonomyKind::Tags.plural(), "tags");
     }
 }

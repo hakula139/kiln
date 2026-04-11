@@ -331,6 +331,15 @@ mod tests {
         );
     }
 
+    // ── format_rfc2822 ──
+
+    #[test]
+    fn format_rfc2822_utc() {
+        let ts: Timestamp = "2026-03-15T10:30:00Z".parse().unwrap();
+        let formatted = format_rfc2822(ts);
+        assert_eq!(formatted, "Sun, 15 Mar 2026 10:30:00 +0000");
+    }
+
     // ── iso_to_rfc2822 ──
 
     #[test]
@@ -354,14 +363,5 @@ mod tests {
     #[test]
     fn iso_to_rfc2822_invalid_returns_none() {
         assert!(iso_to_rfc2822("not-a-date").is_none());
-    }
-
-    // ── format_rfc2822 ──
-
-    #[test]
-    fn format_rfc2822_utc() {
-        let ts: Timestamp = "2026-03-15T10:30:00Z".parse().unwrap();
-        let formatted = format_rfc2822(ts);
-        assert_eq!(formatted, "Sun, 15 Mar 2026 10:30:00 +0000");
     }
 }

@@ -67,13 +67,13 @@ mod tests {
     // ── run_pagefind ──
 
     #[test]
-    fn succeeds_with_output() {
+    fn run_pagefind_succeeds_with_output() {
         let dir = tempfile::tempdir().unwrap();
         run_pagefind(dir.path(), Some("echo")).unwrap();
     }
 
     #[test]
-    fn missing_binary_returns_error() {
+    fn run_pagefind_missing_binary_returns_error() {
         let dir = tempfile::tempdir().unwrap();
         let err = run_pagefind(dir.path(), Some("nonexistent-pagefind-binary-xyz"))
             .unwrap_err()
@@ -89,7 +89,7 @@ mod tests {
     }
 
     #[test]
-    fn non_zero_exit_returns_error() {
+    fn run_pagefind_non_zero_exit_returns_error() {
         let dir = tempfile::tempdir().unwrap();
         let result = run_pagefind(dir.path(), Some("false"));
         assert!(result.is_err());
