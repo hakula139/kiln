@@ -136,13 +136,6 @@ Then target that class in `style.css`:
 }
 ```
 
-### Tailwind CSS in Content
-
-Per-page `style.css` is not Tailwind-processed. For content that needs Tailwind features:
-
-- **`@apply`, `@variant dark`**: Import the CSS file in the site's `assets/css/main.css` entry point. This makes it part of the global Tailwind build (always loaded).
-- **Utility classes in markdown** (`::: { .text-red-500 }`): Add `@source "../../content/**/*.md"` to the site's Tailwind entry so utility classes used in markdown compile into the global stylesheet.
-
 ## Static Files
 
 Files in the site's `static/` directory are copied to the output root. Use this for files shared across all pages:
