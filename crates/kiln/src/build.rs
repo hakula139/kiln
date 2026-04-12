@@ -658,6 +658,76 @@ mod tests {
         );
     }
 
+    // ── build: page CSS ──
+
+    #[test]
+    fn build_injects_page_css_link() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("config.toml"), "").unwrap();
+        copy_templates(&root.path().join("templates"));
+
+        write_page(
+            root.path(),
+            "posts/hello",
+            indoc! {r#"
+                +++
+                title = "Hello"
+                +++
+                Body
+            "#},
+        );
+        let bundle = root.path().join("content").join("posts").join("hello");
+        fs::write(bundle.join("style.css"), ".custom { color: red; }").unwrap();
+
+        build(root.path(), None).unwrap();
+
+        let html = fs::read_to_string(
+            root.path()
+                .join("public")
+                .join("posts")
+                .join("hello")
+                .join("index.html"),
+        )
+        .unwrap();
+        assert!(
+            html.contains(r#"<link rel="stylesheet" href="/posts/hello/style.css">"#),
+            "should inject per-page CSS link, html:\n{html}"
+        );
+    }
+
+    #[test]
+    fn build_omits_page_css_without_style() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("config.toml"), "").unwrap();
+        copy_templates(&root.path().join("templates"));
+
+        write_page(
+            root.path(),
+            "posts/hello",
+            indoc! {r#"
+                +++
+                title = "Hello"
+                +++
+                Body
+            "#},
+        );
+
+        build(root.path(), None).unwrap();
+
+        let html = fs::read_to_string(
+            root.path()
+                .join("public")
+                .join("posts")
+                .join("hello")
+                .join("index.html"),
+        )
+        .unwrap();
+        assert!(
+            !html.contains("style.css"),
+            "should NOT inject page CSS link when no style.css, html:\n{html}"
+        );
+    }
+
     // ── build: home page ──
 
     #[test]
@@ -1960,75 +2030,5 @@ mod tests {
     #[test]
     fn find_page_css_returns_none_for_non_bundle() {
         assert!(find_page_css(&[], None, "https://example.com/posts/my-post/").is_none());
-    }
-
-    // ── build: page CSS ──
-
-    #[test]
-    fn build_injects_page_css_link() {
-        let root = tempfile::tempdir().unwrap();
-        fs::write(root.path().join("config.toml"), "").unwrap();
-        copy_templates(&root.path().join("templates"));
-
-        write_page(
-            root.path(),
-            "posts/hello",
-            indoc! {r#"
-                +++
-                title = "Hello"
-                +++
-                Body
-            "#},
-        );
-        let bundle = root.path().join("content").join("posts").join("hello");
-        fs::write(bundle.join("style.css"), ".custom { color: red; }").unwrap();
-
-        build(root.path(), None).unwrap();
-
-        let html = fs::read_to_string(
-            root.path()
-                .join("public")
-                .join("posts")
-                .join("hello")
-                .join("index.html"),
-        )
-        .unwrap();
-        assert!(
-            html.contains(r#"<link rel="stylesheet" href="/posts/hello/style.css">"#),
-            "should inject per-page CSS link, html:\n{html}"
-        );
-    }
-
-    #[test]
-    fn build_omits_page_css_without_style() {
-        let root = tempfile::tempdir().unwrap();
-        fs::write(root.path().join("config.toml"), "").unwrap();
-        copy_templates(&root.path().join("templates"));
-
-        write_page(
-            root.path(),
-            "posts/hello",
-            indoc! {r#"
-                +++
-                title = "Hello"
-                +++
-                Body
-            "#},
-        );
-
-        build(root.path(), None).unwrap();
-
-        let html = fs::read_to_string(
-            root.path()
-                .join("public")
-                .join("posts")
-                .join("hello")
-                .join("index.html"),
-        )
-        .unwrap();
-        assert!(
-            !html.contains("style.css"),
-            "should NOT inject page CSS link when no style.css, html:\n{html}"
-        );
     }
 }
