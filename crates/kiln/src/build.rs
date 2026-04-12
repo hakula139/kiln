@@ -6,9 +6,10 @@ mod listing;
 mod overview;
 mod paginate;
 mod sitemap;
+mod url;
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use jiff::tz::TimeZone;
@@ -29,6 +30,7 @@ use crate::template::vars::PostTemplateVars;
 use self::listing::{
     build_listing_artifacts, format_page_date, page_section, resolve_featured_image,
 };
+use self::url::{page_url, resolve_relative_url};
 
 /// Shared build state, created once per build invocation.
 struct BuildContext {
@@ -191,6 +193,7 @@ fn build_page(
     let url = page_url(&ctx.config.base_url, &output_path);
 
     let featured_image = resolve_featured_image(page.frontmatter.featured_image.as_ref(), &url);
+    let page_css = find_page_css(&page.assets, page.source_path.parent(), &url);
     let vars = PostTemplateVars {
         title: &page.frontmatter.title,
         description: page
@@ -201,6 +204,7 @@ fn build_page(
             .unwrap_or(""),
         url: &url,
         featured_image,
+        page_css,
         date: page
             .frontmatter
             .date
@@ -242,20 +246,15 @@ fn build_page(
     Ok(())
 }
 
-/// Computes the canonical URL for a page from its output path.
-///
-/// For `index.html` pages (page bundles), returns the directory path with a
-/// trailing slash. For other files, returns the file path as-is.
-#[must_use]
-pub(crate) fn page_url(base_url: &str, output_path: &Path) -> String {
-    let base = base_url.trim_end_matches('/');
-    let rel = output_path.to_string_lossy();
-
-    if let Some(dir) = rel.strip_suffix("index.html") {
-        format!("{base}/{dir}")
-    } else {
-        format!("{base}/{rel}")
-    }
+/// Finds a `style.css` file in the page bundle's assets and returns its
+/// resolved URL path (e.g., `/posts/my-post/style.css`).
+fn find_page_css(assets: &[PathBuf], bundle_dir: Option<&Path>, page_url: &str) -> Option<String> {
+    let dir = bundle_dir?;
+    let css = assets
+        .iter()
+        .find(|p| p.file_name().and_then(|n| n.to_str()) == Some("style.css"))?;
+    let relative = css.strip_prefix(dir).ok()?;
+    Some(resolve_relative_url(&relative.to_string_lossy(), page_url))
 }
 
 #[cfg(test)]
@@ -1928,37 +1927,108 @@ mod tests {
         );
     }
 
-    // ── page_url ──
+    // ── find_page_css ──
 
     #[test]
-    fn page_url_index_html() {
-        assert_eq!(
-            page_url("https://example.com", Path::new("foo/bar/index.html")),
-            "https://example.com/foo/bar/"
+    fn find_page_css_detects_root_style() {
+        let bundle = Path::new("content/posts/my-post");
+        let assets = vec![bundle.join("cover.webp"), bundle.join("style.css")];
+        let result = find_page_css(&assets, Some(bundle), "https://example.com/posts/my-post/");
+        assert_eq!(result.as_deref(), Some("/posts/my-post/style.css"));
+    }
+
+    #[test]
+    fn find_page_css_detects_nested_style() {
+        let bundle = Path::new("content/posts/my-post");
+        let assets = vec![
+            bundle.join("assets/cover.webp"),
+            bundle.join("assets/style.css"),
+        ];
+        let result = find_page_css(&assets, Some(bundle), "https://example.com/posts/my-post/");
+        assert_eq!(result.as_deref(), Some("/posts/my-post/assets/style.css"));
+    }
+
+    #[test]
+    fn find_page_css_returns_none_without_style() {
+        let bundle = Path::new("content/posts/my-post");
+        let assets = vec![bundle.join("cover.webp")];
+        assert!(
+            find_page_css(&assets, Some(bundle), "https://example.com/posts/my-post/").is_none()
         );
     }
 
     #[test]
-    fn page_url_root_index() {
-        assert_eq!(
-            page_url("https://example.com", Path::new("index.html")),
-            "https://example.com/"
+    fn find_page_css_returns_none_for_non_bundle() {
+        assert!(find_page_css(&[], None, "https://example.com/posts/my-post/").is_none());
+    }
+
+    // ── build: page CSS ──
+
+    #[test]
+    fn build_injects_page_css_link() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("config.toml"), "").unwrap();
+        copy_templates(&root.path().join("templates"));
+
+        write_page(
+            root.path(),
+            "posts/hello",
+            indoc! {r#"
+                +++
+                title = "Hello"
+                +++
+                Body
+            "#},
+        );
+        let bundle = root.path().join("content").join("posts").join("hello");
+        fs::write(bundle.join("style.css"), ".custom { color: red; }").unwrap();
+
+        build(root.path(), None).unwrap();
+
+        let html = fs::read_to_string(
+            root.path()
+                .join("public")
+                .join("posts")
+                .join("hello")
+                .join("index.html"),
+        )
+        .unwrap();
+        assert!(
+            html.contains(r#"<link rel="stylesheet" href="/posts/hello/style.css">"#),
+            "should inject per-page CSS link, html:\n{html}"
         );
     }
 
     #[test]
-    fn page_url_non_index() {
-        assert_eq!(
-            page_url("https://example.com", Path::new("standalone.html")),
-            "https://example.com/standalone.html"
-        );
-    }
+    fn build_omits_page_css_without_style() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("config.toml"), "").unwrap();
+        copy_templates(&root.path().join("templates"));
 
-    #[test]
-    fn page_url_trailing_slash_base() {
-        assert_eq!(
-            page_url("https://example.com/", Path::new("foo/index.html")),
-            "https://example.com/foo/"
+        write_page(
+            root.path(),
+            "posts/hello",
+            indoc! {r#"
+                +++
+                title = "Hello"
+                +++
+                Body
+            "#},
+        );
+
+        build(root.path(), None).unwrap();
+
+        let html = fs::read_to_string(
+            root.path()
+                .join("public")
+                .join("posts")
+                .join("hello")
+                .join("index.html"),
+        )
+        .unwrap();
+        assert!(
+            !html.contains("style.css"),
+            "should NOT inject page CSS link when no style.css, html:\n{html}"
         );
     }
 }

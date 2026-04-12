@@ -15,6 +15,7 @@ pub struct PostTemplateVars<'a> {
     pub description: &'a str,
     pub url: &'a str,
     pub featured_image: Option<FeaturedImage>,
+    pub page_css: Option<String>,
     pub date: Option<String>,
     pub section: Option<LinkedTerm>,
     pub math: bool,
