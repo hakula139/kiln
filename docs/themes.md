@@ -237,6 +237,7 @@ Whenever a template variable includes a page `date`, kiln renders it as an ISO 8
 | `description`     | string           | Post description                        |
 | `url`             | string           | Canonical URL of the post               |
 | `featured_image`  | object or `none` | Featured image (see below)              |
+| `page_css`        | string or `none` | URL to co-located `style.css` (if any)  |
 | `date`            | string or `none` | Publication date (ISO 8601)             |
 | `section`         | object or `none` | Section the post belongs to (see below) |
 | `content`         | string           | Rendered HTML content                   |

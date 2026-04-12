@@ -22,7 +22,7 @@ The project direction is simple:
 ### Site Generation
 
 - Pretty URLs
-- Static file copying and co-located content assets
+- Static file copying, co-located content assets, and per-page CSS bundling
 - Home pages, section pages, standalone pages, taxonomy indexes, and paginated term pages
 - Configurable site time zones for rendered dates
 - RSS 2.0 feeds (main site + per-section + per-taxonomy-term)

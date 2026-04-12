@@ -17,6 +17,9 @@ static BASE_HTML: &str = indoc! {r#"
     <head>
       <meta charset="utf-8">
       {% block title %}<title>{{ config.title }}</title>{% endblock %}
+      {%- if page_css %}
+      <link rel="stylesheet" href="{{ page_css | safe }}">
+      {%- endif %}
       {% block head %}{% endblock %}
     </head>
 

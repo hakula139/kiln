@@ -45,7 +45,8 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 │   ├── listing.rs      # ListedPage model, single-pass ListingArtifacts construction, sorting / grouping helpers
 │   ├── overview.rs     # Bucket overview index pages (/sections/, /tags/)
 │   ├── paginate.rs     # Generic write_paginated, paginate_config
-│   └── sitemap.rs      # sitemap.xml + robots.txt generation
+│   ├── sitemap.rs      # sitemap.xml + robots.txt generation
+│   └── url.rs          # page_url, resolve_relative_url — build-time URL resolution helpers
 ├── config.rs           # TOML site configuration loading, theme resolution, param merging
 ├── content/            # Content model (module declarations in content.rs)
 │   ├── discovery.rs    # Recursive content walking with draft / _-prefix / no-frontmatter exclusion
