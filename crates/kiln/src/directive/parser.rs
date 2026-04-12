@@ -126,7 +126,13 @@ fn parse_directive_head(text: &str) -> DirectiveHead {
     };
 
     // Parse {#id .class key=value "positional"} if present.
-    if let Some(inner) = rest.strip_prefix('{').and_then(|s| s.strip_suffix('}')) {
+    // Use `rfind` instead of `strip_suffix` so trailing content after the
+    // closing brace (e.g. HTML comments like `<!-- cspell:disable-line -->`)
+    // does not silently discard all attributes.
+    if rest.starts_with('{')
+        && let Some(close) = rest.rfind('}')
+    {
+        let inner = &rest[1..close];
         let args = parse_directive_args(inner.trim());
         return DirectiveHead {
             name: name.to_string(),
@@ -689,7 +695,13 @@ mod tests {
 
     #[test]
     fn indented_code_fence_ignores_directives() {
-        let input = "   ```\n::: callout\nBody\n:::\n   ```\n";
+        let input = indoc! {"
+               ```
+            ::: callout
+            Body
+            :::
+               ```
+        "};
         assert!(
             parse_directives(input).is_empty(),
             "directives inside indented code fences should be ignored"
@@ -699,7 +711,12 @@ mod tests {
     #[test]
     fn over_indented_code_fence_not_recognized() {
         // Opening fence.
-        let input = "    ```\n::: callout\nBody\n:::\n";
+        let input = indoc! {"
+                ```
+            ::: callout
+            Body
+            :::
+        "};
         assert_eq!(
             parse_directives(input).len(),
             1,
@@ -707,7 +724,13 @@ mod tests {
         );
 
         // Closing fence.
-        let input = "```\n::: callout\nBody\n:::\n    ```\n";
+        let input = indoc! {"
+            ```
+            ::: callout
+            Body
+            :::
+                ```
+        "};
         assert!(
             parse_directives(input).is_empty(),
             "over-indented closing fence should not close the code block"
@@ -763,7 +786,11 @@ mod tests {
 
     #[test]
     fn indented_directive_fence_ignored() {
-        let input = "  ::: callout\n  Body\n  :::\n";
+        let input = indoc! {"
+             ::: callout
+            Body
+            :::
+        "};
         assert!(
             parse_directives(input).is_empty(),
             "indented directive fences should not be recognized"
@@ -772,16 +799,41 @@ mod tests {
 
     #[test]
     fn directive_trailing_whitespace_on_fences() {
-        let input = "::: callout   \nBody\n:::   \n";
+        let input = concat!("::: callout   \n", "Body\n", ":::   \n",);
         let blocks = parse_directives(input);
         assert_eq!(blocks.len(), 1);
         assert_eq!(blocks[0].body, "Body");
     }
 
     #[test]
+    fn trailing_content_after_attrs_preserved() {
+        let input = indoc! {r#"
+            ::: embed { src="example.com" mode="full" } <!-- comment -->
+            :::
+        "#};
+        let blocks = parse_directives(input);
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(
+            blocks[0].kind,
+            DirectiveKind::Unknown {
+                name: "embed".into(),
+                positional_args: Vec::new(),
+                named_args: BTreeMap::from([
+                    ("src".into(), "example.com".into()),
+                    ("mode".into(), "full".into()),
+                ]),
+            }
+        );
+    }
+
+    #[test]
     fn utf8_body_and_range() {
         let prefix = "前言：世界\n";
-        let directive = "::: callout\n你好世界\n:::\n";
+        let directive = indoc! {"
+            ::: callout
+            你好世界
+            :::
+        "};
         let input = format!("{prefix}{directive}");
         let blocks = parse_directives(&input);
         assert_eq!(blocks.len(), 1);
@@ -805,7 +857,10 @@ mod tests {
 
     #[test]
     fn eof_without_trailing_newline() {
-        let input = "::: callout\nBody\n:::";
+        let input = indoc! {"
+            ::: callout
+            Body
+            :::"};
         let blocks = parse_directives(input);
         assert_eq!(blocks.len(), 1);
         assert_eq!(blocks[0].body, "Body");
@@ -818,7 +873,11 @@ mod tests {
 
     #[test]
     fn crlf_line_endings() {
-        let input = "::: callout\r\nHello\r\n:::\r\n";
+        let input = indoc! {"
+            ::: callout\r
+            Hello\r
+            :::\r
+        "};
         let blocks = parse_directives(input);
         assert_eq!(blocks.len(), 1);
         assert_eq!(blocks[0].body, "Hello");

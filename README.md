@@ -32,87 +32,12 @@ kiln is purpose-built for hakula.xyz: strong CJK-friendly authoring, explicit re
 ### Theming
 
 - MiniJinja templates with layered site overrides and theme parameter merging
-- Ships with [IgnIt](https://github.com/hakula139/IgnIt): Tailwind CSS v4, glassmorphism panels, dark mode, responsive layout, search modal
+- Ships with [IgnIt](https://github.com/hakula139/IgnIt): Tailwind CSS v4, glassmorphism panels with cursor-tracking glow, dark mode, responsive layout, search modal, back-to-top, mobile menu animations, print styles, keyboard accessibility
 
 ### Tooling
 
 - Dev server with live reload (`kiln serve`)
 - Hugo-to-kiln content migration (`kiln convert`)
-
-## Current Focus
-
-- Improve the production pipeline with Rust-native asset minification, i18n groundwork, and further ergonomics polish.
-- Make the taxonomy system config-driven (replace hardcoded `TaxonomyKind` with `[[taxonomies]]` config).
-
-## Usage
-
-```bash
-# Build the site (default root: current directory)
-kiln build
-
-# Build from a specific project root
-kiln build --root /path/to/site
-
-# Start a dev server with live reload (default port: 5456)
-kiln serve
-
-# Dev server with custom port and auto-open browser
-kiln serve --port 3000 --open
-
-# Scaffold a new theme
-kiln init-theme my-theme
-
-# Convert a Hugo site root into a kiln site root
-kiln convert --source /path/to/hugo-site --dest /path/to/kiln-site
-```
-
-`kiln convert` expects site roots, not `content/` directories. It reads from `source/content`, writes converted markdown and co-located assets to `dest/content`, and copies `source/static` to `dest/static` without overwriting existing destination files.
-
-### Search
-
-kiln integrates with [Pagefind](https://pagefind.app) for full-text search. Pagefind runs as a post-build step, indexing HTML output and generating client-side search assets.
-
-**Setup:**
-
-1. Install the Pagefind binary (one of):
-
-   ```bash
-   cargo install pagefind
-   npm install -g pagefind
-   ```
-
-2. Enable search in `config.toml`:
-
-   ```toml
-   [search]
-   enabled = true
-   ```
-
-`kiln build` and `kiln serve` both invoke the `pagefind` binary with `--site <output_dir>` after all HTML is generated. The `pagefind/` directory it creates is served alongside the rest of the site.
-
-**Custom binary path:** If `pagefind` is not on your `$PATH`, specify it in config:
-
-```toml
-[search]
-enabled = true
-binary = "/path/to/pagefind"
-```
-
-## Site Structure
-
-A kiln site is organized as follows:
-
-```text
-.
-├── config.toml      # Site configuration (TOML)
-├── content/         # Markdown content
-│   ├── about-me/    # Standalone pages
-│   └── posts/       # Blog posts organized by section
-├── public/          # Build output (configurable via output_dir)
-├── static/          # Static assets (copied to output as-is)
-├── templates/       # MiniJinja templates (site overrides theme)
-└── themes/          # Themes (git submodules)
-```
 
 ## Documentation
 
@@ -122,26 +47,40 @@ A kiln site is organized as follows:
 | [Syntax Guide](docs/syntax.md) | Markdown extensions, frontmatter fields, directives |
 | [Theming](docs/themes.md)      | Theme installation, configuration, and creation     |
 
+## Current Focus
+
+Improve the production pipeline with Rust-native asset minification, i18n groundwork, and further ergonomics polish. See the [roadmap](docs/roadmap.md) for details.
+
+## Usage
+
+```bash
+kiln build                                                  # Build the site
+kiln build --root /path/to/site                             # Build from a specific root
+kiln serve                                                  # Dev server with live reload
+kiln serve --port 3000 --open                               # Custom port, auto-open browser
+kiln init-theme my-theme                                    # Scaffold a new theme
+kiln convert --source /path/to/hugo --dest /path/to/kiln    # Convert a Hugo site
+```
+
+### Search
+
+kiln integrates with [Pagefind](https://pagefind.app) for full-text search. Install the binary (`cargo install pagefind` or `npm install -g pagefind`), then enable it in `config.toml`:
+
+```toml
+[search]
+enabled = true
+# binary = "/path/to/pagefind"    # optional, if not on $PATH
+```
+
+`kiln build` and `kiln serve` both run Pagefind automatically after HTML generation.
+
 ## Building from Source
 
 Requires [Rust](https://www.rust-lang.org/tools/install) 1.85+ (edition 2024).
 
 ```bash
-cargo build --release
+cargo build --release    # Binary at target/release/kiln
 ```
-
-The binary will be at `target/release/kiln`.
-
-## Development
-
-```bash
-cargo build                    # Build
-cargo fmt --all --check        # Check formatting
-cargo clippy --all-targets     # Lint (pedantic)
-cargo test                     # Run tests
-```
-
-CI runs these same checks on every push and pull request via GitHub Actions.
 
 ## License
 

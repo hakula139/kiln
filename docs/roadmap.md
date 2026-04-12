@@ -32,7 +32,13 @@ The project direction is simple:
 
 ### Theming and Extensibility
 
-- [IgnIt](https://github.com/hakula139/IgnIt) default theme: Tailwind CSS v4, glassmorphism panels, home page image cards with hover effects, responsive layout, dark mode (system preference + manual toggle, flash-free), Pagefind search modal
+- [IgnIt](https://github.com/hakula139/IgnIt) default theme (Tailwind CSS v4)
+  - Glassmorphism panels with cursor-tracking glow, configurable background image
+  - Dark / light mode (system preference + manual toggle, flash-free)
+  - Responsive layout, home page image cards with hover reveal
+  - Pagefind search modal, link card directive, modern favicon set
+  - Back-to-top button, mobile menu animations, print styles
+  - Keyboard focus-visible styling, `prefers-reduced-motion` support
 - Layered MiniJinja templates with site-level overrides
 - Theme parameter merging
 - Directive template helpers such as `read_file()` and `parse_csv()`
@@ -46,12 +52,6 @@ The project direction is simple:
 - `kiln convert` for Hugo-to-kiln content conversion
 
 ## Current Focus
-
-### Engine Extensibility
-
-- Config-driven taxonomies (replace hardcoded `TaxonomyKind` enum with `[[taxonomies]]` config)
-
-## Next Phase
 
 ### Build / Asset Pipeline
 
@@ -83,7 +83,6 @@ The immediate goal is to remove hardcoded theme strings and make localization pr
 ## Later
 
 - Demo / example site material once the core workflow feels stable
-- Theme polish: standalone page styling, mobile menu animation, back-to-top button, accessibility (focus states, print styles)
 - Additional engine work only when it solves concrete problems in the publishing workflow
 
 ## Not the Goal Right Now
