@@ -10,7 +10,7 @@ use crate::taxonomy::{TaxonomyKind, TaxonomySet};
 use crate::template::vars::{LinkedTerm, PageGroup, PageSummary};
 use crate::text::slugify;
 
-use super::page_url;
+use super::url::{page_url, resolve_relative_url};
 
 // ── Listing model ──
 
@@ -228,37 +228,17 @@ pub(crate) fn page_section(
 }
 
 /// Resolves a `FeaturedImage`'s `src` path against the page's output URL.
-///
-/// Absolute paths (starting with `/`) and external URLs (containing `://`)
-/// are returned as-is. Relative paths are resolved against the page's
-/// directory URL so that co-located assets like `assets/cover.webp` become
-/// `/posts/section/slug/assets/cover.webp`.
 #[must_use]
 pub(crate) fn resolve_featured_image(
     featured_image: Option<&FeaturedImage>,
     page_url: &str,
 ) -> Option<FeaturedImage> {
     let fi = featured_image?;
-    let resolved_src = resolve_image_src(&fi.src, page_url);
+    let resolved_src = resolve_relative_url(&fi.src, page_url);
     Some(FeaturedImage {
         src: resolved_src,
         ..fi.clone()
     })
-}
-
-fn resolve_image_src(src: &str, page_url: &str) -> String {
-    if src.starts_with('/') || src.contains("://") {
-        return src.to_owned();
-    }
-    let path = if let Some(scheme_end) = page_url.find("://") {
-        let after_scheme = scheme_end + 3;
-        page_url[after_scheme..]
-            .find('/')
-            .map_or(page_url, |i| &page_url[after_scheme + i..])
-    } else {
-        page_url
-    };
-    format!("{path}{src}")
 }
 
 /// Converts raw tag strings into `LinkedTerm`s with pre-computed URLs.
