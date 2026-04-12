@@ -7,19 +7,19 @@ kiln discovers content in the `content/` directory. This document describes how 
 ```text
 content/
 ├── about-me/
-│   └── index.md              # Standalone page → /about-me/
+│   └── index.md                          # Standalone page → /about-me/
 ├── posts/
-│   ├── _index.md             # Optional: sets title for /posts/ listing
+│   ├── _index.md                         # Optional: sets title for /posts/ listing
 │   ├── note/
-│   │   ├── _index.md         # Optional: sets title for /posts/note/ listing
+│   │   ├── _index.md                     # Optional: sets title for /posts/note/ listing
 │   │   └── my-post/
-│   │       ├── index.md      # Post → /posts/note/my-post/
-│   │       ├── cover.webp    # Co-located asset
+│   │       ├── index.md                  # Post → /posts/note/my-post/
+│   │       ├── cover.webp                # Co-located asset
 │   │       └── assets/
 │   │           └── diagram.svg
-│   └── standalone-post.md    # Post (no bundle) → /posts/standalone-post/
+│   └── standalone-post.md                # Post (no bundle) → /posts/standalone-post/
 └── comments/
-    └── index.md              # Standalone page → /comments/
+    └── index.md                          # Standalone page → /comments/
 ```
 
 ### Page Kinds
