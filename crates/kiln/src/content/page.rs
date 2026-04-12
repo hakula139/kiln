@@ -140,11 +140,13 @@ impl Page {
 
 /// Derives the page kind from its position in the content directory.
 ///
-/// Pages under `content/posts/` are posts. If the relative path after `posts/`
-/// has 3+ components (e.g., `posts/note/my-post/index.md`), the first component
-/// is the section. Posts with fewer components (e.g., `posts/hello/index.md`)
-/// are orphan posts with no section.
+/// Pages under `content/posts/` are posts. The first directory after `posts/`
+/// is the section when the remaining path is deep enough:
 ///
+/// - Bundles need 3+ components: `posts/note/slug/index.md` → section "note"
+/// - Non-bundles need 2+: `posts/note/hello.md` → section "note"
+///
+/// Shallower paths (`posts/slug/index.md`, `posts/hello.md`) are orphan posts.
 /// Everything outside `content/posts/` is a standalone page.
 pub fn derive_page_kind(source_path: &Path, content_dir: &Path) -> PageKind {
     let Ok(relative) = source_path.strip_prefix(content_dir) else {
@@ -156,7 +158,8 @@ pub fn derive_page_kind(source_path: &Path, content_dir: &Path) -> PageKind {
     };
 
     let components: Vec<_> = after_posts.components().collect();
-    let section = if components.len() >= 3 {
+    let min_depth = if is_page_bundle(source_path) { 3 } else { 2 };
+    let section = if components.len() >= min_depth {
         components[0].as_os_str().to_str().map(String::from)
     } else {
         None
@@ -597,6 +600,20 @@ mod tests {
     }
 
     #[test]
+    fn derive_page_kind_section_post_non_bundle() {
+        let kind = derive_page_kind(
+            Path::new("/site/content/posts/note/hello.md"),
+            Path::new("/site/content"),
+        );
+        assert_eq!(
+            kind,
+            PageKind::Post {
+                section: Some("note".into())
+            }
+        );
+    }
+
+    #[test]
     fn derive_page_kind_orphan_post_bundle() {
         let kind = derive_page_kind(
             Path::new("/site/content/posts/hello/index.md"),
@@ -606,7 +623,7 @@ mod tests {
     }
 
     #[test]
-    fn derive_page_kind_orphan_post_non_index() {
+    fn derive_page_kind_orphan_post_non_bundle() {
         let kind = derive_page_kind(
             Path::new("/site/content/posts/hello.md"),
             Path::new("/site/content"),
