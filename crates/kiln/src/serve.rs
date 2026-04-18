@@ -366,7 +366,7 @@ async fn ws_relay(mut socket: WebSocket, tx: broadcast::Sender<()>) {
                 }
             }
             msg = socket.recv() => {
-                if msg.is_none() || msg.is_some_and(|r| r.is_err()) {
+                if msg.is_none_or(|r| r.is_err()) {
                     break;
                 }
             }
