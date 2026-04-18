@@ -74,12 +74,15 @@ pub fn minify_output_dir(output_dir: &Path) -> Result<MinifyStats> {
 
 /// Returns the minifier to use for `path`, or `None` if the file should
 /// be skipped.
+///
+/// Matching is case-insensitive so files with uppercase extensions (e.g.,
+/// `INDEX.HTML` from a migrated Hugo / legacy site) are still handled.
 fn classify(path: &Path) -> Option<AssetKind> {
-    let name = path.file_name()?.to_str()?;
+    let name = path.file_name()?.to_str()?.to_ascii_lowercase();
     if name.ends_with(".min.css") || name.ends_with(".min.js") {
         return None;
     }
-    match path.extension()?.to_str()? {
+    match Path::new(&name).extension()?.to_str()? {
         "html" | "htm" => Some(AssetKind::Html),
         "css" => Some(AssetKind::Css),
         "js" | "mjs" => Some(AssetKind::Js),
@@ -337,6 +340,14 @@ mod tests {
         assert_eq!(classify(Path::new("a/image.png")), None);
         assert_eq!(classify(Path::new("a/data.json")), None);
         assert_eq!(classify(Path::new("a/README")), None);
+    }
+
+    #[test]
+    fn classify_matches_case_insensitively() {
+        assert_eq!(classify(Path::new("a/INDEX.HTML")), Some(AssetKind::Html),);
+        assert_eq!(classify(Path::new("a/Style.CSS")), Some(AssetKind::Css));
+        assert_eq!(classify(Path::new("a/App.MJS")), Some(AssetKind::Js));
+        assert_eq!(classify(Path::new("a/vendor.MIN.JS")), None);
     }
 
     // ── minify_html_bytes ──
