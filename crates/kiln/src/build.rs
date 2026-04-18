@@ -450,7 +450,7 @@ mod tests {
             .join("index.html");
 
         build(root.path(), BuildOptions::default()).unwrap();
-        let unminified_size = fs::metadata(&output).unwrap().len();
+        let plain_size = fs::metadata(&output).unwrap().len();
 
         build(
             root.path(),
@@ -463,8 +463,8 @@ mod tests {
         let minified_size = fs::metadata(&output).unwrap().len();
 
         assert!(
-            minified_size < unminified_size,
-            "minify should shrink HTML: {unminified_size} → {minified_size}",
+            minified_size < plain_size,
+            "minify should shrink HTML: {plain_size} → {minified_size}",
         );
 
         let html = fs::read_to_string(&output).unwrap();
