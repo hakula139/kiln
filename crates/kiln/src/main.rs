@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use kiln::BuildOptions;
 use tracing_subscriber::EnvFilter;
 
 #[derive(Parser)]
@@ -69,7 +70,13 @@ fn main() -> Result<()> {
     match cli.command {
         Command::Build { root, minify } => {
             let root = root.canonicalize()?;
-            kiln::build(&root, None, minify)?;
+            kiln::build(
+                &root,
+                BuildOptions {
+                    minify,
+                    ..Default::default()
+                },
+            )?;
         }
         Command::Convert { source, dest } => {
             let source = source.canonicalize()?;

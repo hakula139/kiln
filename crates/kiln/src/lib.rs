@@ -19,7 +19,7 @@ pub mod taxonomy;
 pub mod template;
 pub mod text;
 
-pub use build::build;
+pub use build::{BuildOptions, build};
 pub use convert::convert;
 pub use init::init_theme;
 pub use serve::DEFAULT_PORT;
