@@ -368,6 +368,12 @@ mod tests {
         assert!(minify_js_bytes(b"function () { ]]]", &path).is_none());
     }
 
+    #[test]
+    fn minify_js_returns_none_on_invalid_utf8() {
+        let path = PathBuf::from("broken.js");
+        assert!(minify_js_bytes(&[0xff, 0xfe, 0xfd], &path).is_none());
+    }
+
     // ── minify_output_dir ──
 
     #[test]
