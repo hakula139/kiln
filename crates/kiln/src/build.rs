@@ -188,10 +188,15 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
 }
 
 /// Prints the end-of-build summary line(s).
+///
+/// All build output goes to stderr so stdout stays free for future
+/// machine-readable output (e.g., `--json`) and piping (`kiln build
+/// 2>/dev/null` silences progress). This also matches `serve.rs`,
+/// which uses `eprintln!` uniformly for its live-reload diagnostics.
 fn report_build_summary(page_count: usize, minify_stats: Option<&MinifyStats>) {
-    println!("Build complete: {page_count} page(s).");
+    eprintln!("Build complete: {page_count} page(s).");
     if let Some(stats) = minify_stats {
-        println!("{stats}");
+        eprintln!("{stats}");
     }
 }
 
