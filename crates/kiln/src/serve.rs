@@ -121,7 +121,9 @@ async fn serve_until(
     let base_url = localhost_url(port);
 
     eprintln!("Building site...");
-    crate::build(root, Some(&base_url)).context("initial build failed")?;
+    // `kiln serve` never minifies — dev-loop speed and live-reload matter
+    // more than on-disk size, and minified output hurts debuggability.
+    crate::build(root, Some(&base_url), false).context("initial build failed")?;
 
     let config = Config::load(root).context("failed to load config")?;
     // output_dir is captured once; if config.toml changes output_dir at runtime,
@@ -302,7 +304,7 @@ fn safe_rebuild(root: &Path, base_url: &str) -> Result<()> {
         _ = fs::remove_dir_all(&staging_dir);
     }
 
-    if let Err(e) = build_to(root, Some(base_url), Some(&staging_dir)) {
+    if let Err(e) = build_to(root, Some(base_url), Some(&staging_dir), false) {
         _ = fs::remove_dir_all(&staging_dir);
         return Err(e);
     }
@@ -883,7 +885,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         setup_site(root.path());
 
-        crate::build(root.path(), None).unwrap();
+        crate::build(root.path(), None, false).unwrap();
         assert!(root.path().join("public").exists());
 
         safe_rebuild(root.path(), "http://localhost:0").unwrap();
@@ -897,7 +899,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         setup_site(root.path());
 
-        crate::build(root.path(), None).unwrap();
+        crate::build(root.path(), None, false).unwrap();
         let output = root
             .path()
             .join("public")
@@ -939,7 +941,7 @@ mod tests {
     fn safe_rebuild_cleans_leftover_staging() {
         let root = tempfile::tempdir().unwrap();
         setup_site(root.path());
-        crate::build(root.path(), None).unwrap();
+        crate::build(root.path(), None, false).unwrap();
 
         let staging = root.path().join("public.staging");
         fs::create_dir_all(staging.join("stale")).unwrap();
@@ -954,7 +956,7 @@ mod tests {
     fn safe_rebuild_cleans_leftover_backup() {
         let root = tempfile::tempdir().unwrap();
         setup_site(root.path());
-        crate::build(root.path(), None).unwrap();
+        crate::build(root.path(), None, false).unwrap();
 
         let backup = root.path().join("public.prev");
         fs::create_dir_all(&backup).unwrap();
