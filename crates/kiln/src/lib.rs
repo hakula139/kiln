@@ -7,6 +7,7 @@ pub mod feed;
 pub mod html;
 pub mod init;
 pub mod markdown;
+pub mod minify;
 pub mod output;
 pub mod pagination;
 pub mod render;
