@@ -632,6 +632,25 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn serve_until_ws_exits_on_client_disconnect() {
+        let root = tempfile::tempdir().unwrap();
+        setup_site(root.path());
+
+        let (addr, shutdown_tx) = spawn_server(root.path()).await;
+        wait_for_server(addr).await;
+
+        let url = format!("ws://{addr}{LIVE_RELOAD_PATH}");
+        let (ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+        drop(ws);
+
+        // Give the server's ws_relay loop time to observe the disconnect via
+        // `socket.recv()` returning `None` and break out of the select loop.
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        _ = shutdown_tx.send(());
+    }
+
+    #[tokio::test]
     async fn serve_until_ws_sends_reload_on_file_change() {
         use tokio_stream::StreamExt;
 
