@@ -140,7 +140,7 @@ fn build_listed_page(
 
 /// Sorts listed pages by date descending (newest first, undated last).
 pub(crate) fn sort_by_date_desc(pages: &mut [ListedPage]) {
-    pages.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+    pages.sort_by_key(|page| std::cmp::Reverse(page.timestamp));
 }
 
 /// Resolves the listed pages for a taxonomy term, sorted by date descending.
