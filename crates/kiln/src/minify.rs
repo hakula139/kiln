@@ -410,6 +410,14 @@ mod tests {
         assert_eq!(minify_css_bytes(&[0xff, 0xfe, 0xfd], &path), None);
     }
 
+    #[test]
+    fn minify_css_returns_none_on_parse_error() {
+        let path = PathBuf::from("broken.css");
+        // `@@@` is lexically invalid — lightningcss reports an unexpected-
+        // end-of-input error rather than recovering.
+        assert_eq!(minify_css_bytes(b"@@@", &path), None);
+    }
+
     // ── minify_js_bytes ──
 
     #[test]
@@ -462,6 +470,23 @@ mod tests {
         assert_eq!(
             format!("{stats}"),
             "minified 4 files, 3 shrunk (2.0 KB → 512 B, -75.0%)",
+        );
+    }
+
+    #[test]
+    fn display_reports_zero_percent_when_no_input_bytes() {
+        // Empty files get counted in `files_processed` but contribute zero
+        // bytes, so the percent calculation must short-circuit to avoid
+        // dividing by zero.
+        let stats = MinifyStats {
+            files_processed: 1,
+            files_shrunk: 0,
+            bytes_in: 0,
+            bytes_out: 0,
+        };
+        assert_eq!(
+            format!("{stats}"),
+            "minified 1 files, 0 shrunk (0 B → 0 B, -0.0%)"
         );
     }
 

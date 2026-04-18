@@ -417,6 +417,68 @@ mod tests {
     }
 
     #[test]
+    fn build_with_minify_shrinks_html() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(
+            root.path().join("config.toml"),
+            indoc! {r#"
+                base_url = "https://example.com"
+                title = "Test Site"
+            "#},
+        )
+        .unwrap();
+        copy_templates(&root.path().join("templates"));
+
+        write_page(
+            root.path(),
+            "posts/hello",
+            indoc! {r#"
+                +++
+                title = "Hello World"
+                date = "2026-02-24T12:34:56Z"
+                +++
+
+                Body paragraph with **markup**.
+            "#},
+        );
+
+        let output = root
+            .path()
+            .join("public")
+            .join("posts")
+            .join("hello")
+            .join("index.html");
+
+        build(root.path(), BuildOptions::default()).unwrap();
+        let unminified_size = fs::metadata(&output).unwrap().len();
+
+        build(
+            root.path(),
+            BuildOptions {
+                minify: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let minified_size = fs::metadata(&output).unwrap().len();
+
+        assert!(
+            minified_size < unminified_size,
+            "minify should shrink HTML: {unminified_size} → {minified_size}",
+        );
+
+        let html = fs::read_to_string(&output).unwrap();
+        assert!(
+            html.contains("Hello World"),
+            "visible content should survive minify, html:\n{html}",
+        );
+        assert!(
+            !html.contains("  "),
+            "inner whitespace should collapse, html:\n{html}",
+        );
+    }
+
+    #[test]
     fn build_base_url_override() {
         let root = tempfile::tempdir().unwrap();
         fs::write(
