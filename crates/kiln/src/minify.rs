@@ -34,7 +34,7 @@ pub struct MinifyStats {
 }
 
 /// Which minifier to use for a given file.
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AssetKind {
     Html,
     Css,
@@ -117,6 +117,17 @@ fn minify_file(path: &Path, kind: AssetKind, stats: &mut MinifyStats) -> Result<
     Ok(())
 }
 
+/// Decodes UTF-8 input, or warns and returns `None`. `kind` is the label
+/// used in the log message (e.g., `"CSS"`, `"JS"`) so multiple minifier
+/// paths can share one warning format without losing context.
+fn decode_utf8<'a>(input: &'a [u8], path: &Path, kind: &str) -> Option<&'a str> {
+    std::str::from_utf8(input)
+        .inspect_err(|e| {
+            tracing::warn!("skipping {} ({kind}): invalid UTF-8: {e}", path.display());
+        })
+        .ok()
+}
+
 fn minify_html_bytes(input: &[u8]) -> Vec<u8> {
     let mut cfg = Cfg::new();
     cfg.minify_css = true;
@@ -126,13 +137,7 @@ fn minify_html_bytes(input: &[u8]) -> Vec<u8> {
 }
 
 fn minify_css_bytes(input: &[u8], path: &Path) -> Option<Vec<u8>> {
-    let source = match std::str::from_utf8(input) {
-        Ok(s) => s,
-        Err(e) => {
-            tracing::warn!("skipping {} (invalid UTF-8): {e}", path.display());
-            return None;
-        }
-    };
+    let source = decode_utf8(input, path, "CSS")?;
     let mut stylesheet = match StyleSheet::parse(source, ParserOptions::default()) {
         Ok(s) => s,
         Err(e) => {
@@ -157,13 +162,7 @@ fn minify_css_bytes(input: &[u8], path: &Path) -> Option<Vec<u8>> {
 }
 
 fn minify_js_bytes(input: &[u8], path: &Path) -> Option<Vec<u8>> {
-    let source = match std::str::from_utf8(input) {
-        Ok(s) => s,
-        Err(e) => {
-            tracing::warn!("skipping {} (invalid UTF-8): {e}", path.display());
-            return None;
-        }
-    };
+    let source = decode_utf8(input, path, "JS")?;
 
     // Parse as module by default — modules are a near-superset of scripts
     // and modern theme JS routinely uses `import` / `export`.
@@ -192,10 +191,6 @@ fn minify_js_bytes(input: &[u8], path: &Path) -> Option<Vec<u8>> {
 }
 
 impl fmt::Display for MinifyStats {
-    #[expect(
-        clippy::cast_precision_loss,
-        reason = "byte sizes stay well below 2^52 in practice"
-    )]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.files_processed == 0 {
             return f.write_str("minified 0 files");
@@ -204,27 +199,23 @@ impl fmt::Display for MinifyStats {
         let pct = if self.bytes_in == 0 {
             0.0
         } else {
-            saved as f64 / self.bytes_in as f64 * 100.0
+            u64_to_f64(saved) / u64_to_f64(self.bytes_in) * 100.0
         };
         write!(
             f,
-            "minified {} / {} files ({} → {}, -{pct:.1}%)",
-            self.files_shrunk,
+            "minified {} files, {} shrunk ({} → {}, -{pct:.1}%)",
             self.files_processed,
+            self.files_shrunk,
             format_bytes(self.bytes_in),
             format_bytes(self.bytes_out),
         )
     }
 }
 
-#[expect(
-    clippy::cast_precision_loss,
-    reason = "byte sizes stay well below 2^52 in practice"
-)]
 fn format_bytes(bytes: u64) -> String {
     const KB: f64 = 1024.0;
     const MB: f64 = KB * 1024.0;
-    let b = bytes as f64;
+    let b = u64_to_f64(bytes);
     if b >= MB {
         format!("{:.1} MB", b / MB)
     } else if b >= KB {
@@ -234,6 +225,14 @@ fn format_bytes(bytes: u64) -> String {
     }
 }
 
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "byte sizes in a build pass stay far below 2^52, where f64 starts losing integer precision"
+)]
+fn u64_to_f64(value: u64) -> f64 {
+    value as f64
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -241,138 +240,6 @@ mod tests {
     use indoc::indoc;
 
     use super::*;
-
-    // ── classify ──
-
-    #[test]
-    fn classify_recognizes_html_css_js() {
-        assert!(matches!(
-            classify(Path::new("a/index.html")),
-            Some(AssetKind::Html)
-        ));
-        assert!(matches!(
-            classify(Path::new("a/page.htm")),
-            Some(AssetKind::Html)
-        ));
-        assert!(matches!(
-            classify(Path::new("a/style.css")),
-            Some(AssetKind::Css)
-        ));
-        assert!(matches!(
-            classify(Path::new("a/app.js")),
-            Some(AssetKind::Js)
-        ));
-        assert!(matches!(
-            classify(Path::new("a/app.mjs")),
-            Some(AssetKind::Js)
-        ));
-    }
-
-    #[test]
-    fn classify_skips_pre_minified() {
-        assert!(classify(Path::new("a/vendor.min.css")).is_none());
-        assert!(classify(Path::new("a/vendor.min.js")).is_none());
-    }
-
-    #[test]
-    fn classify_skips_unknown_extensions() {
-        assert!(classify(Path::new("a/image.png")).is_none());
-        assert!(classify(Path::new("a/data.json")).is_none());
-        assert!(classify(Path::new("a/README")).is_none());
-    }
-
-    // ── minify_html_bytes ──
-
-    #[test]
-    fn minify_html_strips_whitespace_and_comments() {
-        let input = indoc! {r"
-            <!DOCTYPE html>
-            <html>
-              <head>  <title>Hi</title>  </head>
-              <body>
-                <!-- a comment -->
-                <p>Hello    world</p>
-              </body>
-            </html>
-        "};
-        let output = minify_html_bytes(input.as_bytes());
-        let text = std::str::from_utf8(&output).unwrap();
-        assert!(output.len() < input.len(), "should shrink, got {text}");
-        assert!(!text.contains("a comment"), "should drop comments: {text}");
-        assert!(
-            !text.contains("Hello    world"),
-            "should collapse inner whitespace, got: {text}",
-        );
-        assert!(
-            text.contains("<p>Hello world"),
-            "should preserve content, got: {text}",
-        );
-    }
-
-    // ── minify_css_bytes ──
-
-    #[test]
-    fn minify_css_shrinks_valid_stylesheet() {
-        let input = indoc! {r"
-            .foo {
-                color: #ff0000;
-                margin: 0px 0px 0px 0px;
-            }
-        "};
-        let path = PathBuf::from("style.css");
-        let output = minify_css_bytes(input.as_bytes(), &path).expect("should minify");
-        let text = std::str::from_utf8(&output).unwrap();
-        assert!(output.len() < input.len(), "should shrink, got {text}");
-        assert!(
-            text.contains(".foo"),
-            "should preserve selector, got: {text}"
-        );
-        assert!(
-            text.contains("red") || text.contains("#f00"),
-            "should compress color, got: {text}",
-        );
-    }
-
-    #[test]
-    fn minify_css_returns_none_on_invalid_utf8() {
-        let path = PathBuf::from("broken.css");
-        // `0xff 0xfe 0xfd` is not a valid UTF-8 sequence; hits the early
-        // UTF-8 guard before lightningcss ever sees the bytes.
-        assert!(minify_css_bytes(&[0xff, 0xfe, 0xfd], &path).is_none());
-    }
-
-    // ── minify_js_bytes ──
-
-    #[test]
-    fn minify_js_shrinks_valid_source() {
-        let input = indoc! {r"
-            const greeting = 'hello';
-            function greet(name) {
-                console.log(greeting + ', ' + name);
-            }
-            greet('world');
-        "};
-        let path = PathBuf::from("app.js");
-        let output = minify_js_bytes(input.as_bytes(), &path).expect("should minify");
-        let text = std::str::from_utf8(&output).unwrap();
-        assert!(output.len() < input.len(), "should shrink, got {text}");
-        assert!(
-            text.contains("console.log"),
-            "should preserve runtime calls, got: {text}",
-        );
-    }
-
-    #[test]
-    fn minify_js_returns_none_on_parse_error() {
-        let path = PathBuf::from("broken.js");
-        assert!(minify_js_bytes(b"function () { ]]]", &path).is_none());
-    }
-
-    #[test]
-    fn minify_js_returns_none_on_invalid_utf8() {
-        let path = PathBuf::from("broken.js");
-        assert!(minify_js_bytes(&[0xff, 0xfe, 0xfd], &path).is_none());
-    }
 
     // ── minify_output_dir ──
 
@@ -448,10 +315,127 @@ mod tests {
         assert_eq!(stats.bytes_out, 0);
     }
 
-    // ── Display ──
+    // ── classify ──
 
     #[test]
-    fn display_empty_pass() {
+    fn classify_recognizes_html_css_js() {
+        assert_eq!(classify(Path::new("a/index.html")), Some(AssetKind::Html));
+        assert_eq!(classify(Path::new("a/page.htm")), Some(AssetKind::Html));
+        assert_eq!(classify(Path::new("a/style.css")), Some(AssetKind::Css));
+        assert_eq!(classify(Path::new("a/app.js")), Some(AssetKind::Js));
+        assert_eq!(classify(Path::new("a/app.mjs")), Some(AssetKind::Js));
+    }
+
+    #[test]
+    fn classify_skips_pre_minified() {
+        assert_eq!(classify(Path::new("a/vendor.min.css")), None);
+        assert_eq!(classify(Path::new("a/vendor.min.js")), None);
+    }
+
+    #[test]
+    fn classify_skips_unknown_extensions() {
+        assert_eq!(classify(Path::new("a/image.png")), None);
+        assert_eq!(classify(Path::new("a/data.json")), None);
+        assert_eq!(classify(Path::new("a/README")), None);
+    }
+
+    // ── minify_html_bytes ──
+
+    #[test]
+    fn minify_html_strips_whitespace_and_comments() {
+        let input = indoc! {r"
+            <!DOCTYPE html>
+            <html>
+              <head>  <title>Hi</title>  </head>
+              <body>
+                <!-- a comment -->
+                <p>Hello    world</p>
+              </body>
+            </html>
+        "};
+        let output = minify_html_bytes(input.as_bytes());
+        let text = std::str::from_utf8(&output).unwrap();
+        assert!(output.len() < input.len(), "should shrink, got {text}");
+        assert!(!text.contains("a comment"), "should drop comments: {text}");
+        assert!(
+            !text.contains("Hello    world"),
+            "should collapse inner whitespace, got: {text}",
+        );
+        assert!(
+            text.contains("<p>Hello world"),
+            "should preserve content, got: {text}",
+        );
+    }
+
+    // ── minify_css_bytes ──
+
+    #[test]
+    fn minify_css_shrinks_valid_stylesheet() {
+        let input = indoc! {r"
+            .foo {
+                color: #ff0000;
+                margin: 0px 0px 0px 0px;
+            }
+        "};
+        let path = PathBuf::from("style.css");
+        let output = minify_css_bytes(input.as_bytes(), &path).expect("should minify");
+        let text = std::str::from_utf8(&output).unwrap();
+        assert!(output.len() < input.len(), "should shrink, got {text}");
+        assert!(
+            text.contains(".foo"),
+            "should preserve selector, got: {text}"
+        );
+        assert!(
+            text.contains("red") || text.contains("#f00"),
+            "should compress color, got: {text}",
+        );
+    }
+
+    #[test]
+    fn minify_css_returns_none_on_invalid_utf8() {
+        let path = PathBuf::from("broken.css");
+        // `0xff 0xfe 0xfd` is not a valid UTF-8 sequence; hits the early
+        // UTF-8 guard before lightningcss ever sees the bytes.
+        assert_eq!(minify_css_bytes(&[0xff, 0xfe, 0xfd], &path), None);
+    }
+
+    // ── minify_js_bytes ──
+
+    #[test]
+    fn minify_js_shrinks_valid_source() {
+        let input = indoc! {r"
+            const greeting = 'hello';
+            function greet(name) {
+                console.log(greeting + ', ' + name);
+            }
+            greet('world');
+        "};
+        let path = PathBuf::from("app.js");
+        let output = minify_js_bytes(input.as_bytes(), &path).expect("should minify");
+        let text = std::str::from_utf8(&output).unwrap();
+        assert!(output.len() < input.len(), "should shrink, got {text}");
+        assert!(
+            text.contains("console.log"),
+            "should preserve runtime calls, got: {text}",
+        );
+    }
+
+    #[test]
+    fn minify_js_returns_none_on_parse_error() {
+        let path = PathBuf::from("broken.js");
+        assert_eq!(minify_js_bytes(b"function () { ]]]", &path), None);
+    }
+
+    #[test]
+    fn minify_js_returns_none_on_invalid_utf8() {
+        let path = PathBuf::from("broken.js");
+        assert_eq!(minify_js_bytes(&[0xff, 0xfe, 0xfd], &path), None);
+    }
+
+    // ── Display for MinifyStats ──
+
+    #[test]
+    fn display_for_empty_pass_shows_zero() {
         let stats = MinifyStats::default();
         assert_eq!(format!("{stats}"), "minified 0 files");
     }
@@ -464,10 +448,10 @@ mod tests {
             bytes_in: 2048,
             bytes_out: 512,
         };
-        let out = format!("{stats}");
-        assert!(out.contains("3 / 4 files"), "files counts, got: {out}");
-        assert!(out.contains("2.0 KB"), "input size, got: {out}");
-        assert!(out.contains("-75.0%"), "percentage, got: {out}");
+        assert_eq!(
+            format!("{stats}"),
+            "minified 4 files, 3 shrunk (2.0 KB → 512 B, -75.0%)",
+        );
     }
 
     // ── format_bytes ──
