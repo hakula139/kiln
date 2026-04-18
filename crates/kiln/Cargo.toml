@@ -18,9 +18,16 @@ gh-emoji = { workspace = true }
 http-body-util = { workspace = true }
 indoc = { workspace = true }
 jiff = { workspace = true }
+lightningcss = { workspace = true }
+minify-html = { workspace = true }
 minijinja = { workspace = true }
 notify = { workspace = true }
 open = { workspace = true }
+oxc_allocator = { workspace = true }
+oxc_codegen = { workspace = true }
+oxc_minifier = { workspace = true }
+oxc_parser = { workspace = true }
+oxc_span = { workspace = true }
 pulldown-cmark = { workspace = true }
 regex = { workspace = true }
 semver = { workspace = true }

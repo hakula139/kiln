@@ -22,6 +22,12 @@ pub fn clean_output_dir(path: &Path) -> Result<()> {
 
 /// Recursively copies all files from `src` into `dest`, preserving directory structure.
 ///
+/// Files and directories whose names start with `_` are skipped (including
+/// their entire subtrees). This mirrors the content-discovery convention and
+/// lets themes and sites keep private build inputs (e.g., Tailwind partials
+/// under `static/css/_src/`) in the same tree as the shipped bundle without
+/// exposing them in the published site.
+///
 /// Skips the copy entirely if `src` does not exist.
 ///
 /// # Errors
@@ -31,7 +37,11 @@ pub fn copy_static(src: &Path, dest: &Path) -> Result<()> {
     if !src.exists() {
         return Ok(());
     }
-    for entry in WalkDir::new(src).follow_links(false) {
+    let walker = WalkDir::new(src)
+        .follow_links(false)
+        .into_iter()
+        .filter_entry(|e| e.depth() == 0 || !is_build_private(e));
+    for entry in walker {
         let entry = entry.with_context(|| format!("failed to read entry in {}", src.display()))?;
         let relative = entry.path().strip_prefix(src).with_context(|| {
             format!(
@@ -49,6 +59,16 @@ pub fn copy_static(src: &Path, dest: &Path) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Returns `true` for entries whose file name starts with `_`. Such entries
+/// are build inputs (partials, Tailwind sources, etc.) that should not be
+/// copied into the published site.
+fn is_build_private(entry: &walkdir::DirEntry) -> bool {
+    entry
+        .file_name()
+        .to_str()
+        .is_some_and(|name| name.starts_with('_'))
 }
 
 /// Copies a single file from `src` to `dest`, creating parent directories as needed.
@@ -149,6 +169,46 @@ mod tests {
         assert_eq!(
             fs::read_to_string(dest.join("images").join("logo.png")).unwrap(),
             "logo"
+        );
+    }
+
+    #[test]
+    fn copy_static_skips_underscore_prefixed_files_and_dirs() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("static");
+        let dest = dir.path().join("public");
+        fs::create_dir_all(src.join("css").join("_src").join("components")).unwrap();
+        fs::create_dir_all(&dest).unwrap();
+        fs::write(src.join("css").join("style.css"), "public").unwrap();
+        fs::write(
+            src.join("css").join("_src").join("main.css"),
+            "private-entry",
+        )
+        .unwrap();
+        fs::write(
+            src.join("css")
+                .join("_src")
+                .join("components")
+                .join("nav.css"),
+            "private-nested",
+        )
+        .unwrap();
+        fs::write(src.join("_notes.txt"), "private-file").unwrap();
+
+        copy_static(&src, &dest).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(dest.join("css").join("style.css")).unwrap(),
+            "public",
+            "non-underscore files should be copied",
+        );
+        assert!(
+            !dest.join("css").join("_src").exists(),
+            "underscore-prefixed directories should not be copied",
+        );
+        assert!(
+            !dest.join("_notes.txt").exists(),
+            "underscore-prefixed files should not be copied",
         );
     }
 

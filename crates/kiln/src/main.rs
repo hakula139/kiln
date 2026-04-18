@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use kiln::BuildOptions;
 use tracing_subscriber::EnvFilter;
 
 #[derive(Parser)]
@@ -18,6 +19,10 @@ enum Command {
         /// Project root directory (defaults to current directory).
         #[arg(long, default_value = ".")]
         root: PathBuf,
+
+        /// Minify HTML, CSS, and JS in the output directory.
+        #[arg(long)]
+        minify: bool,
     },
     /// Convert Hugo content to kiln format.
     Convert {
@@ -63,9 +68,15 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Command::Build { root } => {
+        Command::Build { root, minify } => {
             let root = root.canonicalize()?;
-            kiln::build(&root, None)?;
+            kiln::build(
+                &root,
+                BuildOptions {
+                    minify,
+                    ..Default::default()
+                },
+            )?;
         }
         Command::Convert { source, dest } => {
             let source = source.canonicalize()?;

@@ -50,18 +50,29 @@ kiln is purpose-built for hakula.xyz: strong CJK-friendly authoring, explicit re
 
 ## Current Focus
 
-Improve the production pipeline with Rust-native asset minification, i18n groundwork, and further ergonomics polish. See the [roadmap](docs/roadmap.md) for details.
+i18n groundwork, authoring enhancements (code-block attributes, bundled scripts), and further ergonomics polish. See the [roadmap](docs/roadmap.md) for details.
 
 ## Usage
 
 ```bash
 kiln build                                                  # Build the site
 kiln build --root /path/to/site                             # Build from a specific root
+kiln build --minify                                         # Build, then minify HTML / CSS / JS
 kiln serve                                                  # Dev server with live reload
 kiln serve --port 3000 --open                               # Custom port, auto-open browser
 kiln init-theme my-theme                                    # Scaffold a new theme
 kiln convert --source /path/to/hugo --dest /path/to/kiln    # Convert a Hugo site
 ```
+
+### Minification
+
+Passing `--minify` to `kiln build` runs a Rust-native pass over the output directory and rewrites each HTML / CSS / JS file in place:
+
+- HTML via [`minify-html`](https://crates.io/crates/minify-html)
+- CSS via [`lightningcss`](https://crates.io/crates/lightningcss)
+- JS via [`oxc_minifier`](https://crates.io/crates/oxc_minifier)
+
+Files matching `*.min.css` or `*.min.js` are skipped so that pre-minified vendor bundles (e.g., Pagefind's UI JS) pass through untouched. Unusable inputs log a warning and keep the original file, so `--minify` never blocks a build.
 
 ### Search
 

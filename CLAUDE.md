@@ -9,7 +9,7 @@ User-facing feature positioning belongs in `README.md`. The canonical in-repo ro
 ### CLI
 
 ```bash
-kiln build [--root <dir>]                                    # Build the site (default root: cwd)
+kiln build [--root <dir>] [--minify]                         # Build the site (default root: cwd)
 kiln serve [--root <dir>] [--port 5456] [--open]             # Dev server with live reload
 kiln init-theme <name> [--root]                              # Scaffold a new theme under themes/<name>/
 kiln convert --source <dir> --dest <dir>                     # Convert a Hugo site root into a kiln site root
@@ -64,6 +64,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 ├── html.rs             # Shared HTML utilities (escape, indent, writeln_indented)
 ├── init.rs             # Theme scaffolding (kiln init-theme)
 ├── markdown.rs         # Shared raw-markdown text utilities (code fence detection, code span scanning)
+├── minify.rs           # Post-build HTML / CSS / JS minification (lightningcss, oxc_minifier, minify-html)
 ├── output.rs           # File output, static file copying, output directory cleaning
 ├── pagination.rs       # Paginator for windowed views over slices, page URL computation
 ├── render/             # Markdown rendering pipeline (RenderOptions in render.rs)

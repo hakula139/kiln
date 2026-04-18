@@ -7,6 +7,7 @@ pub mod feed;
 pub mod html;
 pub mod init;
 pub mod markdown;
+pub mod minify;
 pub mod output;
 pub mod pagination;
 pub mod render;
@@ -18,7 +19,7 @@ pub mod taxonomy;
 pub mod template;
 pub mod text;
 
-pub use build::build;
+pub use build::{BuildOptions, build};
 pub use convert::convert;
 pub use init::init_theme;
 pub use serve::DEFAULT_PORT;

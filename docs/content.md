@@ -151,3 +151,19 @@ static/
 ```
 
 Static files differ from co-located assets: they are global (not tied to a page) and are referenced with absolute paths (e.g., `/images/logo.png`).
+
+### Private build inputs (`_` prefix)
+
+Files and directories whose names start with `_` are skipped when `static/` is copied to the output. This lets you keep build-time inputs alongside the shipped bundle without exposing them. Typical use: colocating Tailwind sources with the compiled stylesheet.
+
+```text
+static/
+├── css/
+│   ├── _src/           # not copied to output
+│   │   ├── main.css
+│   │   └── components/
+│   └── style.css       → /css/style.css
+└── ...
+```
+
+The same convention applies to theme `static/` directories.
