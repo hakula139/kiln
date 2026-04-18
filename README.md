@@ -50,7 +50,7 @@ kiln is purpose-built for hakula.xyz: strong CJK-friendly authoring, explicit re
 
 ## Current Focus
 
-Improve the production pipeline with Rust-native asset minification, i18n groundwork, and further ergonomics polish. See the [roadmap](docs/roadmap.md) for details.
+i18n groundwork, authoring enhancements (code-block attributes, bundled scripts), and further ergonomics polish. See the [roadmap](docs/roadmap.md) for details.
 
 ## Usage
 
