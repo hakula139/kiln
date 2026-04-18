@@ -29,6 +29,7 @@ The project direction is simple:
 - Sitemap (`sitemap.xml`) and `robots.txt`
 - Custom 404 error page (optional, template-driven)
 - Full-text search via Pagefind (post-build indexing, `[search]` config)
+- Optional HTML / CSS / JS minification via `kiln build --minify` (lightningcss, oxc_minifier, minify-html)
 
 ### Theming and Extensibility
 
@@ -52,14 +53,6 @@ The project direction is simple:
 - `kiln convert` for Hugo-to-kiln content conversion
 
 ## Current Focus
-
-### Build / Asset Pipeline
-
-- Add `kiln build --minify`
-- Minify CSS and JS in a Rust-native way
-- Keep bundling optional and only add it if real theme usage justifies it
-
-The goal is better production output without making the default build pipeline heavy or frontend-tooling-driven.
 
 ### Internationalization
 
