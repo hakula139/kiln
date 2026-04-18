@@ -103,12 +103,9 @@ fn build_listed_page(
     time_zone: Option<&TimeZone>,
     section_titles: &HashMap<&str, &str>,
 ) -> Result<ListedPage> {
-    let output_path = page.output_path(content_dir).with_context(|| {
-        format!(
-            "failed to compute output path for {}",
-            page.source_path.display()
-        )
-    })?;
+    // `output_path` already includes the source and content-dir paths in
+    // its error, so no extra `with_context` is needed here.
+    let output_path = page.output_path(content_dir)?;
     let url = page_url(base_url, &output_path);
     let timestamp = page.frontmatter.date;
     let section = page_section(page, base_url, section_titles);

@@ -141,27 +141,21 @@ fn minify_html_bytes(input: &[u8]) -> Vec<u8> {
 
 fn minify_css_bytes(input: &[u8], path: &Path) -> Option<Vec<u8>> {
     let source = decode_utf8(input, path, "CSS")?;
-    let mut stylesheet = match StyleSheet::parse(source, ParserOptions::default()) {
-        Ok(s) => s,
-        Err(e) => {
+    let mut stylesheet = StyleSheet::parse(source, ParserOptions::default())
+        .inspect_err(|e| {
             tracing::warn!("skipping {} (CSS parse failed): {e}", path.display());
-            return None;
-        }
-    };
-    if let Err(e) = stylesheet.minify(MinifyOptions::default()) {
-        tracing::warn!("skipping {} (CSS minify failed): {e}", path.display());
-        return None;
-    }
-    match stylesheet.to_css(PrinterOptions {
-        minify: true,
-        ..PrinterOptions::default()
-    }) {
-        Ok(result) => Some(result.code.into_bytes()),
-        Err(e) => {
-            tracing::warn!("skipping {} (CSS print failed): {e}", path.display());
-            None
-        }
-    }
+        })
+        .ok()?;
+    // lightningcss's `minify` and `to_css` don't fail in practice with
+    // default options; silently keep the original if they ever do.
+    stylesheet.minify(MinifyOptions::default()).ok()?;
+    let result = stylesheet
+        .to_css(PrinterOptions {
+            minify: true,
+            ..PrinterOptions::default()
+        })
+        .ok()?;
+    Some(result.code.into_bytes())
 }
 
 fn minify_js_bytes(input: &[u8], path: &Path) -> Option<Vec<u8>> {
