@@ -37,6 +37,7 @@ use self::url::{page_url, resolve_relative_url};
 /// Shared build state, created once per build invocation.
 struct BuildContext {
     config: Config,
+    i18n: I18n,
     time_zone: Option<TimeZone>,
     syntax_set: SyntaxSet,
     template_engine: TemplateEngine,
@@ -111,6 +112,7 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
 
     let ctx = BuildContext {
         config,
+        i18n,
         time_zone,
         syntax_set,
         template_engine,

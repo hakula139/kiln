@@ -39,7 +39,7 @@ pub(crate) fn build_feeds(
     write_output(&output_dir.join("index.xml"), &xml).context("failed to write main RSS feed")?;
 
     let posts_title = section::load_index_title(&content_dir.join("posts"))
-        .unwrap_or_else(|| "All Posts".to_owned());
+        .unwrap_or_else(|| ctx.i18n.t("all_posts").into_owned());
     write_section_feed(
         ctx,
         base,

@@ -29,8 +29,8 @@ pub(crate) fn build_archive_pages(
         .or_else(|| paginate_config(&ctx.config.params, &["paginate"]))
         .unwrap_or(10);
 
-    let posts_title =
-        load_index_title(&content_dir.join("posts")).unwrap_or_else(|| "All Posts".to_owned());
+    let posts_title = load_index_title(&content_dir.join("posts"))
+        .unwrap_or_else(|| ctx.i18n.t("all_posts").into_owned());
     write_archive(
         ctx,
         &ArchiveSpec::new("posts", "post", &posts_title, "posts", "/posts"),
