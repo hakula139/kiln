@@ -5,11 +5,6 @@
 //! 1. `<site_root>/i18n/<language>.toml` — site-level overrides
 //! 2. `<theme>/i18n/<language>.toml` — theme strings for the active language
 //! 3. `<theme>/i18n/en.toml` — theme English fallback
-//!
-//! Every i18n table must declare `date_format` (a strftime format string)
-//! somewhere in the merge chain. `date_format` is extracted into a dedicated
-//! field rather than left in the string map, so the `localdate` filter and
-//! other callers read it via [`I18n::date_format`] rather than `t()`.
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -19,10 +14,7 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result, bail, ensure};
 
-const DATE_FORMAT_KEY: &str = "date_format";
-
-/// Merged i18n strings for a single active language, plus the resolved
-/// strftime `date_format`.
+/// Merged i18n strings for a single active language.
 #[derive(Debug, Clone)]
 pub struct I18n {
     inner: Arc<Inner>,
@@ -30,10 +22,8 @@ pub struct I18n {
 
 #[derive(Debug)]
 struct Inner {
-    /// Merged strings for the active language (excluding `date_format`).
+    /// Merged strings for the active language.
     strings: HashMap<String, String>,
-    /// Resolved strftime `date_format` for the active language.
-    date_format: String,
     /// Active BCP 47 language tag.
     language: String,
     /// Warnings we've already emitted, to keep the log from spamming.
@@ -67,7 +57,6 @@ impl I18n {
     /// - a theme i18n directory exists with any `*.toml` other than `en.toml`
     ///   but `en.toml` is missing
     /// - any loaded file is not a flat table of string values
-    /// - `date_format` is missing after merging, when any i18n file was loaded
     pub fn load(site_root: &Path, theme_dir: Option<&Path>, language: &str) -> Result<Self> {
         // Paths below interpolate `language` into filenames — guard against
         // traversal or oddly-shaped tags before anything touches the FS.
@@ -85,7 +74,6 @@ impl I18n {
         }
 
         let mut strings: HashMap<String, String> = HashMap::new();
-        let mut any_file_loaded = false;
 
         if let Some(theme_dir) = theme_dir {
             let theme_i18n_dir = theme_dir.join("i18n");
@@ -99,13 +87,11 @@ impl I18n {
                 );
                 if en_path.exists() {
                     merge_from_file(&mut strings, &en_path)?;
-                    any_file_loaded = true;
                 }
 
                 let lang_path = theme_i18n_dir.join(format!("{language}.toml"));
                 if language != "en" && lang_path.exists() {
                     merge_from_file(&mut strings, &lang_path)?;
-                    any_file_loaded = true;
                 }
             }
         }
@@ -113,38 +99,15 @@ impl I18n {
         let site_path = site_root.join("i18n").join(format!("{language}.toml"));
         if site_path.exists() {
             merge_from_file(&mut strings, &site_path)?;
-            any_file_loaded = true;
         }
-
-        // No i18n files at all is legal — callers that don't localize still
-        // need a working `localdate` filter, so fall back to an ISO-ish
-        // default. Once any file is loaded, `date_format` must be declared
-        // explicitly so themes and sites can't accidentally inherit a
-        // format that doesn't match their locale.
-        let date_format = match strings.remove(DATE_FORMAT_KEY) {
-            Some(value) => value,
-            None if any_file_loaded => {
-                bail!(
-                    "i18n tables for language `{language}` are missing required `{DATE_FORMAT_KEY}` key",
-                );
-            }
-            None => "%Y-%m-%d".to_owned(),
-        };
 
         Ok(Self {
             inner: Arc::new(Inner {
                 strings,
-                date_format,
                 language: language.to_owned(),
                 warned: Mutex::new(HashSet::new()),
             }),
         })
-    }
-
-    /// The resolved strftime `date_format` string for the active language.
-    #[must_use]
-    pub fn date_format(&self) -> &str {
-        &self.inner.date_format
     }
 
     /// The active BCP 47 language tag (e.g., `"en"`, `"zh-Hans"`).
@@ -378,61 +341,57 @@ mod tests {
         write_file(
             &theme.path().join("i18n/en.toml"),
             indoc! {r#"
-                date_format = "%Y-%m-%d"
                 all_posts = "All Posts"
             "#},
         );
 
         let i18n = I18n::load(site.path(), Some(theme.path()), "en").unwrap();
-        assert_eq!(i18n.date_format(), "%Y-%m-%d");
         assert_eq!(i18n.t("all_posts").as_ref(), "All Posts");
     }
 
     #[test]
-    fn load_date_format_from_theme_lang_file_overrides_en() {
+    fn load_theme_lang_file_overrides_en() {
         let site = tempfile::tempdir().unwrap();
         let theme = tempfile::tempdir().unwrap();
         write_file(
             &theme.path().join("i18n/en.toml"),
             indoc! {r#"
-                date_format = "%Y-%m-%d"
                 shared = "shared en"
             "#},
         );
         write_file(
             &theme.path().join("i18n/fr.toml"),
             indoc! {r#"
-                date_format = "%d/%m/%Y"
+                shared = "shared fr"
                 only_in_fr = "fr-only value"
             "#},
         );
 
         let i18n = I18n::load(site.path(), Some(theme.path()), "fr").unwrap();
-        assert_eq!(i18n.date_format(), "%d/%m/%Y");
+        assert_eq!(i18n.t("shared").as_ref(), "shared fr");
         assert_eq!(i18n.t("only_in_fr").as_ref(), "fr-only value");
-        assert_eq!(i18n.t("shared").as_ref(), "shared en");
     }
 
     #[test]
-    fn load_site_date_format_overrides_theme() {
+    fn load_site_overrides_theme() {
         let site = tempfile::tempdir().unwrap();
         let theme = tempfile::tempdir().unwrap();
         write_file(
             &theme.path().join("i18n/en.toml"),
             indoc! {r#"
-                date_format = "%Y-%m-%d"
                 theme_only = "from theme"
+                shared = "from theme"
             "#},
         );
         write_file(
             &site.path().join("i18n/en.toml"),
             indoc! {r#"
-                date_format = "%B %d, %Y"
+                shared = "from site"
             "#},
         );
 
         let i18n = I18n::load(site.path(), Some(theme.path()), "en").unwrap();
-        assert_eq!(i18n.date_format(), "%B %d, %Y");
+        assert_eq!(i18n.t("shared").as_ref(), "from site");
         assert_eq!(
             i18n.t("theme_only").as_ref(),
             "from theme",
@@ -448,7 +407,6 @@ mod tests {
         write_file(
             &theme.path().join("i18n/en.toml"),
             indoc! {r#"
-                date_format = "%Y-%m-%d"
                 all_posts = "All Posts"
                 back_to_top = "Back to Top"
                 only_in_en = "from en"
@@ -475,8 +433,6 @@ mod tests {
         assert_eq!(i18n.t("all_posts").as_ref(), "全部文章");
         // Theme en is the ultimate fallback.
         assert_eq!(i18n.t("only_in_en").as_ref(), "from en");
-        // Date format came from theme en.
-        assert_eq!(i18n.date_format(), "%Y-%m-%d");
         assert_eq!(i18n.language(), "zh-Hans");
     }
 
@@ -488,13 +444,11 @@ mod tests {
         write_file(
             &site.path().join("i18n/en.toml"),
             indoc! {r#"
-                date_format = "%F"
                 greeting = "Hello"
             "#},
         );
 
         let i18n = I18n::load(site.path(), Some(theme.path()), "en").unwrap();
-        assert_eq!(i18n.date_format(), "%F");
         assert_eq!(i18n.t("greeting").as_ref(), "Hello");
     }
 
@@ -504,12 +458,12 @@ mod tests {
         write_file(
             &site.path().join("i18n/zh-Hans.toml"),
             indoc! {r#"
-                date_format = "%Y年%m月%d日"
+                hello = "你好"
             "#},
         );
 
         let i18n = I18n::load(site.path(), None, "zh-Hans").unwrap();
-        assert_eq!(i18n.date_format(), "%Y年%m月%d日");
+        assert_eq!(i18n.t("hello").as_ref(), "你好");
     }
 
     #[test]
@@ -522,7 +476,6 @@ mod tests {
         write_file(
             &theme.path().join("i18n/en.toml"),
             indoc! {r#"
-                date_format = "%Y-%m-%d"
                 greeting = "Hi"
             "#},
         );
@@ -534,20 +487,14 @@ mod tests {
     }
 
     #[test]
-    fn load_with_no_files_falls_back_to_hardcoded_date_format() {
-        // The hardcoded ISO fallback is meaningful here because no files
-        // were loaded — `strings` is empty, so `t()` always misses, and the
-        // date format can only have come from the hardcoded default.
+    fn load_with_no_files_returns_empty_i18n() {
+        // No theme i18n dir and no site i18n dir — loader must succeed and
+        // every `t()` call must miss (and render the key literal).
         let site = tempfile::tempdir().unwrap();
         let theme = tempfile::tempdir().unwrap();
 
         let i18n = I18n::load(site.path(), Some(theme.path()), "en").unwrap();
-        assert_eq!(i18n.date_format(), "%Y-%m-%d");
-        assert_eq!(
-            i18n.t("anything").as_ref(),
-            "anything",
-            "strings map must be empty when no files contributed",
-        );
+        assert_eq!(i18n.t("anything").as_ref(), "anything");
     }
 
     #[test]
@@ -561,7 +508,6 @@ mod tests {
         write_file(
             &theme.path().join("i18n/En.toml"),
             indoc! {r#"
-                date_format = "%Y-%m-%d"
                 greeting = "Hello"
             "#},
         );
@@ -581,7 +527,7 @@ mod tests {
         write_file(
             &theme.path().join("i18n/zh-Hans.toml"),
             indoc! {r#"
-                date_format = "%Y-%m-%d"
+                greeting = "你好"
             "#},
         );
 
@@ -595,34 +541,12 @@ mod tests {
     }
 
     #[test]
-    fn load_missing_date_format_returns_error() {
-        let site = tempfile::tempdir().unwrap();
-        let theme = tempfile::tempdir().unwrap();
-        write_file(
-            &theme.path().join("i18n/en.toml"),
-            indoc! {r#"
-                all_posts = "All Posts"
-            "#},
-        );
-
-        let err = I18n::load(site.path(), Some(theme.path()), "en")
-            .unwrap_err()
-            .to_string();
-        assert!(
-            err.contains("missing required `date_format`"),
-            "should report missing date_format, got: {err}"
-        );
-    }
-
-    #[test]
     fn load_nested_table_returns_error() {
         let site = tempfile::tempdir().unwrap();
         let theme = tempfile::tempdir().unwrap();
         write_file(
             &theme.path().join("i18n/en.toml"),
             indoc! {r#"
-                date_format = "%Y-%m-%d"
-
                 [nested]
                 key = "value"
             "#},
@@ -643,10 +567,9 @@ mod tests {
         let theme = tempfile::tempdir().unwrap();
         write_file(
             &theme.path().join("i18n/en.toml"),
-            indoc! {r#"
-                date_format = "%Y-%m-%d"
+            indoc! {r"
                 count = 42
-            "#},
+            "},
         );
 
         let err = I18n::load(site.path(), Some(theme.path()), "en")
@@ -699,7 +622,6 @@ mod tests {
         I18n {
             inner: Arc::new(Inner {
                 strings,
-                date_format: "%Y-%m-%d".to_owned(),
                 language: "en".to_owned(),
                 warned: Mutex::new(HashSet::new()),
             }),

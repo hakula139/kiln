@@ -1,12 +1,8 @@
 pub mod vars;
 
 use std::path::{Component, Path};
-use std::str::FromStr;
 
 use anyhow::{Context, Result, ensure};
-use jiff::Timestamp;
-use jiff::civil::Date;
-use jiff::fmt::strtime;
 use minijinja::path_loader;
 use minijinja::value::Kwargs;
 use serde::Serialize;
@@ -31,8 +27,8 @@ impl TemplateEngine {
     /// `site_dir` is silently ignored if it doesn't exist (it's an optional
     /// override layer). `theme_dir`, when provided, must exist.
     ///
-    /// `i18n` powers the `t()` function and `localdate` filter exposed to
-    /// templates. The engine clones cheap `I18n` handles into the closures.
+    /// `i18n` powers the `t()` function exposed to templates. The engine
+    /// clones a cheap `I18n` handle into the closure.
     ///
     /// # Errors
     ///
@@ -77,11 +73,6 @@ impl TemplateEngine {
         let t_i18n = i18n.clone();
         env.add_function("t", move |key: &str, kwargs: Kwargs| {
             tpl_t(&t_i18n, key, &kwargs)
-        });
-
-        let date_i18n = i18n.clone();
-        env.add_filter("localdate", move |value: &minijinja::Value| {
-            tpl_localdate(&date_i18n, value)
         });
 
         Ok(Self { env })
@@ -284,59 +275,6 @@ fn tpl_t(i18n: &I18n, key: &str, kwargs: &Kwargs) -> std::result::Result<String,
         .map(|(name, value)| (*name, value.as_str()))
         .collect();
     Ok(i18n.t_interp(key, &args))
-}
-
-/// `MiniJinja` filter: formats an ISO 8601 date or timestamp using the
-/// active language's `date_format` (strftime).
-///
-/// Usage in templates: `{{ page.date | localdate }}`.
-///
-/// Empty, undefined, or null values render as the empty string. Parse or
-/// format failures log a warning and also render empty — templates should
-/// never crash over a stray value.
-fn tpl_localdate(i18n: &I18n, value: &minijinja::Value) -> String {
-    if value.is_undefined() || value.is_none() {
-        return String::new();
-    }
-    let Some(raw) = value.as_str() else {
-        tracing::warn!(?value, "localdate received non-string value");
-        return String::new();
-    };
-    if raw.is_empty() {
-        return String::new();
-    }
-
-    let broken_down = if looks_like_plain_date(raw) {
-        Date::from_str(raw).map(strtime::BrokenDownTime::from)
-    } else {
-        Timestamp::from_str(raw).map(strtime::BrokenDownTime::from)
-    };
-    let broken_down = match broken_down {
-        Ok(value) => value,
-        Err(err) => {
-            tracing::warn!(raw, %err, "localdate failed to parse date");
-            return String::new();
-        }
-    };
-
-    let date_format = i18n.date_format();
-    match strtime::format(date_format, broken_down) {
-        Ok(formatted) => formatted,
-        Err(err) => {
-            tracing::warn!(format = date_format, %err, "localdate failed to format date");
-            String::new()
-        }
-    }
-}
-
-/// Heuristic: values shaped like `YYYY-MM-DD` parse as civil dates;
-/// anything longer is treated as a full timestamp.
-fn looks_like_plain_date(raw: &str) -> bool {
-    raw.len() == 10
-        && raw.chars().enumerate().all(|(i, c)| match i {
-            4 | 7 => c == '-',
-            _ => c.is_ascii_digit(),
-        })
 }
 
 /// `MiniJinja` template function: parses CSV text into a list of rows,
@@ -1313,10 +1251,7 @@ mod tests {
         test_fs::create_dir_all(dir.path().join("i18n")).unwrap();
         test_fs::write(
             dir.path().join("i18n").join("en.toml"),
-            indoc! {r#"
-                date_format = "%Y-%m-%d"
-                greeting = "Hi {name}!"
-            "#},
+            r#"greeting = "Hi {name}!""#,
         )
         .unwrap();
         let i18n =
@@ -1340,10 +1275,7 @@ mod tests {
         test_fs::create_dir_all(dir.path().join("i18n")).unwrap();
         test_fs::write(
             dir.path().join("i18n").join("en.toml"),
-            indoc! {r#"
-                date_format = "%Y-%m-%d"
-                greeting = "Hi {name}!"
-            "#},
+            r#"greeting = "Hi {name}!""#,
         )
         .unwrap();
         let i18n =
@@ -1356,132 +1288,6 @@ mod tests {
             .render_str(r#"{{ t("greeting", name=none) }}"#, ())
             .unwrap();
         assert_eq!(result, "Hi !");
-    }
-
-    // ── tpl_localdate ──
-
-    #[test]
-    fn localdate_formats_timestamp_with_configured_format() {
-        let dir = tempfile::tempdir().unwrap();
-        test_fs::create_dir_all(dir.path().join("i18n")).unwrap();
-        test_fs::write(
-            dir.path().join("i18n").join("en.toml"),
-            r#"date_format = "%Y/%m/%d""#,
-        )
-        .unwrap();
-        let i18n =
-            crate::i18n::I18n::load(Path::new("/nonexistent"), Some(dir.path()), "en").unwrap();
-
-        let templates = tempfile::tempdir().unwrap();
-        let engine = TemplateEngine::new(Some(templates.path()), None, &i18n).unwrap();
-        let result = engine
-            .env
-            .render_str(r#"{{ "2026-03-15T09:36:00Z" | localdate }}"#, ())
-            .unwrap();
-        assert_eq!(result, "2026/03/15");
-    }
-
-    #[test]
-    fn localdate_formats_plain_date() {
-        // Use a date_format distinct from the input's `%Y-%m-%d` shape so
-        // a passthrough bug would be caught.
-        let dir = tempfile::tempdir().unwrap();
-        test_fs::create_dir_all(dir.path().join("i18n")).unwrap();
-        test_fs::write(
-            dir.path().join("i18n").join("en.toml"),
-            r#"date_format = "%d %m %Y""#,
-        )
-        .unwrap();
-        let i18n =
-            crate::i18n::I18n::load(Path::new("/nonexistent"), Some(dir.path()), "en").unwrap();
-
-        let templates = tempfile::tempdir().unwrap();
-        let engine = TemplateEngine::new(Some(templates.path()), None, &i18n).unwrap();
-        let result = engine
-            .env
-            .render_str(r#"{{ "2026-03-15" | localdate }}"#, ())
-            .unwrap();
-        assert_eq!(result, "15 03 2026");
-    }
-
-    #[test]
-    fn localdate_returns_empty_for_undefined() {
-        let engine = test_engine();
-        let result = engine
-            .env
-            .render_str("{{ missing | localdate }}", ())
-            .unwrap();
-        assert_eq!(result, "");
-    }
-
-    #[test]
-    fn localdate_returns_empty_for_none() {
-        let engine = test_engine();
-        let result = engine.env.render_str("{{ none | localdate }}", ()).unwrap();
-        assert_eq!(result, "");
-    }
-
-    #[test]
-    fn localdate_returns_empty_for_non_string_value() {
-        let engine = test_engine();
-        let result = engine.env.render_str("{{ 42 | localdate }}", ()).unwrap();
-        assert_eq!(result, "");
-    }
-
-    #[test]
-    fn localdate_returns_empty_for_empty_string() {
-        let engine = test_engine();
-        let result = engine
-            .env
-            .render_str(r#"{{ "" | localdate }}"#, ())
-            .unwrap();
-        assert_eq!(result, "");
-    }
-
-    #[test]
-    fn localdate_returns_empty_for_unparseable_value() {
-        let engine = test_engine();
-        let result = engine
-            .env
-            .render_str(r#"{{ "not-a-date" | localdate }}"#, ())
-            .unwrap();
-        assert_eq!(result, "");
-    }
-
-    #[test]
-    fn localdate_returns_empty_for_plain_date_shape_but_invalid_date() {
-        // `9999-99-99` passes the shape heuristic (length 10, digits with
-        // `-` at positions 4 and 7) but fails `Date::from_str` because the
-        // month / day are out of range.
-        let engine = test_engine();
-        let result = engine
-            .env
-            .render_str(r#"{{ "9999-99-99" | localdate }}"#, ())
-            .unwrap();
-        assert_eq!(result, "");
-    }
-
-    #[test]
-    fn localdate_returns_empty_for_invalid_format_string() {
-        // `%Z` requires a timezone-aware datetime; formatting a plain civil
-        // date with it makes `strtime::format` fail, exercising the
-        // format-error arm of `tpl_localdate`.
-        let dir = tempfile::tempdir().unwrap();
-        test_fs::create_dir_all(dir.path().join("i18n")).unwrap();
-        test_fs::write(
-            dir.path().join("i18n").join("en.toml"),
-            r#"date_format = "%Z""#,
-        )
-        .unwrap();
-        let i18n =
-            crate::i18n::I18n::load(Path::new("/nonexistent"), Some(dir.path()), "en").unwrap();
-        let templates = tempfile::tempdir().unwrap();
-        let engine = TemplateEngine::new(Some(templates.path()), None, &i18n).unwrap();
-        let result = engine
-            .env
-            .render_str(r#"{{ "2026-03-15" | localdate }}"#, ())
-            .unwrap();
-        assert_eq!(result, "");
     }
 
     // ── tpl_parse_csv ──
@@ -1620,17 +1426,14 @@ mod tests {
     // ── Integration ──
 
     #[test]
-    fn render_post_renders_t_and_localdate_together() {
-        // End-to-end: t() and localdate cooperate through a real post
-        // template with a non-default date_format.
+    fn render_post_renders_t_through_real_template() {
+        // End-to-end: `t()` resolves strings through a real post template
+        // wired up against a site-level i18n file.
         let dir = tempfile::tempdir().unwrap();
         test_fs::create_dir_all(dir.path().join("i18n")).unwrap();
         test_fs::write(
             dir.path().join("i18n").join("en.toml"),
-            indoc! {r#"
-                date_format = "%d %m %Y"
-                posted_on = "Posted on"
-            "#},
+            r#"posted_on = "Posted on""#,
         )
         .unwrap();
         let i18n =
@@ -1647,7 +1450,7 @@ mod tests {
             indoc! {r#"
                 {% extends "base.html" %}
                 {% block body %}
-                {{ t("posted_on") }} {{ date | localdate }}
+                {{ t("posted_on") }} {{ date[:10] }}
                 {% endblock %}
             "#},
         )
@@ -1661,7 +1464,7 @@ mod tests {
             url: "",
             featured_image: None,
             page_css: None,
-            date: Some("2026-03-15".into()),
+            date: Some("2026-03-15T09:00:00Z".into()),
             section: None,
             math: false,
             content: "",
@@ -1670,8 +1473,8 @@ mod tests {
         };
         let html = engine.render_post(&vars).unwrap();
         assert!(
-            html.contains("Posted on 15 03 2026"),
-            "should combine t() and localdate, html:\n{html}"
+            html.contains("Posted on 2026-03-15"),
+            "should render localized prefix alongside the ISO date slice, html:\n{html}"
         );
     }
 }

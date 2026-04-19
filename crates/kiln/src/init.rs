@@ -76,8 +76,7 @@ pub fn init_theme(root: &Path, name: &str) -> Result<()> {
 ///
 /// The resolver loads strings from three layers in descending precedence:
 /// `<site>/i18n/<lang>.toml` → `<theme>/i18n/<lang>.toml` →
-/// `<theme>/i18n/en.toml`. `date_format` is a strftime template used by
-/// the `localdate` filter and must appear somewhere in the merge chain.
+/// `<theme>/i18n/en.toml`.
 const DEFAULT_I18N_EN: &str = indoc! {r#"
     # English strings for this theme.
     #
@@ -91,10 +90,6 @@ const DEFAULT_I18N_EN: &str = indoc! {r#"
     # Keys are flat string values. Templates call `{{ t("key") }}`, or
     # `{{ t("key", name=value) }}` to substitute `{name}` placeholders.
 
-    # `date_format` is a strftime template consumed by the `localdate`
-    # filter, e.g. `{{ page.date | localdate }}`.
-    date_format = "%Y-%m-%d"
-
     all_posts = "All Posts"
     back_to_top = "Back to Top"
     table_of_contents = "Table of Contents"
@@ -104,8 +99,6 @@ const DEFAULT_I18N_EN: &str = indoc! {r#"
 const DEFAULT_I18N_ZH_HANS: &str = indoc! {r#"
     # Simplified Chinese strings for this theme.
     # See i18n/en.toml for a description of the resolution order.
-
-    date_format = "%Y年%m月%d日"
 
     all_posts = "全部文章"
     back_to_top = "回到顶部"
@@ -152,19 +145,11 @@ mod tests {
         let i18n_dir = root.path().join("themes").join("my-theme").join("i18n");
         let en = fs::read_to_string(i18n_dir.join("en.toml")).unwrap();
         assert!(
-            en.contains(r#"date_format = "%Y-%m-%d""#),
-            "en.toml should declare date_format, got:\n{en}"
-        );
-        assert!(
             en.contains(r#"all_posts = "All Posts""#),
             "en.toml should include example keys, got:\n{en}"
         );
 
         let zh = fs::read_to_string(i18n_dir.join("zh-Hans.toml")).unwrap();
-        assert!(
-            zh.contains("date_format ="),
-            "zh-Hans.toml should declare date_format, got:\n{zh}"
-        );
         assert!(
             zh.contains(r#"all_posts = "全部文章""#),
             "zh-Hans.toml should include localized example keys, got:\n{zh}"

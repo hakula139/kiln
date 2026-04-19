@@ -214,10 +214,7 @@ pub fn test_i18n() -> I18n {
     fs::create_dir_all(dir.path().join("i18n")).unwrap();
     fs::write(
         dir.path().join("i18n").join("en.toml"),
-        indoc! {r#"
-            date_format = "%Y-%m-%d"
-            all_posts = "All Posts"
-        "#},
+        r#"all_posts = "All Posts""#,
     )
     .unwrap();
     I18n::load(Path::new("/nonexistent-site"), Some(dir.path()), "en").unwrap()
