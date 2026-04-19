@@ -428,20 +428,6 @@ Resolves a translatable string for the active language. See [Internationalizatio
 
 When `kwargs` are supplied, Python-style `{name}` placeholders in the string are replaced with the corresponding values. Missing keys emit a warning and render as the key literal (or `«missing:<key>»` under `KILN_DEV`) so the build does not crash.
 
-### Template Filters
-
-The following filters are available in all templates.
-
-#### `localdate`
-
-Formats an ISO 8601 date or timestamp using the active language's `date_format` (strftime):
-
-```html
-{% if page.date %}<time datetime="{{ page.date }}">{{ page.date | localdate }}</time>{% endif %}
-```
-
-Empty, undefined, or null values render as the empty string. Unparseable dates and invalid format strings emit a warning and render empty — templates never fail over a stray value.
-
 ## Internationalization
 
 kiln supports translatable strings via a layered i18n system. Themes ship defaults per language and sites can override any string.
@@ -474,20 +460,19 @@ If the theme has no `i18n/` directory at all, site-only i18n is also supported. 
 i18n files are flat TOML tables of string values:
 
 ```toml
-date_format = "%Y-%m-%d"
-
 all_posts = "All Posts"
 back_to_top = "Back to Top"
 page_counter = "Page {current} of {total}"
 ```
 
-Nested tables are rejected. Every merge chain must declare `date_format` (a strftime template) — it powers the `localdate` filter.
+Nested tables are rejected.
 
 ### Template Usage
 
 - `{{ t("key") }}` — look up a string for the active language.
 - `{{ t("key", name=value) }}` — interpolate keyword arguments into Python-style `{name}` placeholders. `{{` / `}}` escape to literal braces.
-- `{{ date | localdate }}` — format a date with the active language's `date_format`.
+
+Dates render as plain ISO `YYYY-MM-DD` regardless of the active language. When a template receives a full timestamp, slice it with `{{ page.date[:10] }}`.
 
 ### Missing-Key Behavior
 

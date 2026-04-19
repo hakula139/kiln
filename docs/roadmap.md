@@ -35,7 +35,6 @@ The project direction is simple:
 
 - Layered i18n resolver (site override → theme active language → theme English)
 - `{{ t("key") }}` template function with `{name}` keyword-argument interpolation
-- `{{ date | localdate }}` filter driven by a per-language strftime `date_format`
 - `kiln init-theme` scaffolds `i18n/en.toml` and `i18n/zh-Hans.toml` with example keys
 
 ### Theming and Extensibility
