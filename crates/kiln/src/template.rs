@@ -1464,6 +1464,29 @@ mod tests {
         assert_eq!(result, "");
     }
 
+    #[test]
+    fn localdate_returns_empty_for_invalid_format_string() {
+        // `%Z` requires a timezone-aware datetime; formatting a plain civil
+        // date with it makes `strtime::format` fail, exercising the
+        // format-error arm of `tpl_localdate`.
+        let dir = tempfile::tempdir().unwrap();
+        test_fs::create_dir_all(dir.path().join("i18n")).unwrap();
+        test_fs::write(
+            dir.path().join("i18n").join("en.toml"),
+            r#"date_format = "%Z""#,
+        )
+        .unwrap();
+        let i18n =
+            crate::i18n::I18n::load(Path::new("/nonexistent"), Some(dir.path()), "en").unwrap();
+        let templates = tempfile::tempdir().unwrap();
+        let engine = TemplateEngine::new(Some(templates.path()), None, &i18n).unwrap();
+        let result = engine
+            .env
+            .render_str(r#"{{ "2026-03-15" | localdate }}"#, ())
+            .unwrap();
+        assert_eq!(result, "");
+    }
+
     // ── tpl_parse_csv ──
 
     #[test]

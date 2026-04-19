@@ -405,13 +405,13 @@ mod tests {
             &theme.path().join("i18n/fr.toml"),
             indoc! {r#"
                 date_format = "%d/%m/%Y"
-                only_in_fr = "seulement en fr"
+                only_in_fr = "fr-only value"
             "#},
         );
 
         let i18n = I18n::load(site.path(), Some(theme.path()), "fr").unwrap();
         assert_eq!(i18n.date_format(), "%d/%m/%Y");
-        assert_eq!(i18n.t("only_in_fr").as_ref(), "seulement en fr");
+        assert_eq!(i18n.t("only_in_fr").as_ref(), "fr-only value");
         assert_eq!(i18n.t("shared").as_ref(), "shared en");
     }
 
@@ -512,6 +512,27 @@ mod tests {
 
         let i18n = I18n::load(site.path(), None, "zh-Hans").unwrap();
         assert_eq!(i18n.date_format(), "%Y年%m月%d日");
+    }
+
+    #[test]
+    fn load_ignores_non_toml_entries_in_i18n_dir() {
+        // Non-TOML files (READMEs, editor swap files, etc.) and
+        // subdirectories must be skipped without tripping the
+        // "missing en.toml fallback" check.
+        let site = tempfile::tempdir().unwrap();
+        let theme = tempfile::tempdir().unwrap();
+        write_file(
+            &theme.path().join("i18n/en.toml"),
+            indoc! {r#"
+                date_format = "%Y-%m-%d"
+                greeting = "Hi"
+            "#},
+        );
+        write_file(&theme.path().join("i18n/README.md"), "translator notes");
+        fs::create_dir_all(theme.path().join("i18n/.backup")).unwrap();
+
+        let i18n = I18n::load(site.path(), Some(theme.path()), "en").unwrap();
+        assert_eq!(i18n.t("greeting").as_ref(), "Hi");
     }
 
     #[test]
