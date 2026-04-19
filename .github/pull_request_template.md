@@ -1,18 +1,17 @@
 ## Summary
 
-<!-- One bullet per logical change. Group by: features, refactors, tests, docs. -->
+<!--
+Narrative intro describing the motivation and high-level change, then bulleted
+details. Group related changes with `- **Bold intro** — description` and use
+`### Subsection` headings when the scope spans distinct concerns (correctness,
+storage, templates, etc.). Include test count and coverage inline — no
+separate test plan section; CI enforces the checks.
+-->
 
 -
 
 ## Follow-ups
 
-<!-- Items deferred from this PR. Remove section if none. -->
+<!-- Remove this section if there's nothing deferred. -->
 
 -
-
-## Test plan
-
-- [ ] `cargo build` compiles cleanly
-- [ ] `cargo clippy --all-targets -- -D warnings` — zero warnings
-- [ ] `cargo test` — N tests pass
-- [ ] `cargo llvm-cov --ignore-filename-regex 'main\.rs'` — N% line coverage
