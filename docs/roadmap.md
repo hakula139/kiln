@@ -35,6 +35,7 @@ The project direction is simple:
 
 - Layered i18n resolver (site override → theme active language → theme English)
 - `{{ t("key") }}` template function with `{name}` keyword-argument interpolation
+- `[[menu.main]].name` fields treated as i18n keys, resolved via `t()` by themes
 - `kiln init-theme` scaffolds `i18n/en.toml` and `i18n/zh-Hans.toml` with example keys
 
 ### Theming and Extensibility

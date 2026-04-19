@@ -474,6 +474,23 @@ Nested tables are rejected.
 
 Dates render as plain ISO `YYYY-MM-DD` regardless of the active language. When a template receives a full timestamp, slice it with `{{ page.date[:10] }}`.
 
+### Menu Item Translation
+
+Navigation entries defined under `[[menu.main]]` use the `name` field as an i18n key. Themes render labels with `{{ t(item.name) }}`, so the name resolves through the same layered i18n tables as any other string. A missing key renders the literal value, so sites that don't localize can still use plain labels:
+
+```toml
+# config.toml — treat names as i18n keys
+[[menu.main]]
+name = "menu_posts"
+url = "/posts/"
+
+# i18n/en.toml
+menu_posts = "Posts"
+
+# i18n/zh-Hans.toml
+menu_posts = "文章"
+```
+
 ### Missing-Key Behavior
 
 A missing key emits a warning the first time it is requested and renders as the key literal, so a broken translation is visible in the output without crashing the build. Set the `KILN_DEV` environment variable (to any non-empty value) while developing to render misses as `«missing:<key>»` instead — useful for spotting untranslated strings in preview builds.
