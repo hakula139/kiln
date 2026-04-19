@@ -638,10 +638,10 @@ mod tests {
     fn t_warns_once_per_key_independently() {
         let i18n = make_i18n(&[]);
         for _ in 0..3 {
-            let _ = i18n.t("key_alpha");
+            _ = i18n.t("key_alpha");
         }
         for _ in 0..3 {
-            let _ = i18n.t("key_beta");
+            _ = i18n.t("key_beta");
         }
         let warned = i18n.inner.warned.lock().unwrap();
         assert_eq!(warned.len(), 2);
@@ -695,7 +695,7 @@ mod tests {
         let i18n = make_i18n(&[("hello", "Hi {who}!")]);
         let args = BTreeMap::new();
         for _ in 0..500 {
-            let _ = i18n.t_interp("hello", &args);
+            _ = i18n.t_interp("hello", &args);
         }
         let warned = i18n.inner.warned.lock().unwrap();
         assert_eq!(warned.len(), 1);
@@ -717,7 +717,7 @@ mod tests {
         let i18n = make_i18n(&[("bad", "start {unclosed tail")]);
         let args = BTreeMap::new();
         for _ in 0..500 {
-            let _ = i18n.t_interp("bad", &args);
+            _ = i18n.t_interp("bad", &args);
         }
         let warned = i18n.inner.warned.lock().unwrap();
         assert_eq!(warned.len(), 1);
