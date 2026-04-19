@@ -319,14 +319,11 @@ fn tpl_localdate(i18n: &I18n, value: &minijinja::Value) -> String {
         }
     };
 
-    match strtime::format(i18n.date_format(), broken_down) {
+    let date_format = i18n.date_format();
+    match strtime::format(date_format, broken_down) {
         Ok(formatted) => formatted,
         Err(err) => {
-            tracing::warn!(
-                format = i18n.date_format(),
-                %err,
-                "localdate failed to format date",
-            );
+            tracing::warn!(format = date_format, %err, "localdate failed to format date");
             String::new()
         }
     }
