@@ -5,6 +5,7 @@ pub mod convert;
 pub mod directive;
 pub mod feed;
 pub mod html;
+pub mod i18n;
 pub mod init;
 pub mod markdown;
 pub mod minify;
