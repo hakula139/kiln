@@ -8,8 +8,11 @@ hakula
 impls
 indoc
 infty
+interp
 jiff
 katex
+kwarg
+kwargs
 onclose
 onig
 pixiv
@@ -27,5 +30,6 @@ syntect
 tmpl
 tracing
 tungstenite
+unparseable
 walkdir
 writeln
