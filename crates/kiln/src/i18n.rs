@@ -17,7 +17,7 @@ use std::fs;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 
 const DATE_FORMAT_KEY: &str = "date_format";
 
@@ -92,22 +92,20 @@ impl I18n {
             if theme_i18n_dir.is_dir() {
                 let en_path = theme_i18n_dir.join("en.toml");
                 let has_other = theme_has_non_english_toml(&theme_i18n_dir)?;
+                ensure!(
+                    en_path.exists() || !has_other,
+                    "theme i18n directory {} is missing required en.toml fallback",
+                    theme_i18n_dir.display(),
+                );
                 if en_path.exists() {
                     merge_from_file(&mut strings, &en_path)?;
                     any_file_loaded = true;
-                } else if has_other {
-                    bail!(
-                        "theme i18n directory {} is missing required en.toml fallback",
-                        theme_i18n_dir.display(),
-                    );
                 }
 
-                if language != "en" {
-                    let lang_path = theme_i18n_dir.join(format!("{language}.toml"));
-                    if lang_path.exists() {
-                        merge_from_file(&mut strings, &lang_path)?;
-                        any_file_loaded = true;
-                    }
+                let lang_path = theme_i18n_dir.join(format!("{language}.toml"));
+                if language != "en" && lang_path.exists() {
+                    merge_from_file(&mut strings, &lang_path)?;
+                    any_file_loaded = true;
                 }
             }
         }
