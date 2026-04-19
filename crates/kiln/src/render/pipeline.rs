@@ -162,9 +162,8 @@ fn render_directive_block(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::LazyLock;
-
     use std::fs;
+    use std::sync::LazyLock;
 
     use indoc::indoc;
 
