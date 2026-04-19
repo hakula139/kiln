@@ -18,6 +18,7 @@ use syntect::parsing::SyntaxSet;
 use crate::config::Config;
 use crate::content::discovery::discover_content;
 use crate::content::page::{Page, PageKind};
+use crate::i18n::I18n;
 use crate::minify::{self, MinifyStats};
 use crate::output::{clean_output_dir, copy_file, copy_static, write_output};
 use crate::render::RenderOptions;
@@ -101,8 +102,12 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
         tracing::warn!("no templates found; provide templates/ or configure a theme");
     }
 
-    let template_engine = TemplateEngine::new(Some(&site_templates), theme_templates.as_deref())
-        .context("failed to initialize template engine")?;
+    let i18n = I18n::load(root, theme_dir.as_deref(), &config.language)
+        .context("failed to load i18n strings")?;
+
+    let template_engine =
+        TemplateEngine::new(Some(&site_templates), theme_templates.as_deref(), &i18n)
+            .context("failed to initialize template engine")?;
 
     let ctx = BuildContext {
         config,

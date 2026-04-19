@@ -118,21 +118,20 @@ impl I18n {
             any_file_loaded = true;
         }
 
-        let date_format = strings.remove(DATE_FORMAT_KEY).ok_or_else(|| {
-            if any_file_loaded {
-                anyhow::anyhow!(
+        // No i18n files at all is legal — callers that don't localize still
+        // need a working `localdate` filter, so fall back to an ISO-ish
+        // default. Once any file is loaded, `date_format` must be declared
+        // explicitly so themes and sites can't accidentally inherit a
+        // format that doesn't match their locale.
+        let date_format = match strings.remove(DATE_FORMAT_KEY) {
+            Some(value) => value,
+            None if any_file_loaded => {
+                bail!(
                     "i18n tables for language `{language}` are missing required `{DATE_FORMAT_KEY}` key",
-                )
-            } else {
-                // No i18n files at all — still need a default so `localdate`
-                // has something to format with. Report it as a missing file
-                // rather than a missing key to nudge the user in the right
-                // direction.
-                anyhow::anyhow!(
-                    "no i18n files found; provide <theme>/i18n/en.toml or <site>/i18n/{language}.toml with a `{DATE_FORMAT_KEY}` key",
-                )
+                );
             }
-        })?;
+            None => "%Y-%m-%d".to_owned(),
+        };
 
         Ok(Self {
             inner: Arc::new(Inner {
@@ -516,6 +515,23 @@ mod tests {
     }
 
     #[test]
+    fn load_with_no_files_falls_back_to_hardcoded_date_format() {
+        // The hardcoded ISO fallback is meaningful here because no files
+        // were loaded — `strings` is empty, so `t()` always misses, and the
+        // date format can only have come from the hardcoded default.
+        let site = tempfile::tempdir().unwrap();
+        let theme = tempfile::tempdir().unwrap();
+
+        let i18n = I18n::load(site.path(), Some(theme.path()), "en").unwrap();
+        assert_eq!(i18n.date_format(), "%Y-%m-%d");
+        assert_eq!(
+            i18n.t("anything").as_ref(),
+            "anything",
+            "strings map must be empty when no files contributed",
+        );
+    }
+
+    #[test]
     fn load_theme_en_file_with_different_case_is_still_recognized() {
         // On a case-sensitive filesystem `En.toml` and `en.toml` are
         // distinct files; on case-insensitive filesystems they collide.
@@ -576,20 +592,6 @@ mod tests {
         assert!(
             err.contains("missing required `date_format`"),
             "should report missing date_format, got: {err}"
-        );
-    }
-
-    #[test]
-    fn load_no_i18n_anywhere_returns_error() {
-        let site = tempfile::tempdir().unwrap();
-        let theme = tempfile::tempdir().unwrap();
-
-        let err = I18n::load(site.path(), Some(theme.path()), "en")
-            .unwrap_err()
-            .to_string();
-        assert!(
-            err.contains("no i18n files found"),
-            "should report no files, got: {err}"
         );
     }
 
