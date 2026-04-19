@@ -31,6 +31,13 @@ The project direction is simple:
 - Full-text search via Pagefind (post-build indexing, `[search]` config)
 - Optional HTML / CSS / JS minification via `kiln build --minify` (lightningcss, oxc_minifier, minify-html)
 
+### Internationalization
+
+- Layered i18n resolver (site override → theme active language → theme English)
+- `{{ t("key") }}` template function with `{name}` keyword-argument interpolation
+- `{{ date | localdate }}` filter driven by a per-language strftime `date_format`
+- `kiln init-theme` scaffolds `i18n/en.toml` and `i18n/zh-Hans.toml` with example keys
+
 ### Theming and Extensibility
 
 - [IgnIt](https://github.com/hakula139/IgnIt) default theme (Tailwind CSS v4)
@@ -53,14 +60,6 @@ The project direction is simple:
 - `kiln convert` for Hugo-to-kiln content conversion
 
 ## Current Focus
-
-### Internationalization
-
-- Add theme and site i18n tables
-- Expose a template-level `i18n()` lookup
-- Support one active language per build
-
-The immediate goal is to remove hardcoded theme strings and make localization practical, not to build a full multi-language site system yet.
 
 ### Authoring Enhancements
 
