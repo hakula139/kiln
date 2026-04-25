@@ -303,9 +303,11 @@ async fn watch_loop(
 /// the staging directory is removed and the live output is untouched.
 fn safe_rebuild(root: &Path, base_url: &str) -> Result<()> {
     let config = Config::load(root).context("failed to load config")?;
-    let output_dir = root.join(&config.output_dir);
-    let staging_dir = root.join(format!("{}.staging", config.output_dir));
-    let backup_dir = root.join(format!("{}.prev", config.output_dir));
+    let output_dir = config
+        .resolved_output_dir(root)
+        .context("failed to resolve output_dir")?;
+    let staging_dir = append_suffix(&output_dir, ".staging");
+    let backup_dir = append_suffix(&output_dir, ".prev");
 
     if staging_dir.exists() {
         _ = fs::remove_dir_all(&staging_dir);
@@ -336,6 +338,15 @@ fn safe_rebuild(root: &Path, base_url: &str) -> Result<()> {
         _ = fs::remove_dir_all(&backup_dir);
     }
     Ok(())
+}
+
+/// Returns `path` with `suffix` appended to its full OS string, so callers can
+/// derive a sibling path that preserves any nested components (e.g. `dist/site`
+/// → `dist/site.staging`).
+fn append_suffix(path: &Path, suffix: &str) -> PathBuf {
+    let mut buf = path.as_os_str().to_owned();
+    buf.push(suffix);
+    PathBuf::from(buf)
 }
 
 /// Creates the axum router with WebSocket live reload and static file serving.

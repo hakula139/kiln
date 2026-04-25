@@ -119,8 +119,10 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
     };
 
     let content = discover_content(root)?;
-    let output_dir =
-        output_dir_override.map_or_else(|| root.join(&ctx.config.output_dir), Path::to_owned);
+    let output_dir = match output_dir_override {
+        Some(path) => path.to_owned(),
+        None => ctx.config.resolved_output_dir(root)?,
+    };
 
     clean_output_dir(&output_dir)?;
 

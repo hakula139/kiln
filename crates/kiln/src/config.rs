@@ -152,6 +152,43 @@ impl Config {
             .map(|name| root.join("themes").join(name))
     }
 
+    /// Resolves and validates `output_dir` against the project `root`.
+    ///
+    /// Relative paths are resolved against `root`. Absolute paths replace it.
+    /// `..` segments are canonicalized away. The returned path is always
+    /// canonical: parent directories must exist, but the leaf (the output
+    /// directory itself) need not — it is created by `clean_output_dir`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `output_dir` is empty, if its parent cannot be
+    /// canonicalized (e.g., does not exist), or if the resolved path equals or
+    /// is an ancestor of the project root — any of those would let
+    /// `clean_output_dir`'s `remove_dir_all` walk into the source tree.
+    pub fn resolved_output_dir(&self, root: &Path) -> Result<PathBuf> {
+        if self.output_dir.is_empty() {
+            bail!("output_dir cannot be empty");
+        }
+
+        let resolved = root.join(&self.output_dir);
+        let canonical = canonicalize_via_parent(&resolved)
+            .with_context(|| format!("failed to canonicalize output_dir `{}`", self.output_dir))?;
+        let canonical_root = root
+            .canonicalize()
+            .with_context(|| format!("failed to canonicalize project root {}", root.display()))?;
+
+        if canonical_root.starts_with(&canonical) {
+            bail!(
+                "refusing to use output_dir `{}` — it resolves to {}, which would overwrite the project root at {}",
+                self.output_dir,
+                canonical.display(),
+                canonical_root.display(),
+            );
+        }
+
+        Ok(canonical)
+    }
+
     /// Resolves the configured site time zone, if present.
     ///
     /// # Errors
@@ -238,6 +275,39 @@ fn default_language() -> String {
 
 fn default_output_dir() -> String {
     String::from("public")
+}
+
+/// Canonicalizes `path`, walking up until an existing ancestor is found and
+/// reattaching the missing tail components. This lets us validate an output
+/// directory that does not exist yet (the common case for a fresh build),
+/// even when several leading components are also absent (e.g., `dist/site`).
+fn canonicalize_via_parent(path: &Path) -> Result<PathBuf> {
+    if path.exists() {
+        return path
+            .canonicalize()
+            .with_context(|| format!("failed to canonicalize {}", path.display()));
+    }
+    let mut tail: Vec<&std::ffi::OsStr> = Vec::new();
+    let mut probe = path;
+    loop {
+        let leaf = probe
+            .file_name()
+            .with_context(|| format!("path {} has no file name", path.display()))?;
+        tail.push(leaf);
+        probe = probe
+            .parent()
+            .with_context(|| format!("path {} has no parent", path.display()))?;
+        if probe.exists() {
+            break;
+        }
+    }
+    let mut canonical = probe
+        .canonicalize()
+        .with_context(|| format!("failed to canonicalize ancestor {}", probe.display()))?;
+    for component in tail.into_iter().rev() {
+        canonical.push(component);
+    }
+    Ok(canonical)
 }
 
 #[cfg(test)]
@@ -689,6 +759,141 @@ mod tests {
         let config: Config = toml::from_str("").unwrap();
         let root = Path::new("/project");
         assert!(config.theme_dir(root).is_none());
+    }
+
+    // ── resolved_output_dir ──
+
+    fn resolved_output_dir_for(root: &Path, output_dir: &str) -> Result<PathBuf> {
+        let toml_str = format!("output_dir = {}", toml::Value::String(output_dir.into()));
+        let config: Config = toml::from_str(&toml_str).unwrap();
+        config.resolved_output_dir(root)
+    }
+
+    #[test]
+    fn resolved_output_dir_default_relative_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let canonical_root = dir.path().canonicalize().unwrap();
+        let config: Config = toml::from_str("").unwrap();
+
+        let resolved = config.resolved_output_dir(dir.path()).unwrap();
+
+        assert_eq!(resolved, canonical_root.join("public"));
+    }
+
+    #[test]
+    fn resolved_output_dir_nested_relative_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let canonical_root = dir.path().canonicalize().unwrap();
+
+        let resolved = resolved_output_dir_for(dir.path(), "dist/site").unwrap();
+
+        assert_eq!(resolved, canonical_root.join("dist").join("site"));
+    }
+
+    #[test]
+    fn resolved_output_dir_canonicalizes_dotdot_segments() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir(dir.path().join("build")).unwrap();
+        let canonical_root = dir.path().canonicalize().unwrap();
+
+        let resolved = resolved_output_dir_for(dir.path(), "build/../out").unwrap();
+
+        assert_eq!(resolved, canonical_root.join("out"));
+    }
+
+    #[test]
+    fn resolved_output_dir_absolute_path_outside_root() {
+        let root = tempfile::tempdir().unwrap();
+        let target_parent = tempfile::tempdir().unwrap();
+        let canonical_target_parent = target_parent.path().canonicalize().unwrap();
+        let target = canonical_target_parent.join("site");
+
+        let resolved = resolved_output_dir_for(root.path(), &target.to_string_lossy()).unwrap();
+
+        assert_eq!(resolved, target);
+    }
+
+    #[test]
+    fn resolved_output_dir_relative_path_outside_root() {
+        let outer = tempfile::tempdir().unwrap();
+        let root = outer.path().join("project");
+        fs::create_dir(&root).unwrap();
+        let canonical_outer = outer.path().canonicalize().unwrap();
+
+        let resolved = resolved_output_dir_for(&root, "../sibling").unwrap();
+
+        assert_eq!(resolved, canonical_outer.join("sibling"));
+    }
+
+    #[test]
+    fn resolved_output_dir_empty_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let err = resolved_output_dir_for(dir.path(), "")
+            .unwrap_err()
+            .to_string();
+
+        assert!(
+            err.contains("output_dir cannot be empty"),
+            "should reject empty string, got: {err}"
+        );
+    }
+
+    #[test]
+    fn resolved_output_dir_dot_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let err = resolved_output_dir_for(dir.path(), ".")
+            .unwrap_err()
+            .to_string();
+
+        assert!(
+            err.contains("would overwrite the project root"),
+            "should reject `.`, got: {err}"
+        );
+    }
+
+    #[test]
+    fn resolved_output_dir_dotdot_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let err = resolved_output_dir_for(dir.path(), "..")
+            .unwrap_err()
+            .to_string();
+
+        assert!(
+            err.contains("would overwrite the project root"),
+            "should reject `..`, got: {err}"
+        );
+    }
+
+    #[test]
+    fn resolved_output_dir_filesystem_root_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let err = resolved_output_dir_for(dir.path(), "/")
+            .unwrap_err()
+            .to_string();
+
+        assert!(
+            err.contains("would overwrite the project root"),
+            "should reject `/`, got: {err}"
+        );
+    }
+
+    #[test]
+    fn resolved_output_dir_equal_to_root_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let canonical_root = dir.path().canonicalize().unwrap();
+
+        let err = resolved_output_dir_for(dir.path(), &canonical_root.to_string_lossy())
+            .unwrap_err()
+            .to_string();
+
+        assert!(
+            err.contains("would overwrite the project root"),
+            "should reject path equal to root, got: {err}"
+        );
     }
 
     // ── time_zone ──
