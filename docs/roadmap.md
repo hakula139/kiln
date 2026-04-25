@@ -1,85 +1,86 @@
 # Roadmap
 
-kiln is still early, but it is already usable for real publishing. This roadmap is the high-level product view: it should show what works, what is being built next, and what is intentionally out of scope for now.
+kiln is a small static site generator built for [hakula.xyz](https://hakula.xyz) and already powering it day to day. This page is the high-level product view — what works today, what's being built next, and what is intentionally out of scope.
 
-The project direction is simple:
+The project's shape is deliberate:
 
-- Keep the authoring experience strong for CJK-heavy writing, technical posts, and custom content components.
-- Finish the publishing workflow before expanding into broader platform scope.
-- Keep the architecture understandable. New features should fit the current model instead of forcing large abstractions too early.
+- Make CJK-heavy writing, technical posts, and custom content components a pleasure to author.
+- Finish the publishing workflow before reaching for broader platform scope.
+- Keep the architecture understandable — new features fit the current model.
 
-## Working Well Today
+## What Works Today
 
-### Authoring
+### Writing
 
-- TOML frontmatter
-- GitHub Flavored Markdown
-- KaTeX math
-- CJK-aware heading IDs and table of contents generation
-- `:::` directives with theme-template rendering
-- Image attributes, emoji / icon shortcodes, and code-block presentation helpers
+- TOML frontmatter, GitHub Flavored Markdown, and KaTeX math out of the box
+- CJK-aware heading IDs and table of contents — Chinese / Japanese / Korean headings stay linkable
+- `:::` directive blocks rendered through theme templates: callouts, link cards, music embeds, anything you can template
+- Image attributes, emoji and Font Awesome icon shortcodes, and rich code-block presentation helpers
 
-### Site Generation
+### Publishing
 
-- Pretty URLs
-- Static file copying, co-located content assets, and per-page CSS bundling
-- Home pages, section pages, standalone pages, taxonomy indexes, and paginated term pages
-- Configurable site time zones for rendered dates
-- RSS 2.0 feeds (main site + per-section + per-taxonomy-term)
-- Sitemap (`sitemap.xml`) and `robots.txt`
-- Custom 404 error page (optional, template-driven)
-- Full-text search via Pagefind (post-build indexing, `[search]` config)
-- Optional HTML / CSS / JS minification via `kiln build --minify` (lightningcss, oxc_minifier, minify-html)
+- Pretty URLs, page bundles with co-located assets, and per-page CSS injection
+- Home, section, standalone, and paginated taxonomy / term pages
+- Time-zone-aware dates rendered in your site's local time
+- RSS 2.0 feeds for the whole site, each section, and each taxonomy term
+- Sitemap, `robots.txt`, and an optional template-driven 404 page
+- Full-text search via [Pagefind](https://pagefind.app), wired in at build time
+- Optional HTML / CSS / JS minification with `kiln build --minify` — pure Rust, no Node toolchain required
 
 ### Internationalization
 
-- Layered i18n resolver (site override → theme active language → theme English)
-- `{{ t("key") }}` template function with `{name}` keyword-argument interpolation
-- `[[menu.main]].name` fields treated as i18n keys, resolved via `t()` by themes
-- `kiln init-theme` scaffolds `i18n/en.toml` and `i18n/zh-Hans.toml` with example keys
+- Translatable theme strings via layered TOML files: site override → theme language → English fallback, so partial translations degrade gracefully
+- `{{ t("key", name=value) }}` template helper with placeholder interpolation
+- Navigation menu labels resolve through the same i18n tables as the rest of your strings
+- `kiln init-theme` scaffolds starter `en.toml` and `zh-Hans.toml` files for new themes
 
-### Theming and Extensibility
+### Theming
 
-- [IgnIt](https://github.com/hakula139/IgnIt) default theme (Tailwind CSS v4)
-  - Glassmorphism panels with cursor-tracking glow, configurable background image
-  - Dark / light mode (system preference + manual toggle, flash-free)
-  - Responsive layout, home page image cards with hover reveal
-  - Pagefind search modal, link card directive, modern favicon set
-  - Back-to-top button, mobile menu animations, print styles
-  - Keyboard focus-visible styling, `prefers-reduced-motion` support
-- Layered MiniJinja templates with site-level overrides
-- Theme parameter merging
-- Directive template helpers such as `read_file()` and `parse_csv()`
-- Navigation menu via `[[menu.main]]` config (sorted by weight, external link support)
-- Page summaries with tags and featured images for list templates (home, section, term)
+- Layered MiniJinja templates: site files transparently override theme files
+- Deep parameter merging for nested theme config tables
+- Directive template helpers including `read_file()` and `parse_csv()` for data-driven blocks
+- Configurable navigation menu via `[[menu.main]]` with weight sorting and external link support
+
+The default theme [**IgnIt**](https://github.com/hakula139/IgnIt) ships with Tailwind CSS v4 and a polished feature set:
+
+- Glassmorphism panels with cursor-tracking glow and a configurable background image
+- Dark / light mode (system preference + manual toggle, flash-free)
+- Responsive layout with hover-reveal image cards on the home page
+- Pagefind search modal, link card directives, modern favicon set
+- Back-to-top button, mobile menu animations, print styles
+- Keyboard focus-visible styling and `prefers-reduced-motion` support
 
 ### Tooling
 
-- `kiln build`
-- `kiln serve` with file watching and live reload
-- `kiln convert` for Hugo-to-kiln content conversion
+- `kiln build` for one-shot builds
+- `kiln serve` with file watching and live reload for fast iteration
+- `kiln convert` to migrate Hugo sites into kiln, frontmatter and shortcodes included
 
-## Current Focus
+## What's Next
 
-### Authoring Enhancements
+### Richer Authoring
 
-- Code block attributes: `title="..."`, collapse / fold, line highlighting (`highlight="1,3-5"`)
-- Bundled scripts: `register_script()` mechanism for directive templates (replaces inline `<script>` workaround)
+- Code-block attributes: titles, line highlighting (`highlight="1,3-5"`), collapse / expand
+- Pinned posts on the home page via a `weight` frontmatter field — keep your hero pieces above the fold
+- Bundled scripts for directive templates via a `register_script()` mechanism, retiring the inline `<script>` workaround
 
-### Runtime / Ergonomics Polish
+### Reader Experience
 
-- Load optional assets conditionally for features such as KaTeX or Mermaid
-- Validate `output_dir` is a safe relative path (prevent `remove_dir_all` on absolute paths)
-- Make small authoring and tooling improvements discovered through day-to-day site work
+- Comment integration via [Twikoo](https://twikoo.js.org/) in the IgnIt theme — bring threads back to per-post pages and the global `/comments/` index, with the hook designed so other backends can drop in later
+
+### Runtime Polish
+
+- Conditional asset loading — KaTeX, Mermaid, and friends only ship on pages that need them
+- Stricter `output_dir` validation so a misconfigured path can never reach somewhere unintended
+- Small authoring and tooling improvements as they surface from real publishing
 
 ## Later
 
-- Demo / example site material once the core workflow feels stable
-- Additional engine work only when it solves concrete problems in the publishing workflow
+A demo site to show kiln in motion, once the core publishing workflow feels finished. Beyond that, engine work continues to be opportunistic — driven by concrete publishing needs, not speculative parity.
 
 ## Not the Goal Right Now
 
-- Chasing one-to-one Hugo feature parity
-- Full multi-language site generation
-- Adding build-system complexity before the core publishing workflow feels complete
-- Expanding scope faster than real usage justifies
+- One-to-one Hugo feature parity
+- Full multi-language site generation (separate per-language URL trees)
+- Build-system complexity ahead of a complete publishing workflow
+- Scope expansion that outpaces real usage

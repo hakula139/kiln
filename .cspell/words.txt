@@ -30,6 +30,7 @@ syntect
 tmpl
 tracing
 tungstenite
+twikoo
 unparseable
 walkdir
 writeln

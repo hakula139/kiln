@@ -62,6 +62,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 │   └── parser.rs       # Line-based stack parser, nesting, single-pass arg + Pandoc attr parsing
 ├── feed.rs             # RSS 2.0 XML generation (Channel, generate_rss, RFC 2822 date formatting)
 ├── html.rs             # Shared HTML utilities (escape, indent, writeln_indented)
+├── i18n.rs             # Layered i18n resolver (site → theme lang → theme English), t() with placeholder interpolation
 ├── init.rs             # Theme scaffolding (kiln init-theme)
 ├── markdown.rs         # Shared raw-markdown text utilities (code fence detection, code span scanning)
 ├── minify.rs           # Post-build HTML / CSS / JS minification (lightningcss, oxc_minifier, minify-html)

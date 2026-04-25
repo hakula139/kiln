@@ -29,6 +29,11 @@ kiln is purpose-built for hakula.xyz: strong CJK-friendly authoring, explicit re
 - RSS feeds, sitemap, custom 404 page
 - Full-text search via [Pagefind](https://pagefind.app)
 
+### Internationalization
+
+- Translatable theme strings with layered TOML overrides — themes ship defaults, sites customize freely
+- Localized templates and navigation menus, with graceful fallback to English when a translation is missing
+
 ### Theming
 
 - MiniJinja templates with layered site overrides and theme parameter merging
@@ -50,7 +55,7 @@ kiln is purpose-built for hakula.xyz: strong CJK-friendly authoring, explicit re
 
 ## Current Focus
 
-i18n groundwork, authoring enhancements (code-block attributes, bundled scripts), and further ergonomics polish. See the [roadmap](docs/roadmap.md) for details.
+Richer code-block presentation, bundled scripts for directive templates, and ongoing runtime ergonomics polish. See the [roadmap](docs/roadmap.md) for details.
 
 ## Usage
 
