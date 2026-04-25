@@ -21,6 +21,7 @@ The project's shape is deliberate:
 
 - Pretty URLs, page bundles with co-located assets, and per-page CSS injection
 - Home, section, standalone, and paginated taxonomy / term pages
+- Pinned posts on the home page via a `weight` frontmatter field — hero pieces stay above the fold without affecting archive, tag, or RSS order
 - Time-zone-aware dates rendered in your site's local time
 - RSS 2.0 feeds for the whole site, each section, and each taxonomy term
 - Sitemap, `robots.txt`, and an optional template-driven 404 page
@@ -61,7 +62,6 @@ The default theme [**IgnIt**](https://github.com/hakula139/IgnIt) ships with Tai
 ### Richer Authoring
 
 - Code-block attributes: titles, line highlighting (`highlight="1,3-5"`), collapse / expand
-- Pinned posts on the home page via a `weight` frontmatter field — keep your hero pieces above the fold
 - Bundled scripts for directive templates via a `register_script()` mechanism, retiring the inline `<script>` workaround
 
 ### Reader Experience

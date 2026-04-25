@@ -19,6 +19,7 @@ use super::url::{page_url, resolve_relative_url};
 pub(crate) struct ListedPage {
     pub(crate) summary: PageSummary,
     pub(crate) timestamp: Option<Timestamp>,
+    pub(crate) weight: Option<i64>,
     pub(crate) year: String,
 }
 
@@ -108,6 +109,7 @@ fn build_listed_page(
     let output_path = page.output_path(content_dir)?;
     let url = page_url(base_url, &output_path);
     let timestamp = page.frontmatter.date;
+    let weight = page.frontmatter.weight;
     let section = page_section(page, base_url, section_titles);
     let featured_image = resolve_featured_image(page.frontmatter.featured_image.as_ref(), &url);
 
@@ -116,6 +118,7 @@ fn build_listed_page(
             title: page.frontmatter.title.clone(),
             url,
             date: timestamp.map(|date| format_page_date(date, time_zone)),
+            pinned: weight.is_some(),
             description: page
                 .frontmatter
                 .description
@@ -127,6 +130,7 @@ fn build_listed_page(
             section,
         },
         timestamp,
+        weight,
         year: timestamp
             .map(|date| page_year(date, time_zone))
             .unwrap_or_default(),
@@ -135,9 +139,28 @@ fn build_listed_page(
 
 // ── Sorting and grouping ──
 
-/// Sorts listed pages by date descending (newest first, undated last).
+/// Sorts listed pages by date descending (newest first, undated last). The
+/// canonical order for archive surfaces, taxonomy term pages, and RSS feeds.
+/// Pinning is a home-page-only concept — see `sort_pinned_first`.
 pub(crate) fn sort_by_date_desc(pages: &mut [ListedPage]) {
     pages.sort_by_key(|page| std::cmp::Reverse(page.timestamp));
+}
+
+/// Sorts listed pages with pinned posts first (by `weight` ascending), then
+/// unpinned posts by date descending. Used only for the home page so that
+/// hero pieces stay above the fold on the front door without affecting how
+/// the same posts appear in archives, tag pages, or RSS feeds. Posts without
+/// a `weight` frontmatter field are unpinned; any `weight` value (positive,
+/// zero, or negative) marks the post as pinned, with lower values floating
+/// higher inside the pinned band.
+pub(crate) fn sort_pinned_first(pages: &mut [ListedPage]) {
+    pages.sort_by_key(|page| {
+        (
+            page.weight.is_none(),
+            page.weight.unwrap_or(0),
+            std::cmp::Reverse(page.timestamp),
+        )
+    });
 }
 
 /// Resolves the listed pages for a taxonomy term, sorted by date descending.
@@ -275,18 +298,24 @@ mod tests {
     use crate::content::frontmatter::ImageCredit;
 
     fn make_listed_page(title: &str, date: Option<&str>) -> ListedPage {
+        make_listed_page_with(title, date, None)
+    }
+
+    fn make_listed_page_with(title: &str, date: Option<&str>, weight: Option<i64>) -> ListedPage {
         let timestamp = date.map(|date| date.parse().unwrap());
         ListedPage {
             summary: PageSummary {
                 title: title.into(),
                 url: format!("/{title}/"),
                 date: timestamp.map(|date: Timestamp| date.to_string()),
+                pinned: weight.is_some(),
                 description: String::new(),
                 featured_image: None,
                 tags: Vec::new(),
                 section: None,
             },
             timestamp,
+            weight,
             year: timestamp
                 .map(|date| page_year(date, None))
                 .unwrap_or_default(),
@@ -328,6 +357,102 @@ mod tests {
         sort_by_date_desc(&mut pages);
         assert_eq!(pages[0].summary.title, "newer");
         assert_eq!(pages[1].summary.title, "older");
+    }
+
+    #[test]
+    fn sort_by_date_desc_ignores_weight() {
+        let mut pages = vec![
+            make_listed_page_with("pinned-old", Some("2020-01-01T00:00:00Z"), Some(1)),
+            make_listed_page_with("recent", Some("2026-06-01T00:00:00Z"), None),
+        ];
+        sort_by_date_desc(&mut pages);
+        assert_eq!(pages[0].summary.title, "recent");
+        assert_eq!(pages[1].summary.title, "pinned-old");
+    }
+
+    // ── sort_pinned_first ──
+
+    #[test]
+    fn sort_pinned_first_falls_back_to_date_desc_when_no_pins() {
+        let mut pages = vec![
+            make_listed_page("old", Some("2025-01-01T00:00:00Z")),
+            make_listed_page("new", Some("2026-06-15T00:00:00Z")),
+        ];
+        sort_pinned_first(&mut pages);
+        assert_eq!(pages[0].summary.title, "new");
+        assert_eq!(pages[1].summary.title, "old");
+    }
+
+    #[test]
+    fn sort_pinned_first_pinned_come_before_unpinned() {
+        let mut pages = vec![
+            make_listed_page_with("recent", Some("2026-06-01T00:00:00Z"), None),
+            make_listed_page_with("pinned-old", Some("2020-01-01T00:00:00Z"), Some(1)),
+        ];
+        sort_pinned_first(&mut pages);
+        assert_eq!(pages[0].summary.title, "pinned-old");
+        assert!(pages[0].summary.pinned);
+        assert_eq!(pages[1].summary.title, "recent");
+        assert!(!pages[1].summary.pinned);
+    }
+
+    #[test]
+    fn sort_pinned_first_pinned_ordered_by_weight_ascending() {
+        let mut pages = vec![
+            make_listed_page_with("third", Some("2026-01-01T00:00:00Z"), Some(3)),
+            make_listed_page_with("first", Some("2026-01-01T00:00:00Z"), Some(1)),
+            make_listed_page_with("second", Some("2026-01-01T00:00:00Z"), Some(2)),
+        ];
+        sort_pinned_first(&mut pages);
+        assert_eq!(pages[0].summary.title, "first");
+        assert_eq!(pages[1].summary.title, "second");
+        assert_eq!(pages[2].summary.title, "third");
+    }
+
+    #[test]
+    fn sort_pinned_first_negative_weight_sorts_above_positive() {
+        let mut pages = vec![
+            make_listed_page_with("positive", Some("2026-01-01T00:00:00Z"), Some(1)),
+            make_listed_page_with("negative", Some("2025-01-01T00:00:00Z"), Some(-5)),
+        ];
+        sort_pinned_first(&mut pages);
+        assert_eq!(pages[0].summary.title, "negative");
+        assert_eq!(pages[1].summary.title, "positive");
+    }
+
+    #[test]
+    fn sort_pinned_first_pinned_ties_break_by_date_desc() {
+        let mut pages = vec![
+            make_listed_page_with("pin-old", Some("2025-01-01T00:00:00Z"), Some(1)),
+            make_listed_page_with("pin-new", Some("2026-01-01T00:00:00Z"), Some(1)),
+        ];
+        sort_pinned_first(&mut pages);
+        assert_eq!(pages[0].summary.title, "pin-new");
+        assert_eq!(pages[1].summary.title, "pin-old");
+    }
+
+    #[test]
+    fn sort_pinned_first_mixed_pinned_and_unpinned_full_order() {
+        let mut pages = vec![
+            make_listed_page_with("unpin-old", Some("2024-01-01T00:00:00Z"), None),
+            make_listed_page_with("pin-2", Some("2020-01-01T00:00:00Z"), Some(2)),
+            make_listed_page_with("unpin-new", Some("2026-01-01T00:00:00Z"), None),
+            make_listed_page_with("pin-1", Some("2018-01-01T00:00:00Z"), Some(1)),
+        ];
+        sort_pinned_first(&mut pages);
+        let order: Vec<&str> = pages.iter().map(|p| p.summary.title.as_str()).collect();
+        assert_eq!(order, ["pin-1", "pin-2", "unpin-new", "unpin-old"]);
+    }
+
+    #[test]
+    fn sort_pinned_first_zero_weight_is_pinned() {
+        let mut pages = vec![
+            make_listed_page_with("recent", Some("2026-06-01T00:00:00Z"), None),
+            make_listed_page_with("pin-zero", Some("2020-01-01T00:00:00Z"), Some(0)),
+        ];
+        sort_pinned_first(&mut pages);
+        assert_eq!(pages[0].summary.title, "pin-zero");
+        assert!(pages[0].summary.pinned);
     }
 
     // ── group_by_year ──

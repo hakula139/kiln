@@ -38,9 +38,12 @@ All fields are optional. Defaults:
 | `draft`          | `false`               |
 | `tags`           | `[]`                  |
 | `slug`           | derived from filename |
+| `weight`         | none                  |
 | `featured_image` | none (table)          |
 
 Draft pages (`draft = true`) and pages whose filename starts with `_` are excluded from the build.
+
+A post with any `weight` set is pinned on the home page, sorted before unpinned posts and ordered by `weight` ascending (lower floats higher, matching `MenuItem` and Hugo conventions). Archive, tag, and section listings ignore `weight` and stay strictly date-sorted, so a pinned post still appears at its natural date position when readers browse those surfaces.
 
 Frontmatter `date` / `updated` values are parsed as absolute instants. When kiln exposes a page date to templates, it renders that instant in the site's configured `timezone` from `config.toml`, or in UTC when `timezone` is unset:
 

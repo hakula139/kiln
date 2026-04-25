@@ -108,6 +108,7 @@ mod tests {
             title: title.into(),
             url: url.into(),
             date: date.map(String::from),
+            pinned: false,
             description: String::new(),
             featured_image: None,
             tags: Vec::new(),

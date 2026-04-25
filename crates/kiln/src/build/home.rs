@@ -5,13 +5,15 @@ use anyhow::{Context, Result};
 use crate::template::vars::HomePageVars;
 
 use super::BuildContext;
-use super::listing::{ListedPage, collect_page_summaries};
+use super::listing::{ListedPage, collect_page_summaries, sort_pinned_first};
 use super::paginate::{paginate_config, write_paginated};
 
 /// Generates paginated home pages listing recent posts.
 ///
-/// Posts must be pre-sorted by date descending. Skipped when `home.html`
-/// is not present in the template set.
+/// The input slice is expected to be date-sorted; this function applies a
+/// home-page-only pinned-first ordering on a clone before paginating, so
+/// other surfaces (archives, tag pages, RSS) keep their date-only order.
+/// Skipped when `home.html` is not present in the template set.
 pub(crate) fn build_home_pages(
     ctx: &BuildContext,
     listed_posts: &[ListedPage],
@@ -27,8 +29,11 @@ pub(crate) fn build_home_pages(
 
     let home_url = format!("{}/", ctx.config.base_url.trim_end_matches('/'));
 
+    let mut home_posts = listed_posts.to_vec();
+    sort_pinned_first(&mut home_posts);
+
     write_paginated(
-        listed_posts,
+        &home_posts,
         per_page,
         "",
         output_dir,
