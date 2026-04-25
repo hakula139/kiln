@@ -416,3 +416,81 @@ Parses CSV text (RFC 4180) into a list of rows, where each row is a list of fiel
   <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
 {% endfor %}
 ```
+
+#### `t(key, **kwargs)`
+
+Resolves a translatable string for the active language. See [Internationalization](#internationalization) for the full model.
+
+```html
+<a href="#top">{{ t("back_to_top") }}</a>
+<p>{{ t("page_counter", current=page, total=pages) }}</p>
+```
+
+When `kwargs` are supplied, Python-style `{name}` placeholders in the string are replaced with the corresponding values. Missing keys emit a warning and render as the key literal (or `«missing:<key>»` under `KILN_DEV`) so the build does not crash.
+
+## Internationalization
+
+kiln supports translatable strings via a layered i18n system. Themes ship defaults per language and sites can override any string.
+
+### File Layout
+
+```text
+themes/my-theme/i18n/
+├── en.toml              # Ultimate fallback (required if any other file exists)
+└── zh-Hans.toml         # Additional language (BCP 47 tag)
+
+my-site/i18n/
+└── zh-Hans.toml         # Site-level overrides for the active language
+```
+
+The active language comes from `language` in `config.toml` (default `"en"`). Language tags follow [BCP 47](https://www.rfc-editor.org/info/bcp47) (e.g., `en`, `zh-Hans`, `ja`).
+
+### Resolution Order
+
+For each key, kiln merges three tables in descending precedence:
+
+1. `<site>/i18n/<language>.toml` — site-level override
+2. `<theme>/i18n/<language>.toml` — theme strings for the active language
+3. `<theme>/i18n/en.toml` — theme English fallback
+
+If the theme has no `i18n/` directory at all, site-only i18n is also supported. If a theme ships any `i18n/*.toml` file other than `en.toml`, the loader requires `en.toml` as the ultimate fallback.
+
+### File Format
+
+i18n files are flat TOML tables of string values:
+
+```toml
+all_posts = "All Posts"
+back_to_top = "Back to Top"
+page_counter = "Page {current} of {total}"
+```
+
+Nested tables are rejected.
+
+### Template Usage
+
+- `{{ t("key") }}` — look up a string for the active language.
+- `{{ t("key", name=value) }}` — interpolate keyword arguments into Python-style `{name}` placeholders. `{{` / `}}` escape to literal braces.
+
+Dates render as plain ISO `YYYY-MM-DD` regardless of the active language. When a template receives a full timestamp, slice it with `{{ page.date[:10] }}`.
+
+### Menu Item Translation
+
+Navigation entries defined under `[[menu.main]]` use the `name` field as an i18n key. Themes render labels with `{{ t(item.name) }}`, so the name resolves through the same layered i18n tables as any other string. A missing key renders the literal value, so sites that don't localize can still use plain labels:
+
+```toml
+# config.toml — treat names as i18n keys
+[[menu.main]]
+name = "menu_posts"
+url = "/posts/"
+
+# i18n/en.toml
+menu_posts = "Posts"
+
+# i18n/zh-Hans.toml
+menu_posts = "文章"
+```
+
+### Missing-Key Behavior
+
+A missing key emits a warning the first time it is requested and renders as the key literal, so a broken translation is visible in the output without crashing the build. Set the `KILN_DEV` environment variable (to any non-empty value) while developing to render misses as `«missing:<key>»` instead — useful for spotting untranslated strings in preview builds.

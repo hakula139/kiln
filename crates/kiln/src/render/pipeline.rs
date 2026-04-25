@@ -162,14 +162,13 @@ fn render_directive_block(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::LazyLock;
-
     use std::fs;
+    use std::sync::LazyLock;
 
     use indoc::indoc;
 
     use super::*;
-    use crate::test_utils::test_engine;
+    use crate::test_utils::{test_engine, test_i18n};
 
     static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(two_face::syntax::extra_newlines);
 
@@ -401,7 +400,7 @@ mod tests {
         )
         .unwrap();
 
-        let engine = TemplateEngine::new(Some(dir.path()), None).unwrap();
+        let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
         let page = render_with(
             indoc! {"
                 ::: my-widget
@@ -433,7 +432,7 @@ mod tests {
         )
         .unwrap();
 
-        let engine = TemplateEngine::new(Some(dir.path()), None).unwrap();
+        let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
         let page = render_with(
             indoc! {r#"
                 ::: widget {"my-title" key="value"}
@@ -468,7 +467,7 @@ mod tests {
         let source = tempfile::tempdir().unwrap();
         fs::write(source.path().join("data.csv"), "A,B\n1,2").unwrap();
 
-        let engine = TemplateEngine::new(Some(dir.path()), None).unwrap();
+        let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
         let page = render_page(
             indoc! {r#"
                 ::: reader {"data.csv"}

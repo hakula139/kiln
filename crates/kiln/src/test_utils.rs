@@ -9,6 +9,7 @@ use tempfile::TempDir;
 use crate::config::Config;
 use crate::content::frontmatter::Frontmatter;
 use crate::content::page::{Page, PageKind};
+use crate::i18n::I18n;
 use crate::template::TemplateEngine;
 
 static BASE_HTML: &str = indoc! {r#"
@@ -203,7 +204,20 @@ pub fn copy_templates(dest: &Path) {
 
 /// Creates a `TemplateEngine` using embedded test templates.
 pub fn test_engine() -> TemplateEngine {
-    TemplateEngine::new(None, Some(TEST_TEMPLATE_DIR.path())).unwrap()
+    TemplateEngine::new(None, Some(TEST_TEMPLATE_DIR.path()), &test_i18n()).unwrap()
+}
+
+/// Creates a minimal `I18n` seeded with English strings used by the
+/// engine fallbacks so build-level tests render deterministic output.
+pub fn test_i18n() -> I18n {
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("i18n")).unwrap();
+    fs::write(
+        dir.path().join("i18n").join("en.toml"),
+        r#"all_posts = "All Posts""#,
+    )
+    .unwrap();
+    I18n::load(Path::new("/nonexistent-site"), Some(dir.path()), "en").unwrap()
 }
 
 /// Creates a `Config` with all defaults.
