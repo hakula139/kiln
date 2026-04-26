@@ -308,7 +308,10 @@ mod tests {
 
     #[test]
     fn extract_unclosed_brace_preserved() {
-        let input = "![alt](img.png){width=500\nnext line\n";
+        let input = indoc! {"
+            ![alt](img.png){width=500
+            next line
+        "};
         let (output, attrs) = extract_image_attrs(input);
         assert_eq!(output, input);
         assert!(attrs.is_empty());

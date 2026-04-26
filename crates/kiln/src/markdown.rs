@@ -238,9 +238,13 @@ mod tests {
 
     #[test]
     fn for_each_non_code_line_processes_normal_lines() {
+        let input = indoc! {"
+            a
+            b
+        "};
         let mut out = String::new();
-        for_each_non_code_line("a\nb\n", &mut out, |line, o| o.push_str(line));
-        assert_eq!(out, "a\nb\n");
+        for_each_non_code_line(input, &mut out, |line, o| o.push_str(line));
+        assert_eq!(out, input);
     }
 
     #[test]

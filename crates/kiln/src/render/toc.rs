@@ -61,7 +61,7 @@ pub fn render_toc_html(entries: &[TocEntry]) -> String {
         writeln_indented!(
             &mut html,
             depth * 2,
-            "<li><a href=\"#{}\">{}</a>",
+            r##"<li><a href="#{}">{}</a>"##,
             escape(&entry.id),
             escape(&entry.title),
         );
@@ -355,7 +355,7 @@ mod tests {
         }];
         let html = render_toc_html(&entries);
         assert!(
-            html.contains("href=\"#foo&amp;bar\""),
+            html.contains(r##"href="#foo&amp;bar""##),
             "should escape HTML in href, html:\n{html}"
         );
     }

@@ -29,12 +29,19 @@ mod tests {
 
     #[test]
     fn render_mermaid_wraps_source_in_pre_with_class() {
-        let html = render_mermaid("graph TD\nA --> B\n");
-        assert_eq!(
-            html,
-            "<pre class=\"mermaid\" data-source=\"graph TD\nA --&gt; B\n\">\
-             graph TD\nA --&gt; B\n</pre>\n",
-        );
+        let source = indoc! {"
+            graph TD
+            A --> B
+        "};
+        let html = render_mermaid(source);
+        let expected = indoc! {r#"
+            <pre class="mermaid" data-source="graph TD
+            A --&gt; B
+            ">graph TD
+            A --&gt; B
+            </pre>
+        "#};
+        assert_eq!(html, expected);
     }
 
     #[test]
@@ -44,8 +51,9 @@ mod tests {
         // browser's textContent / dataset.source decode back to the original.
         assert_eq!(
             html,
-            "<pre class=\"mermaid\" data-source=\"A[&quot;&lt;b&gt;&amp;&quot;]\">\
-             A[&quot;&lt;b&gt;&amp;&quot;]</pre>\n",
+            indoc! {r#"
+                <pre class="mermaid" data-source="A[&quot;&lt;b&gt;&amp;&quot;]">A[&quot;&lt;b&gt;&amp;&quot;]</pre>
+            "#},
         );
     }
 
@@ -59,8 +67,13 @@ mod tests {
         let html = render_mermaid(source);
         // Indentation and newlines are preserved verbatim — mermaid is
         // whitespace-sensitive in some dialects (flowchart subgraphs).
+        let inner = indoc! {"
+            graph TB
+                A((36))
+                A --&gt; B((8))
+        "};
         assert!(
-            html.contains("\n    A((36))\n    A --&gt; B((8))\n"),
+            html.contains(inner),
             "indentation and newlines preserved, html:\n{html}",
         );
     }
@@ -68,6 +81,11 @@ mod tests {
     #[test]
     fn render_mermaid_empty_source() {
         let html = render_mermaid("");
-        assert_eq!(html, "<pre class=\"mermaid\" data-source=\"\"></pre>\n");
+        assert_eq!(
+            html,
+            indoc! {r#"
+                <pre class="mermaid" data-source=""></pre>
+            "#},
+        );
     }
 }

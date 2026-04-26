@@ -254,7 +254,10 @@ mod tests {
             </html>
         "};
         let css = ".foo { color: #ff0000; margin: 0px; }\n";
-        let js = "const x = 1 + 2;\nconsole.log(x);\n";
+        let js = indoc! {"
+            const x = 1 + 2;
+            console.log(x);
+        "};
         let png = b"\x89PNG\r\n\x1a\n"; // binary — should be ignored
         let already_min = b"a{color:red}"; // should be left alone
 

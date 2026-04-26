@@ -276,7 +276,14 @@ mod tests {
         "};
         let blocks = parse_directives(input);
         assert_eq!(blocks.len(), 1);
-        assert_eq!(blocks[0].body, "First paragraph.\n\nSecond paragraph.");
+        assert_eq!(
+            blocks[0].body,
+            indoc! {"
+                First paragraph.
+
+                Second paragraph."
+            },
+        );
     }
 
     // ── Unknown directives ──

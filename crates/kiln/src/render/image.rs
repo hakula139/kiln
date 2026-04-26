@@ -12,14 +12,14 @@ use crate::html::escape;
 pub fn render_block_image(src: &str, alt: &str, title: &str, attrs: Option<&ImageAttrs>) -> String {
     let fig_id = attrs
         .and_then(|a| a.id.as_deref())
-        .map(|v| format!(" id=\"{}\"", escape(v)))
+        .map(|v| format!(r#" id="{}""#, escape(v)))
         .unwrap_or_default();
 
     let fig_class = attrs
         .filter(|a| !a.classes.is_empty())
         .map(|a| {
             let classes: Vec<_> = a.classes.iter().map(|c| escape(c)).collect();
-            format!(" class=\"{}\"", classes.join(" "))
+            format!(r#" class="{}""#, classes.join(" "))
         })
         .unwrap_or_default();
 

@@ -443,7 +443,12 @@ mod tests {
             Body text here.
         "#};
         let (fm, body) = split_frontmatter(input).unwrap();
-        assert_eq!(fm, "title = \"Hello\"\n");
+        assert_eq!(
+            fm,
+            indoc! {r#"
+                title = "Hello"
+            "#},
+        );
         assert_eq!(body, "Body text here.\n");
     }
 
@@ -485,7 +490,12 @@ mod tests {
             +++
         "#};
         let (fm, body) = split_frontmatter(input).unwrap();
-        assert_eq!(fm, "title = \"No Body\"\n");
+        assert_eq!(
+            fm,
+            indoc! {r#"
+                title = "No Body"
+            "#},
+        );
         assert_eq!(body, "");
     }
 
@@ -499,7 +509,12 @@ mod tests {
             Body
         "#};
         let (fm, body) = split_frontmatter(input).unwrap();
-        assert_eq!(fm, "foo = \"+++ not a delimiter\"\n");
+        assert_eq!(
+            fm,
+            indoc! {r#"
+                foo = "+++ not a delimiter"
+            "#},
+        );
         assert_eq!(body, "Body\n");
     }
 
@@ -514,7 +529,13 @@ mod tests {
             Body
         "#};
         let (fm, body) = split_frontmatter(input).unwrap();
-        assert_eq!(fm, "title = \"test\"\n+++not_end\n");
+        assert_eq!(
+            fm,
+            indoc! {r#"
+                title = "test"
+                +++not_end
+            "#},
+        );
         assert_eq!(body, "Body\n");
     }
 

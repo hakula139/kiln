@@ -263,7 +263,11 @@ mod tests {
             "},
         );
         assert!(
-            html.contains("<td class=\"line-numbers\"><pre>1\n2\n3</pre></td>"),
+            html.contains(indoc! {r#"
+                <td class="line-numbers"><pre>1
+                2
+                3</pre></td>"#
+            }),
             "should have 3 line numbers, html:\n{html}"
         );
     }

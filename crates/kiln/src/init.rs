@@ -68,7 +68,7 @@ pub fn init_theme(root: &Path, name: &str) -> Result<()> {
         .context("failed to write i18n/zh-Hans.toml")?;
 
     println!("Theme `{name}` created at {}", theme_dir.display());
-    println!("Set `theme = \"{name}\"` in your config.toml to use it.");
+    println!(r#"Set `theme = "{name}"` in your config.toml to use it."#);
     Ok(())
 }
 

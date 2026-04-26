@@ -72,7 +72,7 @@ pub(crate) fn render_markdown(
                 let entry = &headings[heading_index];
                 heading_index += 1;
                 output_events.push(Event::Html(
-                    format!("<{} id=\"{}\">", entry.level, escape(&entry.id)).into(),
+                    format!(r#"<{} id="{}">"#, entry.level, escape(&entry.id)).into(),
                 ));
             }
             Event::End(TagEnd::Heading(level)) => {
@@ -826,7 +826,11 @@ mod tests {
             out.html
         );
         assert!(
-            out.html.contains("data-source=\"graph TD\nA --&gt; B\n\""),
+            out.html.contains(indoc! {r#"
+                data-source="graph TD
+                A --&gt; B
+                ""#
+            }),
             "should preserve the DSL verbatim in data-source for theme-toggle re-render, html:\n{}",
             out.html
         );
@@ -935,7 +939,10 @@ mod tests {
 
     #[test]
     fn render_block_image_with_soft_break_in_alt() {
-        let md = "![line1\nline2](img.png)\n";
+        let md = indoc! {"
+            ![line1
+            line2](img.png)
+        "};
         let out = render(md);
         assert!(
             out.html.contains("<figure>"),

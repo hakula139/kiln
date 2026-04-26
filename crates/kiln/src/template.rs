@@ -1311,7 +1311,15 @@ mod tests {
         .unwrap();
 
         let source = tempfile::tempdir().unwrap();
-        test_fs::write(source.path().join("data.csv"), "A,B\n1,2\n3,4").unwrap();
+        test_fs::write(
+            source.path().join("data.csv"),
+            indoc! {"
+                A,B
+                1,2
+                3,4"
+            },
+        )
+        .unwrap();
 
         let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
         let ctx = crate::directive::DirectiveContext {

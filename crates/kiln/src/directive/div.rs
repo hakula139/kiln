@@ -13,7 +13,7 @@ pub fn render_div(name: &str, id: Option<&str>, classes: &[String], body_html: &
     }
 
     let id_attr = id
-        .map(|v| format!(" id=\"{}\"", escape(v)))
+        .map(|v| format!(r#" id="{}""#, escape(v)))
         .unwrap_or_default();
 
     let mut class_parts = Vec::new();
@@ -26,7 +26,7 @@ pub fn render_div(name: &str, id: Option<&str>, classes: &[String], body_html: &
     let class_attr = if class_parts.is_empty() {
         String::new()
     } else {
-        format!(" class=\"{}\"", class_parts.join(" "))
+        format!(r#" class="{}""#, class_parts.join(" "))
     };
 
     format!("<div{id_attr}{class_attr}>{body_html}</div>\n")
@@ -34,6 +34,8 @@ pub fn render_div(name: &str, id: Option<&str>, classes: &[String], body_html: &
 
 #[cfg(test)]
 mod tests {
+    use indoc::indoc;
+
     use super::*;
 
     // ── render_div ──
@@ -43,21 +45,36 @@ mod tests {
         let html = render_div("compact-table", None, &[], "<p>Content</p>\n");
         assert_eq!(
             html,
-            "<div class=\"compact-table\"><p>Content</p>\n</div>\n"
+            indoc! {r#"
+                <div class="compact-table"><p>Content</p>
+                </div>
+            "#},
         );
     }
 
     #[test]
     fn render_with_id() {
         let html = render_div("", Some("section-1"), &[], "<p>Content</p>\n");
-        assert_eq!(html, "<div id=\"section-1\"><p>Content</p>\n</div>\n");
+        assert_eq!(
+            html,
+            indoc! {r#"
+                <div id="section-1"><p>Content</p>
+                </div>
+            "#},
+        );
     }
 
     #[test]
     fn render_with_extra_classes() {
         let classes = vec!["compact".into(), "wide".into()];
         let html = render_div("", None, &classes, "<p>Content</p>\n");
-        assert_eq!(html, "<div class=\"compact wide\"><p>Content</p>\n</div>\n");
+        assert_eq!(
+            html,
+            indoc! {r#"
+                <div class="compact wide"><p>Content</p>
+                </div>
+            "#},
+        );
     }
 
     #[test]
@@ -66,7 +83,10 @@ mod tests {
         let html = render_div("wrapper", Some("main"), &classes, "<p>Body</p>\n");
         assert_eq!(
             html,
-            "<div id=\"main\" class=\"wrapper extra wide\"><p>Body</p>\n</div>\n"
+            indoc! {r#"
+                <div id="main" class="wrapper extra wide"><p>Body</p>
+                </div>
+            "#},
         );
     }
 
@@ -80,7 +100,7 @@ mod tests {
     fn render_escapes_name() {
         let html = render_div("<script>", None, &[], "");
         assert!(
-            html.contains("class=\"&lt;script&gt;\""),
+            html.contains(r#"class="&lt;script&gt;""#),
             "name should be escaped, html:\n{html}"
         );
         assert!(
