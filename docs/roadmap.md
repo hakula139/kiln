@@ -16,6 +16,7 @@ The project's shape is deliberate:
 - CJK-aware heading IDs and table of contents — Chinese / Japanese / Korean headings stay linkable
 - `:::` directive blocks rendered through theme templates: callouts, link cards, music embeds, anything you can template
 - Image attributes, emoji and Font Awesome icon shortcodes, and rich code-block presentation helpers
+- Mermaid diagrams via `` ```mermaid `` fences — themes load mermaid.js only on pages that contain a diagram, with `data-source` mirroring the DSL for dark-mode re-render
 
 ### Publishing
 
@@ -71,7 +72,6 @@ The default theme [**IgnIt**](https://github.com/hakula139/IgnIt) ships with Tai
 
 ### Runtime Polish
 
-- Mermaid diagram rendering — kiln emits `<pre class="mermaid">` for `` ```mermaid `` fences (with `data-source` mirroring the DSL so themes can re-render after a dark-mode toggle), and themes can gate on `"mermaid" in assets.features`. Remaining work: theme-side runtime that loads mermaid.js
 - Directive-registered scripts via a `register_script()` helper, retiring the inline `<script>` workaround inside directive templates
 - Stricter `output_dir` validation so a misconfigured path can never reach somewhere unintended
 - Small authoring and tooling improvements as they surface from real publishing
