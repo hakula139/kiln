@@ -318,6 +318,7 @@ mod tests {
 
     use crate::content::frontmatter::FeaturedImage;
     use crate::pagination::PaginationVars;
+    use crate::render::assets::PageAssets;
     use crate::serve::{DEFAULT_PORT, localhost_url};
     use crate::template::vars::{
         ArchivePageVars, BucketSummary, ErrorPageVars, HomePageVars, OverviewPageVars, PageGroup,
@@ -410,7 +411,7 @@ mod tests {
             page_css: None,
             date: Some("2026-02-24T12:34:56Z".into()),
             section: None,
-            math: false,
+            assets: PageAssets::default(),
             content: "<p>Body</p>",
             toc: "",
             config: &config,
@@ -480,7 +481,7 @@ mod tests {
             page_css: None,
             date: None,
             section: None,
-            math: false,
+            assets: PageAssets::default(),
             content: "<strong>bold</strong>",
             toc: r#"<nav class="toc">ToC</nav>"#,
             config: &config,
@@ -508,7 +509,7 @@ mod tests {
             page_css: None,
             date: None,
             section: None,
-            math: false,
+            assets: PageAssets::default(),
             content: "",
             toc: "",
             config: &config,
@@ -537,7 +538,7 @@ mod tests {
             page_css: None,
             date: None,
             section: None,
-            math: false,
+            assets: PageAssets::default(),
             content: "",
             toc: "",
             config: &config,
@@ -563,7 +564,7 @@ mod tests {
             page_css: None,
             date: None,
             section: None,
-            math: false,
+            assets: PageAssets::default(),
             content: "<p>Hello</p>",
             toc: "",
             config: &config,
@@ -596,7 +597,7 @@ mod tests {
             page_css: None,
             date: None,
             section: None,
-            math: false,
+            assets: PageAssets::default(),
             content: "",
             toc: "",
             config: &config,
@@ -1472,7 +1473,7 @@ mod tests {
             page_css: None,
             date: Some("2026-03-15T09:00:00Z".into()),
             section: None,
-            math: false,
+            assets: PageAssets::default(),
             content: "",
             toc: "",
             config: &config,

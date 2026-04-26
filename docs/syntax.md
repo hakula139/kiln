@@ -106,7 +106,7 @@ $$
 $$
 ```
 
-Math expressions are rendered as KaTeX-compatible markup (`<span class="math math-inline">` / `<span class="math math-display">`). The page template must include the [KaTeX](https://katex.org) CSS and JS for client-side rendering.
+Math expressions are rendered as KaTeX-compatible markup (`<span class="math math-inline">` / `<span class="math math-display">`). Themes load the [KaTeX](https://katex.org) CSS and JS for client-side rendering by gating on `"math" in assets.features` — see [Theme Authoring](themes.md#template-variables) for the page-scoped asset registry.
 
 ### Headings
 
