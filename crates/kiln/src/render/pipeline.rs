@@ -4,6 +4,7 @@ use anyhow::Result;
 use syntect::parsing::SyntaxSet;
 
 use super::RenderOptions;
+use super::assets::PageAssets;
 use super::emoji::replace_emojis;
 use super::icon::replace_icons;
 use super::image_attrs::extract_image_attrs;
@@ -20,6 +21,10 @@ use crate::template::TemplateEngine;
 pub struct RenderedPage {
     pub content_html: String,
     pub toc_html: String,
+    /// Page-level asset declarations rolled up from the markdown body and any
+    /// nested directive bodies. Templates iterate this to load conditional
+    /// runtime dependencies (`KaTeX` for math, `mermaid.js` for diagrams).
+    pub assets: PageAssets,
 }
 
 /// Renders raw markdown through the full pipeline: directive processing,
@@ -35,7 +40,8 @@ pub fn render_page(
     options: &RenderOptions,
     source_dir: Option<&Path>,
 ) -> Result<RenderedPage> {
-    let processed = render_directives(raw_content, syntax_set, engine, source_dir)?;
+    let mut assets = PageAssets::default();
+    let processed = render_directives(raw_content, syntax_set, engine, source_dir, &mut assets)?;
 
     // Pre-process: extract image attrs, optionally replace shortcodes.
     let mut preprocessed = processed;
@@ -48,11 +54,13 @@ pub fn render_page(
     let (cleaned, image_attrs) = extract_image_attrs(&preprocessed);
 
     let md_output = render_markdown(&cleaned, syntax_set, &image_attrs, options.code_max_lines);
+    assets.features.extend(md_output.features);
     let toc_html = render_toc_html(&md_output.headings);
 
     Ok(RenderedPage {
         content_html: md_output.html,
         toc_html,
+        assets,
     })
 }
 
@@ -71,6 +79,7 @@ fn render_directives(
     syntax_set: &SyntaxSet,
     engine: &TemplateEngine,
     source_dir: Option<&Path>,
+    assets: &mut PageAssets,
 ) -> Result<String> {
     let all_blocks = parse_directives(content);
     if all_blocks.is_empty() {
@@ -82,9 +91,10 @@ fn render_directives(
 
     // Replace right-to-left so earlier ranges remain valid.
     for block in top_level.into_iter().rev() {
-        let inner = render_directives(&block.body, syntax_set, engine, source_dir)?;
+        let inner = render_directives(&block.body, syntax_set, engine, source_dir, assets)?;
         let (cleaned, image_attrs) = extract_image_attrs(&inner);
         let md_output = render_markdown(&cleaned, syntax_set, &image_attrs, None);
+        assets.features.extend(md_output.features);
         let html = render_directive_block(block, &md_output.html, engine, source_dir)?;
 
         // Blank-line padding: <details> / <div> are CommonMark type 6 HTML
@@ -386,6 +396,63 @@ mod tests {
             page.content_html.contains(r#"class="highlight""#),
             "code should be highlighted, html:\n{}",
             page.content_html
+        );
+        assert!(
+            page.assets
+                .features
+                .contains(&crate::render::assets::Feature::Math),
+            "math inside a directive body should bubble up to page assets, features: {:?}",
+            page.assets.features,
+        );
+    }
+
+    // ── render_page: asset auto-detection ──
+
+    #[test]
+    fn render_page_detects_math_feature_at_body_level() {
+        use crate::render::assets::Feature;
+        let page = render(indoc! {r"
+            Plain text with $a + b$ inline math.
+        "});
+        assert!(
+            page.assets.features.contains(&Feature::Math),
+            "math expression should set Feature::Math, features: {:?}",
+            page.assets.features,
+        );
+        assert!(
+            !page.assets.features.contains(&Feature::Mermaid),
+            "no mermaid fence should leave Feature::Mermaid unset, features: {:?}",
+            page.assets.features,
+        );
+    }
+
+    #[test]
+    fn render_page_detects_mermaid_feature_from_fence() {
+        use crate::render::assets::Feature;
+        let page = render(indoc! {"
+            ```mermaid
+            graph TD
+              A --> B
+            ```
+        "});
+        assert!(
+            page.assets.features.contains(&Feature::Mermaid),
+            "```mermaid fence should set Feature::Mermaid, features: {:?}",
+            page.assets.features,
+        );
+    }
+
+    #[test]
+    fn render_page_no_features_for_plain_content() {
+        let page = render(indoc! {"
+            # Heading
+
+            Just text. No math, no diagrams.
+        "});
+        assert!(
+            page.assets.features.is_empty(),
+            "plain content should detect no features, got: {:?}",
+            page.assets.features,
         );
     }
 
