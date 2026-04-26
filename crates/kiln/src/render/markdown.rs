@@ -311,13 +311,11 @@ fn transform_math<'a>(event: Event<'a>, features: &mut BTreeSet<Feature>) -> Eve
     match event {
         Event::InlineMath(content) => {
             features.insert(Feature::Math);
-            Event::InlineHtml(
-                format!(
-                    r#"<span class="math math-inline">\({}\)</span>"#,
-                    escape(&content)
-                )
-                .into(),
-            )
+            let html = format!(
+                r#"<span class="math math-inline">\({}\)</span>"#,
+                escape(&content)
+            );
+            Event::InlineHtml(html.into())
         }
         Event::DisplayMath(content) => {
             features.insert(Feature::Math);
@@ -461,7 +459,7 @@ mod tests {
 
     #[test]
     fn render_heading_with_display_math() {
-        let out = render("## Sum $$\\sum_{i=1}^n$$");
+        let out = render(r"## Sum $$\sum_{i=1}^n$$");
         assert!(
             out.html
                 .contains(r#"<span class="math math-display">\[\sum_{i=1}^n\]</span>"#),
@@ -469,7 +467,7 @@ mod tests {
             out.html
         );
         assert_eq!(out.headings[0].id, "sum-sum-i-1-n");
-        assert_eq!(out.headings[0].title, "Sum \\sum_{i=1}^n");
+        assert_eq!(out.headings[0].title, r"Sum \sum_{i=1}^n");
     }
 
     #[test]
