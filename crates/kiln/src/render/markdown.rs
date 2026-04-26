@@ -18,15 +18,15 @@ pub struct MarkdownOutput {
     pub html: String,
     /// Table of contents entries collected from headings.
     pub headings: Vec<TocEntry>,
-    /// Features detected during render (math expressions, mermaid fences).
-    /// The pipeline merges these into the page-level [`PageAssets`].
-    ///
-    /// [`PageAssets`]: crate::render::assets::PageAssets
-    pub features: BTreeSet<Feature>,
 }
 
 /// Renders markdown content to HTML with GFM extensions, math support, syntax
 /// highlighting, and image enhancement.
+///
+/// Side-effect: any [`Feature`] auto-detected while walking the markdown body
+/// (math expressions, ``` ``` ```mermaid``` ``` fences) is inserted into `features`.
+/// The caller passes `&mut assets.features` so the type system — not caller
+/// discipline — guarantees the page-level [`PageAssets`] sees them.
 ///
 /// - Headings receive auto-generated `id` attributes (CJK-aware slugification)
 ///   and are collected into `headings` for table of contents generation.
@@ -37,12 +37,15 @@ pub struct MarkdownOutput {
 /// - Block images (sole image in a paragraph) are wrapped in `<figure>`
 ///   elements. Optional `image_attrs` from Pandoc `{...}` preprocessing
 ///   are applied (width, height, classes).
+///
+/// [`PageAssets`]: crate::render::assets::PageAssets
 #[must_use]
 pub(crate) fn render_markdown(
     content: &str,
     syntax_set: &SyntaxSet,
     image_attrs: &HashMap<usize, ImageAttrs>,
     code_max_lines: Option<usize>,
+    features: &mut BTreeSet<Feature>,
 ) -> MarkdownOutput {
     let options = markdown_options();
 
@@ -53,7 +56,6 @@ pub(crate) fn render_markdown(
     let parser = Parser::new_ext(content, options).into_offset_iter();
     let mut output_events: Vec<Event<'_>> = Vec::new();
 
-    let mut features: BTreeSet<Feature> = BTreeSet::new();
     let mut heading_index: usize = 0;
     let mut in_code_block = false;
     let mut code_lang: Option<String> = None;
@@ -118,7 +120,7 @@ pub(crate) fn render_markdown(
                     output_events.push(Event::Html(html.into()));
                 } else {
                     output_events.push(Event::Html("<p>".into()));
-                    flush_paragraph(&para_buf, image_attrs, &mut output_events, &mut features);
+                    flush_paragraph(&para_buf, image_attrs, &mut output_events, features);
                     output_events.push(Event::Html("</p>\n".into()));
                 }
                 para_buf.clear();
@@ -129,7 +131,7 @@ pub(crate) fn render_markdown(
 
             // ── Everything else (math, etc.) ──
             other => {
-                output_events.push(transform_math(other, &mut features));
+                output_events.push(transform_math(other, features));
             }
         }
     }
@@ -137,11 +139,7 @@ pub(crate) fn render_markdown(
     let mut html = String::new();
     pulldown_cmark::html::push_html(&mut html, output_events.into_iter());
 
-    MarkdownOutput {
-        html,
-        headings,
-        features,
-    }
+    MarkdownOutput { html, headings }
 }
 
 /// Checks if a paragraph's buffered events represent a sole image (block image).
@@ -365,7 +363,8 @@ mod tests {
     static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(two_face::syntax::extra_newlines);
 
     fn render(content: &str) -> MarkdownOutput {
-        render_markdown(content, &SYNTAX_SET, &HashMap::new(), None)
+        let mut features = BTreeSet::new();
+        render_markdown(content, &SYNTAX_SET, &HashMap::new(), None, &mut features)
     }
 
     // ── deduplicate_id ──

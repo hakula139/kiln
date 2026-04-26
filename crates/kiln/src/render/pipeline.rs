@@ -53,8 +53,13 @@ pub fn render_page(
     }
     let (cleaned, image_attrs) = extract_image_attrs(&preprocessed);
 
-    let md_output = render_markdown(&cleaned, syntax_set, &image_attrs, options.code_max_lines);
-    assets.features.extend(md_output.features);
+    let md_output = render_markdown(
+        &cleaned,
+        syntax_set,
+        &image_attrs,
+        options.code_max_lines,
+        &mut assets.features,
+    );
     let toc_html = render_toc_html(&md_output.headings);
 
     Ok(RenderedPage {
@@ -93,8 +98,13 @@ fn render_directives(
     for block in top_level.into_iter().rev() {
         let inner = render_directives(&block.body, syntax_set, engine, source_dir, assets)?;
         let (cleaned, image_attrs) = extract_image_attrs(&inner);
-        let md_output = render_markdown(&cleaned, syntax_set, &image_attrs, None);
-        assets.features.extend(md_output.features);
+        let md_output = render_markdown(
+            &cleaned,
+            syntax_set,
+            &image_attrs,
+            None,
+            &mut assets.features,
+        );
         let html = render_directive_block(block, &md_output.html, engine, source_dir)?;
 
         // Blank-line padding: <details> / <div> are CommonMark type 6 HTML
