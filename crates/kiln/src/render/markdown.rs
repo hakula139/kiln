@@ -315,7 +315,7 @@ fn transform_math<'a>(event: Event<'a>, features: &mut BTreeSet<Feature>) -> Eve
             features.insert(Feature::Math);
             Event::InlineHtml(
                 format!(
-                    "<span class=\"math math-inline\">\\({}\\)</span>",
+                    r#"<span class="math math-inline">\({}\)</span>"#,
                     escape(&content)
                 )
                 .into(),
@@ -323,13 +323,11 @@ fn transform_math<'a>(event: Event<'a>, features: &mut BTreeSet<Feature>) -> Eve
         }
         Event::DisplayMath(content) => {
             features.insert(Feature::Math);
-            Event::Html(
-                format!(
-                    "<span class=\"math math-display\">\\[{}\\]</span>\n",
-                    escape(&content)
-                )
-                .into(),
-            )
+            let html = format!(
+                r#"<span class="math math-display">\[{}\]</span>"#,
+                escape(&content)
+            );
+            Event::Html(format!("{html}\n").into())
         }
         other => other,
     }
@@ -701,7 +699,7 @@ mod tests {
     fn render_math_with_html_chars() {
         let out = render("$x < y$");
         assert!(
-            out.html.contains("\\(x &lt; y\\)"),
+            out.html.contains(r"\(x &lt; y\)"),
             "math content should be HTML-escaped, html:\n{}",
             out.html
         );
