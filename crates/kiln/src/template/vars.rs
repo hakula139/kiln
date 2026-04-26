@@ -3,6 +3,7 @@ use serde::Serialize;
 use crate::config::Config;
 use crate::content::frontmatter::FeaturedImage;
 use crate::pagination::PaginationVars;
+use crate::render::assets::PageAssets;
 
 /// Template variables for rendering a post page.
 ///
@@ -18,7 +19,10 @@ pub struct PostTemplateVars<'a> {
     pub page_css: Option<String>,
     pub date: Option<String>,
     pub section: Option<LinkedTerm>,
-    pub math: bool,
+    /// Auto-detected runtime dependencies (math, mermaid, registered scripts).
+    /// Themes iterate `assets.features` and `assets.scripts` to load the right
+    /// CSS / JS without per-feature frontmatter flags.
+    pub assets: PageAssets,
     pub content: &'a str,
     pub toc: &'a str,
     pub config: &'a Config,
