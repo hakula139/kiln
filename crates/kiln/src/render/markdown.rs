@@ -24,9 +24,9 @@ pub struct MarkdownOutput {
 /// highlighting, and image enhancement.
 ///
 /// Side-effect: any [`Feature`] auto-detected while walking the markdown body
-/// (math expressions, ``` ``` ```mermaid``` ``` fences) is inserted into `features`.
-/// The caller passes `&mut assets.features` so the type system — not caller
-/// discipline — guarantees the page-level [`PageAssets`] sees them.
+/// (math expressions, fenced code blocks tagged `mermaid`) is inserted into
+/// `features`. The caller passes `&mut assets.features` so the type system —
+/// not caller discipline — guarantees the page-level [`PageAssets`] sees them.
 ///
 /// - Headings receive auto-generated `id` attributes (CJK-aware slugification)
 ///   and are collected into `headings` for table of contents generation.
