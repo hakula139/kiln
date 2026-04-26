@@ -188,6 +188,7 @@ mod tests {
     use indoc::indoc;
 
     use super::*;
+    use crate::render::assets::Feature;
     use crate::test_utils::{test_engine, test_i18n};
 
     static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(two_face::syntax::extra_newlines);
@@ -408,9 +409,7 @@ mod tests {
             page.content_html
         );
         assert!(
-            page.assets
-                .features
-                .contains(&crate::render::assets::Feature::Math),
+            page.assets.features.contains(&Feature::Math),
             "math inside a directive body should bubble up to page assets, features: {:?}",
             page.assets.features,
         );
@@ -420,7 +419,6 @@ mod tests {
 
     #[test]
     fn render_page_detects_math_feature_at_body_level() {
-        use crate::render::assets::Feature;
         let page = render(indoc! {r"
             Plain text with $a + b$ inline math.
         "});
@@ -438,7 +436,6 @@ mod tests {
 
     #[test]
     fn render_page_detects_mermaid_feature_from_fence() {
-        use crate::render::assets::Feature;
         let page = render(indoc! {"
             ```mermaid
             graph TD
@@ -454,7 +451,6 @@ mod tests {
 
     #[test]
     fn render_page_detects_mermaid_feature_case_insensitively() {
-        use crate::render::assets::Feature;
         let page = render(indoc! {"
             ```Mermaid
             graph TD
@@ -470,7 +466,6 @@ mod tests {
 
     #[test]
     fn render_page_detects_mermaid_feature_with_info_string_metadata() {
-        use crate::render::assets::Feature;
         let page = render(indoc! {"
             ```mermaid no_run
             graph TD
