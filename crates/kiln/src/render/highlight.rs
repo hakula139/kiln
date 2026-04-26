@@ -125,8 +125,7 @@ pub fn highlight_code(
 /// Unrecognized tokens always get `"plaintext"` as the canonical label (for
 /// consistent CSS targeting) with a title-cased display label derived from
 /// the lowercased token. Known plain text names ("text", "plaintext",
-/// "plain") display as "Plain Text"; silent fallbacks ("mermaid") keep
-/// their capitalized name without a warning.
+/// "plain") display as "Plain Text".
 fn find_syntax<'a>(syntax_set: &'a SyntaxSet, lang: &str) -> (&'a SyntaxReference, String, String) {
     if !lang.is_empty() {
         let syntax = syntax_set
@@ -148,7 +147,6 @@ fn find_syntax<'a>(syntax_set: &'a SyntaxSet, lang: &str) -> (&'a SyntaxReferenc
     let lower = lang.to_ascii_lowercase();
     let display = match lower.as_str() {
         "" | "text" | "plaintext" | "plain" => "Plain Text".into(),
-        "mermaid" => capitalize_first(&lower),
         _ => {
             debug!(lang, "unrecognized language, falling back to plain text");
             capitalize_first(&lower)
@@ -374,19 +372,6 @@ mod tests {
         assert!(
             html.contains(r#"<span class="code-lang">Plain Text</span>"#),
             "display label should be Plain Text, html:\n{html}"
-        );
-    }
-
-    #[test]
-    fn highlight_code_mermaid() {
-        let html = highlight("mermaid", "graph TD\n");
-        assert!(
-            html.contains(r#"data-lang="plaintext""#),
-            "should normalize mermaid to plaintext, html:\n{html}"
-        );
-        assert!(
-            html.contains(r#"<span class="code-lang">Mermaid</span>"#),
-            "display label should preserve tool name, html:\n{html}"
         );
     }
 
