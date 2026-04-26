@@ -249,20 +249,18 @@ Whenever a template variable includes a page `date`, kiln renders it as an ISO 8
 
 `assets` is populated by the renderer as it walks the page (and any nested directive bodies):
 
-| Field      | Type             | Description                                                                                       |
-| ---------- | ---------------- | ------------------------------------------------------------------------------------------------- |
-| `features` | list of strings  | Auto-detected runtime dependencies. Current values: `"math"` (set when the page contains math expressions), `"mermaid"` (set when a ` ```mermaid ` fence is present). |
-| `scripts`  | list of objects  | Scripts registered by directive templates (forward-looking — wired by a future `register_script()` helper). Each entry has `url`, `load` (`"defer"` / `"async"` / `"sync"`), and `module` (bool). |
+| Field      | Type            | Description                                                                                                                                                                                                                        |
+| ---------- | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `features` | list of strings | Auto-detected runtime dependencies. Current values: `"math"` (set when the page contains math expressions), `"mermaid"` (set when a ` ```mermaid ` fence is present).                                                              |
+| `scripts`  | list of objects | Reserved for the planned directive→script bridge. No template binding exists yet, so this list is always empty in the current release. Each entry will have `url`, `load` (`"defer"` / `"async"` / `"sync"`), and `module` (bool). |
 
-Templates gate conditional CDN loads with membership tests, e.g.:
+Templates gate conditional CDN loads with membership tests on `assets.features`. Use the `assets is defined` guard when the include is shared with listing templates (`home.html`, `archive.html`, `overview.html`, `404.html`) — only `post.html` and `page.html` receive `assets`:
 
 ```jinja
-{%- if "math" in assets.features %}
+{%- if assets is defined and "math" in assets.features %}
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16/dist/katex.min.css">
 {%- endif %}
 ```
-
-The `assets is defined` guard is required when the include is shared with listing templates (`home.html`, `archive.html`, `overview.html`, `404.html`) — only `post.html` and `page.html` receive `assets`.
 
 #### Standalone page templates (`page.html`)
 

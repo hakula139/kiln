@@ -71,7 +71,7 @@ The default theme [**IgnIt**](https://github.com/hakula139/IgnIt) ships with Tai
 
 ### Runtime Polish
 
-- Mermaid diagram rendering — auto-detection is wired; remaining work is a markup change so themes can drop in mermaid.js
+- Mermaid diagram rendering — feature auto-detection is wired (themes can already gate on `"mermaid" in assets.features`), but `` ```mermaid `` fences still emit `<pre><code class="language-mermaid">`. Swapping that wrapper to `<pre class="mermaid">` is the remaining engine work before themes can drop in mermaid.js
 - Directive-registered scripts via a `register_script()` helper, retiring the inline `<script>` workaround inside directive templates
 - Stricter `output_dir` validation so a misconfigured path can never reach somewhere unintended
 - Small authoring and tooling improvements as they surface from real publishing
