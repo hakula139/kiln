@@ -69,6 +69,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 ├── output.rs           # File output, static file copying, output directory cleaning
 ├── pagination.rs       # Paginator for windowed views over slices, page URL computation
 ├── render/             # Markdown rendering pipeline (RenderOptions in render.rs)
+│   ├── assets.rs       # PageAssets registry: scripts + auto-detected Feature flags (Math, Mermaid)
 │   ├── emoji.rs        # GitHub-style :shortcode: → Unicode emoji replacement
 │   ├── highlight.rs    # syntect + two-face CSS-class highlighting with line numbers, code-block wrapper
 │   ├── icon.rs         # :(class): → <i> FontAwesome icon shortcode replacement
