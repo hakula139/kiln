@@ -71,7 +71,7 @@ The default theme [**IgnIt**](https://github.com/hakula139/IgnIt) ships with Tai
 
 ### Runtime Polish
 
-- Mermaid diagram rendering — feature auto-detection is wired (themes can already gate on `"mermaid" in assets.features`), but `` ```mermaid `` fences still emit `<pre><code class="language-mermaid">`. Swapping that wrapper to `<pre class="mermaid">` is the remaining engine work before themes can drop in mermaid.js
+- Mermaid diagram rendering — kiln emits `<pre class="mermaid">` for `` ```mermaid `` fences (with `data-source` mirroring the DSL so themes can re-render after a dark-mode toggle), and themes can gate on `"mermaid" in assets.features`. Remaining work: theme-side runtime that loads mermaid.js
 - Directive-registered scripts via a `register_script()` helper, retiring the inline `<script>` workaround inside directive templates
 - Stricter `output_dir` validation so a misconfigured path can never reach somewhere unintended
 - Small authoring and tooling improvements as they surface from real publishing
