@@ -240,11 +240,29 @@ Whenever a template variable includes a page `date`, kiln renders it as an ISO 8
 | `page_css`        | string or `none` | URL to co-located `style.css` (if any)  |
 | `date`            | string or `none` | Publication date (ISO 8601)             |
 | `section`         | object or `none` | Section the post belongs to (see below) |
+| `assets`          | object           | Page-scoped asset registry (see below)  |
 | `content`         | string           | Rendered HTML content                   |
 | `toc`             | string           | Rendered table of contents HTML         |
 | `config`          | object           | Site configuration                      |
 | `config.base_url` | string           | Site base URL                           |
 | `config.title`    | string           | Site title                              |
+
+`assets` is populated by the renderer as it walks the page (and any nested directive bodies):
+
+| Field      | Type             | Description                                                                                       |
+| ---------- | ---------------- | ------------------------------------------------------------------------------------------------- |
+| `features` | list of strings  | Auto-detected runtime dependencies. Current values: `"math"` (set when the page contains math expressions), `"mermaid"` (set when a ` ```mermaid ` fence is present). |
+| `scripts`  | list of objects  | Scripts registered by directive templates (forward-looking — wired by a future `register_script()` helper). Each entry has `url`, `load` (`"defer"` / `"async"` / `"sync"`), and `module` (bool). |
+
+Templates gate conditional CDN loads with membership tests, e.g.:
+
+```jinja
+{%- if "math" in assets.features %}
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16/dist/katex.min.css">
+{%- endif %}
+```
+
+The `assets is defined` guard is required when the include is shared with listing templates (`home.html`, `archive.html`, `overview.html`, `404.html`) — only `post.html` and `page.html` receive `assets`.
 
 #### Standalone page templates (`page.html`)
 

@@ -27,6 +27,7 @@ The project's shape is deliberate:
 - Sitemap, `robots.txt`, and an optional template-driven 404 page
 - Full-text search via [Pagefind](https://pagefind.app), wired in at build time
 - Optional HTML / CSS / JS minification with `kiln build --minify` — pure Rust, no Node toolchain required
+- Page-scoped asset detection: themes load KaTeX only on pages that actually contain math expressions, no frontmatter flag required
 
 ### Internationalization
 
@@ -70,7 +71,8 @@ The default theme [**IgnIt**](https://github.com/hakula139/IgnIt) ships with Tai
 
 ### Runtime Polish
 
-- Conditional asset loading — KaTeX, Mermaid, and friends only ship on pages that need them
+- Mermaid diagram rendering — auto-detection is wired; remaining work is a markup change so themes can drop in mermaid.js
+- Directive-registered scripts via a `register_script()` helper, retiring the inline `<script>` workaround inside directive templates
 - Stricter `output_dir` validation so a misconfigured path can never reach somewhere unintended
 - Small authoring and tooling improvements as they surface from real publishing
 
