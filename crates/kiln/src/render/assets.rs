@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use anyhow::{Result, bail};
 use serde::Serialize;
-use strum::{AsRefStr, EnumString};
+use strum::AsRefStr;
 
 /// Per-page collection of asset declarations gathered during render.
 ///
@@ -17,6 +17,9 @@ use strum::{AsRefStr, EnumString};
 pub struct PageAssets {
     /// Scripts in registration order. Order matters for dependency chains
     /// (e.g., a library script must be registered before its consumer).
+    ///
+    /// Reserved for the planned directive→script bridge; no caller writes to
+    /// this field today, so themes will currently see an empty list.
     pub scripts: Vec<ScriptTag>,
 
     /// Features auto-detected during render (math expressions, mermaid fences).
@@ -27,19 +30,30 @@ pub struct PageAssets {
 impl PageAssets {
     /// Registers a script for the current page.
     ///
+    /// Re-registering the exact same [`ScriptTag`] (same `url`, `load`, and
+    /// `module`) is a no-op. Linear search is fine here — a page registers
+    /// at most a handful of scripts.
+    ///
     /// # Errors
     ///
     /// Returns an error if a script with the same URL has already been
-    /// registered with different load attributes. Re-registering an identical
-    /// tag is a no-op.
+    /// registered with a different `load` strategy or `module` flag, since
+    /// the browser would otherwise see two `<script>` tags fighting for the
+    /// same source.
     pub fn register_script(&mut self, tag: ScriptTag) -> Result<()> {
         if let Some(existing) = self.scripts.iter().find(|s| s.url == tag.url) {
             if existing == &tag {
                 return Ok(());
             }
             bail!(
-                "script {} registered with conflicting attributes: {existing:?} vs {tag:?}",
-                tag.url
+                "script \"{url}\" was already registered as (load={old_load}, module={old_mod}); \
+                 cannot re-register as (load={new_load}, module={new_mod}). \
+                 Pick one set of attributes per URL.",
+                url = tag.url,
+                old_load = existing.load.as_ref(),
+                old_mod = existing.module,
+                new_load = tag.load.as_ref(),
+                new_mod = tag.module,
             );
         }
         self.scripts.push(tag);
@@ -77,7 +91,7 @@ impl ScriptTag {
 
 /// How a `<script>` tag is loaded. `defer` and `async` are mutually exclusive
 /// in HTML, so they share an enum rather than two `bool` fields.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, AsRefStr, EnumString)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, AsRefStr)]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
 pub enum LoadStrategy {
@@ -92,7 +106,7 @@ pub enum LoadStrategy {
 /// New variants are added when the engine learns to auto-detect a new
 /// conditional capability. Site-wide modes (search, fontawesome) are
 /// configured separately and do not belong here.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, AsRefStr, EnumString)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, AsRefStr)]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
 pub enum Feature {
@@ -144,11 +158,12 @@ mod tests {
             })
             .unwrap_err()
             .to_string();
-        assert!(
-            err.contains("conflicting attributes"),
-            "should report conflict, got: {err}"
+        assert_eq!(
+            err,
+            "script \"/x.js\" was already registered as (load=defer, module=false); \
+             cannot re-register as (load=async, module=false). \
+             Pick one set of attributes per URL.",
         );
-        assert!(err.contains("/x.js"), "should mention URL, got: {err}");
         assert_eq!(assets.scripts.len(), 1, "conflicting tag must not be added");
     }
 
@@ -166,9 +181,11 @@ mod tests {
             })
             .unwrap_err()
             .to_string();
-        assert!(
-            err.contains("conflicting attributes"),
-            "should report conflict, got: {err}"
+        assert_eq!(
+            err,
+            "script \"/x.js\" was already registered as (load=defer, module=false); \
+             cannot re-register as (load=defer, module=true). \
+             Pick one set of attributes per URL.",
         );
     }
 
