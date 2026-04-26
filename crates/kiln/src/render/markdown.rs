@@ -88,7 +88,10 @@ pub(crate) fn render_markdown(
                         .map(String::from),
                     CodeBlockKind::Indented => None,
                 };
-                if code_lang.as_deref() == Some("mermaid") {
+                if code_lang
+                    .as_deref()
+                    .is_some_and(|l| l.eq_ignore_ascii_case("mermaid"))
+                {
                     features.insert(Feature::Mermaid);
                 }
                 code_buf.clear();

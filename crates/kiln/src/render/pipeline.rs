@@ -443,6 +443,38 @@ mod tests {
     }
 
     #[test]
+    fn render_page_detects_mermaid_feature_case_insensitively() {
+        use crate::render::assets::Feature;
+        let page = render(indoc! {"
+            ```Mermaid
+            graph TD
+              A --> B
+            ```
+        "});
+        assert!(
+            page.assets.features.contains(&Feature::Mermaid),
+            "uppercase fence should still set Feature::Mermaid, features: {:?}",
+            page.assets.features,
+        );
+    }
+
+    #[test]
+    fn render_page_detects_mermaid_feature_with_info_string_metadata() {
+        use crate::render::assets::Feature;
+        let page = render(indoc! {"
+            ```mermaid no_run
+            graph TD
+              A --> B
+            ```
+        "});
+        assert!(
+            page.assets.features.contains(&Feature::Mermaid),
+            "fence with trailing metadata should still set Feature::Mermaid, features: {:?}",
+            page.assets.features,
+        );
+    }
+
+    #[test]
     fn render_page_no_features_for_plain_content() {
         let page = render(indoc! {"
             # Heading
