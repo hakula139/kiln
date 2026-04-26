@@ -76,6 +76,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 │   ├── image.rs        # Block (<figure>) and inline (<img>) image rendering, lazy loading
 │   ├── image_attrs.rs  # Pandoc-style {#id .class width=N} extraction for images
 │   ├── markdown.rs     # pulldown-cmark, GFM, CJK heading IDs, KaTeX, block / inline images
+│   ├── mermaid.rs      # `<pre class="mermaid">` emit for ` ```mermaid ` fences (with data-source mirror)
 │   ├── pipeline.rs     # Full pipeline: directives → pre-processors → markdown → ToC
 │   └── toc.rs          # TocEntry struct, nested <nav> table of contents generation
 ├── search.rs           # Pagefind search indexing (external binary invocation)

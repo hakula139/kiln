@@ -7,6 +7,7 @@ use super::assets::Feature;
 use super::highlight::highlight_code;
 use super::image::{render_block_image, render_inline_image};
 use super::image_attrs::ImageAttrs;
+use super::mermaid::render_mermaid;
 use super::toc::TocEntry;
 use crate::html::escape;
 use crate::text::slugify;
@@ -60,6 +61,7 @@ pub(crate) fn render_markdown(
     let mut in_code_block = false;
     let mut code_lang: Option<String> = None;
     let mut code_buf = String::new();
+    let mut is_mermaid_block = false;
     let mut para_buf: Vec<(Event<'_>, std::ops::Range<usize>)> = Vec::new();
     let mut in_para = false;
 
@@ -77,7 +79,7 @@ pub(crate) fn render_markdown(
                 output_events.push(Event::Html(format!("</{level}>\n").into()));
             }
 
-            // ── Code blocks: buffer content, highlight on End ──
+            // ── Code blocks: buffer content, emit on End ──
             Event::Start(Tag::CodeBlock(kind)) => {
                 in_code_block = true;
                 code_lang = match kind {
@@ -90,20 +92,25 @@ pub(crate) fn render_markdown(
                         .map(String::from),
                     CodeBlockKind::Indented => None,
                 };
-                if code_lang
+                is_mermaid_block = code_lang
                     .as_deref()
-                    .is_some_and(|l| l.eq_ignore_ascii_case("mermaid"))
-                {
+                    .is_some_and(|l| l.eq_ignore_ascii_case("mermaid"));
+                if is_mermaid_block {
                     features.insert(Feature::Mermaid);
                 }
                 code_buf.clear();
             }
             Event::End(TagEnd::CodeBlock) => {
                 in_code_block = false;
-                let lang = code_lang.take().unwrap_or_default();
-                let html = highlight_code(syntax_set, &lang, &code_buf, code_max_lines);
+                let html = if is_mermaid_block {
+                    render_mermaid(&code_buf)
+                } else {
+                    let lang = code_lang.take().unwrap_or_default();
+                    highlight_code(syntax_set, &lang, &code_buf, code_max_lines)
+                };
                 output_events.push(Event::Html(html.into()));
                 code_buf.clear();
+                is_mermaid_block = false;
             }
             Event::Text(ref t) if in_code_block => {
                 code_buf.push_str(t);
@@ -795,6 +802,47 @@ mod tests {
         assert!(
             out.html.contains("<span class="),
             "should contain highlighted spans, html:\n{}",
+            out.html
+        );
+    }
+
+    #[test]
+    fn render_code_block_mermaid_emits_bare_pre() {
+        let md = indoc! {"
+            ```mermaid
+            graph TD
+            A --> B
+            ```
+        "};
+        let out = render(md);
+        assert!(
+            out.html.contains(r#"<pre class="mermaid""#),
+            "should emit bare pre.mermaid, html:\n{}",
+            out.html
+        );
+        assert!(
+            !out.html.contains(r#"class="code-block""#),
+            "mermaid block should bypass the code-block chrome, html:\n{}",
+            out.html
+        );
+        assert!(
+            out.html.contains("data-source=\"graph TD\nA --&gt; B\n\""),
+            "should preserve the DSL verbatim in data-source for theme-toggle re-render, html:\n{}",
+            out.html
+        );
+    }
+
+    #[test]
+    fn render_code_block_mermaid_case_insensitive() {
+        let md = indoc! {"
+            ```Mermaid
+            graph TD
+            ```
+        "};
+        let out = render(md);
+        assert!(
+            out.html.contains(r#"<pre class="mermaid""#),
+            "case-insensitive language tag should still emit pre.mermaid, html:\n{}",
             out.html
         );
     }
