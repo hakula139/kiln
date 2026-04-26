@@ -1,8 +1,9 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use syntect::parsing::SyntaxSet;
 
+use super::assets::Feature;
 use super::highlight::highlight_code;
 use super::image::{render_block_image, render_inline_image};
 use super::image_attrs::ImageAttrs;
@@ -17,6 +18,11 @@ pub struct MarkdownOutput {
     pub html: String,
     /// Table of contents entries collected from headings.
     pub headings: Vec<TocEntry>,
+    /// Features detected during render (math expressions, mermaid fences).
+    /// The pipeline merges these into the page-level [`PageAssets`].
+    ///
+    /// [`PageAssets`]: crate::render::assets::PageAssets
+    pub features: BTreeSet<Feature>,
 }
 
 /// Renders markdown content to HTML with GFM extensions, math support, syntax
@@ -47,6 +53,7 @@ pub(crate) fn render_markdown(
     let parser = Parser::new_ext(content, options).into_offset_iter();
     let mut output_events: Vec<Event<'_>> = Vec::new();
 
+    let mut features: BTreeSet<Feature> = BTreeSet::new();
     let mut heading_index: usize = 0;
     let mut in_code_block = false;
     let mut code_lang: Option<String> = None;
@@ -81,6 +88,9 @@ pub(crate) fn render_markdown(
                         .map(String::from),
                     CodeBlockKind::Indented => None,
                 };
+                if code_lang.as_deref() == Some("mermaid") {
+                    features.insert(Feature::Mermaid);
+                }
                 code_buf.clear();
             }
             Event::End(TagEnd::CodeBlock) => {
@@ -105,7 +115,7 @@ pub(crate) fn render_markdown(
                     output_events.push(Event::Html(html.into()));
                 } else {
                     output_events.push(Event::Html("<p>".into()));
-                    flush_paragraph(&para_buf, image_attrs, &mut output_events);
+                    flush_paragraph(&para_buf, image_attrs, &mut output_events, &mut features);
                     output_events.push(Event::Html("</p>\n".into()));
                 }
                 para_buf.clear();
@@ -116,7 +126,7 @@ pub(crate) fn render_markdown(
 
             // ── Everything else (math, etc.) ──
             other => {
-                output_events.push(transform_math(other));
+                output_events.push(transform_math(other, &mut features));
             }
         }
     }
@@ -124,7 +134,11 @@ pub(crate) fn render_markdown(
     let mut html = String::new();
     pulldown_cmark::html::push_html(&mut html, output_events.into_iter());
 
-    MarkdownOutput { html, headings }
+    MarkdownOutput {
+        html,
+        headings,
+        features,
+    }
 }
 
 /// Checks if a paragraph's buffered events represent a sole image (block image).
@@ -173,6 +187,7 @@ fn flush_paragraph<'a>(
     events: &[(Event<'a>, std::ops::Range<usize>)],
     image_attrs: &HashMap<usize, ImageAttrs>,
     output: &mut Vec<Event<'a>>,
+    features: &mut BTreeSet<Feature>,
 ) {
     let mut i = 0;
     while i < events.len() {
@@ -200,7 +215,7 @@ fn flush_paragraph<'a>(
                 render_inline_image(&src, &alt, &title, attrs).into(),
             ));
         } else {
-            output.push(transform_math(events[i].0.clone()));
+            output.push(transform_math(events[i].0.clone(), features));
             i += 1;
         }
     }
@@ -287,22 +302,32 @@ fn push_plain_text(buf: &mut String, event: &Event) {
 }
 
 /// Converts math events into KaTeX-compatible HTML; passes other events through.
-fn transform_math(event: Event<'_>) -> Event<'_> {
+///
+/// Records [`Feature::Math`] in `features` whenever a math event is transformed,
+/// so the page knows it needs the `KaTeX` runtime even without an explicit
+/// frontmatter flag.
+fn transform_math<'a>(event: Event<'a>, features: &mut BTreeSet<Feature>) -> Event<'a> {
     match event {
-        Event::InlineMath(content) => Event::InlineHtml(
-            format!(
-                "<span class=\"math math-inline\">\\({}\\)</span>",
-                escape(&content)
+        Event::InlineMath(content) => {
+            features.insert(Feature::Math);
+            Event::InlineHtml(
+                format!(
+                    "<span class=\"math math-inline\">\\({}\\)</span>",
+                    escape(&content)
+                )
+                .into(),
             )
-            .into(),
-        ),
-        Event::DisplayMath(content) => Event::Html(
-            format!(
-                "<span class=\"math math-display\">\\[{}\\]</span>\n",
-                escape(&content)
+        }
+        Event::DisplayMath(content) => {
+            features.insert(Feature::Math);
+            Event::Html(
+                format!(
+                    "<span class=\"math math-display\">\\[{}\\]</span>\n",
+                    escape(&content)
+                )
+                .into(),
             )
-            .into(),
-        ),
+        }
         other => other,
     }
 }
