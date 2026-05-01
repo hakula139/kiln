@@ -256,12 +256,9 @@ fn flush_paragraph<'a>(
     }
 }
 
-/// Merges the manually-authored `{...}` attributes for an image with on-disk
-/// metadata from the resolver.
-///
-/// Returns `None` only when there are neither manual attrs nor a resolver
-/// match — that lets remote images, missing files, and undecodable formats
-/// pass through with the existing `<img src="..." alt="...">` shape.
+/// Merges the authored `{...}` block for an image with the resolver's
+/// on-disk metadata. Returns `None` only when neither side has anything,
+/// so remote images and unresolvable paths pass through unchanged.
 fn enrich_image_attrs(
     base: Option<&ImageAttrs>,
     src: &str,

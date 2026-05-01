@@ -83,9 +83,8 @@ fn push_img_tag(
             _ = write!(html, r#" height="{}""#, escape(h));
         }
         if let Some(lqip) = &a.lqip_uri {
-            // Base64 data URIs contain only `[A-Za-z0-9+/=]` after the
-            // comma, so neither the surrounding `"` nor the CSS `url('...')`
-            // delimiters can collide with the payload — no escaping needed.
+            // Base64 contains only `[A-Za-z0-9+/=]`, so no escaping needed
+            // for the surrounding `"` or the CSS `url('...')` delimiters.
             _ = write!(html, r#" style="background:url('{lqip}') center/cover""#,);
         }
     }
@@ -93,12 +92,9 @@ fn push_img_tag(
     html.push_str(r#" loading="lazy" decoding="async" />"#);
 }
 
-/// Computes the `width` / `height` HTML attributes for an `<img>`.
-///
-/// Manual `{width=…}` / `{height=…}` from markdown attribute blocks always
-/// win. When only one axis is manually set, the other is scaled from the
-/// resolver-supplied auto aspect ratio so the rendered box matches the
-/// source's shape — the exact-aspect placeholder that kills layout shift.
+/// Picks the `width` / `height` to emit. Manual `{width=…}` / `{height=…}`
+/// always win; when only one is set, the other is scaled from the resolver's
+/// auto aspect so the rendered box matches the source shape.
 fn final_dimensions(attrs: &ImageAttrs) -> (Option<String>, Option<String>) {
     match (
         attrs.width.as_deref(),

@@ -189,36 +189,25 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 
 ## Nix Development
 
-The `flake.nix` at the repo root provides a reproducible dev shell with the
-Rust toolchain plus the native libraries kiln links against (`libdav1d` for
-AVIF decoding, `pagefind` for search indexing).
+`flake.nix` pins the Rust toolchain, `libdav1d` (AVIF), and `pagefind`.
 
 ```bash
 nix develop                            # interactive shell
-nix develop --command cargo test       # one-shot under the dev shell
 nix flake check                        # run pre-commit hooks
 ```
 
-`direnv` users get the shell automatically — `.envrc` ships `use flake`.
+`direnv` auto-activates the shell via `.envrc`.
 
-### Pre-commit hooks (via `git-hooks-nix`)
+### Pre-commit hooks
 
-Configured in `flake.nix` and installed by entering the dev shell:
-
-- File hygiene: `check-added-large-files`, `check-yaml`, `end-of-file-fixer`,
-  `trim-trailing-whitespace`
-- Nix: `nixfmt`, `statix`, `deadnix`
-- Rust: `rustfmt`
-
-Clippy is intentionally **not** in the pre-commit set: it needs the full dev
-shell environment (`libdav1d`) which the bare git hook process does not
-inherit. CI runs `cargo clippy` instead.
+Hygiene (`check-added-large-files`, `check-yaml`, `end-of-file-fixer`,
+`trim-trailing-whitespace`), Nix (`nixfmt`, `statix`, `deadnix`), and
+`rustfmt`. Clippy stays in CI — the bare hook process can't see `libdav1d`.
 
 ### Adding native dependencies
 
-Add the package to `devShells.default.packages` in `flake.nix`. For build
-deps the Rust toolchain itself needs (e.g., a `*-sys` crate's underlying C
-library), also extend `pkg-config` discovery if the crate uses it.
+Append to `devShells.default.packages` in `flake.nix`. `*-sys` crates that
+use `pkg-config` also need their `.pc` file on `PKG_CONFIG_PATH`.
 
 ## Verification
 

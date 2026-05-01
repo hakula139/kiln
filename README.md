@@ -128,20 +128,19 @@ enabled = true
 Requires [Rust](https://www.rust-lang.org/tools/install) 1.85+ (edition 2024) and `libdav1d` (for the `image` crate's AVIF decoder).
 
 ```bash
-cargo build --release    # Binary at target/release/kiln
+cargo build --release             # Binary at target/release/kiln
 ```
 
 ### Reproducible dev shell (Nix)
 
-If you have [Nix](https://nixos.org) with flakes enabled, the supplied `flake.nix` pins the Rust toolchain, `libdav1d`, `pagefind`, and the project's pre-commit hooks:
+The shipped `flake.nix` pins the Rust toolchain, `libdav1d`, `pagefind`, and pre-commit hooks:
 
 ```bash
-nix develop                            # interactive shell
-nix develop --command cargo build      # one-shot build
-nix flake check                        # run pre-commit hooks
+nix develop                       # interactive shell
+nix flake check                   # run pre-commit hooks
 ```
 
-`direnv` users get the shell automatically via the included `.envrc`.
+`direnv` auto-activates the shell via `.envrc`.
 
 ## License
 

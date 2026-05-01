@@ -52,10 +52,9 @@ impl Default for ImageConfig {
 
 /// Per-image metadata produced by [`ImageResolver::resolve`].
 ///
-/// `lqip_uri` is `None` when LQIP is disabled in config or when the source
-/// format cannot be decoded by the `image` crate (e.g., SVG). The
-/// `width` / `height` fields are populated whenever any decoder — including
-/// the header-only `imagesize` fallback — recognises the file.
+/// `lqip_uri` is `None` when LQIP is disabled or the source can't be decoded
+/// (e.g., SVG); `width` / `height` fall back to the header-only `imagesize`
+/// reader, which covers more formats than the `image` crate.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ImageMeta {
     pub width: u32,
@@ -65,10 +64,8 @@ pub struct ImageMeta {
 }
 
 /// Resolves `<img src>` strings to on-disk paths, reads dimensions, and
-/// optionally encodes a 16×16 WebP LQIP per the active [`ImageConfig`].
-///
-/// Construction is cheap; the resolver memoises results per canonical path
-/// for the lifetime of a single build.
+/// (per [`ImageConfig`]) encodes a small WebP LQIP. Memoised per canonical
+/// path for the build's lifetime.
 pub struct ImageResolver {
     static_root: PathBuf,
     config: ImageConfig,
@@ -88,16 +85,16 @@ impl ImageResolver {
     }
 
     /// Resolves a `src` string to image metadata, or returns `None` when the
-    /// path cannot be located or the format is unrecognisable.
+    /// path can't be located or the format isn't recognised.
     ///
-    /// `base_dir` is the page-bundle directory used for relative paths. Pass
-    /// `None` for contexts without a bundle anchor (e.g., feed generation).
+    /// `base_dir` is the page-bundle anchor for relative paths; pass `None`
+    /// for contexts without a bundle (e.g., feed generation).
     ///
     /// # Panics
     ///
-    /// Panics if the internal cache mutex is poisoned. Poisoning would mean
-    /// a previous `resolve` call panicked while holding the lock, which the
-    /// pure cache logic here cannot trigger; treat any panic as a bug.
+    /// Panics if the cache mutex is poisoned — only reachable if a prior
+    /// `resolve` call panicked while holding the lock, which the pure cache
+    /// logic here cannot trigger.
     #[must_use]
     pub fn resolve(&self, src: &str, base_dir: Option<&Path>) -> Option<Arc<ImageMeta>> {
         let path = self.resolve_path(src, base_dir)?;
@@ -133,10 +130,9 @@ impl ImageResolver {
 
     /// Reads dimensions and (optionally) encodes the LQIP for one path.
     ///
-    /// Always tries `imagesize` first — it parses headers without decoding
-    /// pixels and supports formats the `image` crate cannot (e.g., raw HEIC,
-    /// JPEG XL). If LQIP is enabled, the second pass decodes pixels for the
-    /// downsample.
+    /// `imagesize` parses headers without decoding pixels and covers formats
+    /// the `image` crate doesn't (HEIC, JPEG XL). LQIP encoding happens in a
+    /// second pass that does decode.
     fn compute(&self, path: &Path) -> Option<ImageMeta> {
         let dims = imagesize::size(path).ok()?;
         let width = u32::try_from(dims.width).ok()?;
@@ -160,16 +156,14 @@ impl ImageResolver {
     }
 }
 
-/// Decodes the source raster, downsamples to a square `size`-pixel preview,
-/// and returns a `data:image/webp;base64,...` URI. Returns `None` when the
-/// format isn't decodable (e.g., SVG vector, animated AVIF first-frame
-/// failure) — the caller falls back to dimension-only output.
+/// Decodes the raster, downsamples to a `size`-pixel preview, and returns
+/// a `data:image/webp;base64,...` URI. Returns `None` for undecodable
+/// formats (SVG, animated AVIF first-frame failure).
 fn encode_lqip(path: &Path, size: u32, quality: u8) -> Option<String> {
     let img = ImageReader::open(path).ok()?.decode().ok()?;
 
-    // Resize preserving aspect ratio so the LQIP echoes the source's shape.
-    // `Triangle` is the cheapest filter that doesn't visibly alias at small
-    // sizes; `Lanczos3` over-sharpens the blur we actually want.
+    // `Triangle` is the cheapest filter that doesn't alias at this size;
+    // `Lanczos3` over-sharpens the blur we want.
     let resized = img.resize(size, size, FilterType::Triangle);
     let rgba = resized.to_rgba8();
 

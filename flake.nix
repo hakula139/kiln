@@ -2,13 +2,9 @@
 # kiln Development Flake
 # ==============================================================================
 #
-# Reproducible dev shell with the Rust toolchain, libdav1d (for `image`'s
-# AVIF decoder), and the build-time tooling kiln shells out to (`pagefind`).
-#
-# Usage:
+# Provides Rust toolchain, libdav1d (AVIF decode), pagefind, and pre-commit hooks.
 #
 #   nix develop                            # interactive shell
-#   nix develop --command cargo build      # one-shot
 #   nix flake check                        # run pre-commit hooks
 
 {
@@ -49,8 +45,7 @@
           overlays = [ rust-overlay.overlays.default ];
         };
 
-        # Stable Rust with components used by `cargo clippy`, coverage, and
-        # editor tooling.
+        # Stable Rust with clippy / coverage / editor extensions.
         rustToolchain = pkgs.rust-bin.stable.latest.default.override {
           extensions = [
             "llvm-tools-preview"
@@ -74,9 +69,7 @@
             statix.enable = true;
             deadnix.enable = true;
 
-            # Format Rust at commit time. Clippy is run in CI rather than
-            # at commit, since it requires the full dev-shell environment
-            # (libdav1d) which the bare git hook process doesn't inherit.
+            # Clippy stays in CI — the bare hook process can't see libdav1d.
             rustfmt = {
               enable = true;
               packageOverrides = {
@@ -98,24 +91,20 @@
             preCommitCheck.enabledPackages
             ++ [ rustToolchain ]
             ++ (with pkgs; [
-              # `image` crate AVIF decoder — libdav1d via dav1d-sys.
+              # AVIF decode (dav1d-sys) + kiln's runtime search dep.
               dav1d
               pkg-config
               nasm
-
-              # kiln runtime dependency.
               pagefind
             ])
-            # Darwin requires libiconv when crates link against libstd
-            # symbols (e.g. onig_sys, libwebp-sys).
+            # libiconv resolves onig_sys / libwebp-sys link errors on darwin.
             ++ pkgs.lib.optional pkgs.stdenv.isDarwin pkgs.libiconv;
 
           shellHook =
             preCommitCheck.shellHook
             + pkgs.lib.optionalString pkgs.stdenv.isDarwin ''
-              # Point the linker at the system Xcode SDK so rustc's stdlib
-              # (which links against system libSystem) resolves cleanly. The
-              # Nix apple-sdk sysroot has different ABI versioning.
+              # rustc stdlib targets the system libSystem; reach the Xcode SDK
+              # rather than the Nix apple-sdk sysroot (mismatched ABI).
               export LIBRARY_PATH="$(xcrun --show-sdk-path)/usr/lib''${LIBRARY_PATH:+:$LIBRARY_PATH}"
             '';
 
