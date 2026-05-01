@@ -57,6 +57,32 @@ kiln is purpose-built for hakula.xyz: strong CJK-friendly authoring, explicit re
 
 Richer code-block presentation, bundled scripts for directive templates, and ongoing runtime ergonomics polish. See the [roadmap](docs/roadmap.md) for details.
 
+## Installation
+
+### Prebuilt binary
+
+Download the latest release for your platform from [Releases](https://github.com/hakula139/kiln/releases/latest):
+
+```bash
+# Linux x86_64
+curl -fsSL https://github.com/hakula139/kiln/releases/latest/download/kiln-x86_64-unknown-linux-gnu.tar.gz | tar -xz
+sudo mv kiln /usr/local/bin/
+
+# macOS aarch64 (Apple Silicon)
+curl -fsSL https://github.com/hakula139/kiln/releases/latest/download/kiln-aarch64-apple-darwin.tar.gz | tar -xz
+sudo mv kiln /usr/local/bin/
+
+kiln --version
+```
+
+### From source
+
+```bash
+cargo install --git https://github.com/hakula139/kiln --locked
+```
+
+See [`RELEASING.md`](./RELEASING.md) for how releases are produced.
+
 ## Usage
 
 ```bash
