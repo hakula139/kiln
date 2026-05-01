@@ -5,6 +5,12 @@
 # Dependencies
 /node_modules/
 
+# Nix
+.direnv/
+.pre-commit-config.yaml
+result
+result-*
+
 # OS files
 .DS_Store
 

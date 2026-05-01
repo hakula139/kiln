@@ -17,10 +17,21 @@ pedantic = { level = "warn", priority = -1 }
 [workspace.dependencies]
 anyhow = "1"
 axum = { version = "0.8", features = ["ws"] }
+base64 = "0.22"
 clap = { version = "4", features = ["derive"] }
 csv = "1"
 gh-emoji = "1"
 http-body-util = "0.1"
+image = { version = "0.25", default-features = false, features = [
+  "avif-native",
+  "bmp",
+  "gif",
+  "jpeg",
+  "png",
+  "tiff",
+  "webp",
+] }
+imagesize = "0.13"
 indoc = "2"
 jiff = { version = "0.2", features = ["serde"] }
 lightningcss = "1.0.0-alpha.71"
@@ -65,6 +76,7 @@ tracing-subscriber = { version = "0.3", default-features = false, features = [
 ] }
 two-face = "0.5"
 walkdir = "2"
+webp = "0.3"
 
 [profile.release]
 lto = true

@@ -1,15 +1,24 @@
 use std::collections::HashMap;
 
+use super::lqip::ImageMeta;
 use crate::directive::parse_pandoc_attrs;
 use crate::markdown::{for_each_non_code_line, scan_code_span};
 
-/// Attributes extracted from Pandoc-style `{...}` blocks after images.
+/// Attributes extracted from Pandoc-style `{...}` blocks after images,
+/// merged with auto-detected dimensions and an optional LQIP placeholder.
+///
+/// Manual attributes (`width` / `height`) come from the markdown source and
+/// take precedence over the auto-detected values from the resolver. The
+/// auto fields backstop the common case where no `{...}` block is present.
 #[derive(Debug, Clone, Default)]
 pub struct ImageAttrs {
     pub id: Option<String>,
     pub classes: Vec<String>,
     pub width: Option<String>,
     pub height: Option<String>,
+    pub auto_width: Option<u32>,
+    pub auto_height: Option<u32>,
+    pub lqip_uri: Option<String>,
 }
 
 /// Extracts `![alt](url){...}` attribute blocks from markdown.
@@ -145,6 +154,17 @@ impl ImageAttrs {
             && self.classes.is_empty()
             && self.width.is_none()
             && self.height.is_none()
+            && self.auto_width.is_none()
+            && self.auto_height.is_none()
+            && self.lqip_uri.is_none()
+    }
+
+    /// Stamps auto-detected dimensions and LQIP onto the attributes from a
+    /// resolver lookup. Manual fields are untouched.
+    pub fn fill_from_meta(&mut self, meta: &ImageMeta) {
+        self.auto_width = Some(meta.width);
+        self.auto_height = Some(meta.height);
+        self.lqip_uri.clone_from(&meta.lqip_uri);
     }
 }
 
