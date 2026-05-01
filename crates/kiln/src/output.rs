@@ -28,6 +28,10 @@ pub fn clean_output_dir(path: &Path) -> Result<()> {
 /// under `static/css/_src/`) in the same tree as the shipped bundle without
 /// exposing them in the published site.
 ///
+/// The exception is well-known deployment-config files (see
+/// [`STATIC_DEPLOYMENT_CONFIG_FILES`]) at the top level of `src`, which pass
+/// through unchanged so that hosts that consume these files work as expected.
+///
 /// Skips the copy entirely if `src` does not exist.
 ///
 /// # Errors
@@ -61,15 +65,27 @@ pub fn copy_static(src: &Path, dest: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Returns `true` for entries whose file name starts with `_`. Such entries
-/// are build inputs (partials, Tailwind sources, etc.) that should not be
-/// copied into the published site.
+/// Returns `true` for entries whose file name starts with `_`, except for the
+/// deployment-config files in [`STATIC_DEPLOYMENT_CONFIG_FILES`] when they
+/// appear at the top level of the walked tree.
 fn is_build_private(entry: &walkdir::DirEntry) -> bool {
-    entry
-        .file_name()
-        .to_str()
-        .is_some_and(|name| name.starts_with('_'))
+    let Some(name) = entry.file_name().to_str() else {
+        return false;
+    };
+    if !name.starts_with('_') {
+        return false;
+    }
+    if entry.depth() == 1 && STATIC_DEPLOYMENT_CONFIG_FILES.contains(&name) {
+        return false;
+    }
+    true
 }
+
+/// Well-known deployment-config files that pass through the underscore filter
+/// when present at the top level of `src`. These conventions are shared across
+/// Cloudflare Pages, Workers Static Assets, Netlify, and similar static hosts;
+/// the host reads them from the root of the deployed assets directory.
+const STATIC_DEPLOYMENT_CONFIG_FILES: &[&str] = &["_headers", "_redirects"];
 
 /// Copies a single file from `src` to `dest`, creating parent directories as needed.
 ///
@@ -209,6 +225,35 @@ mod tests {
         assert!(
             !dest.join("_notes.txt").exists(),
             "underscore-prefixed files should not be copied",
+        );
+    }
+
+    #[test]
+    fn copy_static_passes_through_top_level_deployment_config_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("static");
+        let dest = dir.path().join("public");
+        fs::create_dir_all(src.join("nested")).unwrap();
+        fs::create_dir_all(&dest).unwrap();
+        fs::write(src.join("_headers"), "top-level-headers").unwrap();
+        fs::write(src.join("_redirects"), "top-level-redirects").unwrap();
+        fs::write(src.join("nested").join("_headers"), "nested-headers").unwrap();
+
+        copy_static(&src, &dest).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(dest.join("_headers")).unwrap(),
+            "top-level-headers",
+            "top-level _headers should pass through",
+        );
+        assert_eq!(
+            fs::read_to_string(dest.join("_redirects")).unwrap(),
+            "top-level-redirects",
+            "top-level _redirects should pass through",
+        );
+        assert!(
+            !dest.join("nested").join("_headers").exists(),
+            "nested _headers should still be filtered as build-private",
         );
     }
 
