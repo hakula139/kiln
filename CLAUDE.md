@@ -75,6 +75,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 │   ├── icon.rs         # :(class): → <i> FontAwesome icon shortcode replacement
 │   ├── image.rs        # Block (<figure>) and inline (<img>) image rendering, lazy loading
 │   ├── image_attrs.rs  # Pandoc-style {#id .class width=N} extraction for images
+│   ├── lqip.rs         # ImageResolver: on-disk dimension reads + base64 WebP placeholder encoding
 │   ├── markdown.rs     # pulldown-cmark, GFM, CJK heading IDs, KaTeX, block / inline images
 │   ├── mermaid.rs      # `<pre class="mermaid">` emit for ` ```mermaid ` fences (with data-source mirror)
 │   ├── pipeline.rs     # Full pipeline: directives → pre-processors → markdown → ToC
@@ -185,6 +186,39 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 - Keep `README.md` user-facing. It should describe value, supported features, and usage, not internal progress tracking.
 - Keep `docs/roadmap.md` as the canonical in-repo roadmap / status summary. Update it when shipped capability areas or planned priorities change.
 - Crate structure diagrams must match the actual filesystem. When adding, removing, or renaming modules, update the tree in this file. Entries are sorted alphabetically; directories sort alongside their parent `.rs` file.
+
+## Nix Development
+
+The `flake.nix` at the repo root provides a reproducible dev shell with the
+Rust toolchain plus the native libraries kiln links against (`libdav1d` for
+AVIF decoding, `pagefind` for search indexing).
+
+```bash
+nix develop                            # interactive shell
+nix develop --command cargo test       # one-shot under the dev shell
+nix flake check                        # run pre-commit hooks
+```
+
+`direnv` users get the shell automatically — `.envrc` ships `use flake`.
+
+### Pre-commit hooks (via `git-hooks-nix`)
+
+Configured in `flake.nix` and installed by entering the dev shell:
+
+- File hygiene: `check-added-large-files`, `check-yaml`, `end-of-file-fixer`,
+  `trim-trailing-whitespace`
+- Nix: `nixfmt`, `statix`, `deadnix`
+- Rust: `rustfmt`
+
+Clippy is intentionally **not** in the pre-commit set: it needs the full dev
+shell environment (`libdav1d`) which the bare git hook process does not
+inherit. CI runs `cargo clippy` instead.
+
+### Adding native dependencies
+
+Add the package to `devShells.default.packages` in `flake.nix`. For build
+deps the Rust toolchain itself needs (e.g., a `*-sys` crate's underlying C
+library), also extend `pkg-config` discovery if the crate uses it.
 
 ## Verification
 
