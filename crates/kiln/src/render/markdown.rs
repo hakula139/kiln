@@ -1,4 +1,5 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::path::Path;
 
 use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use syntect::parsing::SyntaxSet;
@@ -7,6 +8,7 @@ use super::assets::Feature;
 use super::highlight::highlight_code;
 use super::image::{render_block_image, render_inline_image};
 use super::image_attrs::ImageAttrs;
+use super::lqip::ImageResolver;
 use super::mermaid::render_mermaid;
 use super::toc::TocEntry;
 use crate::html::escape;
@@ -45,6 +47,8 @@ pub(crate) fn render_markdown(
     content: &str,
     syntax_set: &SyntaxSet,
     image_attrs: &HashMap<usize, ImageAttrs>,
+    image_resolver: Option<&ImageResolver>,
+    base_dir: Option<&Path>,
     code_max_lines: Option<usize>,
     features: &mut BTreeSet<Feature>,
 ) -> MarkdownOutput {
@@ -123,11 +127,20 @@ pub(crate) fn render_markdown(
             }
             Event::End(TagEnd::Paragraph) => {
                 in_para = false;
-                if let Some(html) = try_render_block_image(&para_buf, image_attrs) {
+                if let Some(html) =
+                    try_render_block_image(&para_buf, image_attrs, image_resolver, base_dir)
+                {
                     output_events.push(Event::Html(html.into()));
                 } else {
                     output_events.push(Event::Html("<p>".into()));
-                    flush_paragraph(&para_buf, image_attrs, &mut output_events, features);
+                    flush_paragraph(
+                        &para_buf,
+                        image_attrs,
+                        image_resolver,
+                        base_dir,
+                        &mut output_events,
+                        features,
+                    );
                     output_events.push(Event::Html("</p>\n".into()));
                 }
                 para_buf.clear();
@@ -156,6 +169,8 @@ pub(crate) fn render_markdown(
 fn try_render_block_image(
     events: &[(Event<'_>, std::ops::Range<usize>)],
     image_attrs: &HashMap<usize, ImageAttrs>,
+    image_resolver: Option<&ImageResolver>,
+    base_dir: Option<&Path>,
 ) -> Option<String> {
     let (src, title, byte_offset) = match &events.first()?.0 {
         Event::Start(Tag::Image {
@@ -185,8 +200,13 @@ fn try_render_block_image(
     }
 
     let alt = extract_alt_text(inner);
-    let attrs = image_attrs.get(&byte_offset);
-    Some(render_block_image(&src, &alt, &title, attrs))
+    let enriched = enrich_image_attrs(
+        image_attrs.get(&byte_offset),
+        &src,
+        image_resolver,
+        base_dir,
+    );
+    Some(render_block_image(&src, &alt, &title, enriched.as_ref()))
 }
 
 /// Flushes buffered paragraph events, replacing inline image sequences with
@@ -194,6 +214,8 @@ fn try_render_block_image(
 fn flush_paragraph<'a>(
     events: &[(Event<'a>, std::ops::Range<usize>)],
     image_attrs: &HashMap<usize, ImageAttrs>,
+    image_resolver: Option<&ImageResolver>,
+    base_dir: Option<&Path>,
     output: &mut Vec<Event<'a>>,
     features: &mut BTreeSet<Feature>,
 ) {
@@ -218,15 +240,43 @@ fn flush_paragraph<'a>(
                 i += 1; // skip End(Image)
             }
 
-            let attrs = image_attrs.get(&byte_offset);
+            let enriched = enrich_image_attrs(
+                image_attrs.get(&byte_offset),
+                &src,
+                image_resolver,
+                base_dir,
+            );
             output.push(Event::Html(
-                render_inline_image(&src, &alt, &title, attrs).into(),
+                render_inline_image(&src, &alt, &title, enriched.as_ref()).into(),
             ));
         } else {
             output.push(transform_math(events[i].0.clone(), features));
             i += 1;
         }
     }
+}
+
+/// Merges the manually-authored `{...}` attributes for an image with on-disk
+/// metadata from the resolver.
+///
+/// Returns `None` only when there are neither manual attrs nor a resolver
+/// match — that lets remote images, missing files, and undecodable formats
+/// pass through with the existing `<img src="..." alt="...">` shape.
+fn enrich_image_attrs(
+    base: Option<&ImageAttrs>,
+    src: &str,
+    image_resolver: Option<&ImageResolver>,
+    base_dir: Option<&Path>,
+) -> Option<ImageAttrs> {
+    let meta = image_resolver.and_then(|r| r.resolve(src, base_dir));
+    if base.is_none() && meta.is_none() {
+        return None;
+    }
+    let mut attrs = base.cloned().unwrap_or_default();
+    if let Some(meta) = meta {
+        attrs.fill_from_meta(&meta);
+    }
+    Some(attrs)
 }
 
 /// Extracts plain text from image inner events for use as alt text.
@@ -369,7 +419,15 @@ mod tests {
 
     fn render(content: &str) -> MarkdownOutput {
         let mut features = BTreeSet::new();
-        render_markdown(content, &SYNTAX_SET, &HashMap::new(), None, &mut features)
+        render_markdown(
+            content,
+            &SYNTAX_SET,
+            &HashMap::new(),
+            None,
+            None,
+            None,
+            &mut features,
+        )
     }
 
     // ── deduplicate_id ──

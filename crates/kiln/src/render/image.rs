@@ -75,15 +75,55 @@ fn push_img_tag(
                 _ = write!(html, r#" class="{}""#, classes.join(" "));
             }
         }
-        if let Some(w) = &a.width {
+        let (final_w, final_h) = final_dimensions(a);
+        if let Some(w) = &final_w {
             _ = write!(html, r#" width="{}""#, escape(w));
         }
-        if let Some(h) = &a.height {
+        if let Some(h) = &final_h {
             _ = write!(html, r#" height="{}""#, escape(h));
+        }
+        if let Some(lqip) = &a.lqip_uri {
+            // Base64 data URIs contain only `[A-Za-z0-9+/=]` after the
+            // comma, so neither the surrounding `"` nor the CSS `url('...')`
+            // delimiters can collide with the payload — no escaping needed.
+            _ = write!(html, r#" style="background:url('{lqip}') center/cover""#,);
         }
     }
 
     html.push_str(r#" loading="lazy" decoding="async" />"#);
+}
+
+/// Computes the `width` / `height` HTML attributes for an `<img>`.
+///
+/// Manual `{width=…}` / `{height=…}` from markdown attribute blocks always
+/// win. When only one axis is manually set, the other is scaled from the
+/// resolver-supplied auto aspect ratio so the rendered box matches the
+/// source's shape — the exact-aspect placeholder that kills layout shift.
+fn final_dimensions(attrs: &ImageAttrs) -> (Option<String>, Option<String>) {
+    match (
+        attrs.width.as_deref(),
+        attrs.height.as_deref(),
+        attrs.auto_width,
+        attrs.auto_height,
+    ) {
+        (Some(w), Some(h), _, _) => (Some(w.into()), Some(h.into())),
+        (Some(w), None, Some(aw), Some(ah)) if aw > 0 => {
+            let scaled = w
+                .parse::<u32>()
+                .ok()
+                .map(|wp| (u64::from(ah) * u64::from(wp) / u64::from(aw)).to_string());
+            (Some(w.into()), scaled)
+        }
+        (None, Some(h), Some(aw), Some(ah)) if ah > 0 => {
+            let scaled = h
+                .parse::<u32>()
+                .ok()
+                .map(|hp| (u64::from(aw) * u64::from(hp) / u64::from(ah)).to_string());
+            (scaled, Some(h.into()))
+        }
+        (None, None, Some(aw), Some(ah)) => (Some(aw.to_string()), Some(ah.to_string())),
+        (m_w, m_h, _, _) => (m_w.map(Into::into), m_h.map(Into::into)),
+    }
 }
 
 #[cfg(test)]
@@ -236,5 +276,73 @@ mod tests {
         };
         let html = render_inline_image("img.png", "alt", "", Some(&attrs));
         assert!(html.contains(r#"height="300""#), "html:\n{html}");
+    }
+
+    // ── auto dimensions + LQIP ──
+
+    #[test]
+    fn inline_image_emits_auto_dimensions() {
+        let attrs = ImageAttrs {
+            auto_width: Some(1200),
+            auto_height: Some(800),
+            ..ImageAttrs::default()
+        };
+        let html = render_inline_image("img.avif", "alt", "", Some(&attrs));
+        assert!(html.contains(r#"width="1200""#), "html:\n{html}");
+        assert!(html.contains(r#"height="800""#), "html:\n{html}");
+    }
+
+    #[test]
+    fn inline_image_emits_lqip_background() {
+        let attrs = ImageAttrs {
+            auto_width: Some(100),
+            auto_height: Some(60),
+            lqip_uri: Some("data:image/webp;base64,AAA".into()),
+            ..ImageAttrs::default()
+        };
+        let html = render_inline_image("img.avif", "alt", "", Some(&attrs));
+        assert!(
+            html.contains(r#"style="background:url('data:image/webp;base64,AAA') center/cover""#),
+            "html:\n{html}"
+        );
+    }
+
+    #[test]
+    fn inline_image_manual_width_scales_auto_height() {
+        // Author wrote `{width=600}`; resolver saw a 1200×800 source.
+        // Browser should reserve a 600×400 box so aspect is preserved.
+        let attrs = ImageAttrs {
+            width: Some("600".into()),
+            auto_width: Some(1200),
+            auto_height: Some(800),
+            ..ImageAttrs::default()
+        };
+        let html = render_inline_image("img.avif", "alt", "", Some(&attrs));
+        assert!(html.contains(r#"width="600""#), "html:\n{html}");
+        assert!(html.contains(r#"height="400""#), "html:\n{html}");
+    }
+
+    #[test]
+    fn inline_image_manual_dimensions_win_over_auto() {
+        let attrs = ImageAttrs {
+            width: Some("250".into()),
+            height: Some("100".into()),
+            auto_width: Some(1200),
+            auto_height: Some(800),
+            ..ImageAttrs::default()
+        };
+        let html = render_inline_image("img.avif", "alt", "", Some(&attrs));
+        assert!(html.contains(r#"width="250""#), "html:\n{html}");
+        assert!(html.contains(r#"height="100""#), "html:\n{html}");
+        assert!(!html.contains(r#"width="1200""#), "html:\n{html}");
+    }
+
+    #[test]
+    fn inline_image_no_dimensions_emits_nothing() {
+        let attrs = ImageAttrs::default();
+        let html = render_inline_image("img.png", "alt", "", Some(&attrs));
+        assert!(!html.contains("width="), "html:\n{html}");
+        assert!(!html.contains("height="), "html:\n{html}");
+        assert!(!html.contains("style="), "html:\n{html}");
     }
 }

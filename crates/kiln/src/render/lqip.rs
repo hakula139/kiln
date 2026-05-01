@@ -92,6 +92,12 @@ impl ImageResolver {
     ///
     /// `base_dir` is the page-bundle directory used for relative paths. Pass
     /// `None` for contexts without a bundle anchor (e.g., feed generation).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal cache mutex is poisoned. Poisoning would mean
+    /// a previous `resolve` call panicked while holding the lock, which the
+    /// pure cache logic here cannot trigger; treat any panic as a bug.
     #[must_use]
     pub fn resolve(&self, src: &str, base_dir: Option<&Path>) -> Option<Arc<ImageMeta>> {
         let path = self.resolve_path(src, base_dir)?;
