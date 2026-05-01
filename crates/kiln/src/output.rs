@@ -257,6 +257,34 @@ mod tests {
         );
     }
 
+    // macOS APFS rejects non-UTF-8 byte sequences in filenames; Linux ext4 /
+    // btrfs accept arbitrary bytes. CI runs on ubuntu-latest, so coverage of
+    // the `to_str() == None` branch lands there.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn copy_static_copies_files_with_non_utf8_names() {
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("static");
+        let dest = dir.path().join("public");
+        fs::create_dir_all(&src).unwrap();
+        fs::create_dir_all(&dest).unwrap();
+        // Lone continuation bytes — invalid UTF-8.
+        let bad_name = OsStr::from_bytes(&[0xff, 0xfe]);
+        fs::write(src.join(bad_name), "binary").unwrap();
+
+        copy_static(&src, &dest).unwrap();
+
+        // `is_build_private`'s `None` branch returns false (not classified as
+        // build-private), so the file flows through and lands in dest.
+        assert!(
+            dest.join(bad_name).exists(),
+            "non-UTF-8 filenames should not be filtered",
+        );
+    }
+
     #[test]
     fn copy_static_missing_src_is_noop() {
         let dir = tempfile::tempdir().unwrap();
