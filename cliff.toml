@@ -25,10 +25,11 @@ body = """
         - {% if commit.scope %}_({{ commit.scope }})_ {% endif -%}
           {{ commit.message | upper_first | trim }}
     {% endfor %}
-{% endfor %}
+{%- endfor -%}
 """
 
 footer = """
+
 {% for release in releases -%}
     {%- if release.version -%}
         {%- if release.previous.version -%}
