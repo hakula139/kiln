@@ -28,6 +28,7 @@ strftime
 swatinem
 syntect
 tmpl
+tera
 tracing
 tungstenite
 twikoo
