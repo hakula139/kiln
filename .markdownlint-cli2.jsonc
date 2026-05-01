@@ -17,6 +17,9 @@
     // Disable line length
     "MD013": false,
 
+    // Duplicate headings allowed under different parents (changelog versions)
+    "MD024": { "siblings_only": true },
+
     // Heading trailing punctuation: only flag .,;:
     "MD026": { "punctuation": ".,;:" },
 

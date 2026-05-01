@@ -302,7 +302,7 @@ Recognized attributes:
 | `title`   | any string       | none    | Overrides the default title              |
 | `open`    | `true` / `false` | `true`  | Controls whether the `<details>` is open |
 
-`::: callout` without attributes uses the default type (`note`), default title, and is open by default. Attributes always require `{…}` braces.
+`::: callout` without attributes uses the default type (`note`), default title, and is open by default. Attributes always require `{...}` braces.
 
 #### Pandoc Attributes
 

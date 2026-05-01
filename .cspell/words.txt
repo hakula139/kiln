@@ -1,4 +1,6 @@
+apfs
 bfcache
+btrfs
 clippy
 cmark
 dtolnay
