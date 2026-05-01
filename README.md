@@ -19,12 +19,15 @@ kiln is purpose-built for hakula.xyz: strong CJK-friendly authoring, explicit re
 - CJK-friendly heading IDs and table of contents generation
 - `:::` directives with theme-template rendering
 - Directive template helpers (`read_file`, `parse_csv`)
-- Image attributes, emoji / icon shortcodes, and code-block presentation helpers
+- Mermaid diagrams via `` ```mermaid `` fences
+- Syntax highlighting for 200+ languages, image attributes, emoji and Font Awesome icon shortcodes
 
 ### Site Generation
 
-- Pretty URLs, static file copying, co-located content assets
+- Pretty URLs, static file copying, co-located content assets, per-page CSS bundling
 - Home pages, section pages, standalone pages, taxonomy indexes, and paginated term pages
+- Pinned posts on the home page via `weight` frontmatter
+- Page-scoped asset registry — themes load KaTeX / Mermaid / search only on pages that need them
 - Configurable site time zones for rendered dates
 - RSS feeds, sitemap, custom 404 page
 - Full-text search via [Pagefind](https://pagefind.app)
@@ -43,6 +46,8 @@ kiln is purpose-built for hakula.xyz: strong CJK-friendly authoring, explicit re
 
 - Dev server with live reload (`kiln serve`)
 - Hugo-to-kiln content migration (`kiln convert`)
+- Theme scaffolding (`kiln init-theme`)
+- Optional HTML / CSS / JS minification (`kiln build --minify`)
 
 ## Documentation
 
@@ -56,6 +61,32 @@ kiln is purpose-built for hakula.xyz: strong CJK-friendly authoring, explicit re
 ## Current Focus
 
 Richer code-block presentation, bundled scripts for directive templates, and ongoing runtime ergonomics polish. See the [roadmap](docs/roadmap.md) for details.
+
+## Installation
+
+### Prebuilt binary
+
+Download the latest release for your platform from [Releases](https://github.com/hakula139/kiln/releases/latest):
+
+```bash
+# Linux x86_64
+curl -fsSL https://github.com/hakula139/kiln/releases/latest/download/kiln-x86_64-unknown-linux-gnu.tar.gz | tar -xz
+sudo mv kiln /usr/local/bin/
+
+# macOS aarch64 (Apple Silicon)
+curl -fsSL https://github.com/hakula139/kiln/releases/latest/download/kiln-aarch64-apple-darwin.tar.gz | tar -xz
+sudo mv kiln /usr/local/bin/
+
+kiln --version
+```
+
+### From source
+
+```bash
+cargo install --git https://github.com/hakula139/kiln --locked
+```
+
+See [`RELEASING.md`](./RELEASING.md) for how releases are produced.
 
 ## Usage
 

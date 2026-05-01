@@ -1,0 +1,87 @@
+# git-cliff configuration
+# Reference: https://git-cliff.org/docs/configuration
+
+[changelog]
+header = """
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+"""
+
+body = """
+
+{% if version -%}
+    ## [{{ version | trim_start_matches(pat="v") }}] - {{ timestamp | date(format="%Y-%m-%d") }}
+{% else -%}
+    ## [Unreleased]
+{% endif %}
+{% for group, commits in commits | group_by(attribute="group") %}
+    ### {{ group | upper_first }}
+
+    {% for commit in commits -%}
+        - {% if commit.scope %}_({{ commit.scope }})_ {% endif -%}
+          {{ commit.message | upper_first | trim }}
+    {% endfor %}
+{% endfor %}
+"""
+
+footer = """
+{% for release in releases -%}
+    {%- if release.version -%}
+        {%- if release.previous.version -%}
+[{{ release.version | trim_start_matches(pat="v") }}]: https://github.com/hakula139/kiln/compare/{{ release.previous.version }}..{{ release.version }}
+        {%- else -%}
+[{{ release.version | trim_start_matches(pat="v") }}]: https://github.com/hakula139/kiln/releases/tag/{{ release.version }}
+        {%- endif -%}
+    {%- else -%}
+[unreleased]: https://github.com/hakula139/kiln/compare/{{ release.previous.version }}...HEAD
+    {%- endif %}
+{%- if not loop.last %}
+{% endif -%}
+{% endfor -%}
+"""
+
+# `trim = true` strips per-line whitespace from each TEMPLATE line before Tera
+# compiles it, allowing the indentation above to remain readable without
+# leaking into the rendered output.
+trim = true
+
+# Postprocessors run on each rendered template (header / body / footer)
+# separately, so anchor-based stripping of trailing newlines isn't useful
+# (it would eat the body's separator newline before the footer).
+postprocessors = [
+  { pattern = '\n{3,}', replace = "\n\n" },
+  # Trim Dependabot / Renovate verbose phrasing for `chore(deps)` commits.
+  { pattern = ' in the [a-z]+ group(?: across \d+ director(?:y|ies))?', replace = "" },
+]
+
+[git]
+conventional_commits = true
+filter_unconventional = true
+filter_commits = true
+sort_commits = "oldest"
+
+# Order matters: most specific first.
+commit_parsers = [
+  { message = "^feat", group = "Added" },
+  { message = "^fix", group = "Fixed" },
+  { message = "^perf", group = "Changed" },
+  { message = "^revert", group = "Removed" },
+  # Dependency bumps (Dependabot, Renovate, manual) get their own section
+  # rather than getting lost in the broader `chore` skip below.
+  { message = '^chore\(deps\)', group = "Dependencies" },
+  { message = "^refactor", skip = true },
+  { message = "^docs", skip = true },
+  { message = "^test", skip = true },
+  { message = "^chore", skip = true },
+  { message = "^style", skip = true },
+  { message = "^ci", skip = true },
+  { message = "^build", skip = true },
+]
+
+[remote.github]
+owner = "hakula139"
+repo = "kiln"
