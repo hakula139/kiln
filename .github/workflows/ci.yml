@@ -17,6 +17,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Install libdav1d
+        # Required by the `image` crate's `avif-native` decoder via dav1d-sys.
+        run: sudo apt-get update && sudo apt-get install -y libdav1d-dev nasm
+
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -39,6 +43,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+
+      - name: Install libdav1d
+        run: sudo apt-get update && sudo apt-get install -y libdav1d-dev nasm
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
