@@ -548,6 +548,7 @@ mod tests {
                 author: Some("Artist".into()),
                 url: Some("https://example.com".into()),
             }),
+            ..FeaturedImage::default()
         };
         let resolved = resolve_featured_image(Some(&fi), "https://example.com/posts/foo/").unwrap();
         assert_eq!(resolved.src, "/images/cover.webp");

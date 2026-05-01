@@ -144,6 +144,7 @@ fn parse_image_attrs(attr_str: &str) -> ImageAttrs {
         classes: pandoc.classes.into_iter().map(str::to_string).collect(),
         width,
         height,
+        ..ImageAttrs::default()
     }
 }
 
