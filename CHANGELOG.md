@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0-rc.1] - 2026-05-01
+
+### Added
+
+- _(output)_ Pass through `_headers` and `_redirects` at `static/` root (#39)
+
 ## [0.1.0] - 2026-05-01
 
 ### Added
@@ -39,6 +45,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - _(build)_ Pinned posts via weight frontmatter (#34)
 - _(render)_ Page-scoped asset registry with auto-detected features (#35)
 - _(render)_ Emit `<pre class="mermaid">` for mermaid fences (#36)
+- _(release)_ Publish prebuilt binaries with git-cliff changelog (#37)
+- _(cli)_ Support `kiln --version`
 
 ### Dependencies
 
@@ -53,4 +61,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - _(directive)_ Tolerate trailing content after attribute braces (#27)
 - Resolve Rust 1.95 clippy lints and pin toolchain (#30)
 
+[0.2.0-rc.1]: https://github.com/hakula139/kiln/compare/v0.1.0..v0.2.0-rc.1
 [0.1.0]: https://github.com/hakula139/kiln/releases/tag/v0.1.0
