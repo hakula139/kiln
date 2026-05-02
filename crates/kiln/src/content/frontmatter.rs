@@ -54,12 +54,8 @@ pub struct Frontmatter {
     pub license: Option<String>,
 }
 
-/// Featured image metadata including source URL, display position, and credit.
-///
-/// `width`, `height`, and `lqip_uri` are populated by the build pipeline from
-/// the on-disk source — they are not authored in frontmatter, but are exposed
-/// to templates so banners can declare an aspect ratio and a base64 LQIP
-/// without runtime decoding.
+/// Featured image metadata. `width` / `height` / `lqip_uri` are stamped by
+/// the build pipeline from the on-disk source, not authored.
 #[derive(Debug, Default, Clone, PartialEq, Deserialize, Serialize)]
 pub struct FeaturedImage {
     pub src: String,

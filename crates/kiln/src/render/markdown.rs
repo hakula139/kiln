@@ -256,9 +256,8 @@ fn flush_paragraph<'a>(
     }
 }
 
-/// Merges the authored `{...}` block for an image with the resolver's
-/// on-disk metadata. Returns `None` only when neither side has anything,
-/// so remote images and unresolvable paths pass through unchanged.
+/// Merges authored `{...}` attrs with resolver-supplied on-disk metadata.
+/// Returns `None` only when neither side has anything to contribute.
 fn enrich_image_attrs(
     base: Option<&ImageAttrs>,
     src: &str,
@@ -414,9 +413,7 @@ mod tests {
 
     static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(two_face::syntax::extra_newlines);
 
-    // A bare resolver pointed at an empty static-root is enough for any test
-    // that doesn't reference a local image — `resolve` returns `None` for
-    // remote URLs and missing paths, which is what we want.
+    // Stub resolver for tests with no local images — `resolve` returns `None`.
     static EMPTY_RESOLVER: LazyLock<ImageResolver> = LazyLock::new(|| {
         ImageResolver::new(Path::new(""), crate::render::lqip::ImageConfig::default())
     });
@@ -1132,8 +1129,7 @@ mod tests {
         write_tiny_png(&bundle.join("img.png"));
 
         let resolver = ImageResolver::new(dir.path(), crate::render::lqip::ImageConfig::default());
-        // Two images on one line stay inline; authored width wins, auto height
-        // backfills via the resolver's 8×4 aspect (`width=4 -> height=2`).
+        // Authored width=4 on an 8×4 source backfills height=2 via aspect.
         let out =
             render_with_resolver("![a](img.png){width=4} ![b](img.png)\n", &resolver, &bundle);
 

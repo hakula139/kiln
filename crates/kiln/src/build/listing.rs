@@ -325,9 +325,7 @@ mod tests {
     use crate::content::frontmatter::ImageCredit;
     use crate::render::lqip::ImageConfig;
 
-    // A bare resolver with an empty static-root is enough for tests that
-    // don't reference local images — `resolve` returns `None` for remote
-    // URLs and missing paths.
+    // Stub resolver for tests with no local images — `resolve` returns `None`.
     static EMPTY_RESOLVER: LazyLock<ImageResolver> =
         LazyLock::new(|| ImageResolver::new(Path::new(""), ImageConfig::default()));
 
