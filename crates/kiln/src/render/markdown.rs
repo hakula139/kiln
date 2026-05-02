@@ -47,7 +47,7 @@ pub(crate) fn render_markdown(
     content: &str,
     syntax_set: &SyntaxSet,
     image_attrs: &HashMap<usize, ImageAttrs>,
-    image_resolver: Option<&ImageResolver>,
+    image_resolver: &ImageResolver,
     base_dir: Option<&Path>,
     code_max_lines: Option<usize>,
     features: &mut BTreeSet<Feature>,
@@ -169,7 +169,7 @@ pub(crate) fn render_markdown(
 fn try_render_block_image(
     events: &[(Event<'_>, std::ops::Range<usize>)],
     image_attrs: &HashMap<usize, ImageAttrs>,
-    image_resolver: Option<&ImageResolver>,
+    image_resolver: &ImageResolver,
     base_dir: Option<&Path>,
 ) -> Option<String> {
     let (src, title, byte_offset) = match &events.first()?.0 {
@@ -214,7 +214,7 @@ fn try_render_block_image(
 fn flush_paragraph<'a>(
     events: &[(Event<'a>, std::ops::Range<usize>)],
     image_attrs: &HashMap<usize, ImageAttrs>,
-    image_resolver: Option<&ImageResolver>,
+    image_resolver: &ImageResolver,
     base_dir: Option<&Path>,
     output: &mut Vec<Event<'a>>,
     features: &mut BTreeSet<Feature>,
@@ -262,10 +262,10 @@ fn flush_paragraph<'a>(
 fn enrich_image_attrs(
     base: Option<&ImageAttrs>,
     src: &str,
-    image_resolver: Option<&ImageResolver>,
+    image_resolver: &ImageResolver,
     base_dir: Option<&Path>,
 ) -> Option<ImageAttrs> {
-    let meta = image_resolver.and_then(|r| r.resolve(src, base_dir));
+    let meta = image_resolver.resolve(src, base_dir);
     if base.is_none() && meta.is_none() {
         return None;
     }
@@ -414,13 +414,20 @@ mod tests {
 
     static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(two_face::syntax::extra_newlines);
 
+    // A bare resolver pointed at an empty static-root is enough for any test
+    // that doesn't reference a local image — `resolve` returns `None` for
+    // remote URLs and missing paths, which is what we want.
+    static EMPTY_RESOLVER: LazyLock<ImageResolver> = LazyLock::new(|| {
+        ImageResolver::new(Path::new(""), crate::render::lqip::ImageConfig::default())
+    });
+
     fn render(content: &str) -> MarkdownOutput {
         let mut features = BTreeSet::new();
         render_markdown(
             content,
             &SYNTAX_SET,
             &HashMap::new(),
-            None,
+            &EMPTY_RESOLVER,
             None,
             None,
             &mut features,
@@ -438,7 +445,7 @@ mod tests {
             &cleaned,
             &SYNTAX_SET,
             &attrs,
-            Some(resolver),
+            resolver,
             Some(base_dir),
             None,
             &mut features,

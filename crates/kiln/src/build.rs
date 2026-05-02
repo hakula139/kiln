@@ -152,7 +152,7 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
         &ctx.config.base_url,
         ctx.time_zone.as_ref(),
         &section_titles,
-        Some(&ctx.image_resolver),
+        &ctx.image_resolver,
     )?;
 
     for page in &content.pages {
@@ -237,7 +237,7 @@ fn build_page(
         &ctx.template_engine,
         &options,
         page.source_path.parent(),
-        Some(&ctx.image_resolver),
+        &ctx.image_resolver,
     )
     .with_context(|| format!("failed to render {}", page.source_path.display()))?;
 
@@ -249,7 +249,7 @@ fn build_page(
     let featured_image = resolve_featured_image(
         page.frontmatter.featured_image.as_ref(),
         &url,
-        Some(&ctx.image_resolver),
+        &ctx.image_resolver,
         page.source_path.parent(),
     );
     let page_css = find_page_css(&page.assets, page.source_path.parent(), &url);

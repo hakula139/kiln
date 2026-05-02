@@ -40,7 +40,7 @@ pub fn render_page(
     engine: &TemplateEngine,
     options: &RenderOptions,
     source_dir: Option<&Path>,
-    image_resolver: Option<&ImageResolver>,
+    image_resolver: &ImageResolver,
 ) -> Result<RenderedPage> {
     let mut assets = PageAssets::default();
     let processed = render_directives(
@@ -95,7 +95,7 @@ fn render_directives(
     syntax_set: &SyntaxSet,
     engine: &TemplateEngine,
     source_dir: Option<&Path>,
-    image_resolver: Option<&ImageResolver>,
+    image_resolver: &ImageResolver,
     assets: &mut PageAssets,
 ) -> Result<String> {
     let all_blocks = parse_directives(content);
@@ -210,9 +210,15 @@ mod tests {
 
     use super::*;
     use crate::render::assets::Feature;
+    use crate::render::lqip::ImageConfig;
     use crate::test_utils::{test_engine, test_i18n};
 
     static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(two_face::syntax::extra_newlines);
+
+    // Empty static-root resolver — `resolve` returns `None` for any path
+    // these tests reference.
+    static EMPTY_RESOLVER: LazyLock<ImageResolver> =
+        LazyLock::new(|| ImageResolver::new(Path::new(""), ImageConfig::default()));
 
     fn render(input: &str) -> RenderedPage {
         render_with(input, &test_engine())
@@ -225,7 +231,7 @@ mod tests {
             engine,
             &RenderOptions::default(),
             None,
-            None,
+            &EMPTY_RESOLVER,
         )
         .unwrap()
     }
@@ -259,7 +265,8 @@ mod tests {
             ..RenderOptions::default()
         };
         let input = "Hello :smile: and :(fas fa-link):";
-        let page = render_page(input, &SYNTAX_SET, &engine, &options, None, None).unwrap();
+        let page =
+            render_page(input, &SYNTAX_SET, &engine, &options, None, &EMPTY_RESOLVER).unwrap();
         assert!(
             page.content_html.contains('\u{1f604}'),
             "emoji should be replaced, html:\n{}",
@@ -610,7 +617,7 @@ mod tests {
             &engine,
             &RenderOptions::default(),
             Some(source.path()),
-            None,
+            &EMPTY_RESOLVER,
         )
         .unwrap();
         assert!(

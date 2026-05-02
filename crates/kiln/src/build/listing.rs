@@ -59,7 +59,7 @@ pub(crate) fn build_listing_artifacts(
     base_url: &str,
     time_zone: Option<&TimeZone>,
     section_titles: &HashMap<&str, &str>,
-    image_resolver: Option<&ImageResolver>,
+    image_resolver: &ImageResolver,
 ) -> Result<ListingArtifacts> {
     let mut listed_pages = Vec::with_capacity(pages.len());
     let mut listed_posts = Vec::new();
@@ -112,7 +112,7 @@ fn build_listed_page(
     base_url: &str,
     time_zone: Option<&TimeZone>,
     section_titles: &HashMap<&str, &str>,
-    image_resolver: Option<&ImageResolver>,
+    image_resolver: &ImageResolver,
 ) -> Result<ListedPage> {
     // `output_path` already includes the source and content-dir paths in
     // its error, so no extra `with_context` is needed here.
@@ -269,7 +269,7 @@ pub(crate) fn page_section(
 pub(crate) fn resolve_featured_image(
     featured_image: Option<&FeaturedImage>,
     page_url: &str,
-    image_resolver: Option<&ImageResolver>,
+    image_resolver: &ImageResolver,
     base_dir: Option<&Path>,
 ) -> Option<FeaturedImage> {
     let fi = featured_image?;
@@ -278,9 +278,7 @@ pub(crate) fn resolve_featured_image(
         src: resolved_src,
         ..fi.clone()
     };
-    if let Some(resolver) = image_resolver
-        && let Some(meta) = resolver.resolve(&fi.src, base_dir)
-    {
+    if let Some(meta) = image_resolver.resolve(&fi.src, base_dir) {
         out.width = Some(meta.width);
         out.height = Some(meta.height);
         out.lqip_uri.clone_from(&meta.lqip_uri);
@@ -319,10 +317,19 @@ pub(crate) fn page_year(date: Timestamp, time_zone: Option<&TimeZone>) -> String
 
 #[cfg(test)]
 mod tests {
+    use std::sync::LazyLock;
+
     use jiff::Timestamp;
 
     use super::*;
     use crate::content::frontmatter::ImageCredit;
+    use crate::render::lqip::ImageConfig;
+
+    // A bare resolver with an empty static-root is enough for tests that
+    // don't reference local images — `resolve` returns `None` for remote
+    // URLs and missing paths.
+    static EMPTY_RESOLVER: LazyLock<ImageResolver> =
+        LazyLock::new(|| ImageResolver::new(Path::new(""), ImageConfig::default()));
 
     fn make_listed_page(title: &str, date: Option<&str>) -> ListedPage {
         make_listed_page_with(title, date, None)
@@ -546,9 +553,13 @@ mod tests {
     #[test]
     fn resolve_featured_image_absolute_path() {
         let fi = make_featured_image("/images/cover.webp");
-        let resolved =
-            resolve_featured_image(Some(&fi), "https://example.com/posts/foo/", None, None)
-                .unwrap();
+        let resolved = resolve_featured_image(
+            Some(&fi),
+            "https://example.com/posts/foo/",
+            &EMPTY_RESOLVER,
+            None,
+        )
+        .unwrap();
         assert_eq!(resolved.src, "/images/cover.webp");
     }
 
@@ -558,7 +569,7 @@ mod tests {
         let resolved = resolve_featured_image(
             Some(&fi),
             "https://example.com/posts/avg/on-looker/",
-            None,
+            &EMPTY_RESOLVER,
             None,
         )
         .unwrap();
@@ -568,9 +579,13 @@ mod tests {
     #[test]
     fn resolve_featured_image_external_url() {
         let fi = make_featured_image("https://cdn.example.com/img.jpg");
-        let resolved =
-            resolve_featured_image(Some(&fi), "https://example.com/posts/foo/", None, None)
-                .unwrap();
+        let resolved = resolve_featured_image(
+            Some(&fi),
+            "https://example.com/posts/foo/",
+            &EMPTY_RESOLVER,
+            None,
+        )
+        .unwrap();
         assert_eq!(resolved.src, "https://cdn.example.com/img.jpg");
     }
 
@@ -586,9 +601,13 @@ mod tests {
             }),
             ..FeaturedImage::default()
         };
-        let resolved =
-            resolve_featured_image(Some(&fi), "https://example.com/posts/foo/", None, None)
-                .unwrap();
+        let resolved = resolve_featured_image(
+            Some(&fi),
+            "https://example.com/posts/foo/",
+            &EMPTY_RESOLVER,
+            None,
+        )
+        .unwrap();
         assert_eq!(resolved.src, "/images/cover.webp");
         assert_eq!(resolved.position.as_deref(), Some("top"));
         let credit = resolved.credit.as_ref().unwrap();
@@ -600,15 +619,19 @@ mod tests {
     #[test]
     fn resolve_featured_image_none() {
         assert!(
-            resolve_featured_image(None, "https://example.com/posts/foo/", None, None).is_none()
+            resolve_featured_image(
+                None,
+                "https://example.com/posts/foo/",
+                &EMPTY_RESOLVER,
+                None
+            )
+            .is_none()
         );
     }
 
     #[test]
     fn resolve_featured_image_stamps_dimensions_and_lqip() {
         use std::fs;
-
-        use crate::render::lqip::ImageConfig;
 
         let dir = tempfile::tempdir().unwrap();
         let bundle = dir.path().join("posts/foo");
@@ -623,7 +646,7 @@ mod tests {
         let stamped = resolve_featured_image(
             Some(&fi),
             "https://example.com/posts/foo/",
-            Some(&img_resolver),
+            &img_resolver,
             Some(&bundle),
         )
         .unwrap();
