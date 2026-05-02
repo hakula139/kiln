@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0-rc.2] - 2026-05-02
+
+> **Breaking change for theme authors:** the LQIP placeholder is now delivered via a `<span class="lqip">` wrapper instead of an inline `style="background:..."` on the `<img>`. Themes need a `.lqip` component that paints `var(--lqip-uri)` on a `::before` backdrop — see [docs/themes.md → Image Rendering](docs/themes.md#image-rendering).
+
+### Added
+
+- _(render)_ Build-time image dimensions + LQIP backdrop pipeline (#40)
+- _(render)_ Wrap LQIP-enabled images in `<span class="lqip">` (#41)
+
+### Removed
+
+- _(config)_ The `[image] lqip = true|false` toggle (#41); encoding is always on, and unknown `[image]` keys now error instead of being silently ignored
+
 ## [0.2.0-rc.1] - 2026-05-01
 
 ### Added
@@ -61,5 +74,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - _(directive)_ Tolerate trailing content after attribute braces (#27)
 - Resolve Rust 1.95 clippy lints and pin toolchain (#30)
 
+[0.2.0-rc.2]: https://github.com/hakula139/kiln/compare/v0.2.0-rc.1..v0.2.0-rc.2
 [0.2.0-rc.1]: https://github.com/hakula139/kiln/compare/v0.1.0..v0.2.0-rc.1
 [0.1.0]: https://github.com/hakula139/kiln/releases/tag/v0.1.0
