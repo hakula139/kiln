@@ -85,7 +85,7 @@ fn push_img_tag(
         if let Some(lqip) = &a.lqip_uri {
             // Base64 contains only `[A-Za-z0-9+/=]`, so no escaping needed
             // for the surrounding `"` or the CSS `url('...')` delimiters.
-            _ = write!(html, r#" style="background:url('{lqip}') center/cover""#,);
+            _ = write!(html, r#" style="background:url('{lqip}') center/cover""#);
         }
     }
 
