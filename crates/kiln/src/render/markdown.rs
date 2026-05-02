@@ -1,4 +1,5 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::path::Path;
 
 use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use syntect::parsing::SyntaxSet;
@@ -7,6 +8,7 @@ use super::assets::Feature;
 use super::highlight::highlight_code;
 use super::image::{render_block_image, render_inline_image};
 use super::image_attrs::ImageAttrs;
+use super::lqip::ImageResolver;
 use super::mermaid::render_mermaid;
 use super::toc::TocEntry;
 use crate::html::escape;
@@ -45,6 +47,8 @@ pub(crate) fn render_markdown(
     content: &str,
     syntax_set: &SyntaxSet,
     image_attrs: &HashMap<usize, ImageAttrs>,
+    image_resolver: &ImageResolver,
+    base_dir: Option<&Path>,
     code_max_lines: Option<usize>,
     features: &mut BTreeSet<Feature>,
 ) -> MarkdownOutput {
@@ -123,11 +127,20 @@ pub(crate) fn render_markdown(
             }
             Event::End(TagEnd::Paragraph) => {
                 in_para = false;
-                if let Some(html) = try_render_block_image(&para_buf, image_attrs) {
+                if let Some(html) =
+                    try_render_block_image(&para_buf, image_attrs, image_resolver, base_dir)
+                {
                     output_events.push(Event::Html(html.into()));
                 } else {
                     output_events.push(Event::Html("<p>".into()));
-                    flush_paragraph(&para_buf, image_attrs, &mut output_events, features);
+                    flush_paragraph(
+                        &para_buf,
+                        image_attrs,
+                        image_resolver,
+                        base_dir,
+                        &mut output_events,
+                        features,
+                    );
                     output_events.push(Event::Html("</p>\n".into()));
                 }
                 para_buf.clear();
@@ -156,6 +169,8 @@ pub(crate) fn render_markdown(
 fn try_render_block_image(
     events: &[(Event<'_>, std::ops::Range<usize>)],
     image_attrs: &HashMap<usize, ImageAttrs>,
+    image_resolver: &ImageResolver,
+    base_dir: Option<&Path>,
 ) -> Option<String> {
     let (src, title, byte_offset) = match &events.first()?.0 {
         Event::Start(Tag::Image {
@@ -185,8 +200,13 @@ fn try_render_block_image(
     }
 
     let alt = extract_alt_text(inner);
-    let attrs = image_attrs.get(&byte_offset);
-    Some(render_block_image(&src, &alt, &title, attrs))
+    let enriched = enrich_image_attrs(
+        image_attrs.get(&byte_offset),
+        &src,
+        image_resolver,
+        base_dir,
+    );
+    Some(render_block_image(&src, &alt, &title, enriched.as_ref()))
 }
 
 /// Flushes buffered paragraph events, replacing inline image sequences with
@@ -194,6 +214,8 @@ fn try_render_block_image(
 fn flush_paragraph<'a>(
     events: &[(Event<'a>, std::ops::Range<usize>)],
     image_attrs: &HashMap<usize, ImageAttrs>,
+    image_resolver: &ImageResolver,
+    base_dir: Option<&Path>,
     output: &mut Vec<Event<'a>>,
     features: &mut BTreeSet<Feature>,
 ) {
@@ -218,15 +240,39 @@ fn flush_paragraph<'a>(
                 i += 1; // skip End(Image)
             }
 
-            let attrs = image_attrs.get(&byte_offset);
+            let enriched = enrich_image_attrs(
+                image_attrs.get(&byte_offset),
+                &src,
+                image_resolver,
+                base_dir,
+            );
             output.push(Event::Html(
-                render_inline_image(&src, &alt, &title, attrs).into(),
+                render_inline_image(&src, &alt, &title, enriched.as_ref()).into(),
             ));
         } else {
             output.push(transform_math(events[i].0.clone(), features));
             i += 1;
         }
     }
+}
+
+/// Merges authored `{...}` attrs with resolver-supplied on-disk metadata.
+/// Returns `None` only when neither side has anything to contribute.
+fn enrich_image_attrs(
+    base: Option<&ImageAttrs>,
+    src: &str,
+    image_resolver: &ImageResolver,
+    base_dir: Option<&Path>,
+) -> Option<ImageAttrs> {
+    let meta = image_resolver.resolve(src, base_dir);
+    if base.is_none() && meta.is_none() {
+        return None;
+    }
+    let mut attrs = base.cloned().unwrap_or_default();
+    if let Some(meta) = meta {
+        attrs.fill_from_meta(&meta);
+    }
+    Some(attrs)
 }
 
 /// Extracts plain text from image inner events for use as alt text.
@@ -367,9 +413,46 @@ mod tests {
 
     static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(two_face::syntax::extra_newlines);
 
+    // Stub resolver for tests with no local images — `resolve` returns `None`.
+    static EMPTY_RESOLVER: LazyLock<ImageResolver> = LazyLock::new(|| {
+        ImageResolver::new(Path::new(""), crate::render::lqip::ImageConfig::default())
+    });
+
     fn render(content: &str) -> MarkdownOutput {
         let mut features = BTreeSet::new();
-        render_markdown(content, &SYNTAX_SET, &HashMap::new(), None, &mut features)
+        render_markdown(
+            content,
+            &SYNTAX_SET,
+            &HashMap::new(),
+            &EMPTY_RESOLVER,
+            None,
+            None,
+            &mut features,
+        )
+    }
+
+    fn render_with_resolver(
+        content: &str,
+        resolver: &ImageResolver,
+        base_dir: &Path,
+    ) -> MarkdownOutput {
+        let (cleaned, attrs) = crate::render::image_attrs::extract_image_attrs(content);
+        let mut features = BTreeSet::new();
+        render_markdown(
+            &cleaned,
+            &SYNTAX_SET,
+            &attrs,
+            resolver,
+            Some(base_dir),
+            None,
+            &mut features,
+        )
+    }
+
+    fn write_tiny_png(path: &Path) {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let img = image::RgbaImage::from_pixel(8, 4, image::Rgba([200, 100, 50, 255]));
+        img.save_with_format(path, image::ImageFormat::Png).unwrap();
     }
 
     // ── deduplicate_id ──
@@ -1017,5 +1100,60 @@ mod tests {
             "second image should be present, html:\n{}",
             out.html
         );
+    }
+
+    // ── render_markdown: enrich_image_attrs via ImageResolver ──
+
+    #[test]
+    fn resolver_stamps_dimensions_and_lqip_on_block_image() {
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = dir.path().join("bundle");
+        write_tiny_png(&bundle.join("img.png"));
+
+        let resolver = ImageResolver::new(dir.path(), crate::render::lqip::ImageConfig::default());
+        let out = render_with_resolver("![alt](img.png)\n", &resolver, &bundle);
+
+        assert!(out.html.contains(r#"width="8""#), "html:\n{}", out.html);
+        assert!(out.html.contains(r#"height="4""#), "html:\n{}", out.html);
+        assert!(
+            out.html.contains("background:url('data:image/webp;base64,"),
+            "html:\n{}",
+            out.html
+        );
+    }
+
+    #[test]
+    fn resolver_merges_with_authored_attrs_on_inline_image() {
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = dir.path().join("bundle");
+        write_tiny_png(&bundle.join("img.png"));
+
+        let resolver = ImageResolver::new(dir.path(), crate::render::lqip::ImageConfig::default());
+        // Authored width=4 on an 8×4 source backfills height=2 via aspect.
+        let out =
+            render_with_resolver("![a](img.png){width=4} ![b](img.png)\n", &resolver, &bundle);
+
+        assert!(
+            !out.html.contains("<figure>"),
+            "two-image paragraph should not be a figure, html:\n{}",
+            out.html
+        );
+        assert!(out.html.contains(r#"width="4""#), "html:\n{}", out.html);
+        assert!(out.html.contains(r#"height="2""#), "html:\n{}", out.html);
+    }
+
+    #[test]
+    fn resolver_misses_remote_image_emits_no_dims() {
+        let dir = tempfile::tempdir().unwrap();
+        let resolver = ImageResolver::new(dir.path(), crate::render::lqip::ImageConfig::default());
+        let out = render_with_resolver(
+            "![remote](https://cdn.example.com/x.png)\n",
+            &resolver,
+            dir.path(),
+        );
+
+        assert!(out.html.contains(r#"src="https://cdn.example.com/x.png""#));
+        assert!(!out.html.contains("width="), "html:\n{}", out.html);
+        assert!(!out.html.contains("background:url"), "html:\n{}", out.html);
     }
 }

@@ -1,15 +1,24 @@
 use std::collections::HashMap;
 
+use super::lqip::ImageMeta;
 use crate::directive::parse_pandoc_attrs;
 use crate::markdown::{for_each_non_code_line, scan_code_span};
 
-/// Attributes extracted from Pandoc-style `{...}` blocks after images.
+/// Attributes extracted from Pandoc-style `{...}` blocks after images,
+/// merged with auto-detected dimensions and an optional LQIP placeholder.
+///
+/// Manual attributes (`width` / `height`) come from the markdown source and
+/// take precedence over the auto-detected values from the resolver. The
+/// auto fields backstop the common case where no `{...}` block is present.
 #[derive(Debug, Clone, Default)]
 pub struct ImageAttrs {
     pub id: Option<String>,
     pub classes: Vec<String>,
     pub width: Option<String>,
     pub height: Option<String>,
+    pub auto_width: Option<u32>,
+    pub auto_height: Option<u32>,
+    pub lqip_uri: Option<String>,
 }
 
 /// Extracts `![alt](url){...}` attribute blocks from markdown.
@@ -135,6 +144,7 @@ fn parse_image_attrs(attr_str: &str) -> ImageAttrs {
         classes: pandoc.classes.into_iter().map(str::to_string).collect(),
         width,
         height,
+        ..ImageAttrs::default()
     }
 }
 
@@ -145,6 +155,17 @@ impl ImageAttrs {
             && self.classes.is_empty()
             && self.width.is_none()
             && self.height.is_none()
+            && self.auto_width.is_none()
+            && self.auto_height.is_none()
+            && self.lqip_uri.is_none()
+    }
+
+    /// Stamps auto-detected dimensions and LQIP onto the attributes from a
+    /// resolver lookup. Manual fields are untouched.
+    pub fn fill_from_meta(&mut self, meta: &ImageMeta) {
+        self.auto_width = Some(meta.width);
+        self.auto_height = Some(meta.height);
+        self.lqip_uri.clone_from(&meta.lqip_uri);
     }
 }
 
@@ -325,6 +346,30 @@ mod tests {
         assert!(attrs.is_empty());
     }
 
+    #[test]
+    fn extract_empty_brace_block_drops_attrs_entry() {
+        let input = "![alt](img.png){}";
+        let (output, attrs) = extract_image_attrs(input);
+        assert_eq!(output, "![alt](img.png)");
+        assert!(attrs.is_empty());
+    }
+
+    #[test]
+    fn extract_unmatched_open_bracket_passes_bang_through() {
+        let input = "![no close paren or bracket";
+        let (output, attrs) = extract_image_attrs(input);
+        assert_eq!(output, input);
+        assert!(attrs.is_empty());
+    }
+
+    #[test]
+    fn extract_alt_without_paren_after_bracket_passes_bang_through() {
+        let input = "![alt]{width=100}";
+        let (output, attrs) = extract_image_attrs(input);
+        assert_eq!(output, input);
+        assert!(attrs.is_empty());
+    }
+
     // ── extract_image_attrs (code awareness) ──
 
     #[test]
@@ -416,5 +461,69 @@ mod tests {
             }
             .is_empty()
         );
+        assert!(
+            !ImageAttrs {
+                auto_width: Some(100),
+                ..Default::default()
+            }
+            .is_empty()
+        );
+        assert!(
+            !ImageAttrs {
+                auto_height: Some(100),
+                ..Default::default()
+            }
+            .is_empty()
+        );
+        assert!(
+            !ImageAttrs {
+                lqip_uri: Some("data:image/webp;base64,AAA".into()),
+                ..Default::default()
+            }
+            .is_empty()
+        );
+    }
+
+    // ── ImageAttrs::fill_from_meta ──
+
+    #[test]
+    fn fill_from_meta_stamps_auto_dims_and_lqip() {
+        let mut attrs = ImageAttrs::default();
+        let meta = ImageMeta {
+            width: 1600,
+            height: 900,
+            lqip_uri: Some("data:image/webp;base64,XYZ".into()),
+        };
+        attrs.fill_from_meta(&meta);
+        assert_eq!(attrs.auto_width, Some(1600));
+        assert_eq!(attrs.auto_height, Some(900));
+        assert_eq!(
+            attrs.lqip_uri.as_deref(),
+            Some("data:image/webp;base64,XYZ")
+        );
+    }
+
+    #[test]
+    fn fill_from_meta_preserves_manual_fields() {
+        let mut attrs = ImageAttrs {
+            id: Some("hero".into()),
+            classes: vec!["wide".into()],
+            width: Some("400".into()),
+            height: Some("300".into()),
+            ..ImageAttrs::default()
+        };
+        let meta = ImageMeta {
+            width: 1600,
+            height: 900,
+            lqip_uri: None,
+        };
+        attrs.fill_from_meta(&meta);
+        assert_eq!(attrs.id.as_deref(), Some("hero"));
+        assert_eq!(attrs.classes, vec!["wide"]);
+        assert_eq!(attrs.width.as_deref(), Some("400"));
+        assert_eq!(attrs.height.as_deref(), Some("300"));
+        assert_eq!(attrs.auto_width, Some(1600));
+        assert_eq!(attrs.auto_height, Some(900));
+        assert!(attrs.lqip_uri.is_none());
     }
 }

@@ -54,7 +54,8 @@ pub struct Frontmatter {
     pub license: Option<String>,
 }
 
-/// Featured image metadata including source URL, display position, and credit.
+/// Featured image metadata. `width` / `height` / `lqip_uri` are stamped by
+/// the build pipeline from the on-disk source, not authored.
 #[derive(Debug, Default, Clone, PartialEq, Deserialize, Serialize)]
 pub struct FeaturedImage {
     pub src: String,
@@ -66,6 +67,15 @@ pub struct FeaturedImage {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub credit: Option<ImageCredit>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub width: Option<u32>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub height: Option<u32>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lqip_uri: Option<String>,
 }
 
 /// Attribution metadata for a featured image.
@@ -380,6 +390,21 @@ mod tests {
         assert_eq!(fi.src, "/images/cover.webp");
         assert!(fi.position.is_none());
         assert!(fi.credit.is_none());
+        assert!(fi.width.is_none());
+        assert!(fi.height.is_none());
+        assert!(fi.lqip_uri.is_none());
+    }
+
+    #[test]
+    fn featured_image_skips_unset_auto_fields_when_serialized() {
+        let fi = FeaturedImage {
+            src: "/img.webp".into(),
+            ..Default::default()
+        };
+        let serialized = toml::to_string(&fi).unwrap();
+        assert!(!serialized.contains("width"));
+        assert!(!serialized.contains("height"));
+        assert!(!serialized.contains("lqip_uri"));
     }
 
     #[test]

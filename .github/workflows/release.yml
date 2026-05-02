@@ -42,6 +42,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Install libdav1d (Linux)
+        # Required by the `image` crate's `avif-native` decoder via dav1d-sys.
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libdav1d-dev nasm
+
+      - name: Install libdav1d (macOS)
+        if: runner.os == 'macOS'
+        run: brew install dav1d nasm
+
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
         with:

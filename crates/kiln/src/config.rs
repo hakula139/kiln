@@ -5,6 +5,8 @@ use anyhow::{Context, Result, bail};
 use jiff::tz::TimeZone;
 use serde::{Deserialize, Serialize};
 
+use crate::render::lqip::ImageConfig;
+
 /// Site-wide configuration loaded from `config.toml`.
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Config {
@@ -47,6 +49,9 @@ pub struct Config {
 
     #[serde(default)]
     pub author: Author,
+
+    #[serde(default)]
+    pub image: ImageConfig,
 }
 
 /// Theme metadata loaded from `themes/<name>/theme.toml`.
@@ -337,6 +342,9 @@ mod tests {
         assert!(config.author.name.is_empty());
         assert!(config.author.email.is_empty());
         assert!(config.author.link.is_empty());
+        assert!(config.image.lqip);
+        assert_eq!(config.image.lqip_size, 16);
+        assert_eq!(config.image.lqip_quality, 25);
     }
 
     #[test]
@@ -373,6 +381,20 @@ mod tests {
         assert_eq!(config.author.name, "Alice");
         assert_eq!(config.author.email, "alice@example.com");
         assert_eq!(config.author.link, "https://alice.example.com");
+    }
+
+    #[test]
+    fn image_from_toml() {
+        let config: Config = toml::from_str(indoc! {r"
+            [image]
+            lqip = false
+            lqip_size = 24
+            lqip_quality = 50
+        "})
+        .unwrap();
+        assert!(!config.image.lqip);
+        assert_eq!(config.image.lqip_size, 24);
+        assert_eq!(config.image.lqip_quality, 50);
     }
 
     #[test]

@@ -8,6 +8,7 @@ use super::assets::PageAssets;
 use super::emoji::replace_emojis;
 use super::icon::replace_icons;
 use super::image_attrs::extract_image_attrs;
+use super::lqip::ImageResolver;
 use super::markdown::render_markdown;
 use super::toc::render_toc_html;
 use crate::directive::callout::render_callout;
@@ -39,9 +40,17 @@ pub fn render_page(
     engine: &TemplateEngine,
     options: &RenderOptions,
     source_dir: Option<&Path>,
+    image_resolver: &ImageResolver,
 ) -> Result<RenderedPage> {
     let mut assets = PageAssets::default();
-    let processed = render_directives(raw_content, syntax_set, engine, source_dir, &mut assets)?;
+    let processed = render_directives(
+        raw_content,
+        syntax_set,
+        engine,
+        source_dir,
+        image_resolver,
+        &mut assets,
+    )?;
 
     // Pre-process: extract image attrs, optionally replace shortcodes.
     let mut preprocessed = processed;
@@ -57,6 +66,8 @@ pub fn render_page(
         &cleaned,
         syntax_set,
         &image_attrs,
+        image_resolver,
+        source_dir,
         options.code_max_lines,
         &mut assets.features,
     );
@@ -84,6 +95,7 @@ fn render_directives(
     syntax_set: &SyntaxSet,
     engine: &TemplateEngine,
     source_dir: Option<&Path>,
+    image_resolver: &ImageResolver,
     assets: &mut PageAssets,
 ) -> Result<String> {
     let all_blocks = parse_directives(content);
@@ -96,12 +108,21 @@ fn render_directives(
 
     // Replace right-to-left so earlier ranges remain valid.
     for block in top_level.into_iter().rev() {
-        let inner = render_directives(&block.body, syntax_set, engine, source_dir, assets)?;
+        let inner = render_directives(
+            &block.body,
+            syntax_set,
+            engine,
+            source_dir,
+            image_resolver,
+            assets,
+        )?;
         let (cleaned, image_attrs) = extract_image_attrs(&inner);
         let md_output = render_markdown(
             &cleaned,
             syntax_set,
             &image_attrs,
+            image_resolver,
+            source_dir,
             None,
             &mut assets.features,
         );
@@ -189,16 +210,30 @@ mod tests {
 
     use super::*;
     use crate::render::assets::Feature;
+    use crate::render::lqip::ImageConfig;
     use crate::test_utils::{test_engine, test_i18n};
 
     static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(two_face::syntax::extra_newlines);
+
+    // Empty static-root resolver — `resolve` returns `None` for any path
+    // these tests reference.
+    static EMPTY_RESOLVER: LazyLock<ImageResolver> =
+        LazyLock::new(|| ImageResolver::new(Path::new(""), ImageConfig::default()));
 
     fn render(input: &str) -> RenderedPage {
         render_with(input, &test_engine())
     }
 
     fn render_with(input: &str, engine: &TemplateEngine) -> RenderedPage {
-        render_page(input, &SYNTAX_SET, engine, &RenderOptions::default(), None).unwrap()
+        render_page(
+            input,
+            &SYNTAX_SET,
+            engine,
+            &RenderOptions::default(),
+            None,
+            &EMPTY_RESOLVER,
+        )
+        .unwrap()
     }
 
     // ── render_page ──
@@ -230,7 +265,8 @@ mod tests {
             ..RenderOptions::default()
         };
         let input = "Hello :smile: and :(fas fa-link):";
-        let page = render_page(input, &SYNTAX_SET, &engine, &options, None).unwrap();
+        let page =
+            render_page(input, &SYNTAX_SET, &engine, &options, None, &EMPTY_RESOLVER).unwrap();
         assert!(
             page.content_html.contains('\u{1f604}'),
             "emoji should be replaced, html:\n{}",
@@ -581,6 +617,7 @@ mod tests {
             &engine,
             &RenderOptions::default(),
             Some(source.path()),
+            &EMPTY_RESOLVER,
         )
         .unwrap();
         assert!(

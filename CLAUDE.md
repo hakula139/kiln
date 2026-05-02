@@ -75,6 +75,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 │   ├── icon.rs         # :(class): → <i> FontAwesome icon shortcode replacement
 │   ├── image.rs        # Block (<figure>) and inline (<img>) image rendering, lazy loading
 │   ├── image_attrs.rs  # Pandoc-style {#id .class width=N} extraction for images
+│   ├── lqip.rs         # ImageResolver: on-disk dimension reads + base64 WebP placeholder encoding
 │   ├── markdown.rs     # pulldown-cmark, GFM, CJK heading IDs, KaTeX, block / inline images
 │   ├── mermaid.rs      # `<pre class="mermaid">` emit for ` ```mermaid ` fences (with data-source mirror)
 │   ├── pipeline.rs     # Full pipeline: directives → pre-processors → markdown → ToC
@@ -185,6 +186,26 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 - Keep `README.md` user-facing. It should describe value, supported features, and usage, not internal progress tracking.
 - Keep `docs/roadmap.md` as the canonical in-repo roadmap / status summary. Update it when shipped capability areas or planned priorities change.
 - Crate structure diagrams must match the actual filesystem. When adding, removing, or renaming modules, update the tree in this file. Entries are sorted alphabetically; directories sort alongside their parent `.rs` file.
+- Markdown prose is **not hard-wrapped** — paragraphs are single long lines and flow with the reader's viewport. Match the surrounding style; do not introduce 80-column line breaks inside paragraphs.
+
+## Nix Development
+
+`flake.nix` pins the Rust toolchain, `libdav1d` (AVIF), and `pagefind`.
+
+```bash
+nix develop                            # interactive shell
+nix flake check                        # run pre-commit hooks
+```
+
+`direnv` auto-activates the shell via `.envrc`.
+
+### Pre-commit hooks
+
+Hygiene (`check-added-large-files`, `check-yaml`, `end-of-file-fixer`, `trim-trailing-whitespace`), Nix (`nixfmt`, `statix`, `deadnix`), and `rustfmt`. Clippy stays in CI — the bare hook process can't see `libdav1d`.
+
+### Adding native dependencies
+
+Append to `devShells.default.packages` in `flake.nix`. `*-sys` crates that use `pkg-config` also need their `.pc` file on `PKG_CONFIG_PATH`.
 
 ## Verification
 

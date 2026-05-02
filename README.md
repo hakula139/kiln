@@ -29,6 +29,7 @@ kiln is purpose-built for hakula.xyz: strong CJK-friendly authoring, explicit re
 - Pinned posts on the home page via `weight` frontmatter
 - Page-scoped asset registry — themes load KaTeX / Mermaid / search only on pages that need them
 - Configurable site time zones for rendered dates
+- Build-time image pipeline — every `<img>` gets natural `width`/`height` plus a base64 WebP LQIP backdrop, so the browser reserves the exact box and paints a low-frequency placeholder while the source decodes
 - RSS feeds, sitemap, custom 404 page
 - Full-text search via [Pagefind](https://pagefind.app)
 
@@ -124,11 +125,22 @@ enabled = true
 
 ## Building from Source
 
-Requires [Rust](https://www.rust-lang.org/tools/install) 1.85+ (edition 2024).
+Requires [Rust](https://www.rust-lang.org/tools/install) 1.85+ (edition 2024) and `libdav1d` (for the `image` crate's AVIF decoder).
 
 ```bash
-cargo build --release    # Binary at target/release/kiln
+cargo build --release             # Binary at target/release/kiln
 ```
+
+### Reproducible dev shell (Nix)
+
+The shipped `flake.nix` pins the Rust toolchain, `libdav1d`, `pagefind`, and pre-commit hooks:
+
+```bash
+nix develop                       # interactive shell
+nix flake check                   # run pre-commit hooks
+```
+
+`direnv` auto-activates the shell via `.envrc`.
 
 ## License
 

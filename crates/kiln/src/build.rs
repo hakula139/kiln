@@ -22,6 +22,7 @@ use crate::i18n::I18n;
 use crate::minify::{self, MinifyStats};
 use crate::output::{clean_output_dir, copy_file, copy_static, write_output};
 use crate::render::RenderOptions;
+use crate::render::lqip::ImageResolver;
 use crate::render::pipeline::render_page;
 use crate::search;
 use crate::section::collect_sections;
@@ -41,6 +42,7 @@ struct BuildContext {
     time_zone: Option<TimeZone>,
     syntax_set: SyntaxSet,
     template_engine: TemplateEngine,
+    image_resolver: ImageResolver,
 }
 
 /// Options controlling a single `build()` invocation.
@@ -76,6 +78,10 @@ pub struct BuildOptions<'a> {
     clippy::needless_pass_by_value,
     reason = "BuildOptions is an owned options bag: callers construct it inline with `..Default::default()`, so taking it by value keeps call sites concise and lets future non-Copy fields land without a signature churn"
 )]
+#[expect(
+    clippy::too_many_lines,
+    reason = "this is the top-level build orchestrator; splitting it would obscure the linear pipeline (config → context → discover → render → write)"
+)]
 pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
     let BuildOptions {
         base_url_override,
@@ -110,12 +116,15 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
         TemplateEngine::new(Some(&site_templates), theme_templates.as_deref(), &i18n)
             .context("failed to initialize template engine")?;
 
+    let image_resolver = ImageResolver::new(&root.join("static"), config.image.clone());
+
     let ctx = BuildContext {
         config,
         i18n,
         time_zone,
         syntax_set,
         template_engine,
+        image_resolver,
     };
 
     let content = discover_content(root)?;
@@ -143,6 +152,7 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
         &ctx.config.base_url,
         ctx.time_zone.as_ref(),
         &section_titles,
+        &ctx.image_resolver,
     )?;
 
     for page in &content.pages {
@@ -227,6 +237,7 @@ fn build_page(
         &ctx.template_engine,
         &options,
         page.source_path.parent(),
+        &ctx.image_resolver,
     )
     .with_context(|| format!("failed to render {}", page.source_path.display()))?;
 
@@ -235,7 +246,12 @@ fn build_page(
     let output_path = page.output_path(content_dir)?;
     let url = page_url(&ctx.config.base_url, &output_path);
 
-    let featured_image = resolve_featured_image(page.frontmatter.featured_image.as_ref(), &url);
+    let featured_image = resolve_featured_image(
+        page.frontmatter.featured_image.as_ref(),
+        &url,
+        &ctx.image_resolver,
+        page.source_path.parent(),
+    );
     let page_css = find_page_css(&page.assets, page.source_path.parent(), &url);
     let vars = PostTemplateVars {
         title: &page.frontmatter.title,

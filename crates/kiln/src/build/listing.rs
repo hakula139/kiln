@@ -6,6 +6,7 @@ use jiff::{Timestamp, tz::TimeZone};
 
 use crate::content::frontmatter::FeaturedImage;
 use crate::content::page::{Page, PageKind};
+use crate::render::lqip::ImageResolver;
 use crate::taxonomy::{TaxonomyKind, TaxonomySet};
 use crate::template::vars::{LinkedTerm, PageGroup, PageSummary};
 use crate::text::slugify;
@@ -58,19 +59,27 @@ pub(crate) fn build_listing_artifacts(
     base_url: &str,
     time_zone: Option<&TimeZone>,
     section_titles: &HashMap<&str, &str>,
+    image_resolver: &ImageResolver,
 ) -> Result<ListingArtifacts> {
     let mut listed_pages = Vec::with_capacity(pages.len());
     let mut listed_posts = Vec::new();
     let mut section_posts: HashMap<String, Vec<ListedPage>> = HashMap::new();
 
     for page in pages {
-        let lp = build_listed_page(page, content_dir, base_url, time_zone, section_titles)
-            .with_context(|| {
-                format!(
-                    "failed to build listing entry for {}",
-                    page.source_path.display()
-                )
-            })?;
+        let lp = build_listed_page(
+            page,
+            content_dir,
+            base_url,
+            time_zone,
+            section_titles,
+            image_resolver,
+        )
+        .with_context(|| {
+            format!(
+                "failed to build listing entry for {}",
+                page.source_path.display()
+            )
+        })?;
 
         if let PageKind::Post { section } = &page.kind {
             if let Some(slug) = section {
@@ -103,6 +112,7 @@ fn build_listed_page(
     base_url: &str,
     time_zone: Option<&TimeZone>,
     section_titles: &HashMap<&str, &str>,
+    image_resolver: &ImageResolver,
 ) -> Result<ListedPage> {
     // `output_path` already includes the source and content-dir paths in
     // its error, so no extra `with_context` is needed here.
@@ -111,7 +121,12 @@ fn build_listed_page(
     let timestamp = page.frontmatter.date;
     let weight = page.frontmatter.weight;
     let section = page_section(page, base_url, section_titles);
-    let featured_image = resolve_featured_image(page.frontmatter.featured_image.as_ref(), &url);
+    let featured_image = resolve_featured_image(
+        page.frontmatter.featured_image.as_ref(),
+        &url,
+        image_resolver,
+        page.source_path.parent(),
+    );
 
     Ok(ListedPage {
         summary: PageSummary {
@@ -247,18 +262,28 @@ pub(crate) fn page_section(
     })
 }
 
-/// Resolves a `FeaturedImage`'s `src` path against the page's output URL.
+/// Resolves a `FeaturedImage`'s `src` path against the page's output URL and
+/// stamps on the source's natural dimensions plus an LQIP placeholder when
+/// the image is local and decodable.
 #[must_use]
 pub(crate) fn resolve_featured_image(
     featured_image: Option<&FeaturedImage>,
     page_url: &str,
+    image_resolver: &ImageResolver,
+    base_dir: Option<&Path>,
 ) -> Option<FeaturedImage> {
     let fi = featured_image?;
     let resolved_src = resolve_relative_url(&fi.src, page_url);
-    Some(FeaturedImage {
+    let mut out = FeaturedImage {
         src: resolved_src,
         ..fi.clone()
-    })
+    };
+    if let Some(meta) = image_resolver.resolve(&fi.src, base_dir) {
+        out.width = Some(meta.width);
+        out.height = Some(meta.height);
+        out.lqip_uri.clone_from(&meta.lqip_uri);
+    }
+    Some(out)
 }
 
 /// Converts raw tag strings into `LinkedTerm`s with pre-computed URLs.
@@ -292,10 +317,17 @@ pub(crate) fn page_year(date: Timestamp, time_zone: Option<&TimeZone>) -> String
 
 #[cfg(test)]
 mod tests {
+    use std::sync::LazyLock;
+
     use jiff::Timestamp;
 
     use super::*;
     use crate::content::frontmatter::ImageCredit;
+    use crate::render::lqip::ImageConfig;
+
+    // Stub resolver for tests with no local images — `resolve` returns `None`.
+    static EMPTY_RESOLVER: LazyLock<ImageResolver> =
+        LazyLock::new(|| ImageResolver::new(Path::new(""), ImageConfig::default()));
 
     fn make_listed_page(title: &str, date: Option<&str>) -> ListedPage {
         make_listed_page_with(title, date, None)
@@ -320,6 +352,38 @@ mod tests {
                 .map(|date| page_year(date, None))
                 .unwrap_or_default(),
         }
+    }
+
+    // ── build_listing_artifacts ──
+
+    #[test]
+    fn build_listing_artifacts_propagates_output_path_error() {
+        use std::path::PathBuf;
+
+        use crate::test_utils::test_page;
+
+        let mut page = test_page("Stray");
+        // `output_path` errors when the source isn't under `content_dir`.
+        page.source_path = PathBuf::from("/elsewhere/stray.md");
+        let pages = vec![page];
+        let titles = HashMap::new();
+
+        let result = build_listing_artifacts(
+            &pages,
+            Path::new("content"),
+            "https://example.com/",
+            None,
+            &titles,
+            &EMPTY_RESOLVER,
+        );
+        let Err(err) = result else {
+            panic!("expected an error from build_listing_artifacts");
+        };
+        let chain = format!("{err:#}");
+        assert!(
+            chain.contains("failed to build listing entry"),
+            "expected with_context wrapper, got: {chain}"
+        );
     }
 
     // ── sort_by_date_desc ──
@@ -519,22 +583,39 @@ mod tests {
     #[test]
     fn resolve_featured_image_absolute_path() {
         let fi = make_featured_image("/images/cover.webp");
-        let resolved = resolve_featured_image(Some(&fi), "https://example.com/posts/foo/").unwrap();
+        let resolved = resolve_featured_image(
+            Some(&fi),
+            "https://example.com/posts/foo/",
+            &EMPTY_RESOLVER,
+            None,
+        )
+        .unwrap();
         assert_eq!(resolved.src, "/images/cover.webp");
     }
 
     #[test]
     fn resolve_featured_image_relative_path() {
         let fi = make_featured_image("assets/cover.webp");
-        let resolved =
-            resolve_featured_image(Some(&fi), "https://example.com/posts/avg/on-looker/").unwrap();
-        assert_eq!(resolved.src, "/posts/avg/on-looker/assets/cover.webp");
+        let resolved = resolve_featured_image(
+            Some(&fi),
+            "https://example.com/posts/section/page/",
+            &EMPTY_RESOLVER,
+            None,
+        )
+        .unwrap();
+        assert_eq!(resolved.src, "/posts/section/page/assets/cover.webp");
     }
 
     #[test]
     fn resolve_featured_image_external_url() {
         let fi = make_featured_image("https://cdn.example.com/img.jpg");
-        let resolved = resolve_featured_image(Some(&fi), "https://example.com/posts/foo/").unwrap();
+        let resolved = resolve_featured_image(
+            Some(&fi),
+            "https://example.com/posts/foo/",
+            &EMPTY_RESOLVER,
+            None,
+        )
+        .unwrap();
         assert_eq!(resolved.src, "https://cdn.example.com/img.jpg");
     }
 
@@ -548,8 +629,15 @@ mod tests {
                 author: Some("Artist".into()),
                 url: Some("https://example.com".into()),
             }),
+            ..FeaturedImage::default()
         };
-        let resolved = resolve_featured_image(Some(&fi), "https://example.com/posts/foo/").unwrap();
+        let resolved = resolve_featured_image(
+            Some(&fi),
+            "https://example.com/posts/foo/",
+            &EMPTY_RESOLVER,
+            None,
+        )
+        .unwrap();
         assert_eq!(resolved.src, "/images/cover.webp");
         assert_eq!(resolved.position.as_deref(), Some("top"));
         let credit = resolved.credit.as_ref().unwrap();
@@ -560,7 +648,47 @@ mod tests {
 
     #[test]
     fn resolve_featured_image_none() {
-        assert!(resolve_featured_image(None, "https://example.com/posts/foo/").is_none());
+        assert!(
+            resolve_featured_image(
+                None,
+                "https://example.com/posts/foo/",
+                &EMPTY_RESOLVER,
+                None
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn resolve_featured_image_stamps_dimensions_and_lqip() {
+        use std::fs;
+
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = dir.path().join("posts/foo");
+        fs::create_dir_all(&bundle).unwrap();
+
+        let img = image::RgbaImage::from_pixel(4, 2, image::Rgba([200, 100, 50, 255]));
+        img.save_with_format(bundle.join("cover.png"), image::ImageFormat::Png)
+            .unwrap();
+
+        let img_resolver = ImageResolver::new(dir.path(), ImageConfig::default());
+        let fi = make_featured_image("cover.png");
+        let stamped = resolve_featured_image(
+            Some(&fi),
+            "https://example.com/posts/foo/",
+            &img_resolver,
+            Some(&bundle),
+        )
+        .unwrap();
+
+        assert_eq!(stamped.width, Some(4));
+        assert_eq!(stamped.height, Some(2));
+        assert!(
+            stamped
+                .lqip_uri
+                .as_deref()
+                .is_some_and(|u| u.starts_with("data:image/webp;base64,"))
+        );
     }
 
     // ── page_year ──

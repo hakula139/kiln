@@ -1,0 +1,5 @@
+pnpm-lock.yaml
+flake.lock
+Cargo.lock
+target/
+public/
