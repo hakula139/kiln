@@ -305,8 +305,7 @@ mod tests {
 
     #[test]
     fn inline_image_manual_width_scales_auto_height() {
-        // Author wrote `{width=600}`; resolver saw a 1200×800 source.
-        // Browser should reserve a 600×400 box so aspect is preserved.
+        // {width=600} on a 1200×800 source → 600×400 box.
         let attrs = ImageAttrs {
             width: Some("600".into()),
             auto_width: Some(1200),
@@ -320,8 +319,7 @@ mod tests {
 
     #[test]
     fn inline_image_manual_height_scales_auto_width() {
-        // Author wrote `{height=400}`; resolver saw a 1200×800 source.
-        // Browser should reserve a 600×400 box so aspect is preserved.
+        // {height=400} on a 1200×800 source → 600×400 box.
         let attrs = ImageAttrs {
             height: Some("400".into()),
             auto_width: Some(1200),

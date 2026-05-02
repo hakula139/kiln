@@ -12,17 +12,15 @@ use serde::{Deserialize, Serialize};
 /// `config.toml`.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ImageConfig {
-    /// Whether to bake LQIP placeholders into the rendered HTML.
-    /// Dimensions (`width` / `height`) are always populated regardless.
+    /// Toggle LQIP encoding. Dimensions are always emitted regardless.
     #[serde(default = "default_lqip_enabled")]
     pub lqip: bool,
 
-    /// Pixel dimension of the square LQIP source raster before WebP encoding.
+    /// Source raster size (square pixels) before WebP encoding.
     #[serde(default = "default_lqip_size")]
     pub lqip_size: u32,
 
-    /// WebP encoder quality for the LQIP, on the conventional 1–100 scale.
-    /// Lower values produce smaller, blurrier placeholders.
+    /// WebP encoder quality (1–100; lower = smaller / blurrier).
     #[serde(default = "default_lqip_quality")]
     pub lqip_quality: u8,
 }
@@ -49,11 +47,9 @@ impl Default for ImageConfig {
     }
 }
 
-/// Per-image metadata produced by [`ImageResolver::resolve`].
-///
-/// `lqip_uri` is `None` when LQIP is disabled or the source can't be decoded
-/// (e.g., SVG); `width` / `height` fall back to the header-only `imagesize`
-/// reader, which covers more formats than the `image` crate.
+/// Per-image metadata produced by [`ImageResolver::resolve`]. `lqip_uri`
+/// is `None` for SVG / disabled LQIP; dimensions come from `imagesize`
+/// (header-only, covers more formats than the `image` crate's decoder).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ImageMeta {
     pub width: u32,
@@ -98,9 +94,7 @@ impl ImageResolver {
         let path = self.resolve_path(src, base_dir)?;
         let canonical = path.canonicalize().ok()?;
 
-        // `entry().or_insert_with` keeps the lookup-and-insert under one lock,
-        // so two concurrent callers can't both decode the same image and
-        // clobber each other's `Arc`.
+        // Single-lock entry pattern so concurrent callers don't double-decode.
         self.cache
             .lock()
             .unwrap()
@@ -128,11 +122,9 @@ impl ImageResolver {
         }
     }
 
-    /// Reads dimensions and (optionally) encodes the LQIP for one path.
-    ///
-    /// `imagesize` parses headers without decoding pixels and covers formats
-    /// the `image` crate doesn't (HEIC, JPEG XL). LQIP encoding happens in a
-    /// second pass that does decode.
+    /// Reads dimensions (header-only via `imagesize`) and optionally encodes
+    /// the LQIP. `imagesize` covers formats the `image` decoder skips
+    /// (HEIC, JPEG XL); LQIP encoding still requires a full decode.
     fn compute(&self, path: &Path) -> Option<ImageMeta> {
         let dims = imagesize::size(path).ok()?;
         let width = u32::try_from(dims.width).ok()?;

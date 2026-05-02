@@ -348,8 +348,6 @@ mod tests {
 
     #[test]
     fn extract_empty_brace_block_drops_attrs_entry() {
-        // `{}` parses to an empty `ImageAttrs`; the entry is skipped so the
-        // attrs map stays empty even though the `{...}` is consumed.
         let input = "![alt](img.png){}";
         let (output, attrs) = extract_image_attrs(input);
         assert_eq!(output, "![alt](img.png)");
@@ -358,8 +356,6 @@ mod tests {
 
     #[test]
     fn extract_unmatched_open_bracket_passes_bang_through() {
-        // No matching `]` after `![`, so `find_image_end` returns `None` and
-        // the lone `!` is emitted as plain text without consuming the `[`.
         let input = "![no close paren or bracket";
         let (output, attrs) = extract_image_attrs(input);
         assert_eq!(output, input);
@@ -368,8 +364,6 @@ mod tests {
 
     #[test]
     fn extract_alt_without_paren_after_bracket_passes_bang_through() {
-        // `![alt]` followed by `{...}` instead of `(...)` — `find_image_end`
-        // finds the `]` but bails on the missing `(`.
         let input = "![alt]{width=100}";
         let (output, attrs) = extract_image_attrs(input);
         assert_eq!(output, input);
@@ -511,8 +505,6 @@ mod tests {
 
     #[test]
     fn fill_from_meta_preserves_manual_fields() {
-        // Manual id / classes / width / height predate the resolver lookup;
-        // `fill_from_meta` must only stamp the auto/lqip slots.
         let mut attrs = ImageAttrs {
             id: Some("hero".into()),
             classes: vec!["wide".into()],
