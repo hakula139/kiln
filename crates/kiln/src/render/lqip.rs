@@ -9,8 +9,11 @@ use image::imageops::FilterType;
 use serde::{Deserialize, Serialize};
 
 /// Image-pipeline configuration loaded from the `[image]` section of
-/// `config.toml`.
+/// `config.toml`. Unknown keys are rejected so removed fields (e.g. the
+/// pre-0.2 `lqip` toggle) and typos surface as build errors instead of
+/// silently being ignored.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ImageConfig {
     /// Source raster size (square pixels) before WebP encoding.
     #[serde(default = "default_lqip_size")]
@@ -183,6 +186,20 @@ mod tests {
         .unwrap();
         assert_eq!(parsed.lqip_size, 24);
         assert_eq!(parsed.lqip_quality, 25);
+    }
+
+    #[test]
+    fn config_rejects_unknown_fields() {
+        // Removed pre-0.2 toggle should error rather than silently no-op.
+        let err = toml::from_str::<ImageConfig>(indoc! {"
+            lqip = false
+            lqip_size = 16
+        "})
+        .unwrap_err();
+        assert!(
+            err.to_string().contains("unknown field"),
+            "expected an unknown-field error, got: {err}",
+        );
     }
 
     // ── ImageResolver::resolve_path ──
