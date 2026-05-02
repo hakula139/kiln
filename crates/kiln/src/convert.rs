@@ -547,7 +547,7 @@ mod tests {
                 title = "Hello, world!"
                 tags = ["rust"]
                 +++
-                
+
                 Summary
 
                 <!--more-->
