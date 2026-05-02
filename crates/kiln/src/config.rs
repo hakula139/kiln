@@ -342,7 +342,6 @@ mod tests {
         assert!(config.author.name.is_empty());
         assert!(config.author.email.is_empty());
         assert!(config.author.link.is_empty());
-        assert!(config.image.lqip);
         assert_eq!(config.image.lqip_size, 16);
         assert_eq!(config.image.lqip_quality, 25);
     }
@@ -387,12 +386,10 @@ mod tests {
     fn image_from_toml() {
         let config: Config = toml::from_str(indoc! {r"
             [image]
-            lqip = false
             lqip_size = 24
             lqip_quality = 50
         "})
         .unwrap();
-        assert!(!config.image.lqip);
         assert_eq!(config.image.lqip_size, 24);
         assert_eq!(config.image.lqip_quality, 50);
     }
