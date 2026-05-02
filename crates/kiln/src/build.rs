@@ -116,7 +116,7 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
         TemplateEngine::new(Some(&site_templates), theme_templates.as_deref(), &i18n)
             .context("failed to initialize template engine")?;
 
-    let image_resolver = ImageResolver::new(root, config.image.clone());
+    let image_resolver = ImageResolver::new(&root.join("static"), config.image.clone());
 
     let ctx = BuildContext {
         config,

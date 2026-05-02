@@ -72,12 +72,13 @@ pub struct ImageResolver {
 }
 
 impl ImageResolver {
-    /// Constructs a resolver rooted at `site_root`. Static-prefixed sources
-    /// (`src` starting with `/`) resolve under `site_root/static/`.
+    /// Constructs a resolver. `static_root` anchors `src` strings that begin
+    /// with `/` (i.e., site-absolute references); page-bundle-relative paths
+    /// resolve through the `base_dir` argument to [`Self::resolve`].
     #[must_use]
-    pub fn new(site_root: &Path, config: ImageConfig) -> Self {
+    pub fn new(static_root: &Path, config: ImageConfig) -> Self {
         Self {
-            static_root: site_root.join("static"),
+            static_root: static_root.to_path_buf(),
             config,
             cache: Mutex::new(HashMap::new()),
         }
@@ -221,9 +222,10 @@ mod tests {
     #[test]
     fn resolve_path_absolute_uses_static_root() {
         let dir = tempdir().unwrap();
-        let r = ImageResolver::new(dir.path(), ImageConfig::default());
+        let static_root = dir.path().join("static");
+        let r = ImageResolver::new(&static_root, ImageConfig::default());
         let resolved = r.resolve_path("/images/cover.webp", None).unwrap();
-        assert_eq!(resolved, dir.path().join("static/images/cover.webp"));
+        assert_eq!(resolved, static_root.join("images/cover.webp"));
     }
 
     #[test]
