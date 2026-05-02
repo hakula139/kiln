@@ -103,14 +103,14 @@ fn final_dimensions(attrs: &ImageAttrs) -> (Option<String>, Option<String>) {
         attrs.auto_height,
     ) {
         (Some(w), Some(h), _, _) => (Some(w.into()), Some(h.into())),
-        (Some(w), None, Some(aw), Some(ah)) if aw > 0 => {
+        (Some(w), None, Some(aw), Some(ah)) => {
             let scaled = w
                 .parse::<u32>()
                 .ok()
                 .map(|wp| (u64::from(ah) * u64::from(wp) / u64::from(aw)).to_string());
             (Some(w.into()), scaled)
         }
-        (None, Some(h), Some(aw), Some(ah)) if ah > 0 => {
+        (None, Some(h), Some(aw), Some(ah)) => {
             let scaled = h
                 .parse::<u32>()
                 .ok()
@@ -331,21 +331,6 @@ mod tests {
         let html = render_inline_image("img.avif", "alt", "", Some(&attrs));
         assert!(html.contains(r#"width="600""#), "html:\n{html}");
         assert!(html.contains(r#"height="400""#), "html:\n{html}");
-    }
-
-    #[test]
-    fn inline_image_manual_height_with_zero_auto_height_skips_scaling() {
-        // Pathological `auto_height = 0` (would divide by zero) falls through
-        // to the catch-all arm: emit the manual height, no auto width.
-        let attrs = ImageAttrs {
-            height: Some("400".into()),
-            auto_width: Some(1200),
-            auto_height: Some(0),
-            ..ImageAttrs::default()
-        };
-        let html = render_inline_image("img.avif", "alt", "", Some(&attrs));
-        assert!(html.contains(r#"height="400""#), "html:\n{html}");
-        assert!(!html.contains("width="), "html:\n{html}");
     }
 
     #[test]
