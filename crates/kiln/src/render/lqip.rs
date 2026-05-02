@@ -92,21 +92,21 @@ impl ImageResolver {
     ///
     /// # Panics
     ///
-    /// Panics if the cache mutex is poisoned — only reachable if a prior
-    /// `resolve` call panicked while holding the lock, which the pure cache
-    /// logic here cannot trigger.
+    /// Panics if the cache mutex is poisoned.
     #[must_use]
     pub fn resolve(&self, src: &str, base_dir: Option<&Path>) -> Option<Arc<ImageMeta>> {
         let path = self.resolve_path(src, base_dir)?;
         let canonical = path.canonicalize().ok()?;
 
-        if let Some(cached) = self.cache.lock().unwrap().get(&canonical) {
-            return cached.clone();
-        }
-
-        let meta = self.compute(&canonical).map(Arc::new);
-        self.cache.lock().unwrap().insert(canonical, meta.clone());
-        meta
+        // `entry().or_insert_with` keeps the lookup-and-insert under one lock,
+        // so two concurrent callers can't both decode the same image and
+        // clobber each other's `Arc`.
+        self.cache
+            .lock()
+            .unwrap()
+            .entry(canonical.clone())
+            .or_insert_with(|| self.compute(&canonical).map(Arc::new))
+            .clone()
     }
 
     /// Maps a `src` reference to a filesystem path under one of the known
