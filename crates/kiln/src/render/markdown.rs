@@ -1116,7 +1116,8 @@ mod tests {
         assert!(out.html.contains(r#"width="8""#), "html:\n{}", out.html);
         assert!(out.html.contains(r#"height="4""#), "html:\n{}", out.html);
         assert!(
-            out.html.contains("background:url('data:image/webp;base64,"),
+            out.html
+                .contains(r#"<span class="lqip" style="--lqip-uri:url('data:image/webp;base64,"#),
             "html:\n{}",
             out.html
         );
@@ -1154,6 +1155,6 @@ mod tests {
 
         assert!(out.html.contains(r#"src="https://cdn.example.com/x.png""#));
         assert!(!out.html.contains("width="), "html:\n{}", out.html);
-        assert!(!out.html.contains("background:url"), "html:\n{}", out.html);
+        assert!(!out.html.contains(r#"class="lqip""#), "html:\n{}", out.html);
     }
 }

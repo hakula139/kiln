@@ -8,6 +8,8 @@ use crate::html::escape;
 /// The image gets `loading="lazy" decoding="async"`. If `alt` is non-empty, a `<figcaption>` is
 /// included. The `title` attribute is omitted when empty. Optional `attrs`
 /// apply `id` CSS classes to `<figure>`, and `width` / `height` to `<img>`.
+/// When `attrs.lqip_uri` is set, the `<img>` is wrapped in a `<span class="lqip">`
+/// inside the figure so themes can paint a blurred placeholder behind it.
 #[must_use]
 pub fn render_block_image(src: &str, alt: &str, title: &str, attrs: Option<&ImageAttrs>) -> String {
     let fig_id = attrs
@@ -23,14 +25,12 @@ pub fn render_block_image(src: &str, alt: &str, title: &str, attrs: Option<&Imag
         })
         .unwrap_or_default();
 
-    let mut html = format!("<figure{fig_id}{fig_class}>\n  ");
-    push_img_tag(&mut html, src, alt, title, attrs, false);
-    html.push('\n');
+    let img_html = render_img(src, alt, title, attrs, false);
 
+    let mut html = format!("<figure{fig_id}{fig_class}>\n  {img_html}\n");
     if !alt.is_empty() {
         _ = writeln!(html, "  <figcaption>{}</figcaption>", escape(alt));
     }
-
     html.push_str("</figure>\n");
     html
 }
@@ -38,7 +38,8 @@ pub fn render_block_image(src: &str, alt: &str, title: &str, attrs: Option<&Imag
 /// Renders an inline image as a plain `<img>` element with `loading="lazy" decoding="async"`.
 ///
 /// The `title` attribute is omitted when empty. Optional `attrs` apply `id`,
-/// CSS classes, `width`, and `height` directly to the `<img>` element.
+/// CSS classes, `width`, and `height` directly to the `<img>` element. When
+/// `attrs.lqip_uri` is set, the `<img>` is wrapped in `<span class="lqip">`.
 #[must_use]
 pub fn render_inline_image(
     src: &str,
@@ -46,9 +47,29 @@ pub fn render_inline_image(
     title: &str,
     attrs: Option<&ImageAttrs>,
 ) -> String {
-    let mut html = String::new();
-    push_img_tag(&mut html, src, alt, title, attrs, true);
-    html
+    render_img(src, alt, title, attrs, true)
+}
+
+/// Builds the `<img>` tag, then wraps it in `<span class="lqip">` when an LQIP
+/// URI is available. The wrapper exposes the placeholder via the `--lqip-uri`
+/// custom property; themes consume it from a `::before` backdrop so the blur
+/// can layer behind the image without affecting the bitmap itself.
+fn render_img(
+    src: &str,
+    alt: &str,
+    title: &str,
+    attrs: Option<&ImageAttrs>,
+    include_identity: bool,
+) -> String {
+    let mut img = String::new();
+    push_img_tag(&mut img, src, alt, title, attrs, include_identity);
+
+    match attrs.and_then(|a| a.lqip_uri.as_deref()) {
+        // Base64 contains only `[A-Za-z0-9+/=]`, so no escaping needed for
+        // the surrounding `"` or the CSS `url('...')` delimiters.
+        Some(uri) => format!(r#"<span class="lqip" style="--lqip-uri:url('{uri}')">{img}</span>"#),
+        None => img,
+    }
 }
 
 fn push_img_tag(
@@ -82,17 +103,12 @@ fn push_img_tag(
         if let Some(h) = &final_h {
             _ = write!(html, r#" height="{}""#, escape(h));
         }
-        if let Some(lqip) = &a.lqip_uri {
-            // Base64 contains only `[A-Za-z0-9+/=]`, so no escaping needed
-            // for the surrounding `"` or the CSS `url('...')` delimiters.
-            _ = write!(html, r#" style="background:url('{lqip}') center/cover""#);
-        }
     }
 
     html.push_str(r#" loading="lazy" decoding="async" />"#);
 }
 
-/// Picks the `width` / `height` to emit. Manual `{width=…}` / `{height=…}`
+/// Picks the `width` / `height` to emit. Manual `{width=...}` / `{height=...}`
 /// always win; when only one is set, the other is scaled from the resolver's
 /// auto aspect so the rendered box matches the source shape.
 fn final_dimensions(attrs: &ImageAttrs) -> (Option<String>, Option<String>) {
@@ -289,7 +305,7 @@ mod tests {
     }
 
     #[test]
-    fn inline_image_emits_lqip_background() {
+    fn inline_image_with_lqip_wraps_in_span() {
         let attrs = ImageAttrs {
             auto_width: Some(100),
             auto_height: Some(60),
@@ -298,7 +314,56 @@ mod tests {
         };
         let html = render_inline_image("img.avif", "alt", "", Some(&attrs));
         assert!(
-            html.contains(r#"style="background:url('data:image/webp;base64,AAA') center/cover""#),
+            html.starts_with(
+                r#"<span class="lqip" style="--lqip-uri:url('data:image/webp;base64,AAA')">"#
+            ),
+            "wrapper opens with the lqip span, html:\n{html}"
+        );
+        assert!(html.ends_with("</span>"), "wrapper closes, html:\n{html}");
+        assert!(
+            html.contains("<img "),
+            "img is inside the wrapper, html:\n{html}"
+        );
+        assert!(
+            !html.contains("background:url"),
+            "no inline background style on the img, html:\n{html}",
+        );
+    }
+
+    #[test]
+    fn inline_image_without_lqip_emits_bare_img() {
+        let attrs = ImageAttrs {
+            auto_width: Some(100),
+            auto_height: Some(60),
+            ..ImageAttrs::default()
+        };
+        let html = render_inline_image("img.avif", "alt", "", Some(&attrs));
+        assert!(
+            html.starts_with("<img "),
+            "no wrapper without lqip, html:\n{html}"
+        );
+        assert!(!html.contains(r#"class="lqip""#), "html:\n{html}");
+    }
+
+    #[test]
+    fn block_image_with_lqip_wraps_inside_figure() {
+        let attrs = ImageAttrs {
+            auto_width: Some(100),
+            auto_height: Some(60),
+            lqip_uri: Some("data:image/webp;base64,AAA".into()),
+            ..ImageAttrs::default()
+        };
+        let html = render_block_image("img.avif", "alt", "", Some(&attrs));
+        assert!(html.contains("<figure>"), "html:\n{html}");
+        assert!(
+            html.contains(
+                r#"<span class="lqip" style="--lqip-uri:url('data:image/webp;base64,AAA')"><img "#
+            ),
+            "wrapper sits between figure and img, html:\n{html}",
+        );
+        assert!(html.contains("</span>"), "wrapper closed, html:\n{html}");
+        assert!(
+            html.contains("<figcaption>alt</figcaption>"),
             "html:\n{html}"
         );
     }
