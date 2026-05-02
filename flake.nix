@@ -4,8 +4,8 @@
 #
 # Provides Rust toolchain, libdav1d (AVIF decode), pagefind, and pre-commit hooks.
 #
-#   nix develop                            # interactive shell
-#   nix flake check                        # run pre-commit hooks
+#   nix develop        # interactive shell
+#   nix flake check    # run pre-commit hooks
 
 {
   description = "kiln — custom static site generator (dev environment)";
@@ -116,8 +116,6 @@
               enable = true;
               name = "prettier";
               entry = nodeHook "prettier-write" "prettier --write --ignore-unknown";
-              # Markdown is opinionated; markdownlint covers structure. JSON
-              # is safe to auto-format.
               files = "\\.json$";
               pass_filenames = true;
             };
