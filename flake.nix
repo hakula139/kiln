@@ -14,15 +14,19 @@
   # Inputs
   # ----------------------------------------------------------------------------
   inputs = {
+    # Nixpkgs - NixOS 25.11 stable release
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
 
+    # Per-system flake outputs
     flake-utils.url = "github:numtide/flake-utils";
 
+    # Rust toolchains
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    # Pre-commit hooks
     git-hooks-nix.url = "github:cachix/git-hooks.nix";
   };
 
@@ -55,6 +59,32 @@
         };
 
         # ----------------------------------------------------------------------
+        # Node Hook Wrapper
+        # ----------------------------------------------------------------------
+        # `pnpm exec` needs node + pnpm on PATH and the project's
+        # `node_modules` materialised. The Nix sandbox lacks the latter, so
+        # `nix flake check` skips these hooks; the equivalent checks run in
+        # CI via direct `pnpm` scripts.
+        nodeHook =
+          name: cmd:
+          let
+            wrapper = pkgs.writeShellApplication {
+              inherit name;
+              runtimeInputs = [
+                pkgs.nodejs_24
+                pkgs.pnpm
+              ];
+              text = ''
+                if [ ! -d node_modules ]; then
+                  exit 0
+                fi
+                pnpm exec ${cmd} "$@"
+              '';
+            };
+          in
+          "${wrapper}/bin/${name}";
+
+        # ----------------------------------------------------------------------
         # Pre-commit Hooks
         # ----------------------------------------------------------------------
         preCommitCheck = git-hooks-nix.lib.${system}.run {
@@ -63,7 +93,11 @@
             check-added-large-files.enable = true;
             check-yaml.enable = true;
             end-of-file-fixer.enable = true;
-            trim-trailing-whitespace.enable = true;
+            # Preserve Markdown's two-trailing-space hard-break syntax.
+            trim-trailing-whitespace = {
+              enable = true;
+              args = [ "--markdown-linebreak-ext=md" ];
+            };
 
             nixfmt.enable = true;
             statix.enable = true;
@@ -76,6 +110,31 @@
                 cargo = rustToolchain;
                 rustfmt = rustToolchain;
               };
+            };
+
+            prettier-write = {
+              enable = true;
+              name = "prettier";
+              entry = nodeHook "prettier-write" "prettier --write --ignore-unknown";
+              # Markdown is opinionated; markdownlint covers structure. JSON
+              # is safe to auto-format.
+              files = "\\.json$";
+              pass_filenames = true;
+            };
+
+            markdownlint = {
+              enable = true;
+              name = "markdownlint-cli2";
+              entry = nodeHook "markdownlint" "markdownlint-cli2";
+              files = "\\.md$";
+              pass_filenames = true;
+            };
+
+            cspell = {
+              enable = true;
+              entry = nodeHook "cspell" "cspell --no-must-find-files --no-progress";
+              types = [ "text" ];
+              pass_filenames = true;
             };
           };
         };
@@ -96,6 +155,9 @@
               pkg-config
               nasm
               pagefind
+              # Node tooling for the Node-side pre-commit hooks.
+              nodejs_24
+              pnpm
             ])
             # libiconv resolves onig_sys / libwebp-sys link errors on darwin.
             ++ pkgs.lib.optional pkgs.stdenv.isDarwin pkgs.libiconv;
@@ -121,7 +183,7 @@
         # Checks (`nix flake check`)
         # ----------------------------------------------------------------------
         checks = {
-          inherit preCommitCheck;
+          pre-commit = preCommitCheck;
         };
 
         # ----------------------------------------------------------------------
