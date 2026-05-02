@@ -368,6 +368,51 @@ mod tests {
     }
 
     #[test]
+    fn inline_image_with_lqip_keeps_identity_attrs_on_img() {
+        // Identity attrs must stay on the `<img>` so theme selectors like
+        // `img#hero` or `img.full-bleed` keep matching after the wrapper lands.
+        let attrs = ImageAttrs {
+            id: Some("hero".into()),
+            classes: vec!["full-bleed".into()],
+            auto_width: Some(100),
+            auto_height: Some(60),
+            lqip_uri: Some("data:image/webp;base64,AAA".into()),
+            ..ImageAttrs::default()
+        };
+        let html = render_inline_image("img.avif", "alt", "", Some(&attrs));
+        let span_open_end = html.find('>').expect("wrapper has an opening tag");
+        let span_open = &html[..=span_open_end];
+        assert!(
+            !span_open.contains(r#"id="hero""#),
+            "id should not land on the <span>, span:\n{span_open}",
+        );
+        assert!(
+            !span_open.contains(r#"class="full-bleed""#),
+            "user class should not land on the <span>, span:\n{span_open}",
+        );
+        assert!(
+            html.contains(r#"<img src="img.avif" alt="alt" id="hero" class="full-bleed""#),
+            "id and class should land on the <img>, html:\n{html}",
+        );
+    }
+
+    #[test]
+    fn block_image_without_lqip_emits_bare_img_inside_figure() {
+        let attrs = ImageAttrs {
+            auto_width: Some(100),
+            auto_height: Some(60),
+            ..ImageAttrs::default()
+        };
+        let html = render_block_image("img.avif", "alt", "", Some(&attrs));
+        assert!(html.contains("<figure>"), "html:\n{html}");
+        assert!(
+            !html.contains(r#"class="lqip""#),
+            "no wrapper without lqip, html:\n{html}",
+        );
+        assert!(html.contains("<img "), "img is rendered, html:\n{html}");
+    }
+
+    #[test]
     fn block_image_with_lqip_wraps_inside_figure() {
         let attrs = ImageAttrs {
             auto_width: Some(100),
