@@ -277,7 +277,7 @@ Uses the same variables as `post.html` (see above). The `page.html` template is 
 | `pagination`  | object        | Pagination metadata (same structure as archive pages below)            |
 | `config`      | object        | Site configuration                                                     |
 
-Only posts (`PageKind::Post`) appear on the home page; standalone pages are excluded. The number of posts per page is configurable via `params.home.paginate` or `params.paginate` (default: 10). If `home.html` is not present, no home page is generated.
+Only posts appear on the home page; standalone pages are excluded. The number of posts per page is configurable via `params.home.paginate` or `params.paginate` (default: 10). If `home.html` is not present, no home page is generated.
 
 #### Archive page templates (`archive.html`)
 
