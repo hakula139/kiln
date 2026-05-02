@@ -566,12 +566,12 @@ mod tests {
         let fi = make_featured_image("assets/cover.webp");
         let resolved = resolve_featured_image(
             Some(&fi),
-            "https://example.com/posts/avg/on-looker/",
+            "https://example.com/posts/section/page/",
             &EMPTY_RESOLVER,
             None,
         )
         .unwrap();
-        assert_eq!(resolved.src, "/posts/avg/on-looker/assets/cover.webp");
+        assert_eq!(resolved.src, "/posts/section/page/assets/cover.webp");
     }
 
     #[test]
