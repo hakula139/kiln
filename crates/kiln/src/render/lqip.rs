@@ -308,6 +308,45 @@ mod tests {
     }
 
     #[test]
+    fn resolve_unrecognized_format_returns_none() {
+        let dir = tempdir().unwrap();
+        let bundle = dir.path().join("bundle");
+        fs::create_dir_all(&bundle).unwrap();
+        fs::write(bundle.join("garbage.png"), b"not actually an image").unwrap();
+
+        let r = ImageResolver::new(dir.path(), ImageConfig::default());
+        assert!(r.resolve("garbage.png", Some(&bundle)).is_none());
+    }
+
+    #[test]
+    fn resolve_yields_dimensions_but_no_lqip_for_undecodable_png() {
+        // A minimal PNG header (signature + IHDR for a 4×2 RGBA image, with a
+        // valid CRC) gives `imagesize` enough to report dimensions, but the
+        // `image` crate's full decoder bails when it hits EOF without IDAT.
+        let dir = tempdir().unwrap();
+        let bundle = dir.path().join("bundle");
+        fs::create_dir_all(&bundle).unwrap();
+        let mut bytes: Vec<u8> = vec![
+            0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, // signature
+            0x00, 0x00, 0x00, 0x0D, // IHDR length = 13
+            b'I', b'H', b'D', b'R', // chunk type
+            0x00, 0x00, 0x00, 0x04, // width = 4
+            0x00, 0x00, 0x00, 0x02, // height = 2
+            0x08, 0x06, 0x00, 0x00, 0x00, // bit depth, color type, etc.
+        ];
+        // CRC over chunk type + data; placeholder zeros — `imagesize` ignores it.
+        bytes.extend_from_slice(&[0, 0, 0, 0]);
+        fs::write(bundle.join("partial.png"), &bytes).unwrap();
+
+        let r = ImageResolver::new(dir.path(), ImageConfig::default());
+        let meta = r.resolve("partial.png", Some(&bundle)).unwrap();
+        assert_eq!(meta.width, 4);
+        assert_eq!(meta.height, 2);
+        // `image` crate refuses the file because IDAT is missing.
+        assert!(meta.lqip_uri.is_none());
+    }
+
+    #[test]
     fn resolve_caches_repeated_lookups() {
         let dir = tempdir().unwrap();
         let bundle = dir.path().join("bundle");

@@ -186,6 +186,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 - Keep `README.md` user-facing. It should describe value, supported features, and usage, not internal progress tracking.
 - Keep `docs/roadmap.md` as the canonical in-repo roadmap / status summary. Update it when shipped capability areas or planned priorities change.
 - Crate structure diagrams must match the actual filesystem. When adding, removing, or renaming modules, update the tree in this file. Entries are sorted alphabetically; directories sort alongside their parent `.rs` file.
+- Markdown prose is **not hard-wrapped** — paragraphs are single long lines and flow with the reader's viewport. Match the surrounding style; do not introduce 80-column line breaks inside paragraphs.
 
 ## Nix Development
 
@@ -200,14 +201,11 @@ nix flake check                        # run pre-commit hooks
 
 ### Pre-commit hooks
 
-Hygiene (`check-added-large-files`, `check-yaml`, `end-of-file-fixer`,
-`trim-trailing-whitespace`), Nix (`nixfmt`, `statix`, `deadnix`), and
-`rustfmt`. Clippy stays in CI — the bare hook process can't see `libdav1d`.
+Hygiene (`check-added-large-files`, `check-yaml`, `end-of-file-fixer`, `trim-trailing-whitespace`), Nix (`nixfmt`, `statix`, `deadnix`), and `rustfmt`. Clippy stays in CI — the bare hook process can't see `libdav1d`.
 
 ### Adding native dependencies
 
-Append to `devShells.default.packages` in `flake.nix`. `*-sys` crates that
-use `pkg-config` also need their `.pc` file on `PKG_CONFIG_PATH`.
+Append to `devShells.default.packages` in `flake.nix`. `*-sys` crates that use `pkg-config` also need their `.pc` file on `PKG_CONFIG_PATH`.
 
 ## Verification
 

@@ -354,6 +354,38 @@ mod tests {
         }
     }
 
+    // ── build_listing_artifacts ──
+
+    #[test]
+    fn build_listing_artifacts_propagates_output_path_error() {
+        use std::path::PathBuf;
+
+        use crate::test_utils::test_page;
+
+        let mut page = test_page("Stray");
+        // `output_path` errors when the source isn't under `content_dir`.
+        page.source_path = PathBuf::from("/elsewhere/stray.md");
+        let pages = vec![page];
+        let titles = HashMap::new();
+
+        let result = build_listing_artifacts(
+            &pages,
+            Path::new("content"),
+            "https://example.com/",
+            None,
+            &titles,
+            &EMPTY_RESOLVER,
+        );
+        let Err(err) = result else {
+            panic!("expected an error from build_listing_artifacts");
+        };
+        let chain = format!("{err:#}");
+        assert!(
+            chain.contains("failed to build listing entry"),
+            "expected with_context wrapper, got: {chain}"
+        );
+    }
+
     // ── sort_by_date_desc ──
 
     #[test]

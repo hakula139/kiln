@@ -11,6 +11,8 @@ ellipsed
 envrc
 feff
 hakula
+idat
+ihdr
 impls
 indoc
 infty
