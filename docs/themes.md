@@ -333,16 +333,16 @@ Each page in `pages` has:
 
 `featured_image` (when present) has:
 
-| Field      | Type             | Description                                                              |
-| ---------- | ---------------- | ------------------------------------------------------------------------ |
-| `src`      | string           | Resolved image path / URL                                                |
-| `position` | string or `none` | CSS `object-position` value (e.g., `"top"`)                              |
-| `credit`   | object or `none` | Attribution metadata (see below)                                         |
-| `width`    | int or `none`    | Natural pixel width, stamped by the build-time image pipeline            |
-| `height`   | int or `none`    | Natural pixel height, stamped by the build-time image pipeline           |
-| `lqip_uri` | string or `none` | `data:image/webp;base64,…` placeholder for `style="background:url(...)"` |
+| Field      | Type             | Description                                                               |
+| ---------- | ---------------- | ------------------------------------------------------------------------- |
+| `src`      | string           | Resolved image path / URL                                                 |
+| `position` | string or `none` | CSS `object-position` value (e.g., `"top"`)                               |
+| `credit`   | object or `none` | Attribution metadata (see below)                                          |
+| `width`    | int or `none`    | Natural pixel width, stamped by the build-time image pipeline             |
+| `height`   | int or `none`    | Natural pixel height, stamped by the build-time image pipeline            |
+| `lqip_uri` | string or `none` | `data:image/webp;base64,...` placeholder for the `.lqip` wrapper backdrop |
 
-`width` / `height` / `lqip_uri` are populated for local, decodable images when the `[image]` build config has `lqip = true` (the default). Remote URLs and unresolvable paths leave these fields `none`, so templates should gate on their presence (e.g., `{% if featured_image.width %}`).
+`width` / `height` / `lqip_uri` are populated for local, decodable images. Remote URLs and unresolvable paths leave these fields `none`, so templates should gate on their presence (e.g., `{% if featured_image.lqip_uri %}<span class="lqip" style="--lqip-uri:url('{{ featured_image.lqip_uri | safe }}')"><img ...></span>{% else %}<img ...>{% endif %}`).
 
 `credit` (when present) has:
 
