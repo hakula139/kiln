@@ -277,7 +277,7 @@ Uses the same variables as `post.html` (see above). The `page.html` template is 
 | `pagination`  | object        | Pagination metadata (same structure as archive pages below)            |
 | `config`      | object        | Site configuration                                                     |
 
-Only posts (`PageKind::Post`) appear on the home page; standalone pages are excluded. The number of posts per page is configurable via `params.home.paginate` or `params.paginate` (default: 10). If `home.html` is not present, no home page is generated.
+Only posts appear on the home page; standalone pages are excluded. The number of posts per page is configurable via `params.home.paginate` or `params.paginate` (default: 10). If `home.html` is not present, no home page is generated.
 
 #### Archive page templates (`archive.html`)
 
@@ -333,16 +333,16 @@ Each page in `pages` has:
 
 `featured_image` (when present) has:
 
-| Field      | Type             | Description                                                              |
-| ---------- | ---------------- | ------------------------------------------------------------------------ |
-| `src`      | string           | Resolved image path / URL                                                |
-| `position` | string or `none` | CSS `object-position` value (e.g., `"top"`)                              |
-| `credit`   | object or `none` | Attribution metadata (see below)                                         |
-| `width`    | int or `none`    | Natural pixel width, stamped by the build-time image pipeline            |
-| `height`   | int or `none`    | Natural pixel height, stamped by the build-time image pipeline           |
-| `lqip_uri` | string or `none` | `data:image/webp;base64,…` placeholder for `style="background:url(...)"` |
+| Field      | Type             | Description                                                               |
+| ---------- | ---------------- | ------------------------------------------------------------------------- |
+| `src`      | string           | Resolved image path / URL                                                 |
+| `position` | string or `none` | CSS `object-position` value (e.g., `"top"`)                               |
+| `credit`   | object or `none` | Attribution metadata (see below)                                          |
+| `width`    | int or `none`    | Natural pixel width, stamped by the build-time image pipeline             |
+| `height`   | int or `none`    | Natural pixel height, stamped by the build-time image pipeline            |
+| `lqip_uri` | string or `none` | `data:image/webp;base64,...` placeholder for the `.lqip` wrapper backdrop |
 
-`width` / `height` / `lqip_uri` are populated for local, decodable images when the `[image]` build config has `lqip = true` (the default). Remote URLs and unresolvable paths leave these fields `none`, so templates should gate on their presence (e.g., `{% if featured_image.width %}`).
+`width` / `height` / `lqip_uri` are populated for local, decodable images. Remote URLs and unresolvable paths leave these fields `none`, so templates should gate on their presence. See [Image Rendering](#image-rendering) for the wrapper shape and a CSS recipe.
 
 `credit` (when present) has:
 
@@ -448,6 +448,88 @@ Resolves a translatable string for the active language. See [Internationalizatio
 ```
 
 When `kwargs` are supplied, Python-style `{name}` placeholders in the string are replaced with the corresponding values. Missing keys emit a warning and render as the key literal (or `«missing:<key>»` under `KILN_DEV`) so the build does not crash.
+
+## Image Rendering
+
+kiln stamps natural pixel `width` / `height` and a base64 WebP placeholder (`lqip_uri`) onto every locally-resolvable image at build time. Themes consume the placeholder to paint a blurred backdrop while the full image loads, so layout doesn't shift and the slot is never visually empty.
+
+### Emitted HTML
+
+For inline images, the renderer wraps `<img>` in a `<span class="lqip">` whenever a placeholder was encoded:
+
+```html
+<span class="lqip" style="--lqip-uri:url('data:image/webp;base64,...')">
+  <img src="..." alt="..." width="..." height="..." loading="lazy" decoding="async" />
+</span>
+```
+
+For block images (a paragraph containing only one image), the wrapper sits inside `<figure>`, between the figure and any `<figcaption>`:
+
+```html
+<figure>
+  <span class="lqip" style="--lqip-uri:url('data:image/webp;base64,...')">
+    <img src="..." alt="..." width="..." height="..." loading="lazy" decoding="async" />
+  </span>
+  <figcaption>...</figcaption>
+</figure>
+```
+
+When no placeholder is available (remote URLs, unresolvable paths, undecodable formats like SVG), the wrapper is omitted and the bare `<img>` ships as-is — themes should never assume the wrapper is present.
+
+### Stable contract
+
+The wrapper exposes two identifiers themes can rely on across kiln releases:
+
+| Token          | Meaning                                                            |
+| -------------- | ------------------------------------------------------------------ |
+| `class="lqip"` | Marks the placeholder wrapper. Use as a CSS selector hook.         |
+| `--lqip-uri`   | CSS custom property carrying the `data:image/webp;base64,...` URI. |
+
+User-supplied attributes (`id`, custom classes, manual `width` / `height`) land on the inner `<img>`, so existing `img` selectors keep matching.
+
+### Minimum-viable theme CSS
+
+The placeholder is meant to be rendered on a `::before` pseudo-element so the foreground bitmap stays unblurred. A vanilla-CSS minimum:
+
+```css
+.lqip {
+  display: inline-block;
+  position: relative;
+}
+.lqip::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: var(--lqip-uri);
+  background-size: cover;
+  filter: blur(20px);
+  z-index: -1;
+}
+```
+
+### Featured images in templates
+
+Auto-wrapping only covers `<img>` tags rendered from markdown. For featured images and other template-rendered images, gate on `featured_image.lqip_uri` and emit the wrapper manually:
+
+```jinja
+{% if featured_image.lqip_uri %}
+  <span class="lqip" style="--lqip-uri:url('{{ featured_image.lqip_uri | safe }}')">
+    <img src="{{ featured_image.src }}" ...>
+  </span>
+{% else %}
+  <img src="{{ featured_image.src }}" ...>
+{% endif %}
+```
+
+### Configuration
+
+Tune the placeholder size and quality via `[image]` in `config.toml`:
+
+```toml
+[image]
+lqip_size = 16        # max placeholder dimension in pixels (default: 16)
+lqip_quality = 25     # WebP quality, 1-100 (default: 25)
+```
 
 ## Internationalization
 

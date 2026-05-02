@@ -73,9 +73,9 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 │   ├── emoji.rs        # GitHub-style :shortcode: → Unicode emoji replacement
 │   ├── highlight.rs    # syntect + two-face CSS-class highlighting with line numbers, code-block wrapper
 │   ├── icon.rs         # :(class): → <i> FontAwesome icon shortcode replacement
-│   ├── image.rs        # Block (<figure>) and inline (<img>) image rendering, lazy loading
+│   ├── image.rs        # Block (<figure>) and inline (<img>) image rendering, lazy loading, <span class="lqip"> wrapper emission
 │   ├── image_attrs.rs  # Pandoc-style {#id .class width=N} extraction for images
-│   ├── lqip.rs         # ImageResolver: on-disk dimension reads + base64 WebP placeholder encoding
+│   ├── lqip.rs         # ImageResolver: on-disk dimension reads + base64 WebP placeholder encoding (consumed via the .lqip wrapper)
 │   ├── markdown.rs     # pulldown-cmark, GFM, CJK heading IDs, KaTeX, block / inline images
 │   ├── mermaid.rs      # `<pre class="mermaid">` emit for ` ```mermaid ` fences (with data-source mirror)
 │   ├── pipeline.rs     # Full pipeline: directives → pre-processors → markdown → ToC
@@ -140,6 +140,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 
 - Prefer raw strings (`r"..."`) when the string contains characters that would need escaping (e.g., `"`, `\`). Always use the minimum delimiter level needed (`r"..."` → `r#"..."#` → `r##"..."##`).
 - Use `indoc!` / `formatdoc!` for multiline string content so the literal can be indented with surrounding code. Inline at the call site when the string is used once; use a named constant only when it is shared or very large. Avoid `\n` escapes and `\x20` workarounds for multiline content.
+- Ellipsis: always `...` (three ASCII dots), never `…` (U+2026). Applies everywhere — prose, comments, doc comments, production strings, tests.
 
 ### Enum String Mappings
 

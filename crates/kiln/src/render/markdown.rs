@@ -1115,10 +1115,24 @@ mod tests {
 
         assert!(out.html.contains(r#"width="8""#), "html:\n{}", out.html);
         assert!(out.html.contains(r#"height="4""#), "html:\n{}", out.html);
+
+        // Pin the nesting order so a transposition (e.g. wrapper outside the
+        // figure, or img outside the wrapper) trips the test.
+        let figure = out.html.find("<figure>").expect("figure opens");
+        let wrapper = out
+            .html
+            .find(r#"<span class="lqip" style="--lqip-uri:url('data:image/webp;base64,"#)
+            .expect("wrapper opens");
+        let img = out.html.find("<img ").expect("img tag");
+        let wrapper_close = out.html.find("</span>").expect("wrapper closes");
+        let figure_close = out.html.find("</figure>").expect("figure closes");
         assert!(
-            out.html.contains("background:url('data:image/webp;base64,"),
-            "html:\n{}",
-            out.html
+            figure < wrapper
+                && wrapper < img
+                && img < wrapper_close
+                && wrapper_close < figure_close,
+            "expected <figure> > <span.lqip> > <img> > </span> > </figure>, html:\n{}",
+            out.html,
         );
     }
 
@@ -1154,6 +1168,6 @@ mod tests {
 
         assert!(out.html.contains(r#"src="https://cdn.example.com/x.png""#));
         assert!(!out.html.contains("width="), "html:\n{}", out.html);
-        assert!(!out.html.contains("background:url"), "html:\n{}", out.html);
+        assert!(!out.html.contains(r#"class="lqip""#), "html:\n{}", out.html);
     }
 }

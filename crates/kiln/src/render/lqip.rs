@@ -9,13 +9,12 @@ use image::imageops::FilterType;
 use serde::{Deserialize, Serialize};
 
 /// Image-pipeline configuration loaded from the `[image]` section of
-/// `config.toml`.
+/// `config.toml`. Unknown keys are rejected so removed fields (e.g. the
+/// pre-0.2 `lqip` toggle) and typos surface as build errors instead of
+/// silently being ignored.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ImageConfig {
-    /// Toggle LQIP encoding. Dimensions are always emitted regardless.
-    #[serde(default = "default_lqip_enabled")]
-    pub lqip: bool,
-
     /// Source raster size (square pixels) before WebP encoding.
     #[serde(default = "default_lqip_size")]
     pub lqip_size: u32,
@@ -23,10 +22,6 @@ pub struct ImageConfig {
     /// WebP encoder quality (1–100; lower = smaller / blurrier).
     #[serde(default = "default_lqip_quality")]
     pub lqip_quality: u8,
-}
-
-const fn default_lqip_enabled() -> bool {
-    true
 }
 
 const fn default_lqip_size() -> u32 {
@@ -40,7 +35,6 @@ const fn default_lqip_quality() -> u8 {
 impl Default for ImageConfig {
     fn default() -> Self {
         Self {
-            lqip: default_lqip_enabled(),
             lqip_size: default_lqip_size(),
             lqip_quality: default_lqip_quality(),
         }
@@ -48,8 +42,9 @@ impl Default for ImageConfig {
 }
 
 /// Per-image metadata produced by [`ImageResolver::resolve`]. `lqip_uri`
-/// is `None` for SVG / disabled LQIP; dimensions come from `imagesize`
-/// (header-only, covers more formats than the `image` crate's decoder).
+/// is `None` for formats the `image` crate can't decode (SVG, partial
+/// rasters); dimensions come from `imagesize` (header-only, covers more
+/// formats than the `image` crate's decoder).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ImageMeta {
     pub width: u32,
@@ -134,11 +129,7 @@ impl ImageResolver {
             return None;
         }
 
-        let lqip_uri = self
-            .config
-            .lqip
-            .then(|| encode_lqip(path, self.config.lqip_size, self.config.lqip_quality))
-            .flatten();
+        let lqip_uri = encode_lqip(path, self.config.lqip_size, self.config.lqip_quality);
 
         Some(ImageMeta {
             width,
@@ -183,7 +174,6 @@ mod tests {
     #[test]
     fn config_defaults_match_constants() {
         let config = ImageConfig::default();
-        assert!(config.lqip);
         assert_eq!(config.lqip_size, 16);
         assert_eq!(config.lqip_quality, 25);
     }
@@ -191,12 +181,25 @@ mod tests {
     #[test]
     fn config_deserialises_partial_toml() {
         let parsed: ImageConfig = toml::from_str(indoc! {"
-            lqip = false
+            lqip_size = 24
         "})
         .unwrap();
-        assert!(!parsed.lqip);
-        assert_eq!(parsed.lqip_size, 16);
+        assert_eq!(parsed.lqip_size, 24);
         assert_eq!(parsed.lqip_quality, 25);
+    }
+
+    #[test]
+    fn config_rejects_unknown_fields() {
+        // Removed pre-0.2 toggle should error rather than silently no-op.
+        let err = toml::from_str::<ImageConfig>(indoc! {"
+            lqip = false
+            lqip_size = 16
+        "})
+        .unwrap_err();
+        assert!(
+            err.to_string().contains("unknown field"),
+            "expected an unknown-field error, got: {err}",
+        );
     }
 
     // ── ImageResolver::resolve_path ──
@@ -257,7 +260,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_emits_lqip_data_uri_when_enabled() {
+    fn resolve_emits_lqip_data_uri() {
         let dir = tempdir().unwrap();
         let bundle = dir.path().join("bundle");
         write_tiny_png(&bundle.join("img.png"));
@@ -270,24 +273,6 @@ mod tests {
             uri.len() > "data:image/webp;base64,".len(),
             "expected non-empty payload, got: {uri}"
         );
-    }
-
-    #[test]
-    fn resolve_skips_lqip_when_disabled() {
-        let dir = tempdir().unwrap();
-        let bundle = dir.path().join("bundle");
-        write_tiny_png(&bundle.join("img.png"));
-
-        let r = ImageResolver::new(
-            dir.path(),
-            ImageConfig {
-                lqip: false,
-                ..ImageConfig::default()
-            },
-        );
-        let meta = r.resolve("img.png", Some(&bundle)).unwrap();
-        assert_eq!(meta.width, 2);
-        assert!(meta.lqip_uri.is_none());
     }
 
     #[test]
