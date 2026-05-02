@@ -9,7 +9,9 @@ Any prose that should land in the changelog must come from a commit message: use
 ## Standard release
 
 1. Bump version in `Cargo.toml` (`workspace.package.version`).
+
 2. Run `cargo build` to refresh `Cargo.lock`.
+
 3. Regenerate `CHANGELOG.md` from commits:
 
    ```bash
@@ -17,7 +19,9 @@ Any prose that should land in the changelog must come from a commit message: use
    ```
 
    Inspect the diff to confirm the new section reads well. If it doesn't, fix the underlying commits (rebase, amend, reword the squash commit subject) and regenerate — never edit `CHANGELOG.md` directly.
+
 4. Commit: `chore(release): vX.Y.Z`.
+
 5. Tag and push:
 
    ```bash
@@ -27,6 +31,7 @@ Any prose that should land in the changelog must come from a commit message: use
    ```
 
 6. The workflow creates the GitHub Release, extracting the matching `[X.Y.Z]` section from `CHANGELOG.md` as release notes, and uploads:
+
    - `kiln-x86_64-unknown-linux-gnu.tar.gz` (+ `.sha256`)
    - `kiln-aarch64-apple-darwin.tar.gz` (+ `.sha256`)
 

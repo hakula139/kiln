@@ -65,24 +65,17 @@ filter_unconventional = true
 filter_commits = true
 sort_commits = "oldest"
 
-# Per-commit message rewrites applied before parsing.
 commit_preprocessors = [
-  # Wrap inline HTML tags (e.g., `<span class="lqip">`) in backticks so
-  # markdown viewers render them as code, not as actual (and invisible)
-  # elements. The leading-character capture acts as a poor-person's negative
-  # lookbehind — Rust regex doesn't support lookaround, so we match either
-  # start-of-string or any non-backtick character and re-emit it, leaving
-  # already-fenced spans like `` `<pre>` `` untouched.
+  # Backtick inline HTML in commit subjects so markdown renders them as code,
+  # not invisible elements. The `(^|[^`])` capture stands in for a negative
+  # lookbehind (unsupported in Rust regex) to skip already-fenced spans.
   { pattern = '(^|[^`])(<\/?[a-zA-Z][^>]*>)', replace = '$1`$2`' },
 ]
 
-# Group names use a `<!-- N -->` sort prefix so the rendered sections appear
-# in priority order (Breaking → Added → Fixed → ...) rather than alphabetical.
-# The body template strips the prefix from the heading.
-#
-# Order matters: most specific first. Breaking changes (`feat!:`,
-# `feat(scope)!:`, etc.) are matched before the generic type rules so they
-# surface in their own section instead of falling through to Added / Fixed.
+# Group names carry a `<!-- N -->` sort prefix (stripped in the body template)
+# so sections render in priority order, not alphabetically. Order matters:
+# most specific first — `!`-marked commits must hit "Breaking changes" before
+# falling through to the generic type rules.
 commit_parsers = [
   { message = '^[a-z]+(\([^)]+\))?!:', group = "<!-- 0 -->Breaking changes" },
   { message = "^feat", group = "<!-- 1 -->Added" },
