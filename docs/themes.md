@@ -485,7 +485,7 @@ The wrapper exposes two identifiers themes can rely on across kiln releases:
 | `class="lqip"` | Marks the placeholder wrapper. Use as a CSS selector hook.         |
 | `--lqip-uri`   | CSS custom property carrying the `data:image/webp;base64,...` URI. |
 
-Identity attributes authored by users (`id`, custom classes from Pandoc `{...}` braces, manual `width` / `height`) always land on the inner `<img>`, never on the wrapper. Theme selectors written against `<img>` keep working unchanged.
+User-supplied attributes (`id`, custom classes, manual `width` / `height`) land on the inner `<img>`, so existing `img` selectors keep matching.
 
 ### Minimum-viable theme CSS
 
@@ -507,11 +507,9 @@ The placeholder is meant to be rendered on a `::before` pseudo-element so the fo
 }
 ```
 
-Themes that animate the image's `opacity` for a fade-in get the standard "blurred placeholder fades into sharp image" pattern for free, since the backdrop lives on a sibling layer.
-
 ### Featured images in templates
 
-The `featured_image.lqip_uri` template variable carries the same data URI for use in custom layouts (e.g., post banners, card thumbnails). Gate on its presence and emit the wrapper manually, since the auto-wrapping only applies to `<img>` tags rendered from markdown:
+Auto-wrapping only covers `<img>` tags rendered from markdown. For featured images and other template-rendered images, gate on `featured_image.lqip_uri` and emit the wrapper manually:
 
 ```jinja
 {% if featured_image.lqip_uri %}
@@ -532,8 +530,6 @@ Tune the placeholder size and quality via `[image]` in `config.toml`:
 lqip_size = 16        # max placeholder dimension in pixels (default: 16)
 lqip_quality = 25     # WebP quality, 1-100 (default: 25)
 ```
-
-Unknown keys are rejected so typos and removed fields surface as build errors.
 
 ## Internationalization
 
