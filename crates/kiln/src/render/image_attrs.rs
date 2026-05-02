@@ -346,6 +346,36 @@ mod tests {
         assert!(attrs.is_empty());
     }
 
+    #[test]
+    fn extract_empty_brace_block_drops_attrs_entry() {
+        // `{}` parses to an empty `ImageAttrs`; the entry is skipped so the
+        // attrs map stays empty even though the `{...}` is consumed.
+        let input = "![alt](img.png){}";
+        let (output, attrs) = extract_image_attrs(input);
+        assert_eq!(output, "![alt](img.png)");
+        assert!(attrs.is_empty());
+    }
+
+    #[test]
+    fn extract_unmatched_open_bracket_passes_bang_through() {
+        // No matching `]` after `![`, so `find_image_end` returns `None` and
+        // the lone `!` is emitted as plain text without consuming the `[`.
+        let input = "![no close paren or bracket";
+        let (output, attrs) = extract_image_attrs(input);
+        assert_eq!(output, input);
+        assert!(attrs.is_empty());
+    }
+
+    #[test]
+    fn extract_alt_without_paren_after_bracket_passes_bang_through() {
+        // `![alt]` followed by `{...}` instead of `(...)` — `find_image_end`
+        // finds the `]` but bails on the missing `(`.
+        let input = "![alt]{width=100}";
+        let (output, attrs) = extract_image_attrs(input);
+        assert_eq!(output, input);
+        assert!(attrs.is_empty());
+    }
+
     // ── extract_image_attrs (code awareness) ──
 
     #[test]
@@ -437,5 +467,71 @@ mod tests {
             }
             .is_empty()
         );
+        assert!(
+            !ImageAttrs {
+                auto_width: Some(100),
+                ..Default::default()
+            }
+            .is_empty()
+        );
+        assert!(
+            !ImageAttrs {
+                auto_height: Some(100),
+                ..Default::default()
+            }
+            .is_empty()
+        );
+        assert!(
+            !ImageAttrs {
+                lqip_uri: Some("data:image/webp;base64,AAA".into()),
+                ..Default::default()
+            }
+            .is_empty()
+        );
+    }
+
+    // ── ImageAttrs::fill_from_meta ──
+
+    #[test]
+    fn fill_from_meta_stamps_auto_dims_and_lqip() {
+        let mut attrs = ImageAttrs::default();
+        let meta = ImageMeta {
+            width: 1600,
+            height: 900,
+            lqip_uri: Some("data:image/webp;base64,XYZ".into()),
+        };
+        attrs.fill_from_meta(&meta);
+        assert_eq!(attrs.auto_width, Some(1600));
+        assert_eq!(attrs.auto_height, Some(900));
+        assert_eq!(
+            attrs.lqip_uri.as_deref(),
+            Some("data:image/webp;base64,XYZ")
+        );
+    }
+
+    #[test]
+    fn fill_from_meta_preserves_manual_fields() {
+        // Manual id / classes / width / height predate the resolver lookup;
+        // `fill_from_meta` must only stamp the auto/lqip slots.
+        let mut attrs = ImageAttrs {
+            id: Some("hero".into()),
+            classes: vec!["wide".into()],
+            width: Some("400".into()),
+            height: Some("300".into()),
+            ..ImageAttrs::default()
+        };
+        let meta = ImageMeta {
+            width: 1600,
+            height: 900,
+            lqip_uri: None,
+        };
+        attrs.fill_from_meta(&meta);
+        assert_eq!(attrs.id.as_deref(), Some("hero"));
+        assert_eq!(attrs.classes, vec!["wide"]);
+        assert_eq!(attrs.width.as_deref(), Some("400"));
+        assert_eq!(attrs.height.as_deref(), Some("300"));
+        assert_eq!(attrs.auto_width, Some(1600));
+        assert_eq!(attrs.auto_height, Some(900));
+        assert!(attrs.lqip_uri.is_none());
     }
 }

@@ -319,6 +319,36 @@ mod tests {
     }
 
     #[test]
+    fn inline_image_manual_height_scales_auto_width() {
+        // Author wrote `{height=400}`; resolver saw a 1200×800 source.
+        // Browser should reserve a 600×400 box so aspect is preserved.
+        let attrs = ImageAttrs {
+            height: Some("400".into()),
+            auto_width: Some(1200),
+            auto_height: Some(800),
+            ..ImageAttrs::default()
+        };
+        let html = render_inline_image("img.avif", "alt", "", Some(&attrs));
+        assert!(html.contains(r#"width="600""#), "html:\n{html}");
+        assert!(html.contains(r#"height="400""#), "html:\n{html}");
+    }
+
+    #[test]
+    fn inline_image_manual_height_with_zero_auto_height_skips_scaling() {
+        // Pathological `auto_height = 0` (would divide by zero) falls through
+        // to the catch-all arm: emit the manual height, no auto width.
+        let attrs = ImageAttrs {
+            height: Some("400".into()),
+            auto_width: Some(1200),
+            auto_height: Some(0),
+            ..ImageAttrs::default()
+        };
+        let html = render_inline_image("img.avif", "alt", "", Some(&attrs));
+        assert!(html.contains(r#"height="400""#), "html:\n{html}");
+        assert!(!html.contains("width="), "html:\n{html}");
+    }
+
+    #[test]
     fn inline_image_manual_dimensions_win_over_auto() {
         let attrs = ImageAttrs {
             width: Some("250".into()),

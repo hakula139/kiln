@@ -427,6 +427,30 @@ mod tests {
         )
     }
 
+    fn render_with_resolver(
+        content: &str,
+        resolver: &ImageResolver,
+        base_dir: &Path,
+    ) -> MarkdownOutput {
+        let (cleaned, attrs) = crate::render::image_attrs::extract_image_attrs(content);
+        let mut features = BTreeSet::new();
+        render_markdown(
+            &cleaned,
+            &SYNTAX_SET,
+            &attrs,
+            Some(resolver),
+            Some(base_dir),
+            None,
+            &mut features,
+        )
+    }
+
+    fn write_tiny_png(path: &Path) {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let img = image::RgbaImage::from_pixel(8, 4, image::Rgba([200, 100, 50, 255]));
+        img.save_with_format(path, image::ImageFormat::Png).unwrap();
+    }
+
     // ── deduplicate_id ──
 
     #[test]
@@ -1072,5 +1096,61 @@ mod tests {
             "second image should be present, html:\n{}",
             out.html
         );
+    }
+
+    // ── render_markdown: enrich_image_attrs via ImageResolver ──
+
+    #[test]
+    fn resolver_stamps_dimensions_and_lqip_on_block_image() {
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = dir.path().join("bundle");
+        write_tiny_png(&bundle.join("img.png"));
+
+        let resolver = ImageResolver::new(dir.path(), crate::render::lqip::ImageConfig::default());
+        let out = render_with_resolver("![alt](img.png)\n", &resolver, &bundle);
+
+        assert!(out.html.contains(r#"width="8""#), "html:\n{}", out.html);
+        assert!(out.html.contains(r#"height="4""#), "html:\n{}", out.html);
+        assert!(
+            out.html.contains("background:url('data:image/webp;base64,"),
+            "html:\n{}",
+            out.html
+        );
+    }
+
+    #[test]
+    fn resolver_merges_with_authored_attrs_on_inline_image() {
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = dir.path().join("bundle");
+        write_tiny_png(&bundle.join("img.png"));
+
+        let resolver = ImageResolver::new(dir.path(), crate::render::lqip::ImageConfig::default());
+        // Two images on one line stay inline; authored width wins, auto height
+        // backfills via the resolver's 8×4 aspect (`width=4 -> height=2`).
+        let out =
+            render_with_resolver("![a](img.png){width=4} ![b](img.png)\n", &resolver, &bundle);
+
+        assert!(
+            !out.html.contains("<figure>"),
+            "two-image paragraph should not be a figure, html:\n{}",
+            out.html
+        );
+        assert!(out.html.contains(r#"width="4""#), "html:\n{}", out.html);
+        assert!(out.html.contains(r#"height="2""#), "html:\n{}", out.html);
+    }
+
+    #[test]
+    fn resolver_misses_remote_image_emits_no_dims() {
+        let dir = tempfile::tempdir().unwrap();
+        let resolver = ImageResolver::new(dir.path(), crate::render::lqip::ImageConfig::default());
+        let out = render_with_resolver(
+            "![remote](https://cdn.example.com/x.png)\n",
+            &resolver,
+            dir.path(),
+        );
+
+        assert!(out.html.contains(r#"src="https://cdn.example.com/x.png""#));
+        assert!(!out.html.contains("width="), "html:\n{}", out.html);
+        assert!(!out.html.contains("background:url"), "html:\n{}", out.html);
     }
 }
