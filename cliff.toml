@@ -19,7 +19,7 @@ body = """
     ## [Unreleased]
 {% endif %}
 {% for group, commits in commits | group_by(attribute="group") %}
-    ### {{ group | upper_first }}
+    ### {{ group | split(pat="-->") | last | trim | upper_first }}
 
     {% for commit in commits -%}
         - {% if commit.scope %}_({{ commit.scope }})_ {% endif -%}
@@ -65,15 +65,33 @@ filter_unconventional = true
 filter_commits = true
 sort_commits = "oldest"
 
-# Order matters: most specific first.
+# Per-commit message rewrites applied before parsing.
+commit_preprocessors = [
+  # Wrap inline HTML tags (e.g., `<span class="lqip">`) in backticks so
+  # markdown viewers render them as code, not as actual (and invisible)
+  # elements. The leading-character capture acts as a poor-person's negative
+  # lookbehind — Rust regex doesn't support lookaround, so we match either
+  # start-of-string or any non-backtick character and re-emit it, leaving
+  # already-fenced spans like `` `<pre>` `` untouched.
+  { pattern = '(^|[^`])(<\/?[a-zA-Z][^>]*>)', replace = '$1`$2`' },
+]
+
+# Group names use a `<!-- N -->` sort prefix so the rendered sections appear
+# in priority order (Breaking → Added → Fixed → ...) rather than alphabetical.
+# The body template strips the prefix from the heading.
+#
+# Order matters: most specific first. Breaking changes (`feat!:`,
+# `feat(scope)!:`, etc.) are matched before the generic type rules so they
+# surface in their own section instead of falling through to Added / Fixed.
 commit_parsers = [
-  { message = "^feat", group = "Added" },
-  { message = "^fix", group = "Fixed" },
-  { message = "^perf", group = "Changed" },
-  { message = "^revert", group = "Removed" },
+  { message = '^[a-z]+(\([^)]+\))?!:', group = "<!-- 0 -->Breaking changes" },
+  { message = "^feat", group = "<!-- 1 -->Added" },
+  { message = "^fix", group = "<!-- 2 -->Fixed" },
+  { message = "^perf", group = "<!-- 3 -->Changed" },
+  { message = "^revert", group = "<!-- 4 -->Removed" },
   # Dependency bumps (Dependabot, Renovate, manual) get their own section
   # rather than getting lost in the broader `chore` skip below.
-  { message = '^chore\(deps\)', group = "Dependencies" },
+  { message = '^chore\(deps\)', group = "<!-- 5 -->Dependencies" },
   { message = "^refactor", skip = true },
   { message = "^docs", skip = true },
   { message = "^test", skip = true },
