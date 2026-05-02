@@ -480,10 +480,10 @@ When no placeholder is available (remote URLs, unresolvable paths, undecodable f
 
 The wrapper exposes two identifiers themes can rely on across kiln releases:
 
-| Token            | Meaning                                                            |
-| ---------------- | ------------------------------------------------------------------ |
-| `class="lqip"`   | Marks the placeholder wrapper. Use as a CSS selector hook.         |
-| `--lqip-uri`     | CSS custom property carrying the `data:image/webp;base64,...` URI. |
+| Token          | Meaning                                                            |
+| -------------- | ------------------------------------------------------------------ |
+| `class="lqip"` | Marks the placeholder wrapper. Use as a CSS selector hook.         |
+| `--lqip-uri`   | CSS custom property carrying the `data:image/webp;base64,...` URI. |
 
 Identity attributes authored by users (`id`, custom classes from Pandoc `{...}` braces, manual `width` / `height`) always land on the inner `<img>`, never on the wrapper. Theme selectors written against `<img>` keep working unchanged.
 
