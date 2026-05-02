@@ -64,7 +64,12 @@ fn render_img(
     let mut img = String::new();
     push_img_tag(&mut img, src, alt, title, attrs, include_identity);
 
-    match attrs.and_then(|a| a.lqip_uri.as_deref()) {
+    // An empty URI is treated as no URI: a `url('')` placeholder is broken
+    // and would still trigger the wrapper's CSS path on the theme side.
+    match attrs
+        .and_then(|a| a.lqip_uri.as_deref())
+        .filter(|s| !s.is_empty())
+    {
         // Base64 contains only `[A-Za-z0-9+/=]`, so no escaping needed for
         // the surrounding `"` or the CSS `url('...')` delimiters.
         Some(uri) => format!(r#"<span class="lqip" style="--lqip-uri:url('{uri}')">{img}</span>"#),
@@ -328,6 +333,23 @@ mod tests {
             !html.contains("background:url"),
             "no inline background style on the img, html:\n{html}",
         );
+    }
+
+    #[test]
+    fn inline_image_with_empty_lqip_uri_emits_bare_img() {
+        let attrs = ImageAttrs {
+            auto_width: Some(100),
+            auto_height: Some(60),
+            lqip_uri: Some(String::new()),
+            ..ImageAttrs::default()
+        };
+        let html = render_inline_image("img.avif", "alt", "", Some(&attrs));
+        assert!(
+            html.starts_with("<img "),
+            "empty uri should not produce a wrapper, html:\n{html}"
+        );
+        assert!(!html.contains(r#"class="lqip""#), "html:\n{html}");
+        assert!(!html.contains("url('"), "html:\n{html}");
     }
 
     #[test]
