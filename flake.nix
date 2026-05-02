@@ -104,8 +104,14 @@
             preCommitCheck.shellHook
             + pkgs.lib.optionalString pkgs.stdenv.isDarwin ''
               # rustc stdlib targets the system libSystem; reach the Xcode SDK
-              # rather than the Nix apple-sdk sysroot (mismatched ABI).
-              export LIBRARY_PATH="$(xcrun --show-sdk-path)/usr/lib''${LIBRARY_PATH:+:$LIBRARY_PATH}"
+              # rather than the Nix apple-sdk sysroot (mismatched ABI). Guard
+              # `xcrun` so a Darwin user missing the Command Line Tools sees a
+              # readable error instead of `LIBRARY_PATH=/usr/lib`.
+              if command -v xcrun >/dev/null 2>&1; then
+                export LIBRARY_PATH="$(xcrun --show-sdk-path)/usr/lib''${LIBRARY_PATH:+:$LIBRARY_PATH}"
+              else
+                echo "warning: xcrun not found — run \`xcode-select --install\` so cargo can link against the system SDK" >&2
+              fi
             '';
 
           env.RUST_BACKTRACE = "1";
