@@ -2,20 +2,26 @@
 
 Releases are produced by `.github/workflows/release.yml`, triggered when a tag matching `v[0-9]+.*` is pushed.
 
-`CHANGELOG.md` is generated from Conventional Commits via [`git-cliff`](https://git-cliff.org). The `cliff.toml` config groups commits into Keep a Changelog sections (`Added`, `Fixed`, `Changed`, `Removed`, `Dependencies`) and is the single source of truth for both the in-repo changelog and GitHub Release notes (the `taiki-e/create-gh-release-action` step extracts the matching version section).
+`CHANGELOG.md` is fully auto-generated from Conventional Commits via [`git-cliff`](https://git-cliff.org) — do not hand-edit it. The `cliff.toml` config groups commits into Keep a Changelog sections (`Breaking changes`, `Added`, `Fixed`, `Changed`, `Removed`, `Dependencies`) and is the single source of truth for both the in-repo changelog and GitHub Release notes (the `taiki-e/create-gh-release-action` step extracts the matching version section).
+
+Any prose that should land in the changelog must come from a commit message: use `feat!:` / `fix!:` (or `feat(scope)!:` etc.) on PRs that introduce breaking changes so they surface in the `Breaking changes` section. Inline HTML in commit subjects is auto-backticked by a `commit_preprocessors` rule, so a subject like `feat(render)!: wrap <img> in <span class="lqip">` renders correctly in the changelog without manual escaping.
 
 ## Standard release
 
 1. Bump version in `Cargo.toml` (`workspace.package.version`).
+
 2. Run `cargo build` to refresh `Cargo.lock`.
+
 3. Regenerate `CHANGELOG.md` from commits:
 
    ```bash
    git cliff --tag vX.Y.Z --output CHANGELOG.md
    ```
 
-   Review the output and edit by hand if any bullet needs polishing — the file you commit is what users will read.
+   Inspect the diff to confirm the new section reads well. If it doesn't, fix the underlying commits (rebase, amend, reword the squash commit subject) and regenerate — never edit `CHANGELOG.md` directly.
+
 4. Commit: `chore(release): vX.Y.Z`.
+
 5. Tag and push:
 
    ```bash
@@ -25,6 +31,7 @@ Releases are produced by `.github/workflows/release.yml`, triggered when a tag m
    ```
 
 6. The workflow creates the GitHub Release, extracting the matching `[X.Y.Z]` section from `CHANGELOG.md` as release notes, and uploads:
+
    - `kiln-x86_64-unknown-linux-gnu.tar.gz` (+ `.sha256`)
    - `kiln-aarch64-apple-darwin.tar.gz` (+ `.sha256`)
 

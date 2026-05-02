@@ -19,7 +19,7 @@ body = """
     ## [Unreleased]
 {% endif %}
 {% for group, commits in commits | group_by(attribute="group") %}
-    ### {{ group | upper_first }}
+    ### {{ group | split(pat="-->") | last | trim | upper_first }}
 
     {% for commit in commits -%}
         - {% if commit.scope %}_({{ commit.scope }})_ {% endif -%}
@@ -65,15 +65,26 @@ filter_unconventional = true
 filter_commits = true
 sort_commits = "oldest"
 
-# Order matters: most specific first.
+commit_preprocessors = [
+  # Backtick inline HTML in commit subjects so markdown renders them as code,
+  # not invisible elements. The `(^|[^`])` capture stands in for a negative
+  # lookbehind (unsupported in Rust regex) to skip already-fenced spans.
+  { pattern = '(^|[^`])(<\/?[a-zA-Z][^>]*>)', replace = '$1`$2`' },
+]
+
+# Group names carry a `<!-- N -->` sort prefix (stripped in the body template)
+# so sections render in priority order, not alphabetically. Order matters:
+# most specific first — `!`-marked commits must hit "Breaking changes" before
+# falling through to the generic type rules.
 commit_parsers = [
-  { message = "^feat", group = "Added" },
-  { message = "^fix", group = "Fixed" },
-  { message = "^perf", group = "Changed" },
-  { message = "^revert", group = "Removed" },
+  { message = '^[a-z]+(\([^)]+\))?!:', group = "<!-- 0 -->Breaking changes" },
+  { message = "^feat", group = "<!-- 1 -->Added" },
+  { message = "^fix", group = "<!-- 2 -->Fixed" },
+  { message = "^perf", group = "<!-- 3 -->Changed" },
+  { message = "^revert", group = "<!-- 4 -->Removed" },
   # Dependency bumps (Dependabot, Renovate, manual) get their own section
   # rather than getting lost in the broader `chore` skip below.
-  { message = '^chore\(deps\)', group = "Dependencies" },
+  { message = '^chore\(deps\)', group = "<!-- 5 -->Dependencies" },
   { message = "^refactor", skip = true },
   { message = "^docs", skip = true },
   { message = "^test", skip = true },

@@ -7,16 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.0-rc.2] - 2026-05-02
 
-> **Breaking change for theme authors:** the LQIP placeholder is now delivered via a `<span class="lqip">` wrapper instead of an inline `style="background:..."` on the `<img>`. Themes need a `.lqip` component that paints `var(--lqip-uri)` on a `::before` backdrop — see [docs/themes.md → Image Rendering](docs/themes.md#image-rendering).
+### Breaking changes
+
+- _(render)_ Wrap LQIP-enabled images in `<span class="lqip">` (#41)
 
 ### Added
 
 - _(render)_ Build-time image dimensions + LQIP backdrop pipeline (#40)
-- _(render)_ Wrap LQIP-enabled images in `<span class="lqip">` (#41)
-
-### Removed
-
-- _(config)_ The `[image] lqip = true|false` toggle (#41); encoding is always on, and unknown `[image]` keys now error instead of being silently ignored
 
 ## [0.2.0-rc.1] - 2026-05-01
 
@@ -61,10 +58,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - _(release)_ Publish prebuilt binaries with git-cliff changelog (#37)
 - _(cli)_ Support `kiln --version`
 
-### Dependencies
-
-- _(deps)_ Bump rand from 0.9.2 to 0.9.4 (#29)
-
 ### Fixed
 
 - _(serve)_ Use staged build to eliminate 404s during rebuild (#19)
@@ -73,6 +66,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - _(serve)_ Set Cache-Control: no-cache on dev server responses
 - _(directive)_ Tolerate trailing content after attribute braces (#27)
 - Resolve Rust 1.95 clippy lints and pin toolchain (#30)
+
+### Dependencies
+
+- _(deps)_ Bump rand from 0.9.2 to 0.9.4 (#29)
 
 [0.2.0-rc.2]: https://github.com/hakula139/kiln/compare/v0.2.0-rc.1..v0.2.0-rc.2
 [0.2.0-rc.1]: https://github.com/hakula139/kiln/compare/v0.1.0..v0.2.0-rc.1
