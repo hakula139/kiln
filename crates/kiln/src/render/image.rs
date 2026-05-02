@@ -336,38 +336,6 @@ mod tests {
     }
 
     #[test]
-    fn inline_image_with_empty_lqip_uri_emits_bare_img() {
-        let attrs = ImageAttrs {
-            auto_width: Some(100),
-            auto_height: Some(60),
-            lqip_uri: Some(String::new()),
-            ..ImageAttrs::default()
-        };
-        let html = render_inline_image("img.avif", "alt", "", Some(&attrs));
-        assert!(
-            html.starts_with("<img "),
-            "empty uri should not produce a wrapper, html:\n{html}"
-        );
-        assert!(!html.contains(r#"class="lqip""#), "html:\n{html}");
-        assert!(!html.contains("url('"), "html:\n{html}");
-    }
-
-    #[test]
-    fn inline_image_without_lqip_emits_bare_img() {
-        let attrs = ImageAttrs {
-            auto_width: Some(100),
-            auto_height: Some(60),
-            ..ImageAttrs::default()
-        };
-        let html = render_inline_image("img.avif", "alt", "", Some(&attrs));
-        assert!(
-            html.starts_with("<img "),
-            "no wrapper without lqip, html:\n{html}"
-        );
-        assert!(!html.contains(r#"class="lqip""#), "html:\n{html}");
-    }
-
-    #[test]
     fn inline_image_with_lqip_keeps_identity_attrs_on_img() {
         // Identity attrs must stay on the `<img>` so theme selectors like
         // `img#hero` or `img.full-bleed` keep matching after the wrapper lands.
@@ -397,19 +365,35 @@ mod tests {
     }
 
     #[test]
-    fn block_image_without_lqip_emits_bare_img_inside_figure() {
+    fn inline_image_without_lqip_emits_bare_img() {
         let attrs = ImageAttrs {
             auto_width: Some(100),
             auto_height: Some(60),
             ..ImageAttrs::default()
         };
-        let html = render_block_image("img.avif", "alt", "", Some(&attrs));
-        assert!(html.contains("<figure>"), "html:\n{html}");
+        let html = render_inline_image("img.avif", "alt", "", Some(&attrs));
         assert!(
-            !html.contains(r#"class="lqip""#),
-            "no wrapper without lqip, html:\n{html}",
+            html.starts_with("<img "),
+            "no wrapper without lqip, html:\n{html}"
         );
-        assert!(html.contains("<img "), "img is rendered, html:\n{html}");
+        assert!(!html.contains(r#"class="lqip""#), "html:\n{html}");
+    }
+
+    #[test]
+    fn inline_image_with_empty_lqip_uri_emits_bare_img() {
+        let attrs = ImageAttrs {
+            auto_width: Some(100),
+            auto_height: Some(60),
+            lqip_uri: Some(String::new()),
+            ..ImageAttrs::default()
+        };
+        let html = render_inline_image("img.avif", "alt", "", Some(&attrs));
+        assert!(
+            html.starts_with("<img "),
+            "empty uri should not produce a wrapper, html:\n{html}"
+        );
+        assert!(!html.contains(r#"class="lqip""#), "html:\n{html}");
+        assert!(!html.contains("url('"), "html:\n{html}");
     }
 
     #[test]
@@ -433,6 +417,22 @@ mod tests {
             html.contains("<figcaption>alt</figcaption>"),
             "html:\n{html}"
         );
+    }
+
+    #[test]
+    fn block_image_without_lqip_emits_bare_img_inside_figure() {
+        let attrs = ImageAttrs {
+            auto_width: Some(100),
+            auto_height: Some(60),
+            ..ImageAttrs::default()
+        };
+        let html = render_block_image("img.avif", "alt", "", Some(&attrs));
+        assert!(html.contains("<figure>"), "html:\n{html}");
+        assert!(
+            !html.contains(r#"class="lqip""#),
+            "no wrapper without lqip, html:\n{html}",
+        );
+        assert!(html.contains("<img "), "img is rendered, html:\n{html}");
     }
 
     #[test]
