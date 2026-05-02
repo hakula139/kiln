@@ -39,8 +39,9 @@ impl Default for ImageConfig {
 }
 
 /// Per-image metadata produced by [`ImageResolver::resolve`]. `lqip_uri`
-/// is `None` for SVG / disabled LQIP; dimensions come from `imagesize`
-/// (header-only, covers more formats than the `image` crate's decoder).
+/// is `None` for formats the `image` crate can't decode (SVG, partial
+/// rasters); dimensions come from `imagesize` (header-only, covers more
+/// formats than the `image` crate's decoder).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ImageMeta {
     pub width: u32,
