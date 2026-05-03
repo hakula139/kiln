@@ -20,19 +20,10 @@ pub fn clean_output_dir(path: &Path) -> Result<()> {
         .with_context(|| format!("failed to create output directory {}", path.display()))
 }
 
-/// Recursively copies all files from `src` into `dest`, preserving directory structure.
+/// Recursively copies files from `src` into `dest`, skipping `_`-prefixed
+/// entries (except top-level deployment config files like `_headers`).
 ///
-/// Files and directories whose names start with `_` are skipped (including
-/// their entire subtrees). This mirrors the content-discovery convention and
-/// lets themes and sites keep private build inputs (e.g., Tailwind partials
-/// under `static/css/_src/`) in the same tree as the shipped bundle without
-/// exposing them in the published site.
-///
-/// The exception is well-known deployment-config files (see
-/// [`STATIC_DEPLOYMENT_CONFIG_FILES`]) at the top level of `src`, which pass
-/// through unchanged so that hosts that consume these files work as expected.
-///
-/// Skips the copy entirely if `src` does not exist.
+/// No-op if `src` does not exist.
 ///
 /// # Errors
 ///
@@ -81,10 +72,7 @@ fn is_build_private(entry: &walkdir::DirEntry) -> bool {
     true
 }
 
-/// Well-known deployment-config files that pass through the underscore filter
-/// when present at the top level of `src`. These conventions are shared across
-/// Cloudflare Pages, Workers Static Assets, Netlify, and similar static hosts;
-/// the host reads them from the root of the deployed assets directory.
+/// Deployment-config files that bypass the `_`-prefix filter at the top level.
 const STATIC_DEPLOYMENT_CONFIG_FILES: &[&str] = &["_headers", "_redirects"];
 
 /// Copies a single file from `src` to `dest`, creating parent directories as needed.
