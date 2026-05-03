@@ -1655,14 +1655,13 @@ mod tests {
         );
     }
 
-    // cSpell:ignore asyc
-
     #[test]
     fn register_script_returns_error_on_unknown_kwarg() {
-        // `asyc` is an intentional typo: the test proves typo'd kwargs
-        // surface in the error message verbatim so authors can spot them.
+        // The exact name proves unknown kwargs surface in the error message
+        // verbatim, so a typo'd `defer` / `module` is recoverable from the
+        // build log without rerunning under a debugger.
         let (_dir, engine) =
-            engine_with_directive("widget", r#"{{ register_script("/x.js", asyc=true) }}"#);
+            engine_with_directive("widget", r#"{{ register_script("/x.js", bogus=true) }}"#);
         let err = format!(
             "{:#}",
             engine
@@ -1671,8 +1670,8 @@ mod tests {
                 .unwrap_err(),
         );
         assert!(
-            err.contains("asyc"),
-            "typo'd kwarg should surface in the error, got: {err}"
+            err.contains("bogus"),
+            "unknown kwarg should surface in the error, got: {err}"
         );
     }
 
