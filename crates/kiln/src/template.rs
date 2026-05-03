@@ -1384,6 +1384,163 @@ mod tests {
         assert_eq!(result, "Hi !");
     }
 
+    // ── tpl_register_script ──
+
+    fn engine_with_directive(name: &str, body: &str) -> (tempfile::TempDir, TemplateEngine) {
+        let dir = tempfile::tempdir().unwrap();
+        let directives_dir = dir.path().join("directives");
+        test_fs::create_dir_all(&directives_dir).unwrap();
+        test_fs::write(directives_dir.join(format!("{name}.html")), body).unwrap();
+        let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
+        (dir, engine)
+    }
+
+    fn empty_ctx(name: &str) -> crate::directive::DirectiveContext {
+        crate::directive::DirectiveContext {
+            name: name.into(),
+            positional_args: Vec::new(),
+            named_args: BTreeMap::default(),
+            id: None,
+            classes: Vec::new(),
+            body_html: String::new(),
+            body_raw: String::new(),
+            source_dir: None,
+        }
+    }
+
+    #[test]
+    fn register_script_records_default_deferred_tag() {
+        let (_dir, engine) = engine_with_directive(
+            "widget",
+            r#"{{ register_script("/js/widget.js") }}<widget>"#,
+        );
+        let assets = AssetsHandle::default();
+        let html = engine
+            .render_directive("widget", empty_ctx("widget"), &assets)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(html, "<widget>", "register_script must return empty string");
+        let snapshot = assets.snapshot();
+        assert_eq!(snapshot.scripts.len(), 1);
+        assert_eq!(snapshot.scripts[0].url, "/js/widget.js");
+        assert_eq!(snapshot.scripts[0].load, LoadStrategy::Defer);
+        assert!(!snapshot.scripts[0].module);
+    }
+
+    #[test]
+    fn register_script_honors_defer_false_and_module_kwargs() {
+        let (_dir, engine) = engine_with_directive(
+            "widget",
+            r#"{{ register_script("/js/widget.js", defer=false, module=true) }}"#,
+        );
+        let assets = AssetsHandle::default();
+        engine
+            .render_directive("widget", empty_ctx("widget"), &assets)
+            .unwrap()
+            .unwrap();
+
+        let snapshot = assets.snapshot();
+        assert_eq!(snapshot.scripts[0].load, LoadStrategy::Sync);
+        assert!(snapshot.scripts[0].module);
+    }
+
+    #[test]
+    fn register_script_deduplicates_repeated_directive_renders() {
+        // Five renders of the same directive should collapse to one tag —
+        // this is the score-table-style "N copies of the same widget on a
+        // page" case the helper was designed for.
+        let (_dir, engine) =
+            engine_with_directive("widget", r#"{{ register_script("/js/widget.js") }}"#);
+        let assets = AssetsHandle::default();
+        for _ in 0..5 {
+            engine
+                .render_directive("widget", empty_ctx("widget"), &assets)
+                .unwrap()
+                .unwrap();
+        }
+        assert_eq!(assets.snapshot().scripts.len(), 1);
+    }
+
+    #[test]
+    fn register_script_returns_error_on_conflicting_attributes() {
+        let (_dir, engine) = engine_with_directive(
+            "widget",
+            r#"
+            {{- register_script("/js/widget.js") -}}
+            {{- register_script("/js/widget.js", module=true) -}}
+            "#,
+        );
+        let assets = AssetsHandle::default();
+        let err = format!(
+            "{:#}",
+            engine
+                .render_directive("widget", empty_ctx("widget"), &assets)
+                .unwrap()
+                .unwrap_err(),
+        );
+        assert!(
+            err.contains("Pick one set of attributes per URL"),
+            "should surface the assets-layer conflict error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn register_script_returns_error_when_called_outside_directive_context() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
+        let err = engine
+            .env
+            .render_str(r#"{{ register_script("/x.js") }}"#, ())
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("only callable from directive templates"),
+            "non-directive renders should reject register_script, got: {err}"
+        );
+    }
+
+    #[test]
+    fn register_script_returns_error_when_assets_has_wrong_type() {
+        // Defensive branch: `__assets` is present but not an `AssetsHandle`.
+        // Unreachable through `render_directive`, but pins the contract for
+        // any future path that populates the slot.
+        let dir = tempfile::tempdir().unwrap();
+        let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
+        let err = engine
+            .env
+            .render_str(
+                r#"{{ register_script("/x.js") }}"#,
+                minijinja::context! { __assets => "not a handle" },
+            )
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("__assets is not a recognized asset handle"),
+            "wrong-type __assets should surface a typed error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn register_script_returns_error_on_unknown_kwarg() {
+        // The exact name proves unknown kwargs surface in the error message
+        // verbatim, so a typo'd `defer` / `module` is recoverable from the
+        // build log without rerunning under a debugger.
+        let (_dir, engine) =
+            engine_with_directive("widget", r#"{{ register_script("/x.js", bogus=true) }}"#);
+        let err = format!(
+            "{:#}",
+            engine
+                .render_directive("widget", empty_ctx("widget"), &AssetsHandle::default())
+                .unwrap()
+                .unwrap_err(),
+        );
+        assert!(
+            err.contains("bogus"),
+            "unknown kwarg should surface in the error, got: {err}"
+        );
+    }
+
     // ── tpl_parse_csv ──
 
     #[test]
@@ -1531,147 +1688,6 @@ mod tests {
         assert!(
             err.contains("CSV parse error"),
             "should report CSV error, got: {err}"
-        );
-    }
-
-    // ── tpl_register_script ──
-
-    fn engine_with_directive(name: &str, body: &str) -> (tempfile::TempDir, TemplateEngine) {
-        let dir = tempfile::tempdir().unwrap();
-        let directives_dir = dir.path().join("directives");
-        test_fs::create_dir_all(&directives_dir).unwrap();
-        test_fs::write(directives_dir.join(format!("{name}.html")), body).unwrap();
-        let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
-        (dir, engine)
-    }
-
-    fn empty_ctx(name: &str) -> crate::directive::DirectiveContext {
-        crate::directive::DirectiveContext {
-            name: name.into(),
-            positional_args: Vec::new(),
-            named_args: BTreeMap::default(),
-            id: None,
-            classes: Vec::new(),
-            body_html: String::new(),
-            body_raw: String::new(),
-            source_dir: None,
-        }
-    }
-
-    #[test]
-    fn register_script_records_default_deferred_tag() {
-        let (_dir, engine) = engine_with_directive(
-            "widget",
-            r#"{{ register_script("/js/widget.js") }}<widget>"#,
-        );
-        let assets = AssetsHandle::default();
-        let html = engine
-            .render_directive("widget", empty_ctx("widget"), &assets)
-            .unwrap()
-            .unwrap();
-
-        assert_eq!(html, "<widget>", "register_script must return empty string");
-        let snapshot = assets.snapshot();
-        assert_eq!(snapshot.scripts.len(), 1);
-        assert_eq!(snapshot.scripts[0].url, "/js/widget.js");
-        assert_eq!(snapshot.scripts[0].load, LoadStrategy::Defer);
-        assert!(!snapshot.scripts[0].module);
-    }
-
-    #[test]
-    fn register_script_honors_defer_false_and_module_kwargs() {
-        let (_dir, engine) = engine_with_directive(
-            "widget",
-            r#"{{ register_script("/js/widget.js", defer=false, module=true) }}"#,
-        );
-        let assets = AssetsHandle::default();
-        engine
-            .render_directive("widget", empty_ctx("widget"), &assets)
-            .unwrap()
-            .unwrap();
-
-        let snapshot = assets.snapshot();
-        assert_eq!(snapshot.scripts[0].load, LoadStrategy::Sync);
-        assert!(snapshot.scripts[0].module);
-    }
-
-    #[test]
-    fn register_script_deduplicates_repeated_directive_renders() {
-        // Five renders of the same directive should collapse to one tag —
-        // this is the score-table-style "N copies of the same widget on a
-        // page" case the helper was designed for.
-        let (_dir, engine) =
-            engine_with_directive("widget", r#"{{ register_script("/js/widget.js") }}"#);
-        let assets = AssetsHandle::default();
-        for _ in 0..5 {
-            engine
-                .render_directive("widget", empty_ctx("widget"), &assets)
-                .unwrap()
-                .unwrap();
-        }
-        assert_eq!(assets.snapshot().scripts.len(), 1);
-    }
-
-    #[test]
-    fn register_script_returns_error_on_conflicting_attributes() {
-        let (_dir, engine) = engine_with_directive(
-            "widget",
-            r#"
-            {{- register_script("/js/widget.js") -}}
-            {{- register_script("/js/widget.js", module=true) -}}
-            "#,
-        );
-        let assets = AssetsHandle::default();
-        let err = format!(
-            "{:#}",
-            engine
-                .render_directive("widget", empty_ctx("widget"), &assets)
-                .unwrap()
-                .unwrap_err(),
-        );
-        assert!(
-            err.contains("Pick one set of attributes per URL"),
-            "should surface the assets-layer conflict error, got: {err}"
-        );
-    }
-
-    #[test]
-    fn register_script_returns_error_when_called_outside_directive_context() {
-        let dir = tempfile::tempdir().unwrap();
-        test_fs::write(
-            dir.path().join("bare.html"),
-            r#"{{ register_script("/x.js") }}"#,
-        )
-        .unwrap();
-        let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
-        let err = engine
-            .env
-            .render_str(r#"{{ register_script("/x.js") }}"#, ())
-            .unwrap_err()
-            .to_string();
-        assert!(
-            err.contains("only callable from directive templates"),
-            "non-directive renders should reject register_script, got: {err}"
-        );
-    }
-
-    #[test]
-    fn register_script_returns_error_on_unknown_kwarg() {
-        // The exact name proves unknown kwargs surface in the error message
-        // verbatim, so a typo'd `defer` / `module` is recoverable from the
-        // build log without rerunning under a debugger.
-        let (_dir, engine) =
-            engine_with_directive("widget", r#"{{ register_script("/x.js", bogus=true) }}"#);
-        let err = format!(
-            "{:#}",
-            engine
-                .render_directive("widget", empty_ctx("widget"), &AssetsHandle::default())
-                .unwrap()
-                .unwrap_err(),
-        );
-        assert!(
-            err.contains("bogus"),
-            "unknown kwarg should surface in the error, got: {err}"
         );
     }
 
