@@ -2,7 +2,7 @@
 # kiln Development Flake
 # ==============================================================================
 #
-# Provides Rust toolchain, libdav1d (AVIF decode), pagefind, and pre-commit hooks.
+# Provides Rust toolchain, libdav1d (AVIF decode), git-cliff, and pre-commit hooks.
 #
 #   nix develop        # interactive shell
 #   nix flake check    # run pre-commit hooks
@@ -148,12 +148,13 @@
             preCommitCheck.enabledPackages
             ++ [ rustToolchain ]
             ++ (with pkgs; [
-              # AVIF decode (dav1d-sys) + kiln's runtime search dep.
+              # Native build deps (AVIF decode via dav1d-sys).
               dav1d
-              pkg-config
               nasm
-              pagefind
-              # Node tooling for the Node-side pre-commit hooks.
+              pkg-config
+              # Release tooling.
+              git-cliff
+              # Node tooling for pre-commit hooks.
               nodejs_24
               pnpm
             ])
@@ -163,10 +164,7 @@
           shellHook =
             preCommitCheck.shellHook
             + pkgs.lib.optionalString pkgs.stdenv.isDarwin ''
-              # rustc stdlib targets the system libSystem; reach the Xcode SDK
-              # rather than the Nix apple-sdk sysroot (mismatched ABI). Guard
-              # `xcrun` so a Darwin user missing the Command Line Tools sees a
-              # readable error instead of `LIBRARY_PATH=/usr/lib`.
+              # Point LIBRARY_PATH at the Xcode SDK so rustc can link on Darwin.
               if command -v xcrun >/dev/null 2>&1; then
                 export LIBRARY_PATH="$(xcrun --show-sdk-path)/usr/lib''${LIBRARY_PATH:+:$LIBRARY_PATH}"
               else

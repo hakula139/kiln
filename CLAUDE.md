@@ -194,7 +194,7 @@ Follows global CLAUDE.md commit / branch / PR conventions, plus:
 
 ## Nix Development
 
-`flake.nix` pins the Rust toolchain, `libdav1d` (AVIF), and `pagefind`.
+`flake.nix` pins the Rust toolchain, `libdav1d` (AVIF), and `git-cliff`.
 
 ```bash
 nix develop                            # interactive shell
