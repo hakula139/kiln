@@ -4,13 +4,14 @@ use std::path::{Component, Path};
 
 use anyhow::{Context, Result, ensure};
 use minijinja::path_loader;
-use minijinja::value::Kwargs;
+use minijinja::value::{Kwargs, Value, merge_maps};
 use serde::Serialize;
 
 use self::vars::{
     ArchivePageVars, ErrorPageVars, HomePageVars, OverviewPageVars, PostTemplateVars,
 };
 use crate::i18n::I18n;
+use crate::render::assets::{AssetsHandle, LoadStrategy, ScriptTag};
 
 #[derive(Debug)]
 pub struct TemplateEngine {
@@ -69,6 +70,12 @@ impl TemplateEngine {
         env.add_function("now", tpl_now);
         env.add_function("read_file", tpl_read_file);
         env.add_function("parse_csv", tpl_parse_csv);
+        env.add_function(
+            "register_script",
+            |state: &minijinja::State, url: &str, kwargs: Kwargs| {
+                tpl_register_script(state, url, &kwargs)
+            },
+        );
 
         let t_i18n = i18n.clone();
         env.add_function("t", move |key: &str, kwargs: Kwargs| {
@@ -169,14 +176,31 @@ impl TemplateEngine {
     /// Tries to render a directive using a theme template at
     /// `directives/<name>.html`.
     ///
+    /// `assets` is exposed to the template as the `__assets` context variable,
+    /// where the `register_script(...)` function reads it. Directive templates
+    /// can therefore declare scripts that bubble up to the page-level
+    /// [`PageAssets`](crate::render::assets::PageAssets) without per-feature
+    /// frontmatter flags.
+    ///
     /// Returns `None` if no template exists for the directive name.
     /// Returns `Some(Err(_))` if the template exists but rendering fails.
-    pub fn render_directive(&self, name: &str, ctx: impl Serialize) -> Option<Result<String>> {
+    pub fn render_directive(
+        &self,
+        name: &str,
+        ctx: impl Serialize,
+        assets: &AssetsHandle,
+    ) -> Option<Result<String>> {
         let template_name = format!("directives/{name}.html");
         let template = self.env.get_template(&template_name).ok()?;
+        let merged = merge_maps([
+            minijinja::context! {
+                __assets => Value::from_object(assets.clone()),
+            },
+            Value::from_serialize(&ctx),
+        ]);
         Some(
             template
-                .render(ctx)
+                .render(merged)
                 .with_context(|| format!("failed to render directive template: {template_name}")),
         )
     }
@@ -275,6 +299,65 @@ fn tpl_t(i18n: &I18n, key: &str, kwargs: &Kwargs) -> std::result::Result<String,
         .map(|(name, value)| (*name, value.as_str()))
         .collect();
     Ok(i18n.t_interp(key, &args))
+}
+
+/// `MiniJinja` template function: registers a `<script>` for the current
+/// page on the per-render [`AssetsHandle`].
+///
+/// Usage in directive templates: `{{ register_script("/js/widget.js") }}`
+/// (defaults to `defer`). Pass `defer=false` for a synchronous script and
+/// `module=true` for `type="module"`. Returns the empty string so the call
+/// can be used as a statement.
+///
+/// Re-registering the same `(url, defer, module)` is a no-op so repeated
+/// directive instances on the same page coalesce to a single tag. Registering
+/// the same URL with different attributes is an error.
+fn tpl_register_script(
+    state: &minijinja::State,
+    url: &str,
+    kwargs: &Kwargs,
+) -> std::result::Result<&'static str, minijinja::Error> {
+    let assets_value = state
+        .lookup("__assets")
+        .filter(|v| !v.is_undefined() && !v.is_none())
+        .ok_or_else(|| {
+            minijinja::Error::new(
+                minijinja::ErrorKind::InvalidOperation,
+                "register_script requires page asset context — \
+                 only callable from directive templates",
+            )
+        })?;
+
+    let handle = assets_value
+        .downcast_object::<AssetsHandle>()
+        .ok_or_else(|| {
+            minijinja::Error::new(
+                minijinja::ErrorKind::InvalidOperation,
+                "__assets is not a recognized asset handle",
+            )
+        })?;
+
+    let defer: bool = kwargs.get("defer").unwrap_or(true);
+    let module: bool = kwargs.get("module").unwrap_or(false);
+    kwargs.assert_all_used()?;
+
+    let load = if defer {
+        LoadStrategy::Defer
+    } else {
+        LoadStrategy::Sync
+    };
+    handle
+        .lock()
+        .register_script(ScriptTag {
+            url: url.to_owned(),
+            load,
+            module,
+        })
+        .map_err(|e| {
+            minijinja::Error::new(minijinja::ErrorKind::InvalidOperation, e.to_string())
+        })?;
+
+    Ok("")
 }
 
 /// `MiniJinja` template function: parses CSV text into a list of rows,
@@ -974,7 +1057,7 @@ mod tests {
             body_html: "<p>hello</p>".into(),
         };
 
-        let result = engine.render_directive("test", ctx);
+        let result = engine.render_directive("test", ctx, &AssetsHandle::default());
         assert!(result.is_some(), "should find template");
         let html = result.unwrap().unwrap();
         assert!(
@@ -987,7 +1070,11 @@ mod tests {
     fn render_directive_returns_none_for_missing_template() {
         let dir = tempfile::tempdir().unwrap();
         let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
-        assert!(engine.render_directive("nonexistent", ()).is_none());
+        assert!(
+            engine
+                .render_directive("nonexistent", (), &AssetsHandle::default())
+                .is_none()
+        );
     }
 
     #[test]
@@ -1000,7 +1087,7 @@ mod tests {
 
         let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
         // `render_directive` builds "directives/../secret.html" — safe_join rejects "..".
-        let result = engine.render_directive("../secret", ());
+        let result = engine.render_directive("../secret", (), &AssetsHandle::default());
         assert!(result.is_none(), "path traversal should not find template");
     }
 
@@ -1021,7 +1108,7 @@ mod tests {
         .unwrap();
 
         let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
-        let result = engine.render_directive("bad", Ctx { items: 42 });
+        let result = engine.render_directive("bad", Ctx { items: 42 }, &AssetsHandle::default());
         assert!(result.is_some(), "template exists so should return Some");
         let err = result.unwrap().unwrap_err().to_string();
         assert!(
@@ -1090,7 +1177,7 @@ mod tests {
             source_dir: Some(source.path().to_string_lossy().into_owned()),
         };
 
-        let result = engine.render_directive("csv-reader", ctx);
+        let result = engine.render_directive("csv-reader", ctx, &AssetsHandle::default());
         let html = result.unwrap().unwrap();
         assert!(
             html.contains("DATA:A,B\n1,2"),
@@ -1125,7 +1212,7 @@ mod tests {
             source_dir: Some(source.path().join("subdir").to_string_lossy().into_owned()),
         };
 
-        let result = engine.render_directive("reader", ctx);
+        let result = engine.render_directive("reader", ctx, &AssetsHandle::default());
         let err = format!("{:#}", result.unwrap().unwrap_err());
         assert!(
             err.contains("path traversal not allowed"),
@@ -1158,7 +1245,7 @@ mod tests {
             source_dir: Some(source.path().to_string_lossy().into_owned()),
         };
 
-        let result = engine.render_directive("reader", ctx);
+        let result = engine.render_directive("reader", ctx, &AssetsHandle::default());
         let err = format!("{:#}", result.unwrap().unwrap_err());
         assert!(
             err.contains("path traversal not allowed"),
@@ -1189,7 +1276,7 @@ mod tests {
             source_dir: None,
         };
 
-        let result = engine.render_directive("reader", ctx);
+        let result = engine.render_directive("reader", ctx, &AssetsHandle::default());
         let err = format!("{:#}", result.unwrap().unwrap_err());
         assert!(
             err.contains("read_file requires source_dir"),
@@ -1222,7 +1309,7 @@ mod tests {
             source_dir: Some(source.path().to_string_lossy().into_owned()),
         };
 
-        let result = engine.render_directive("reader", ctx);
+        let result = engine.render_directive("reader", ctx, &AssetsHandle::default());
         let err = format!("{:#}", result.unwrap().unwrap_err());
         assert!(
             err.contains("failed to read"),
@@ -1297,6 +1384,156 @@ mod tests {
         assert_eq!(result, "Hi !");
     }
 
+    // ── tpl_register_script ──
+
+    fn engine_with_directive(name: &str, body: &str) -> (tempfile::TempDir, TemplateEngine) {
+        let dir = tempfile::tempdir().unwrap();
+        let directives_dir = dir.path().join("directives");
+        test_fs::create_dir_all(&directives_dir).unwrap();
+        test_fs::write(directives_dir.join(format!("{name}.html")), body).unwrap();
+        let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
+        (dir, engine)
+    }
+
+    fn empty_ctx(name: &str) -> crate::directive::DirectiveContext {
+        crate::directive::DirectiveContext {
+            name: name.into(),
+            positional_args: Vec::new(),
+            named_args: BTreeMap::default(),
+            id: None,
+            classes: Vec::new(),
+            body_html: String::new(),
+            body_raw: String::new(),
+            source_dir: None,
+        }
+    }
+
+    #[test]
+    fn register_script_records_default_deferred_tag() {
+        let (_dir, engine) = engine_with_directive(
+            "widget",
+            r#"{{ register_script("/js/widget.js") }}<widget>"#,
+        );
+        let assets = AssetsHandle::default();
+        let html = engine
+            .render_directive("widget", empty_ctx("widget"), &assets)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(html, "<widget>", "register_script must return empty string");
+        let snapshot = assets.snapshot();
+        assert_eq!(snapshot.scripts.len(), 1);
+        assert_eq!(snapshot.scripts[0].url, "/js/widget.js");
+        assert_eq!(snapshot.scripts[0].load, LoadStrategy::Defer);
+        assert!(!snapshot.scripts[0].module);
+    }
+
+    #[test]
+    fn register_script_honors_defer_false_and_module_kwargs() {
+        let (_dir, engine) = engine_with_directive(
+            "widget",
+            r#"{{ register_script("/js/widget.js", defer=false, module=true) }}"#,
+        );
+        let assets = AssetsHandle::default();
+        engine
+            .render_directive("widget", empty_ctx("widget"), &assets)
+            .unwrap()
+            .unwrap();
+
+        let snapshot = assets.snapshot();
+        assert_eq!(snapshot.scripts[0].load, LoadStrategy::Sync);
+        assert!(snapshot.scripts[0].module);
+    }
+
+    #[test]
+    fn register_script_deduplicates_repeated_directive_renders() {
+        let (_dir, engine) =
+            engine_with_directive("widget", r#"{{ register_script("/js/widget.js") }}"#);
+        let assets = AssetsHandle::default();
+        for _ in 0..5 {
+            engine
+                .render_directive("widget", empty_ctx("widget"), &assets)
+                .unwrap()
+                .unwrap();
+        }
+        assert_eq!(assets.snapshot().scripts.len(), 1);
+    }
+
+    #[test]
+    fn register_script_returns_error_on_conflicting_attributes() {
+        let (_dir, engine) = engine_with_directive(
+            "widget",
+            r#"
+            {{- register_script("/js/widget.js") -}}
+            {{- register_script("/js/widget.js", module=true) -}}
+            "#,
+        );
+        let assets = AssetsHandle::default();
+        let err = format!(
+            "{:#}",
+            engine
+                .render_directive("widget", empty_ctx("widget"), &assets)
+                .unwrap()
+                .unwrap_err(),
+        );
+        assert!(
+            err.contains("Pick one set of attributes per URL"),
+            "should surface the assets-layer conflict error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn register_script_returns_error_when_called_outside_directive_context() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
+        let err = engine
+            .env
+            .render_str(r#"{{ register_script("/x.js") }}"#, ())
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("only callable from directive templates"),
+            "non-directive renders should reject register_script, got: {err}"
+        );
+    }
+
+    #[test]
+    fn register_script_returns_error_when_assets_has_wrong_type() {
+        // Unreachable through `render_directive`; pins the contract for any
+        // future path that populates `__assets`.
+        let dir = tempfile::tempdir().unwrap();
+        let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
+        let err = engine
+            .env
+            .render_str(
+                r#"{{ register_script("/x.js") }}"#,
+                minijinja::context! { __assets => "not a handle" },
+            )
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("__assets is not a recognized asset handle"),
+            "wrong-type __assets should surface a typed error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn register_script_returns_error_on_unknown_kwarg() {
+        let (_dir, engine) =
+            engine_with_directive("widget", r#"{{ register_script("/x.js", bogus=true) }}"#);
+        let err = format!(
+            "{:#}",
+            engine
+                .render_directive("widget", empty_ctx("widget"), &AssetsHandle::default())
+                .unwrap()
+                .unwrap_err(),
+        );
+        assert!(
+            err.contains("bogus"),
+            "unknown kwarg should surface in the error, got: {err}"
+        );
+    }
+
     // ── tpl_parse_csv ──
 
     #[test]
@@ -1333,7 +1570,10 @@ mod tests {
             source_dir: Some(source.path().to_string_lossy().into_owned()),
         };
 
-        let html = engine.render_directive("csv-test", ctx).unwrap().unwrap();
+        let html = engine
+            .render_directive("csv-test", ctx, &AssetsHandle::default())
+            .unwrap()
+            .unwrap();
         assert_eq!(html, "A,B;1,2;3,4;");
     }
 
@@ -1370,7 +1610,10 @@ mod tests {
             source_dir: Some(source.path().to_string_lossy().into_owned()),
         };
 
-        let html = engine.render_directive("csv-test", ctx).unwrap().unwrap();
+        let html = engine
+            .render_directive("csv-test", ctx, &AssetsHandle::default())
+            .unwrap()
+            .unwrap();
         assert_eq!(
             html,
             "[name|value][field with, comma|has &quot;quotes&quot;]"
@@ -1400,7 +1643,10 @@ mod tests {
             source_dir: None,
         };
 
-        let html = engine.render_directive("csv-test", ctx).unwrap().unwrap();
+        let html = engine
+            .render_directive("csv-test", ctx, &AssetsHandle::default())
+            .unwrap()
+            .unwrap();
         assert_eq!(html, "0");
     }
 
@@ -1430,7 +1676,7 @@ mod tests {
             source_dir: Some(source.path().to_string_lossy().into_owned()),
         };
 
-        let result = engine.render_directive("csv-test", ctx);
+        let result = engine.render_directive("csv-test", ctx, &AssetsHandle::default());
         let err = format!("{:#}", result.unwrap().unwrap_err());
         assert!(
             err.contains("CSV parse error"),

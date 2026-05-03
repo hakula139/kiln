@@ -4,7 +4,7 @@ use anyhow::Result;
 use syntect::parsing::SyntaxSet;
 
 use super::RenderOptions;
-use super::assets::PageAssets;
+use super::assets::{AssetsHandle, PageAssets};
 use super::emoji::replace_emojis;
 use super::icon::replace_icons;
 use super::image_attrs::extract_image_attrs;
@@ -42,14 +42,14 @@ pub fn render_page(
     source_dir: Option<&Path>,
     image_resolver: &ImageResolver,
 ) -> Result<RenderedPage> {
-    let mut assets = PageAssets::default();
+    let assets = AssetsHandle::default();
     let processed = render_directives(
         raw_content,
         syntax_set,
         engine,
         source_dir,
         image_resolver,
-        &mut assets,
+        &assets,
     )?;
 
     // Pre-process: extract image attrs, optionally replace shortcodes.
@@ -62,21 +62,24 @@ pub fn render_page(
     }
     let (cleaned, image_attrs) = extract_image_attrs(&preprocessed);
 
-    let md_output = render_markdown(
-        &cleaned,
-        syntax_set,
-        &image_attrs,
-        image_resolver,
-        source_dir,
-        options.code_max_lines,
-        &mut assets.features,
-    );
+    let md_output = {
+        let mut guard = assets.lock();
+        render_markdown(
+            &cleaned,
+            syntax_set,
+            &image_attrs,
+            image_resolver,
+            source_dir,
+            options.code_max_lines,
+            &mut guard.features,
+        )
+    };
     let toc_html = render_toc_html(&md_output.headings);
 
     Ok(RenderedPage {
         content_html: md_output.html,
         toc_html,
-        assets,
+        assets: assets.snapshot(),
     })
 }
 
@@ -96,7 +99,7 @@ fn render_directives(
     engine: &TemplateEngine,
     source_dir: Option<&Path>,
     image_resolver: &ImageResolver,
-    assets: &mut PageAssets,
+    assets: &AssetsHandle,
 ) -> Result<String> {
     let all_blocks = parse_directives(content);
     if all_blocks.is_empty() {
@@ -117,16 +120,19 @@ fn render_directives(
             assets,
         )?;
         let (cleaned, image_attrs) = extract_image_attrs(&inner);
-        let md_output = render_markdown(
-            &cleaned,
-            syntax_set,
-            &image_attrs,
-            image_resolver,
-            source_dir,
-            None,
-            &mut assets.features,
-        );
-        let html = render_directive_block(block, &md_output.html, engine, source_dir)?;
+        let md_output = {
+            let mut guard = assets.lock();
+            render_markdown(
+                &cleaned,
+                syntax_set,
+                &image_attrs,
+                image_resolver,
+                source_dir,
+                None,
+                &mut guard.features,
+            )
+        };
+        let html = render_directive_block(block, &md_output.html, engine, source_dir, assets)?;
 
         // Blank-line padding: <details> / <div> are CommonMark type 6 HTML
         // blocks which cannot interrupt paragraphs. Safe because the directive
@@ -165,6 +171,7 @@ fn render_directive_block(
     body_html: &str,
     engine: &TemplateEngine,
     source_dir: Option<&Path>,
+    assets: &AssetsHandle,
 ) -> Result<String> {
     let id = block.id.as_deref();
     let classes = &block.classes;
@@ -193,7 +200,7 @@ fn render_directive_block(
                 body_raw: block.body.clone(),
                 source_dir: source_dir.map(|p| p.to_string_lossy().into_owned()),
             };
-            match engine.render_directive(name, ctx) {
+            match engine.render_directive(name, ctx, assets) {
                 Some(result) => result,
                 None => Ok(render_div(name, id, classes, body_html)),
             }
