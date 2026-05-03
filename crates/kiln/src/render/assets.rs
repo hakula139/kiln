@@ -1,6 +1,8 @@
 use std::collections::BTreeSet;
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use anyhow::{Result, bail};
+use minijinja::value::Object;
 use serde::Serialize;
 use strum::AsRefStr;
 
@@ -65,6 +67,38 @@ impl PageAssets {
         self.features.insert(feature);
     }
 }
+
+/// Mutable handle to a [`PageAssets`] that `MiniJinja` templates can update via
+/// the `register_script(...)` function.
+///
+/// Cheap to clone — internally an `Arc`. The build pipeline renders one page
+/// at a time on a single thread, so the mutex never contends; it exists only
+/// to satisfy `MiniJinja`'s `Object: Send + Sync` requirement.
+#[derive(Debug, Default, Clone)]
+pub struct AssetsHandle {
+    inner: Arc<Mutex<PageAssets>>,
+}
+
+impl AssetsHandle {
+    /// Locks the underlying assets for direct mutation by the render pipeline.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the underlying mutex is poisoned, which only happens when
+    /// another thread holding the lock panicked. The build pipeline holds the
+    /// lock for tiny synchronous mutations, so this should never trigger.
+    pub fn lock(&self) -> MutexGuard<'_, PageAssets> {
+        self.inner.lock().expect("PageAssets mutex poisoned")
+    }
+
+    /// Returns an owned snapshot of the current assets.
+    #[must_use]
+    pub fn snapshot(&self) -> PageAssets {
+        self.lock().clone()
+    }
+}
+
+impl Object for AssetsHandle {}
 
 /// A `<script>` tag declaration.
 ///

@@ -249,10 +249,10 @@ Whenever a template variable includes a page `date`, kiln renders it as an ISO 8
 
 `assets` is populated by the renderer as it walks the page (and any nested directive bodies):
 
-| Field      | Type            | Description                                                                                                                                                                                                                        |
-| ---------- | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `features` | list of strings | Auto-detected runtime dependencies. Current values: `"math"` (set when the page contains math expressions), `"mermaid"` (set when a ` ```mermaid ` fence is present).                                                              |
-| `scripts`  | list of objects | Reserved for the planned directive→script bridge. No template binding exists yet, so this list is always empty in the current release. Each entry will have `url`, `load` (`"defer"` / `"async"` / `"sync"`), and `module` (bool). |
+| Field      | Type            | Description                                                                                                                                                                                                                                                                      |
+| ---------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `features` | list of strings | Auto-detected runtime dependencies. Current values: `"math"` (set when the page contains math expressions), `"mermaid"` (set when a ` ```mermaid ` fence is present).                                                                                                            |
+| `scripts`  | list of objects | Scripts registered by directive templates via [`register_script(...)`](#register_scripturl-defertrue-modulefalse). Each entry has `url`, `load` (`"defer"` / `"sync"`), and `module` (bool). Order is registration order; the same `(url, load, module)` triple is deduplicated. |
 
 Templates gate conditional CDN loads with membership tests on `assets.features`. Use the `assets is defined` guard when the include is shared with listing templates (`home.html`, `archive.html`, `overview.html`, `404.html`) — only `post.html` and `page.html` receive `assets`:
 
@@ -448,6 +448,18 @@ Resolves a translatable string for the active language. See [Internationalizatio
 ```
 
 When `kwargs` are supplied, Python-style `{name}` placeholders in the string are replaced with the corresponding values. Missing keys emit a warning and render as the key literal (or `«missing:<key>»` under `KILN_DEV`) so the build does not crash.
+
+#### `register_script(url, defer=true, module=false)`
+
+Registers a `<script>` tag for the current page. Only callable from directive templates — the renderer surfaces an error when called from a page-level template. Returns the empty string so the call can stand alone:
+
+```jinja
+{{ register_script("/js/score-table.js") }}
+```
+
+The script appears once on the page no matter how many times the directive renders. Re-registering the same `(url, defer, module)` triple is a no-op; registering the same URL with different attributes is a build-time error so a page can never load two conflicting tags for the same source. Defaults to `defer`; pass `defer=false` for synchronous execution and `module=true` for ES modules.
+
+Themes consume the registered scripts via the page's `assets.scripts` list — see [Post templates](#post-templates-posthtml).
 
 ## Image Rendering
 
