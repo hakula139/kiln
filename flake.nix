@@ -2,10 +2,13 @@
 # kiln Development Flake
 # ==============================================================================
 #
-# Provides Rust toolchain, libdav1d (AVIF decode), git-cliff, and pre-commit hooks.
+# Provides Rust toolchain, libdav1d (AVIF decode), pagefind, git-cliff, and
+# pre-commit hooks. Also exposes `packages.{kiln,pagefind}` for downstream
+# consumers (site repos importing this flake).
 #
-#   nix develop        # interactive shell
+#   nix develop        # interactive shell for hacking on kiln
 #   nix flake check    # run pre-commit hooks
+#   nix build .#kiln   # build kiln from source (dav1d wired in by Nix)
 
 {
   description = "kiln — custom static site generator (dev environment)";
@@ -44,10 +47,17 @@
     flake-utils.lib.eachDefaultSystem (
       system:
       let
-        pkgs = import nixpkgs {
-          inherit system;
-          overlays = [ rust-overlay.overlays.default ];
-        };
+        overlays = [
+          rust-overlay.overlays.default
+          # `pagefind` is a vendored prebuilt; expose it as `pkgs.pagefind`.
+          # `kiln` is built from source and stays out of the overlay so it can
+          # depend on `rustToolchain` without a `pkgs`-evaluation cycle.
+          (final: _: {
+            pagefind = final.callPackage ./packages/pagefind { };
+          })
+        ];
+
+        pkgs = import nixpkgs { inherit system overlays; };
 
         # Stable Rust with clippy / coverage / editor extensions.
         rustToolchain = pkgs.rust-bin.stable.latest.default.override {
@@ -56,6 +66,15 @@
             "rust-analyzer"
             "rust-src"
           ];
+        };
+
+        # Source-build kiln with the rust-overlay toolchain — nixpkgs's stable
+        # rustc lags behind some workspace deps' minimum required version.
+        kiln = pkgs.callPackage ./packages/kiln {
+          rustPlatform = pkgs.makeRustPlatform {
+            cargo = rustToolchain;
+            rustc = rustToolchain;
+          };
         };
 
         # ----------------------------------------------------------------------
@@ -154,6 +173,8 @@
               pkg-config
               # Release tooling.
               git-cliff
+              # Search backend invoked by `kiln build` when `[search] enabled`.
+              pagefind
               # Node tooling for pre-commit hooks.
               nodejs_24
               pnpm
@@ -173,6 +194,17 @@
             '';
 
           env.RUST_BACKTRACE = "1";
+        };
+
+        # ----------------------------------------------------------------------
+        # Packages (`nix build .#<name>`)
+        # ----------------------------------------------------------------------
+        # `kiln` is source-built; `pagefind` is a vendored prebuilt. Site repos
+        # importing this flake get both via `kiln.packages.${system}.<name>`.
+        packages = {
+          default = kiln;
+          inherit kiln;
+          inherit (pkgs) pagefind;
         };
 
         # ----------------------------------------------------------------------
