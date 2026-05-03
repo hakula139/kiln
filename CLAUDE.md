@@ -199,7 +199,7 @@ Follows global CLAUDE.md commit / branch / PR conventions, plus:
 ```bash
 nix develop                            # interactive shell (for hacking on kiln)
 nix flake check                        # run pre-commit hooks
-nix build .#kiln                       # build kiln from source
+nix build '.#kiln'                     # build kiln from source
 ```
 
 `direnv` auto-activates the shell via `.envrc`.

@@ -8,7 +8,7 @@
 #
 #   nix develop        # interactive shell for hacking on kiln
 #   nix flake check    # run pre-commit hooks
-#   nix build .#kiln   # build kiln from source (dav1d wired in by Nix)
+#   nix build '.#kiln' # build kiln from source (dav1d wired in by Nix)
 
 {
   description = "kiln — custom static site generator (dev environment)";
@@ -197,7 +197,7 @@
         };
 
         # ----------------------------------------------------------------------
-        # Packages (`nix build .#<name>`)
+        # Packages (`nix build '.#<name>'`)
         # ----------------------------------------------------------------------
         # `kiln` is source-built; `pagefind` is a vendored prebuilt. Site repos
         # importing this flake get both via `kiln.packages.${system}.<name>`.
