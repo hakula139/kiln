@@ -121,8 +121,7 @@ async fn serve_until(
     let base_url = localhost_url(port);
 
     eprintln!("Building site...");
-    // `kiln serve` never minifies — dev-loop speed and live-reload matter
-    // more than on-disk size, and minified output hurts debuggability.
+    // Dev server skips minification for debuggability and rebuild speed.
     crate::build(
         root,
         BuildOptions {
@@ -295,12 +294,8 @@ async fn watch_loop(
     }
 }
 
-/// Builds the site into a staging directory, then swaps it into place.
-///
-/// The live output directory stays intact while the new build runs, so the
-/// server never serves from a missing or partially written directory. On
-/// success the swap is two back-to-back renames (microseconds). On failure
-/// the staging directory is removed and the live output is untouched.
+/// Builds into a staging directory, then atomically swaps it into place.
+/// On failure, the live output is untouched.
 fn safe_rebuild(root: &Path, base_url: &str) -> Result<()> {
     let config = Config::load(root).context("failed to load config")?;
     let output_dir = config
@@ -340,9 +335,7 @@ fn safe_rebuild(root: &Path, base_url: &str) -> Result<()> {
     Ok(())
 }
 
-/// Returns `path` with `suffix` appended to its full OS string, so callers can
-/// derive a sibling path that preserves any nested components (e.g. `dist/site`
-/// → `dist/site.staging`).
+/// Returns `path` with `suffix` appended (e.g., `dist/site` + `.staging`).
 fn append_suffix(path: &Path, suffix: &str) -> PathBuf {
     let mut buf = path.as_os_str().to_owned();
     buf.push(suffix);

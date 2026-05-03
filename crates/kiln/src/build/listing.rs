@@ -32,10 +32,6 @@ impl ListedPage {
 }
 
 /// Precomputed listing data for all output generators.
-///
-/// Built in a single pass over discovered pages. The three collections
-/// are derived from the same listing pipeline, so ordering and content
-/// are guaranteed consistent.
 pub(crate) struct ListingArtifacts {
     /// All listable pages, indexed to match `TaxonomySet::term_pages`.
     pub(crate) listed_pages: Vec<ListedPage>,
@@ -49,10 +45,8 @@ pub(crate) struct ListingArtifacts {
 
 /// Builds listing artifacts from discovered pages in a single pass.
 ///
-/// Every discovered page produces exactly one `ListedPage`, maintaining
-/// index alignment with the input slice (required by `TaxonomySet::term_pages`).
-/// Posts are additionally collected into `listed_posts` and `section_posts`.
-/// Post lists are pre-sorted by date descending.
+/// Index alignment with the input slice is maintained (required by
+/// `TaxonomySet::term_pages`). Post lists are pre-sorted by date descending.
 pub(crate) fn build_listing_artifacts(
     pages: &[Page],
     content_dir: &Path,
@@ -154,20 +148,15 @@ fn build_listed_page(
 
 // ── Sorting and grouping ──
 
-/// Sorts listed pages by date descending (newest first, undated last). The
-/// canonical order for archive surfaces, taxonomy term pages, and RSS feeds.
-/// Pinning is a home-page-only concept — see `sort_pinned_first`.
+/// Sorts listed pages by date descending (newest first, undated last).
 pub(crate) fn sort_by_date_desc(pages: &mut [ListedPage]) {
     pages.sort_by_key(|page| std::cmp::Reverse(page.timestamp));
 }
 
-/// Sorts listed pages with pinned posts first (by `weight` ascending), then
-/// unpinned posts by date descending. Used only for the home page so that
-/// hero pieces stay above the fold on the front door without affecting how
-/// the same posts appear in archives, tag pages, or RSS feeds. Posts without
-/// a `weight` frontmatter field are unpinned; any `weight` value (positive,
-/// zero, or negative) marks the post as pinned, with lower values floating
-/// higher inside the pinned band.
+/// Sorts pinned posts first (by `weight` ascending), then by date descending.
+///
+/// Used only for the home page. Any `weight` value marks a post as pinned;
+/// lower values sort higher. Posts without `weight` are unpinned.
 pub(crate) fn sort_pinned_first(pages: &mut [ListedPage]) {
     pages.sort_by_key(|page| {
         (

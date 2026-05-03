@@ -6,10 +6,6 @@ use crate::markdown::{for_each_non_code_line, scan_code_span};
 
 /// Attributes extracted from Pandoc-style `{...}` blocks after images,
 /// merged with auto-detected dimensions and an optional LQIP placeholder.
-///
-/// Manual attributes (`width` / `height`) come from the markdown source and
-/// take precedence over the auto-detected values from the resolver. The
-/// auto fields backstop the common case where no `{...}` block is present.
 #[derive(Debug, Clone, Default)]
 pub struct ImageAttrs {
     pub id: Option<String>,

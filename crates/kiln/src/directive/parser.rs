@@ -108,12 +108,9 @@ fn count_leading_colons(line: &str) -> Option<usize> {
     (count >= 3).then_some(count)
 }
 
-/// Splits the text after the colons into a directive name and Pandoc
-/// attributes (`#id`, `.class`, `key=value`).
+/// Splits the text after the colons into a directive name and `{...}` attributes.
 ///
-/// Accepts `name {attrs}`, bare `name`, or `{attrs}` alone. Attributes always
-/// require `{...}` braces. The `{...}` interior is parsed in a single pass
-/// by [`parse_directive_args`] and then [`extract_pandoc_from_positional`].
+/// Accepts `name {attrs}`, bare `name`, or `{attrs}` alone.
 fn parse_directive_head(text: &str) -> DirectiveHead {
     let text = text.trim();
 

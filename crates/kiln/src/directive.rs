@@ -82,9 +82,8 @@ impl DirectiveKind {
 
 /// Serializable context passed to directive templates.
 ///
-/// Templates receive all directive metadata so they can render accordingly.
-/// `body_html` is the markdown-rendered body; `body_raw` is the unprocessed
-/// source for templates that need to parse structured content (e.g., CSV).
+/// `body_html` is pre-rendered markdown; `body_raw` is the unprocessed
+/// source for templates that parse structured content (e.g., CSV).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct DirectiveContext {
     pub name: String,
@@ -107,14 +106,10 @@ pub(crate) struct PandocAttrs<'a> {
     pub kvs: Vec<(&'a str, Cow<'a, str>)>,
 }
 
-/// Parses a Pandoc-style attribute string into structured components.
+/// Parses a Pandoc-style attribute string (`#id`, `.class`, `key=value`).
 ///
-/// Handles `#id`, `.class`, `key=value`, and `key="quoted value"` tokens.
-/// The first `#id` wins; duplicates are silently ignored. Bare words
-/// (tokens without `=`) are skipped.
-///
-/// Quoted values support `\"` and `\\` escape sequences. Unclosed quotes
-/// consume the rest of the input as the value.
+/// First `#id` wins. Quoted values support `\"` / `\\` escapes. Unclosed
+/// quotes consume the rest of the input. Bare words are skipped.
 #[must_use]
 pub(crate) fn parse_pandoc_attrs(input: &str) -> PandocAttrs<'_> {
     let mut result = PandocAttrs::default();
@@ -179,17 +174,8 @@ pub(crate) struct DirectiveArgs {
     pub classes: Vec<String>,
 }
 
-/// Parses a directive attribute block into structured components.
-///
-/// Handles all token types in a single pass:
-/// - `#id` → Pandoc id (first wins; bare tokens only, not quoted)
-/// - `.class` → Pandoc class (bare tokens only, not quoted)
-/// - `"quoted string"` → positional arg (with `\"` / `\\` escape handling)
-/// - `key="value"` or `key=value` → named arg
-/// - `bare_word` → positional arg
-///
-/// Named args use a `BTreeMap` for deterministic ordering in templates;
-/// duplicate keys use last-wins semantics.
+/// Parses a directive `{...}` block into positional args, named args,
+/// `#id`, and `.class` tokens. Named args use `BTreeMap` (last-wins).
 #[must_use]
 pub(crate) fn parse_directive_args(input: &str) -> DirectiveArgs {
     let mut result = DirectiveArgs {

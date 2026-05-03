@@ -1,10 +1,7 @@
 //! Post-build asset minification for HTML, CSS, and JS files.
 //!
-//! Walks the output directory and rewrites each file in place using
-//! Rust-native minifiers. Parse failures are logged as warnings and
-//! the original file is left untouched — this mirrors `minify-html`'s
-//! internal fallback behavior for inline scripts and keeps `--minify`
-//! from aborting builds on unusual input.
+//! Parse failures are logged as warnings and leave the original file
+//! untouched, so `--minify` never aborts builds on unusual input.
 
 use std::fmt;
 use std::fs;
@@ -103,9 +100,7 @@ fn minify_file(path: &Path, kind: AssetKind, stats: &mut MinifyStats) -> Result<
     stats.files_processed += 1;
     stats.bytes_in += bytes_in;
 
-    // Only replace the file when the minifier actually shrank it. Tiny or
-    // already-compact inputs can come back the same size or larger; keeping
-    // the original avoids gratuitous rewrites and pointless mtime churn.
+    // Only replace when the minifier actually shrank the file.
     match output {
         Some(bytes) if (bytes.len() as u64) < bytes_in => {
             fs::write(path, &bytes)
@@ -120,9 +115,7 @@ fn minify_file(path: &Path, kind: AssetKind, stats: &mut MinifyStats) -> Result<
     Ok(())
 }
 
-/// Decodes UTF-8 input, or warns and returns `None`. `kind` is the label
-/// used in the log message (e.g., `"CSS"`, `"JS"`) so multiple minifier
-/// paths can share one warning format without losing context.
+/// Decodes UTF-8 input, or warns and returns `None`.
 fn decode_utf8<'a>(input: &'a [u8], path: &Path, kind: &str) -> Option<&'a str> {
     std::str::from_utf8(input)
         .inspect_err(|e| {

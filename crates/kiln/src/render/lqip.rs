@@ -41,10 +41,7 @@ impl Default for ImageConfig {
     }
 }
 
-/// Per-image metadata produced by [`ImageResolver::resolve`]. `lqip_uri`
-/// is `None` for formats the `image` crate can't decode (SVG, partial
-/// rasters); dimensions come from `imagesize` (header-only, covers more
-/// formats than the `image` crate's decoder).
+/// Per-image metadata: dimensions and optional LQIP data URI.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ImageMeta {
     pub width: u32,
@@ -117,9 +114,7 @@ impl ImageResolver {
         }
     }
 
-    /// Reads dimensions (header-only via `imagesize`) and optionally encodes
-    /// the LQIP. `imagesize` covers formats the `image` decoder skips
-    /// (HEIC, JPEG XL); LQIP encoding still requires a full decode.
+    /// Reads dimensions and optionally encodes the LQIP.
     fn compute(&self, path: &Path) -> Option<ImageMeta> {
         let dims = imagesize::size(path).ok()?;
         let width = u32::try_from(dims.width).ok()?;
@@ -139,9 +134,7 @@ impl ImageResolver {
     }
 }
 
-/// Decodes the raster, downsamples to a `size`-pixel preview, and returns
-/// a `data:image/webp;base64,...` URI. Returns `None` for undecodable
-/// formats (SVG, animated AVIF first-frame failure).
+/// Encodes a LQIP data URI, or `None` for undecodable formats.
 fn encode_lqip(path: &Path, size: u32, quality: u8) -> Option<String> {
     let img = ImageReader::open(path).ok()?.decode().ok()?;
 

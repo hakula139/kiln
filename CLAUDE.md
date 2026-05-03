@@ -100,10 +100,23 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 - Library error types: `thiserror::Error` derive for errors that callers need to match on.
 - Avoid `unwrap()` / `expect()` in production code. Reserve them for cases with a clear invariant comment.
 
+### Discarding Results
+
+- Use `_ = expr` (no `let`) to discard a result — typically infallible `write!` / `writeln!` against a `String`.
+
 ### Lint Suppression
 
 - Use `#[expect(lint)]` instead of `#[allow(lint)]`. `#[expect]` warns when the suppressed lint is no longer triggered, preventing stale suppressions from accumulating.
 - `#[expect]` reason strings must describe the current state, not future plans.
+- For complexity / size lints (`clippy::too_many_lines`, `clippy::cognitive_complexity`, etc.), the default response is to **extract a helper**. Reach for `#[expect]` only when the function is irreducibly cohesive — and say so in the reason string.
+
+### Comments
+
+- Comment the **why**, not the **what**. Comments earn their place by explaining intent, trade-offs, invariants, or constraints the code can't convey on its own. Skip comments that restate the code or narrate the change.
+- Keep `//` comments to one line per thought. Multi-line only when the rationale genuinely needs it.
+- Doc comments (`///`) state the **contract**, not **mechanics**. One-line doc is the default; multi-line only when the contract genuinely warrants it.
+- Wrap comments at **100 columns** (matching `rustfmt` max_width).
+- Write `//` comments as prose. Promote to `///` if list structure is genuinely useful.
 
 ### Section Dividers
 
@@ -112,19 +125,19 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 
 ### Blank Lines
 
-- One blank line between top-level items (functions, structs, enums, impls, constants).
-- One blank line before and after section dividers (`// ── Name ──`).
+- One blank line between top-level items (functions, structs, enums, impls, constants). Exception: runs of closely-related one-line `const` / `static` declarations sharing a theme may sit together without blanks.
+- One blank line before and after section dividers (`// ── Name ──`). This applies inside `#[cfg(test)]` modules too — the first divider takes a blank line after the `use super::*;` block.
 - Inside function bodies, use blank lines to separate logical phases (e.g., setup → validation → execution → result).
 - Group a single-line computation with its immediate validation guard (early-return `if`) — no blank between them. Multi-line `let` bindings (async chains, builder patterns) keep the blank before their guard.
 
 ### Module Organization
 
 - New-style module paths: `foo.rs` alongside `foo/` directory, not `foo/mod.rs`.
-- Keep files focused: one primary type or concern per file. When a file or function grows large, split it into smaller units proactively rather than letting it accumulate.
-- Place functions and types in the module that reflects their conceptual domain — import paths should not mislead about what the item does. Create new modules when needed for clean organization.
-- Avoid `pub use` re-exports that obscure where items are defined. Prefer consistent import paths — if some items are re-exported, re-export all related items so callers never mix paths.
+- Keep files focused: one primary type or concern per file. Split proactively when files grow large.
+- Place functions and types in the module that reflects their conceptual domain. A cross-module trait belongs where the **contract** lives, not the first implementation. Create new modules when needed for clean organization.
+- Avoid `pub use` re-exports that obscure where items are defined. If some items are re-exported, re-export all related items so callers never mix paths.
 - Order helper functions after their caller (top-down reading order).
-- When adding new fields to structs or variants to enums, place them at the most semantically appropriate position among existing members, not simply appended at the bottom.
+- New struct fields / enum variants go at the most semantically appropriate position, not just appended at the bottom.
 
 ### Visibility
 
@@ -138,7 +151,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 
 ### String Literals
 
-- Prefer raw strings (`r"..."`) when the string contains characters that would need escaping (e.g., `"`, `\`). Always use the minimum delimiter level needed (`r"..."` → `r#"..."#` → `r##"..."##`).
+- Prefer raw strings (`r"..."`) when the string contains characters that would need escaping. Always use the minimum delimiter level needed (`r"..."` → `r#"..."#` → `r##"..."##`).
 - Use `indoc!` / `formatdoc!` for multiline string content so the literal can be indented with surrounding code. Inline at the call site when the string is used once; use a named constant only when it is shared or very large. Avoid `\n` escapes and `\x20` workarounds for multiline content.
 - Ellipsis: always `...` (three ASCII dots), never `…` (U+2026). Applies everywhere — prose, comments, doc comments, production strings, tests.
 
@@ -155,32 +168,21 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 
 ### Git Conventions
 
-#### Commits
+Follows global CLAUDE.md commit / branch / PR conventions, plus:
 
-- Messages: `type(scope): description`
-  - Types: `feat`, `fix`, `refactor`, `docs`, `test`, `ci`, `chore`, `style`, `perf`
-  - Scope: the most specific area changed — module (e.g., `config`, `render`, `directive`), doc target (e.g., `CLAUDE`, `roadmap`), or crate name only for cross-module changes.
-- Keep commits atomic — one logical change per commit.
-
-#### Branches
-
-- Feature branches: `feat/<feature-name>`
-
-#### Pull Requests
-
-- Assign to `hakula139`. Label `enhancement` for `feat`, `bug` for `fix`.
-- Do not request review from the PR author (GitHub rejects it).
+- **Scope**: the most specific area changed — module (e.g., `config`, `render`, `directive`), doc target (e.g., `CLAUDE`, `roadmap`), or crate name only for cross-module changes.
+- **PRs**: assign to `hakula139`. Label `enhancement` for `feat`, `bug` for `fix`. Do not request review from the PR author (GitHub rejects it).
 
 ### Testing
 
 - Unit tests in the same file as the code they test (`#[cfg(test)]` module).
 - Integration tests in `tests/` directory for cross-module behavior.
 - Group tests by function under `// ── function_name ──` section headers. Section order must mirror the production function order in the same file. Within each section, order: happy path → variants → edge / error cases.
-- Test name prefixes should match the section's function name (or a clear shortening). Name tests after the scenario they cover. Error-case test names use a return-type suffix: `_returns_error` (`Result`), `_returns_none` (`Option`), `_returns_false` (`bool`).
-- Use `indoc!` for multi-line test inputs whenever possible.
-- Use generic, fictional test data (e.g., `example.com`, `"Hello"`, `"Post A"`). Avoid real names, URLs, or branded content.
-- Write assertions that verify actual behavior, not just surface properties. Avoid uniform test data that makes `starts_with` / `ends_with` unfalsifiable, wildcard struct matches (`..`) that discard field values, and loose bounds that accept nearly any output. Each assertion should fail if the code under test has a plausible bug.
-- Prefer a concise test suite with full coverage over many minimal tests. Drop tests that are subsumed by more thorough ones. Merge tests that cover the same code path when the combined test remains readable.
+- Test name prefixes match the section's function name. Name after the scenario. Error-case suffixes: `_returns_error`, `_returns_none`, `_returns_false`.
+- Use `indoc!` for multi-line test inputs.
+- Use generic, fictional test data (e.g., `example.com`, `"Post A"`). Avoid real names or branded content.
+- Assertions must verify actual behavior. Avoid unfalsifiable patterns (uniform data with `starts_with`, wildcard `..` matches, loose bounds). Each assertion should fail if the code under test has a plausible bug.
+- Prefer a concise suite with full coverage over many minimal tests. Merge tests that cover the same path.
 
 ### Documentation Maintenance
 
@@ -188,10 +190,11 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 - Keep `docs/roadmap.md` as the canonical in-repo roadmap / status summary. Update it when shipped capability areas or planned priorities change.
 - Crate structure diagrams must match the actual filesystem. When adding, removing, or renaming modules, update the tree in this file. Entries are sorted alphabetically; directories sort alongside their parent `.rs` file.
 - Markdown prose is **not hard-wrapped** — paragraphs are single long lines and flow with the reader's viewport. Match the surrounding style; do not introduce 80-column line breaks inside paragraphs.
+- After substantive changes, sweep docs for stale claims: `README.md` feature lists, `docs/roadmap.md` status sections, and this file's crate tree.
 
 ## Nix Development
 
-`flake.nix` pins the Rust toolchain, `libdav1d` (AVIF), and `pagefind`.
+`flake.nix` pins the Rust toolchain, `libdav1d` (AVIF), and `git-cliff`.
 
 ```bash
 nix develop                            # interactive shell
@@ -228,7 +231,9 @@ After verification passes, run a dual review using both a reviewer subagent and 
 - Adherence to project conventions (this file)
 - Conciseness — prefer the simplest idiomatic solution
 - DRY — flag duplicate logic across modules; look for extraction opportunities
-- Cross-file consistency — parallel types and similar patterns should use the same structure, naming, ordering, and derive traits
-- Idiomatic Rust — proper use of iterators, pattern matching, type system, ownership, and standard library
+- Cross-file consistency — parallel types should use the same structure, naming, ordering, and derive traits
+- Comment hygiene — verbose multi-line docs that should be one-liners, missing WHY comments where non-obvious
+- Visibility — `pub(crate)` where `pub(super)` or private suffices
+- Idiomatic Rust — iterators, pattern matching, type system, ownership, standard library
 - Existing crates — flag hand-written logic that an established crate already handles
 - Test coverage gaps

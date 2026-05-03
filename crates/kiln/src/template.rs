@@ -173,17 +173,10 @@ impl TemplateEngine {
         )
     }
 
-    /// Tries to render a directive using a theme template at
-    /// `directives/<name>.html`.
+    /// Tries to render a directive using `directives/<name>.html`.
     ///
-    /// `assets` is exposed to the template as the `__assets` context variable,
-    /// where the `register_script(...)` function reads it. Directive templates
-    /// can therefore declare scripts that bubble up to the page-level
-    /// [`PageAssets`](crate::render::assets::PageAssets) without per-feature
-    /// frontmatter flags.
-    ///
-    /// Returns `None` if no template exists for the directive name.
-    /// Returns `Some(Err(_))` if the template exists but rendering fails.
+    /// Returns `None` if no template exists. Returns `Some(Err(_))` if it
+    /// exists but rendering fails.
     pub fn render_directive(
         &self,
         name: &str,

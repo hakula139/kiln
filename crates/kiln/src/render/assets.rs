@@ -8,11 +8,8 @@ use strum::AsRefStr;
 
 /// Per-page collection of asset declarations gathered during render.
 ///
-/// Built once per page in the render pipeline and surfaced on
-/// [`PostTemplateVars`] so themes can iterate `assets.scripts` and gate
-/// `assets.features` instead of relying on per-feature side-channel flags
-/// (`math: bool`, `mermaid: bool`, ...) that need a frontmatter / template-var /
-/// theme-partial trio for every new feature.
+/// Surfaced on [`PostTemplateVars`] so themes can iterate `assets.scripts`
+/// and `assets.features` without per-feature frontmatter flags.
 ///
 /// [`PostTemplateVars`]: crate::template::vars::PostTemplateVars
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
@@ -65,12 +62,11 @@ impl PageAssets {
     }
 }
 
-/// Mutable handle to a [`PageAssets`] that `MiniJinja` templates can update via
-/// the `register_script(...)` function.
+/// Mutable handle to a [`PageAssets`] that templates can update via
+/// `register_script(...)`. Cheap to clone (internally `Arc<Mutex<_>>`).
 ///
-/// Cheap to clone — internally an `Arc`. The build pipeline renders one page
-/// at a time on a single thread, so the mutex never contends; it exists only
-/// to satisfy `MiniJinja`'s `Object: Send + Sync` requirement.
+/// The mutex satisfies `MiniJinja`'s `Object: Send + Sync` requirement;
+/// the build pipeline is single-threaded so it never contends.
 #[derive(Debug, Default, Clone)]
 pub struct AssetsHandle {
     inner: Arc<Mutex<PageAssets>>,
@@ -133,10 +129,6 @@ pub enum LoadStrategy {
 }
 
 /// A page-level feature flag, set during render and read by themes.
-///
-/// New variants are added when the engine learns to auto-detect a new
-/// conditional capability. Site-wide modes (search, fontawesome) are
-/// configured separately and do not belong here.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, AsRefStr)]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]

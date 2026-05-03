@@ -46,13 +46,6 @@ struct BuildContext {
 }
 
 /// Options controlling a single `build()` invocation.
-///
-/// Construct with struct-literal syntax and `..Default::default()` so the
-/// call site names only the fields it cares about:
-///
-/// ```ignore
-/// kiln::build(&root, BuildOptions { minify: true, ..Default::default() })?;
-/// ```
 #[derive(Default)]
 pub struct BuildOptions<'a> {
     /// Replaces `base_url` from config when set. Used by `kiln serve` so
@@ -68,12 +61,9 @@ pub struct BuildOptions<'a> {
 
 /// Builds the site from the given project root directory.
 ///
-/// Search indexing (Pagefind) runs when `[search] enabled = true` in config.
-///
 /// # Errors
 ///
-/// Returns an error if configuration loading, content discovery, rendering,
-/// or output writing fails.
+/// Returns an error if any build stage fails.
 #[expect(
     clippy::needless_pass_by_value,
     reason = "BuildOptions is an owned options bag: callers construct it inline with `..Default::default()`, so taking it by value keeps call sites concise and lets future non-Copy fields land without a signature churn"
@@ -206,12 +196,7 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
     Ok(())
 }
 
-/// Prints the end-of-build summary line(s).
-///
-/// All build output goes to stderr so stdout stays free for future
-/// machine-readable output (e.g., `--json`) and piping (`kiln build
-/// 2>/dev/null` silences progress). This also matches `serve.rs`,
-/// which uses `eprintln!` uniformly for its live-reload diagnostics.
+/// Prints the end-of-build summary line(s) to stderr.
 fn report_build_summary(page_count: usize, minify_stats: Option<&MinifyStats>) {
     eprintln!("Build complete: {page_count} page(s).");
     if let Some(stats) = minify_stats {

@@ -116,12 +116,8 @@ impl I18n {
         &self.inner.language
     }
 
-    /// Looks up a string by key.
-    ///
-    /// On miss, emits `tracing::warn!` once per key per `I18n` instance.
-    /// Returns `«missing:<key>»` when `KILN_DEV` is set (non-empty), or the
-    /// key literal otherwise, so missing strings are visible in template
-    /// output without crashing the build.
+    /// Looks up a string by key. On miss, warns once per key and returns
+    /// `«missing:<key>»` in dev mode or the raw key otherwise.
     #[must_use]
     pub fn t<'a>(&'a self, key: &str) -> Cow<'a, str> {
         if let Some(value) = self.inner.strings.get(key) {
@@ -185,9 +181,6 @@ impl I18n {
 // ── Miss rendering ──
 
 /// Returns the rendered value for a missing i18n key.
-///
-/// Factored out of `I18n::t` so tests can exercise dev mode without touching
-/// the process environment (which would conflict with `unsafe_code = forbid`).
 fn render_miss(key: &str, dev_mode: bool) -> Cow<'_, str> {
     if dev_mode {
         Cow::Owned(format!("«missing:{key}»"))

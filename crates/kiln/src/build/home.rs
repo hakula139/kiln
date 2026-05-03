@@ -10,9 +10,6 @@ use super::paginate::{paginate_config, write_paginated};
 
 /// Generates paginated home pages listing recent posts.
 ///
-/// The input slice is expected to be date-sorted; this function applies a
-/// home-page-only pinned-first ordering on a clone before paginating, so
-/// other surfaces (archives, tag pages, RSS) keep their date-only order.
 /// Skipped when `home.html` is not present in the template set.
 pub(crate) fn build_home_pages(
     ctx: &BuildContext,

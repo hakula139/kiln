@@ -7,8 +7,6 @@ use crate::pagination::{PaginationVars, Paginator, paginated_url};
 
 /// Paginates items and writes rendered pages to the output directory.
 ///
-/// For each page of the paginator, collects the items, creates pagination
-/// vars, calls the render closure to produce HTML, and writes the result.
 /// Always generates at least one page (even when empty).
 pub(crate) fn write_paginated<T, F>(
     items: &[T],

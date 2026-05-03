@@ -159,17 +159,10 @@ impl Config {
 
     /// Resolves and validates `output_dir` against the project `root`.
     ///
-    /// Relative paths are resolved against `root`. Absolute paths replace it.
-    /// `..` segments are canonicalized away. The returned path is always
-    /// canonical: parent directories must exist, but the leaf (the output
-    /// directory itself) need not — it is created by `clean_output_dir`.
-    ///
     /// # Errors
     ///
-    /// Returns an error if `output_dir` is empty, if its parent cannot be
-    /// canonicalized (e.g., does not exist), or if the resolved path equals or
-    /// is an ancestor of the project root — any of those would let
-    /// `clean_output_dir`'s `remove_dir_all` walk into the source tree.
+    /// Returns an error if `output_dir` is empty, cannot be canonicalized,
+    /// or would overlap with the project root.
     pub fn resolved_output_dir(&self, root: &Path) -> Result<PathBuf> {
         if self.output_dir.is_empty() {
             bail!("output_dir cannot be empty");
@@ -282,10 +275,8 @@ fn default_output_dir() -> String {
     String::from("public")
 }
 
-/// Canonicalizes `path`, walking up until an existing ancestor is found and
-/// reattaching the missing tail components. This lets us validate an output
-/// directory that does not exist yet (the common case for a fresh build),
-/// even when several leading components are also absent (e.g., `dist/site`).
+/// Canonicalizes `path` even when it (or its ancestors) do not exist yet,
+/// by walking up to the nearest existing ancestor.
 fn canonicalize_via_parent(path: &Path) -> Result<PathBuf> {
     if path.exists() {
         return path
