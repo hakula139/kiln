@@ -50,10 +50,8 @@ pub fn render_inline_image(
     render_img(src, alt, title, attrs, true)
 }
 
-/// Builds the `<img>` tag, then wraps it in `<span class="lqip">` when an LQIP
-/// URI is available. The wrapper exposes the placeholder via the `--lqip-uri`
-/// custom property; themes consume it from a `::before` backdrop so the blur
-/// can layer behind the image without affecting the bitmap itself.
+/// Builds the `<img>` tag, wrapping in `<span class="lqip">` when an LQIP
+/// URI is available.
 fn render_img(
     src: &str,
     alt: &str,

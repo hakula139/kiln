@@ -23,25 +23,10 @@ pub struct MarkdownOutput {
     pub headings: Vec<TocEntry>,
 }
 
-/// Renders markdown content to HTML with GFM extensions, math support, syntax
-/// highlighting, and image enhancement.
+/// Renders markdown content to HTML with GFM extensions, math support,
+/// syntax highlighting, and image enhancement.
 ///
-/// Side-effect: any [`Feature`] auto-detected while walking the markdown body
-/// (math expressions, fenced code blocks tagged `mermaid`) is inserted into
-/// `features`. The caller passes `&mut assets.features` so the type system —
-/// not caller discipline — guarantees the page-level [`PageAssets`] sees them.
-///
-/// - Headings receive auto-generated `id` attributes (CJK-aware slugification)
-///   and are collected into `headings` for table of contents generation.
-///   Explicit heading IDs (`## Foo {#bar}`) are respected when present.
-/// - Math events are rendered as KaTeX-compatible `<span>` elements.
-/// - Fenced code blocks with a language tag receive syntect CSS-class
-///   highlighting with line numbers.
-/// - Block images (sole image in a paragraph) are wrapped in `<figure>`
-///   elements. Optional `image_attrs` from Pandoc `{...}` preprocessing
-///   are applied (width, height, classes).
-///
-/// [`PageAssets`]: crate::render::assets::PageAssets
+/// Auto-detected features (math, mermaid) are inserted into `features`.
 #[must_use]
 pub(crate) fn render_markdown(
     content: &str,
@@ -276,9 +261,6 @@ fn enrich_image_attrs(
 }
 
 /// Extracts plain text from image inner events for use as alt text.
-///
-/// Collects text content while skipping inline formatting containers
-/// (emphasis, strong, etc.), since alt text is plain text.
 fn extract_alt_text(events: &[(Event<'_>, std::ops::Range<usize>)]) -> String {
     let mut alt = String::new();
     for (ev, _) in events {
@@ -342,9 +324,6 @@ fn collect_headings(content: &str, options: Options) -> Vec<TocEntry> {
 }
 
 /// Accumulates plain-text content from an event into `buf`.
-///
-/// Handles text-bearing variants (`Text`, `Code`, `InlineMath`, `DisplayMath`)
-/// and converts soft / hard breaks to spaces.
 fn push_plain_text(buf: &mut String, event: &Event) {
     match event {
         Event::Text(t) | Event::Code(t) | Event::InlineMath(t) | Event::DisplayMath(t) => {
@@ -356,10 +335,6 @@ fn push_plain_text(buf: &mut String, event: &Event) {
 }
 
 /// Converts math events into KaTeX-compatible HTML; passes other events through.
-///
-/// Records [`Feature::Math`] in `features` whenever a math event is transformed,
-/// so the page knows it needs the `KaTeX` runtime even without an explicit
-/// frontmatter flag.
 fn transform_math<'a>(event: Event<'a>, features: &mut BTreeSet<Feature>) -> Event<'a> {
     match event {
         Event::InlineMath(content) => {
@@ -382,12 +357,8 @@ fn transform_math<'a>(event: Event<'a>, features: &mut BTreeSet<Feature>) -> Eve
     }
 }
 
-/// Appends a numeric suffix to make `id` unique within the set of already-used IDs.
-///
-/// First occurrence → unchanged. Second → `-1`. Third → `-2`.
-///
-/// Uses `used` to detect collisions between suffixed and natural IDs
-/// (e.g., heading "Foo", then "Foo-1", then "Foo" again → "Foo", "Foo-1", "Foo-2").
+/// Appends a numeric suffix to make `id` unique. First use is unchanged,
+/// then `-1`, `-2`, etc. Handles collisions between suffixed and natural IDs.
 fn deduplicate_id(used: &mut HashSet<String>, id: &str) -> String {
     if used.insert(id.to_owned()) {
         return id.to_owned();

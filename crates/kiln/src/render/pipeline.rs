@@ -83,16 +83,11 @@ pub fn render_page(
     })
 }
 
-/// Recursively processes directive blocks in content, replacing them with
-/// rendered HTML.
+/// Recursively processes directive blocks, replacing them with rendered HTML.
 ///
-/// Top-level blocks are rendered first (their bodies are recursively processed),
-/// then replaced right-to-left so byte offsets stay valid.
-///
-/// Each directive body is rendered as an isolated markdown document. This means:
-/// - Headings inside directives do **not** appear in the page-level `ToC`.
-/// - Footnotes and reference-link definitions do not resolve across directive
-///   boundaries.
+/// Replacement is right-to-left so byte offsets stay valid. Each directive
+/// body is rendered as an isolated markdown document (headings do not appear
+/// in the page-level `ToC`; footnotes do not cross directive boundaries).
 fn render_directives(
     content: &str,
     syntax_set: &SyntaxSet,
