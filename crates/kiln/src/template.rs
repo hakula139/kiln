@@ -304,12 +304,12 @@ fn tpl_t(i18n: &I18n, key: &str, kwargs: &Kwargs) -> std::result::Result<String,
 /// `MiniJinja` template function: registers a `<script>` for the current
 /// page on the per-render [`AssetsHandle`].
 ///
-/// Usage in directive templates: `{{ register_script("/js/score-table.js") }}`
+/// Usage in directive templates: `{{ register_script("/js/widget.js") }}`
 /// (defaults to `defer`). Pass `defer=false` for a synchronous script and
 /// `module=true` for `type="module"`. Returns the empty string so the call
 /// can be used as a statement.
 ///
-/// Re-registering the same `(url, defer, module)` tuple is a no-op so multiple
+/// Re-registering the same `(url, defer, module)` is a no-op so repeated
 /// directive instances on the same page coalesce to a single tag. Registering
 /// the same URL with different attributes is an error.
 fn tpl_register_script(
@@ -1447,9 +1447,6 @@ mod tests {
 
     #[test]
     fn register_script_deduplicates_repeated_directive_renders() {
-        // Five renders of the same directive should collapse to one tag —
-        // this is the score-table-style "N copies of the same widget on a
-        // page" case the helper was designed for.
         let (_dir, engine) =
             engine_with_directive("widget", r#"{{ register_script("/js/widget.js") }}"#);
         let assets = AssetsHandle::default();
@@ -1502,9 +1499,8 @@ mod tests {
 
     #[test]
     fn register_script_returns_error_when_assets_has_wrong_type() {
-        // Defensive branch: `__assets` is present but not an `AssetsHandle`.
-        // Unreachable through `render_directive`, but pins the contract for
-        // any future path that populates the slot.
+        // Unreachable through `render_directive`; pins the contract for any
+        // future path that populates `__assets`.
         let dir = tempfile::tempdir().unwrap();
         let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
         let err = engine
@@ -1523,9 +1519,6 @@ mod tests {
 
     #[test]
     fn register_script_returns_error_on_unknown_kwarg() {
-        // The exact name proves unknown kwargs surface in the error message
-        // verbatim, so a typo'd `defer` / `module` is recoverable from the
-        // build log without rerunning under a debugger.
         let (_dir, engine) =
             engine_with_directive("widget", r#"{{ register_script("/x.js", bogus=true) }}"#);
         let err = format!(
