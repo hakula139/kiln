@@ -120,11 +120,11 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 ### Module Organization
 
 - New-style module paths: `foo.rs` alongside `foo/` directory, not `foo/mod.rs`.
-- Keep files focused: one primary type or concern per file. When a file or function grows large, split it into smaller units proactively rather than letting it accumulate.
-- Place functions and types in the module that reflects their conceptual domain — import paths should not mislead about what the item does. Create new modules when needed for clean organization.
-- Avoid `pub use` re-exports that obscure where items are defined. Prefer consistent import paths — if some items are re-exported, re-export all related items so callers never mix paths.
+- Keep files focused: one primary type or concern per file. Split proactively when files grow large.
+- Place functions and types in the module that reflects their conceptual domain. Create new modules when needed for clean organization.
+- Avoid `pub use` re-exports that obscure where items are defined. If some items are re-exported, re-export all related items so callers never mix paths.
 - Order helper functions after their caller (top-down reading order).
-- When adding new fields to structs or variants to enums, place them at the most semantically appropriate position among existing members, not simply appended at the bottom.
+- New struct fields / enum variants go at the most semantically appropriate position, not just appended at the bottom.
 
 ### Visibility
 
@@ -138,7 +138,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 
 ### String Literals
 
-- Prefer raw strings (`r"..."`) when the string contains characters that would need escaping (e.g., `"`, `\`). Always use the minimum delimiter level needed (`r"..."` → `r#"..."#` → `r##"..."##`).
+- Prefer raw strings (`r"..."`) when the string contains characters that would need escaping. Always use the minimum delimiter level needed (`r"..."` → `r#"..."#` → `r##"..."##`).
 - Use `indoc!` / `formatdoc!` for multiline string content so the literal can be indented with surrounding code. Inline at the call site when the string is used once; use a named constant only when it is shared or very large. Avoid `\n` escapes and `\x20` workarounds for multiline content.
 - Ellipsis: always `...` (three ASCII dots), never `…` (U+2026). Applies everywhere — prose, comments, doc comments, production strings, tests.
 
@@ -155,32 +155,21 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 
 ### Git Conventions
 
-#### Commits
+Follows global CLAUDE.md commit / branch / PR conventions, plus:
 
-- Messages: `type(scope): description`
-  - Types: `feat`, `fix`, `refactor`, `docs`, `test`, `ci`, `chore`, `style`, `perf`
-  - Scope: the most specific area changed — module (e.g., `config`, `render`, `directive`), doc target (e.g., `CLAUDE`, `roadmap`), or crate name only for cross-module changes.
-- Keep commits atomic — one logical change per commit.
-
-#### Branches
-
-- Feature branches: `feat/<feature-name>`
-
-#### Pull Requests
-
-- Assign to `hakula139`. Label `enhancement` for `feat`, `bug` for `fix`.
-- Do not request review from the PR author (GitHub rejects it).
+- **Scope**: the most specific area changed — module (e.g., `config`, `render`, `directive`), doc target (e.g., `CLAUDE`, `roadmap`), or crate name only for cross-module changes.
+- **PRs**: assign to `hakula139`. Label `enhancement` for `feat`, `bug` for `fix`. Do not request review from the PR author (GitHub rejects it).
 
 ### Testing
 
 - Unit tests in the same file as the code they test (`#[cfg(test)]` module).
 - Integration tests in `tests/` directory for cross-module behavior.
 - Group tests by function under `// ── function_name ──` section headers. Section order must mirror the production function order in the same file. Within each section, order: happy path → variants → edge / error cases.
-- Test name prefixes should match the section's function name (or a clear shortening). Name tests after the scenario they cover. Error-case test names use a return-type suffix: `_returns_error` (`Result`), `_returns_none` (`Option`), `_returns_false` (`bool`).
-- Use `indoc!` for multi-line test inputs whenever possible.
-- Use generic, fictional test data (e.g., `example.com`, `"Hello"`, `"Post A"`). Avoid real names, URLs, or branded content.
-- Write assertions that verify actual behavior, not just surface properties. Avoid uniform test data that makes `starts_with` / `ends_with` unfalsifiable, wildcard struct matches (`..`) that discard field values, and loose bounds that accept nearly any output. Each assertion should fail if the code under test has a plausible bug.
-- Prefer a concise test suite with full coverage over many minimal tests. Drop tests that are subsumed by more thorough ones. Merge tests that cover the same code path when the combined test remains readable.
+- Test name prefixes match the section's function name. Name after the scenario. Error-case suffixes: `_returns_error`, `_returns_none`, `_returns_false`.
+- Use `indoc!` for multi-line test inputs.
+- Use generic, fictional test data (e.g., `example.com`, `"Post A"`). Avoid real names or branded content.
+- Assertions must verify actual behavior. Avoid unfalsifiable patterns (uniform data with `starts_with`, wildcard `..` matches, loose bounds). Each assertion should fail if the code under test has a plausible bug.
+- Prefer a concise suite with full coverage over many minimal tests. Merge tests that cover the same path.
 
 ### Documentation Maintenance
 
@@ -229,6 +218,6 @@ After verification passes, run a dual review using both a reviewer subagent and 
 - Conciseness — prefer the simplest idiomatic solution
 - DRY — flag duplicate logic across modules; look for extraction opportunities
 - Cross-file consistency — parallel types and similar patterns should use the same structure, naming, ordering, and derive traits
-- Idiomatic Rust — proper use of iterators, pattern matching, type system, ownership, and standard library
+- Idiomatic Rust — iterators, pattern matching, type system, ownership, standard library
 - Existing crates — flag hand-written logic that an established crate already handles
 - Test coverage gaps
