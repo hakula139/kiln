@@ -23,6 +23,12 @@ enum Command {
         /// Minify HTML, CSS, and JS in the output directory.
         #[arg(long)]
         minify: bool,
+
+        /// Override `base_url` from `config.toml`. Useful for staging or
+        /// per-deploy preview environments that share a single `config.toml`
+        /// with prod. Falls back to the `KILN_BASE_URL` environment variable.
+        #[arg(long, env = "KILN_BASE_URL")]
+        base_url: Option<String>,
     },
     /// Convert Hugo content to kiln format.
     Convert {
@@ -68,12 +74,21 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Command::Build { root, minify } => {
+        Command::Build {
+            root,
+            minify,
+            base_url,
+        } => {
             let root = root.canonicalize()?;
+            // An empty `KILN_BASE_URL` env var (e.g., from a workflow input
+            // left unset) should fall through to config.toml, not blank out
+            // every URL.
+            let base_url = base_url.filter(|s| !s.is_empty());
             kiln::build(
                 &root,
                 BuildOptions {
                     minify,
+                    base_url_override: base_url.as_deref(),
                     ..Default::default()
                 },
             )?;
