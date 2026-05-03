@@ -19,9 +19,6 @@ use strum::AsRefStr;
 pub struct PageAssets {
     /// Scripts in registration order. Order matters for dependency chains
     /// (e.g., a library script must be registered before its consumer).
-    ///
-    /// Reserved for the planned directive→script bridge; no caller writes to
-    /// this field today, so themes will currently see an empty list.
     pub scripts: Vec<ScriptTag>,
 
     /// Features auto-detected during render (math expressions, mermaid fences).
@@ -87,13 +84,13 @@ impl AssetsHandle {
     /// Panics if the underlying mutex is poisoned, which only happens when
     /// another thread holding the lock panicked. The build pipeline holds the
     /// lock for tiny synchronous mutations, so this should never trigger.
-    pub fn lock(&self) -> MutexGuard<'_, PageAssets> {
+    pub(crate) fn lock(&self) -> MutexGuard<'_, PageAssets> {
         self.inner.lock().expect("PageAssets mutex poisoned")
     }
 
     /// Returns an owned snapshot of the current assets.
     #[must_use]
-    pub fn snapshot(&self) -> PageAssets {
+    pub(crate) fn snapshot(&self) -> PageAssets {
         self.lock().clone()
     }
 }
