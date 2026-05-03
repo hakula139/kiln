@@ -100,10 +100,23 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 - Library error types: `thiserror::Error` derive for errors that callers need to match on.
 - Avoid `unwrap()` / `expect()` in production code. Reserve them for cases with a clear invariant comment.
 
+### Discarding Results
+
+- Use `_ = expr` (no `let`) to discard a result — typically infallible `write!` / `writeln!` against a `String`.
+
 ### Lint Suppression
 
 - Use `#[expect(lint)]` instead of `#[allow(lint)]`. `#[expect]` warns when the suppressed lint is no longer triggered, preventing stale suppressions from accumulating.
 - `#[expect]` reason strings must describe the current state, not future plans.
+- For complexity / size lints (`clippy::too_many_lines`, `clippy::cognitive_complexity`, etc.), the default response is to **extract a helper**. Reach for `#[expect]` only when the function is irreducibly cohesive — and say so in the reason string.
+
+### Comments
+
+- Comment the **why**, not the **what**. Comments earn their place by explaining intent, trade-offs, invariants, or constraints the code can't convey on its own. Skip comments that restate the code or narrate the change.
+- Keep `//` comments to one line per thought. Multi-line only when the rationale genuinely needs it.
+- Doc comments (`///`) state the **contract**, not **mechanics**. One-line doc is the default; multi-line only when the contract genuinely warrants it.
+- Wrap comments at **100 columns** (matching `rustfmt` max_width).
+- Write `//` comments as prose. Promote to `///` if list structure is genuinely useful.
 
 ### Section Dividers
 
@@ -112,8 +125,8 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 
 ### Blank Lines
 
-- One blank line between top-level items (functions, structs, enums, impls, constants).
-- One blank line before and after section dividers (`// ── Name ──`).
+- One blank line between top-level items (functions, structs, enums, impls, constants). Exception: runs of closely-related one-line `const` / `static` declarations sharing a theme may sit together without blanks.
+- One blank line before and after section dividers (`// ── Name ──`). This applies inside `#[cfg(test)]` modules too — the first divider takes a blank line after the `use super::*;` block.
 - Inside function bodies, use blank lines to separate logical phases (e.g., setup → validation → execution → result).
 - Group a single-line computation with its immediate validation guard (early-return `if`) — no blank between them. Multi-line `let` bindings (async chains, builder patterns) keep the blank before their guard.
 
@@ -121,7 +134,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 
 - New-style module paths: `foo.rs` alongside `foo/` directory, not `foo/mod.rs`.
 - Keep files focused: one primary type or concern per file. Split proactively when files grow large.
-- Place functions and types in the module that reflects their conceptual domain. Create new modules when needed for clean organization.
+- Place functions and types in the module that reflects their conceptual domain. A cross-module trait belongs where the **contract** lives, not the first implementation. Create new modules when needed for clean organization.
 - Avoid `pub use` re-exports that obscure where items are defined. If some items are re-exported, re-export all related items so callers never mix paths.
 - Order helper functions after their caller (top-down reading order).
 - New struct fields / enum variants go at the most semantically appropriate position, not just appended at the bottom.
@@ -177,6 +190,7 @@ Follows global CLAUDE.md commit / branch / PR conventions, plus:
 - Keep `docs/roadmap.md` as the canonical in-repo roadmap / status summary. Update it when shipped capability areas or planned priorities change.
 - Crate structure diagrams must match the actual filesystem. When adding, removing, or renaming modules, update the tree in this file. Entries are sorted alphabetically; directories sort alongside their parent `.rs` file.
 - Markdown prose is **not hard-wrapped** — paragraphs are single long lines and flow with the reader's viewport. Match the surrounding style; do not introduce 80-column line breaks inside paragraphs.
+- After substantive changes, sweep docs for stale claims: `README.md` feature lists, `docs/roadmap.md` status sections, and this file's crate tree.
 
 ## Nix Development
 
@@ -217,7 +231,9 @@ After verification passes, run a dual review using both a reviewer subagent and 
 - Adherence to project conventions (this file)
 - Conciseness — prefer the simplest idiomatic solution
 - DRY — flag duplicate logic across modules; look for extraction opportunities
-- Cross-file consistency — parallel types and similar patterns should use the same structure, naming, ordering, and derive traits
+- Cross-file consistency — parallel types should use the same structure, naming, ordering, and derive traits
+- Comment hygiene — verbose multi-line docs that should be one-liners, missing WHY comments where non-obvious
+- Visibility — `pub(crate)` where `pub(super)` or private suffices
 - Idiomatic Rust — iterators, pattern matching, type system, ownership, standard library
 - Existing crates — flag hand-written logic that an established crate already handles
 - Test coverage gaps
