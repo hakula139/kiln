@@ -230,11 +230,7 @@ pub(crate) fn split_frontmatter(content: &str) -> Result<(&str, &str)> {
     split_delimited_frontmatter(content, DELIMITER)
 }
 
-/// Splits content into raw frontmatter and the remaining body using the given
-/// delimiter (e.g., `+++` for TOML, `---` for YAML).
-///
-/// Expects the content to start with the delimiter on its own line, followed by
-/// frontmatter content, then a closing delimiter on its own line.
+/// Splits content into raw frontmatter and body using the given delimiter.
 ///
 /// # Errors
 ///

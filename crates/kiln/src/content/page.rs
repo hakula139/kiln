@@ -104,10 +104,6 @@ impl Page {
 
     /// Computes the output path relative to the build output directory.
     ///
-    /// Strips the `content/` prefix and keeps the remaining directory
-    /// structure. Standalone files get pretty URLs (`slug/index.html`
-    /// instead of `slug.html`).
-    ///
     /// - `content/posts/foo/bar/index.md` → `posts/foo/bar/index.html`
     /// - `content/posts/hello-world.md` → `posts/hello-world/index.html`
     /// - `content/example/index.md` → `example/index.html`
@@ -192,13 +188,7 @@ fn discover_assets(dir: &Path) -> Result<Vec<PathBuf>> {
     Ok(assets)
 }
 
-/// Derives the page slug from its file path.
-///
-/// For page bundles (`index.md`), uses the parent directory name.
-/// For standalone files (`my-post.md`), uses the file stem.
-///
-/// Returns `None` if the slug would be empty (e.g., a bare `index.md` with
-/// no parent directory).
+/// Derives the page slug from its file path, or `None` if empty.
 fn derive_slug(path: &Path) -> Option<String> {
     let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
 
@@ -219,14 +209,10 @@ fn derive_slug(path: &Path) -> Option<String> {
     }
 }
 
-/// Extracts the summary from markdown content (text before `<!--more-->`).
+/// Extracts summary text before `<!--more-->`, stripped to plain text.
 ///
-/// The raw markdown is stripped to plain text so that link syntax, formatting,
-/// and reference definitions do not leak into descriptions.
-///
-/// Parses the **full** body so that reference link definitions (typically at
-/// the end of the file) are available for resolution, but only collects text
-/// from events whose source range starts before the separator.
+/// Parses the full body so reference link definitions after the separator
+/// are available for resolution.
 fn extract_summary(body: &str) -> Option<String> {
     let separator_offset = body.find(SUMMARY_SEPARATOR)?;
     let raw = body[..separator_offset].trim();
@@ -237,12 +223,7 @@ fn extract_summary(body: &str) -> Option<String> {
     if plain.is_empty() { None } else { Some(plain) }
 }
 
-/// Strips markdown syntax from the region before `summary_end`, producing a
-/// plain-text representation.
-///
-/// Parses `full_text` so pulldown-cmark can resolve reference links whose
-/// definitions appear after the summary region. Only text events with source
-/// offsets before `summary_end` are collected.
+/// Strips markdown to plain text from the region before `summary_end`.
 fn strip_markdown(full_text: &str, summary_end: usize) -> String {
     let parser = Parser::new_ext(full_text, Options::all()).into_offset_iter();
 
