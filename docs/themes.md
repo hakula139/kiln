@@ -249,10 +249,10 @@ Whenever a template variable includes a page `date`, kiln renders it as an ISO 8
 
 `assets` is populated by the renderer as it walks the page (and any nested directive bodies):
 
-| Field      | Type            | Description                                                                                                                                                                                                                                                                      |
-| ---------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `features` | list of strings | Auto-detected runtime dependencies. Current values: `"math"` (set when the page contains math expressions), `"mermaid"` (set when a `` ```mermaid `` fence is present).                                                                                                          |
-| `scripts`  | list of objects | Scripts registered by directive templates via [`register_script(...)`](#register_scripturl-defertrue-modulefalse). Each entry has `url`, `load` (`"defer"` / `"sync"`), and `module` (bool). Order is registration order; the same `(url, load, module)` triple is deduplicated. |
+| Field      | Type            | Description                                                                                                                                                             |
+| ---------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `features` | list of strings | Auto-detected runtime dependencies. Current values: `"math"` (set when the page contains math expressions), `"mermaid"` (set when a `` ```mermaid `` fence is present). |
+| `scripts`  | list of objects | Scripts registered via [`register_script(...)`](#register_scripturl-loaddefer-modulefalse). Each entry has `url`, `load` (string), and `module` (bool).                 |
 
 Templates gate conditional CDN loads with membership tests on `assets.features`. Use the `assets is defined` guard when the include is shared with listing templates (`home.html`, `archive.html`, `overview.html`, `404.html`) — only `post.html` and `page.html` receive `assets`:
 
@@ -404,6 +404,8 @@ The number of items per page is configurable via `paginate` in `[params]` (defau
 | `body_raw`        | string              | Raw markdown source of the directive body |
 | `source_dir`      | string or `none`    | Page source directory (for `read_file`)   |
 
+Keys prefixed with `__` (such as the `__assets` handle backing `register_script()`) are engine-reserved. Directive payload fields with those names are masked by the engine value; pick a different name in your directive arguments to avoid surprises.
+
 ### Template Functions
 
 The following functions are available in all templates.
@@ -449,7 +451,7 @@ Resolves a translatable string for the active language. See [Internationalizatio
 
 When `kwargs` are supplied, Python-style `{name}` placeholders in the string are replaced with the corresponding values. Missing keys emit a warning and render as the key literal (or `«missing:<key>»` under `KILN_DEV`) so the build does not crash.
 
-#### `register_script(url, defer=true, module=false)`
+#### `register_script(url, load="defer", module=false)`
 
 Registers a `<script>` tag for the current page. Only callable from directive templates — the renderer surfaces an error when called from a page-level template. Returns the empty string so the call can stand alone:
 
@@ -457,7 +459,7 @@ Registers a `<script>` tag for the current page. Only callable from directive te
 {{ register_script("/js/score-table.js") }}
 ```
 
-The script appears once on the page no matter how many times the directive renders. Re-registering the same `(url, defer, module)` triple is a no-op; registering the same URL with different attributes is a build-time error so a page can never load two conflicting tags for the same source. Defaults to `defer`; pass `defer=false` for synchronous execution and `module=true` for ES modules.
+The script appears once on the page no matter how many times the directive renders. Re-registering the same `(url, load, module)` triple is a no-op; registering the same URL with different attributes is a build-time error so a page can never load two conflicting tags for the same source. `load` defaults to `"defer"`; the other accepted values are `"async"` and `"sync"`. Pass `module=true` for ES modules.
 
 Themes consume the registered scripts via the page's `assets.scripts` list — see [Post templates](#post-templates-posthtml).
 
