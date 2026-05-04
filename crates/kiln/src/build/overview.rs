@@ -42,36 +42,31 @@ pub(crate) fn build_overview_pages(
         .collect();
     write_overview(ctx, "sections", "section", section_buckets, output_dir)?;
 
-    for taxonomy in &taxonomy_set.taxonomies {
-        let kind = taxonomy.kind;
-        let kind_path = format!("/{}", kind.plural());
-        let buckets: Vec<BucketSummary> = taxonomy
-            .terms
-            .iter()
-            .map(|term| {
-                let key = (kind, term.slug.clone());
-                let pages = taxonomy_set
-                    .term_pages
-                    .get(&key)
-                    .map(|indices| {
-                        collect_page_summaries(
-                            indices
-                                .iter()
-                                .filter_map(|&idx| artifacts.listed_pages.get(idx))
-                                .cloned(),
-                        )
-                    })
-                    .unwrap_or_default();
-                BucketSummary {
-                    name: term.name.clone(),
-                    slug: term.slug.clone(),
-                    url: format!("{kind_path}/{}/", term.slug),
-                    pages,
-                }
-            })
-            .collect();
-        write_overview(ctx, kind.plural(), kind.singular(), buckets, output_dir)?;
-    }
+    let tag_buckets: Vec<BucketSummary> = taxonomy_set
+        .tags
+        .iter()
+        .map(|term| {
+            let pages = taxonomy_set
+                .tag_pages
+                .get(&term.slug)
+                .map(|indices| {
+                    collect_page_summaries(
+                        indices
+                            .iter()
+                            .filter_map(|&idx| artifacts.listed_pages.get(idx))
+                            .cloned(),
+                    )
+                })
+                .unwrap_or_default();
+            BucketSummary {
+                name: term.name.clone(),
+                slug: term.slug.clone(),
+                url: format!("/tags/{}/", term.slug),
+                pages,
+            }
+        })
+        .collect();
+    write_overview(ctx, "tags", "tag", tag_buckets, output_dir)?;
 
     Ok(())
 }

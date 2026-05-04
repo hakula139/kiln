@@ -64,25 +64,16 @@ pub(crate) fn build_archive_pages(
     }
 
     let tag_per_page = paginate_config(&ctx.config.params, &[&["paginate"]], 10);
-    for taxonomy in &taxonomy_set.taxonomies {
-        let kind = taxonomy.kind;
-        for term in &taxonomy.terms {
-            let pages = resolve_term_pages(taxonomy_set, kind, &term.slug, &artifacts.listed_pages);
-            let base_path = format!("/{}/{}", kind.plural(), term.slug);
-            write_archive(
-                ctx,
-                &ArchiveSpec::new(
-                    kind.plural(),
-                    kind.singular(),
-                    &term.name,
-                    &term.slug,
-                    &base_path,
-                ),
-                &pages,
-                tag_per_page,
-                output_dir,
-            )?;
-        }
+    for term in &taxonomy_set.tags {
+        let pages = resolve_term_pages(taxonomy_set, &term.slug, &artifacts.listed_pages);
+        let base_path = format!("/tags/{}", term.slug);
+        write_archive(
+            ctx,
+            &ArchiveSpec::new("tags", "tag", &term.name, &term.slug, &base_path),
+            &pages,
+            tag_per_page,
+            output_dir,
+        )?;
     }
 
     Ok(())

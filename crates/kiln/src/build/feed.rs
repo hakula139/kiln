@@ -5,7 +5,7 @@ use anyhow::{Context, Result};
 use crate::feed::{self, Channel, DEFAULT_FEED_LIMIT};
 use crate::output::write_output;
 use crate::section::{self, Section};
-use crate::taxonomy::{TaxonomyKind, TaxonomySet, Term};
+use crate::taxonomy::{TaxonomySet, Term};
 
 use super::BuildContext;
 use super::listing::{ListedPage, ListingArtifacts, resolve_term_pages};
@@ -59,19 +59,15 @@ pub(crate) fn build_feeds(
         write_section_feed(ctx, base, &section.title, &dir_slug, posts, output_dir)?;
     }
 
-    for taxonomy in &taxonomy_set.taxonomies {
-        let kind = taxonomy.kind;
-        for term in &taxonomy.terms {
-            write_term_feed(
-                ctx,
-                base,
-                kind,
-                term,
-                &artifacts.listed_pages,
-                taxonomy_set,
-                output_dir,
-            )?;
-        }
+    for term in &taxonomy_set.tags {
+        write_term_feed(
+            ctx,
+            base,
+            term,
+            &artifacts.listed_pages,
+            taxonomy_set,
+            output_dir,
+        )?;
     }
 
     Ok(())
@@ -104,14 +100,13 @@ fn write_section_feed(
 fn write_term_feed(
     ctx: &BuildContext,
     base: &str,
-    kind: TaxonomyKind,
     term: &Term,
     listed_pages: &[ListedPage],
     taxonomy_set: &TaxonomySet,
     output_dir: &Path,
 ) -> Result<()> {
-    let pages = resolve_term_pages(taxonomy_set, kind, &term.slug, listed_pages);
-    let dir_slug = format!("{}/{}", kind.plural(), term.slug);
+    let pages = resolve_term_pages(taxonomy_set, &term.slug, listed_pages);
+    let dir_slug = format!("tags/{}", term.slug);
     let channel = Channel {
         title: format!("{} - {}", term.name, ctx.config.title),
         link: format!("{base}/{dir_slug}/"),
@@ -122,10 +117,7 @@ fn write_term_feed(
     };
     let items: Vec<_> = pages.iter().map(|lp| lp.summary.clone()).collect();
     let xml = feed::generate_rss(&channel, &items, DEFAULT_FEED_LIMIT);
-    let dest = output_dir
-        .join(kind.plural())
-        .join(&term.slug)
-        .join("index.xml");
+    let dest = output_dir.join("tags").join(&term.slug).join("index.xml");
     write_output(&dest, &xml).with_context(|| format!("failed to write RSS feed for {dir_slug}"))
 }
 

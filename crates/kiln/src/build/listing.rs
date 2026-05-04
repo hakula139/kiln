@@ -7,7 +7,7 @@ use jiff::{Timestamp, tz::TimeZone};
 use crate::content::frontmatter::FeaturedImage;
 use crate::content::page::{Page, PageKind};
 use crate::render::lqip::ImageResolver;
-use crate::taxonomy::{TaxonomyKind, TaxonomySet};
+use crate::taxonomy::TaxonomySet;
 use crate::template::vars::{LinkedTerm, PageGroup, PageSummary};
 use crate::text::slugify;
 
@@ -33,7 +33,7 @@ impl ListedPage {
 
 /// Precomputed listing data for all output generators.
 pub(crate) struct ListingArtifacts {
-    /// All listable pages, indexed to match `TaxonomySet::term_pages`.
+    /// All listable pages, indexed to match `TaxonomySet::tag_pages`.
     pub(crate) listed_pages: Vec<ListedPage>,
     /// Posts only, sorted by date descending.
     pub(crate) listed_posts: Vec<ListedPage>,
@@ -46,7 +46,7 @@ pub(crate) struct ListingArtifacts {
 /// Builds listing artifacts from discovered pages in a single pass.
 ///
 /// Index alignment with the input slice is maintained (required by
-/// `TaxonomySet::term_pages`). Post lists are pre-sorted by date descending.
+/// `TaxonomySet::tag_pages`). Post lists are pre-sorted by date descending.
 pub(crate) fn build_listing_artifacts(
     pages: &[Page],
     content_dir: &Path,
@@ -171,14 +171,12 @@ pub(crate) fn sort_pinned_first(pages: &mut [ListedPage]) {
 #[must_use]
 pub(crate) fn resolve_term_pages(
     taxonomy_set: &TaxonomySet,
-    kind: TaxonomyKind,
     slug: &str,
     listed_pages: &[ListedPage],
 ) -> Vec<ListedPage> {
-    let key = (kind, slug.to_owned());
     let mut pages: Vec<ListedPage> = taxonomy_set
-        .term_pages
-        .get(&key)
+        .tag_pages
+        .get(slug)
         .map(|indices| {
             indices
                 .iter()
