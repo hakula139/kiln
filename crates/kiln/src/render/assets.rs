@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use anyhow::{Result, bail};
 use minijinja::value::Object;
 use serde::Serialize;
-use strum::AsRefStr;
+use strum::{AsRefStr, EnumString};
 
 /// Per-page collection of asset declarations gathered during render.
 ///
@@ -118,7 +118,7 @@ impl ScriptTag {
 
 /// How a `<script>` tag is loaded. `defer` and `async` are mutually exclusive
 /// in HTML, so they share an enum rather than two `bool` fields.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, AsRefStr)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, AsRefStr, EnumString)]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
 pub enum LoadStrategy {

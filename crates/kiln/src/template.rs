@@ -298,11 +298,11 @@ fn tpl_t(i18n: &I18n, key: &str, kwargs: &Kwargs) -> std::result::Result<String,
 /// page on the per-render [`AssetsHandle`].
 ///
 /// Usage in directive templates: `{{ register_script("/js/widget.js") }}`
-/// (defaults to `defer`). Pass `defer=false` for a synchronous script and
-/// `module=true` for `type="module"`. Returns the empty string so the call
-/// can be used as a statement.
+/// (defaults to `load="defer"`). Pass `load="async"` or `load="sync"` to pick
+/// a different strategy and `module=true` for `type="module"`. Returns the
+/// empty string so the call can be used as a statement.
 ///
-/// Re-registering the same `(url, defer, module)` is a no-op so repeated
+/// Re-registering the same `(url, load, module)` is a no-op so repeated
 /// directive instances on the same page coalesce to a single tag. Registering
 /// the same URL with different attributes is an error.
 fn tpl_register_script(
@@ -330,15 +330,22 @@ fn tpl_register_script(
             )
         })?;
 
-    let defer: bool = kwargs.get("defer").unwrap_or(true);
-    let module: bool = kwargs.get("module").unwrap_or(false);
+    let load_str: Option<String> = kwargs.get("load")?;
+    let module: bool = kwargs.get::<Option<bool>>("module")?.unwrap_or(false);
     kwargs.assert_all_used()?;
 
-    let load = if defer {
-        LoadStrategy::Defer
-    } else {
-        LoadStrategy::Sync
+    let load = match load_str.as_deref() {
+        None => LoadStrategy::Defer,
+        Some(s) => s.parse::<LoadStrategy>().map_err(|_| {
+            minijinja::Error::new(
+                minijinja::ErrorKind::InvalidOperation,
+                format!(
+                    r#"register_script: load must be one of "defer", "async", "sync"; got "{s}""#,
+                ),
+            )
+        })?,
     };
+
     handle
         .lock()
         .register_script(ScriptTag {
@@ -1422,10 +1429,10 @@ mod tests {
     }
 
     #[test]
-    fn register_script_honors_defer_false_and_module_kwargs() {
+    fn register_script_honors_load_sync_and_module_kwargs() {
         let (_dir, engine) = engine_with_directive(
             "widget",
-            r#"{{ register_script("/js/widget.js", defer=false, module=true) }}"#,
+            r#"{{ register_script("/js/widget.js", load="sync", module=true) }}"#,
         );
         let assets = AssetsHandle::default();
         engine
@@ -1436,6 +1443,23 @@ mod tests {
         let snapshot = assets.snapshot();
         assert_eq!(snapshot.scripts[0].load, LoadStrategy::Sync);
         assert!(snapshot.scripts[0].module);
+    }
+
+    #[test]
+    fn register_script_honors_load_async_kwarg() {
+        let (_dir, engine) = engine_with_directive(
+            "widget",
+            r#"{{ register_script("/js/widget.js", load="async") }}"#,
+        );
+        let assets = AssetsHandle::default();
+        engine
+            .render_directive("widget", empty_ctx("widget"), &assets)
+            .unwrap()
+            .unwrap();
+
+        let snapshot = assets.snapshot();
+        assert_eq!(snapshot.scripts[0].load, LoadStrategy::Async);
+        assert!(!snapshot.scripts[0].module);
     }
 
     #[test]
@@ -1524,6 +1548,44 @@ mod tests {
         assert!(
             err.contains("bogus"),
             "unknown kwarg should surface in the error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn register_script_returns_error_on_unknown_load_strategy() {
+        let (_dir, engine) =
+            engine_with_directive("widget", r#"{{ register_script("/x.js", load="eager") }}"#);
+        let err = format!(
+            "{:#}",
+            engine
+                .render_directive("widget", empty_ctx("widget"), &AssetsHandle::default())
+                .unwrap()
+                .unwrap_err(),
+        );
+        assert!(
+            err.contains(r#"load must be one of "defer", "async", "sync"; got "eager""#),
+            "should surface the parse error verbatim, got: {err}"
+        );
+    }
+
+    #[test]
+    fn register_script_returns_error_on_wrong_type_module_kwarg() {
+        let (_dir, engine) =
+            engine_with_directive("widget", r#"{{ register_script("/x.js", module="yes") }}"#);
+        let err = format!(
+            "{:#}",
+            engine
+                .render_directive("widget", empty_ctx("widget"), &AssetsHandle::default())
+                .unwrap()
+                .unwrap_err(),
+        );
+        assert!(
+            !err.contains("unknown keyword argument"),
+            "wrong-type kwarg must not surface as an unknown-keyword error, got: {err}"
+        );
+        assert!(
+            err.contains("cannot convert"),
+            "should pass through MiniJinja's type-mismatch error, got: {err}"
         );
     }
 
