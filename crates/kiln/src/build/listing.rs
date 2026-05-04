@@ -39,6 +39,10 @@ pub(crate) struct ListingArtifacts {
     pub(crate) listed_posts: Vec<ListedPage>,
     /// Posts grouped by section slug, each bucket sorted by date descending.
     pub(crate) section_posts: HashMap<String, Vec<ListedPage>>,
+    /// Pages grouped by tag slug, each bucket sorted by date descending. Built
+    /// from `TaxonomySet::tag_pages` indices to avoid re-resolving them per
+    /// archive / feed.
+    pub(crate) tag_pages: HashMap<String, Vec<ListedPage>>,
 }
 
 // ── Listing construction ──
@@ -46,7 +50,8 @@ pub(crate) struct ListingArtifacts {
 /// Builds listing artifacts from discovered pages in a single pass.
 ///
 /// Index alignment with the input slice is maintained (required by
-/// `TaxonomySet::tag_pages`). Post lists are pre-sorted by date descending.
+/// `TaxonomySet::tag_pages`). Post and tag lists are pre-sorted by date
+/// descending.
 pub(crate) fn build_listing_artifacts(
     pages: &[Page],
     content_dir: &Path,
@@ -54,6 +59,7 @@ pub(crate) fn build_listing_artifacts(
     time_zone: Option<&TimeZone>,
     section_titles: &HashMap<&str, &str>,
     image_resolver: &ImageResolver,
+    taxonomy_set: &TaxonomySet,
 ) -> Result<ListingArtifacts> {
     let mut listed_pages = Vec::with_capacity(pages.len());
     let mut listed_posts = Vec::new();
@@ -92,10 +98,21 @@ pub(crate) fn build_listing_artifacts(
         sort_by_date_desc(posts);
     }
 
+    let mut tag_pages = HashMap::with_capacity(taxonomy_set.tag_pages.len());
+    for (slug, indices) in &taxonomy_set.tag_pages {
+        let mut pages: Vec<ListedPage> = indices
+            .iter()
+            .filter_map(|&idx| listed_pages.get(idx).cloned())
+            .collect();
+        sort_by_date_desc(&mut pages);
+        tag_pages.insert(slug.clone(), pages);
+    }
+
     Ok(ListingArtifacts {
         listed_pages,
         listed_posts,
         section_posts,
+        tag_pages,
     })
 }
 
@@ -165,28 +182,6 @@ pub(crate) fn sort_pinned_first(pages: &mut [ListedPage]) {
             std::cmp::Reverse(page.timestamp),
         )
     });
-}
-
-/// Resolves the listed pages for a taxonomy term, sorted by date descending.
-#[must_use]
-pub(crate) fn resolve_term_pages(
-    taxonomy_set: &TaxonomySet,
-    slug: &str,
-    listed_pages: &[ListedPage],
-) -> Vec<ListedPage> {
-    let mut pages: Vec<ListedPage> = taxonomy_set
-        .tag_pages
-        .get(slug)
-        .map(|indices| {
-            indices
-                .iter()
-                .filter_map(|&idx| listed_pages.get(idx))
-                .cloned()
-                .collect()
-        })
-        .unwrap_or_default();
-    sort_by_date_desc(&mut pages);
-    pages
 }
 
 /// Groups pages into year-based sections.
@@ -347,6 +342,7 @@ mod tests {
     fn build_listing_artifacts_propagates_output_path_error() {
         use std::path::PathBuf;
 
+        use crate::taxonomy::build_taxonomies;
         use crate::test_utils::test_page;
 
         let mut page = test_page("Stray");
@@ -354,6 +350,7 @@ mod tests {
         page.source_path = PathBuf::from("/elsewhere/stray.md");
         let pages = vec![page];
         let titles = HashMap::new();
+        let taxonomy_set = build_taxonomies(&pages, None);
 
         let result = build_listing_artifacts(
             &pages,
@@ -362,6 +359,7 @@ mod tests {
             None,
             &titles,
             &EMPTY_RESOLVER,
+            &taxonomy_set,
         );
         let Err(err) = result else {
             panic!("expected an error from build_listing_artifacts");

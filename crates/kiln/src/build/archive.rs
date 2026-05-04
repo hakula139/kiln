@@ -7,7 +7,7 @@ use crate::taxonomy::TaxonomySet;
 use crate::template::vars::ArchivePageVars;
 
 use super::BuildContext;
-use super::listing::{ListedPage, ListingArtifacts, group_by_year, resolve_term_pages};
+use super::listing::{ListedPage, ListingArtifacts, group_by_year};
 use super::paginate::{paginate_config, write_paginated};
 
 /// Generates all archive pages: `/posts/`, `/posts/<section>/`, and `/tags/<slug>/`.
@@ -65,12 +65,16 @@ pub(crate) fn build_archive_pages(
 
     let tag_per_page = paginate_config(&ctx.config.params, &[&["paginate"]], 10);
     for term in &taxonomy_set.tags {
-        let pages = resolve_term_pages(taxonomy_set, &term.slug, &artifacts.listed_pages);
+        let pages = artifacts
+            .tag_pages
+            .get(&term.slug)
+            .map(Vec::as_slice)
+            .unwrap_or_default();
         let base_path = format!("/tags/{}", term.slug);
         write_archive(
             ctx,
             &ArchiveSpec::new("tags", "tag", &term.name, &term.slug, &base_path),
-            &pages,
+            pages,
             tag_per_page,
             output_dir,
         )?;

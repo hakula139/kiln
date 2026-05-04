@@ -8,7 +8,7 @@ use crate::section::{self, Section};
 use crate::taxonomy::{TaxonomySet, Term};
 
 use super::BuildContext;
-use super::listing::{ListedPage, ListingArtifacts, resolve_term_pages};
+use super::listing::{ListedPage, ListingArtifacts};
 
 /// Generates RSS feeds: main site feed, per-section feeds, and per-term feeds.
 pub(crate) fn build_feeds(
@@ -60,14 +60,12 @@ pub(crate) fn build_feeds(
     }
 
     for term in &taxonomy_set.tags {
-        write_term_feed(
-            ctx,
-            base,
-            term,
-            &artifacts.listed_pages,
-            taxonomy_set,
-            output_dir,
-        )?;
+        let pages = artifacts
+            .tag_pages
+            .get(&term.slug)
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        write_term_feed(ctx, base, term, pages, output_dir)?;
     }
 
     Ok(())
@@ -101,11 +99,9 @@ fn write_term_feed(
     ctx: &BuildContext,
     base: &str,
     term: &Term,
-    listed_pages: &[ListedPage],
-    taxonomy_set: &TaxonomySet,
+    pages: &[ListedPage],
     output_dir: &Path,
 ) -> Result<()> {
-    let pages = resolve_term_pages(taxonomy_set, &term.slug, listed_pages);
     let dir_slug = format!("tags/{}", term.slug);
     let channel = Channel {
         title: format!("{} - {}", term.name, ctx.config.title),
@@ -113,7 +109,7 @@ fn write_term_feed(
         feed_url: format!("{base}/{dir_slug}/index.xml"),
         description: ctx.config.description.clone(),
         language: ctx.config.language.clone(),
-        last_build_date: newest_date(&pages),
+        last_build_date: newest_date(pages),
     };
     let items: Vec<_> = pages.iter().map(|lp| lp.summary.clone()).collect();
     let xml = feed::generate_rss(&channel, &items, DEFAULT_FEED_LIMIT);

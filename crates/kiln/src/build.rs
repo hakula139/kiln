@@ -135,6 +135,7 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
         .iter()
         .map(|s| (s.slug.as_str(), s.title.as_str()))
         .collect();
+    let taxonomy_set = build_taxonomies(&content.pages, Some(&content.content_dir));
 
     let artifacts = build_listing_artifacts(
         &content.pages,
@@ -143,6 +144,7 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
         ctx.time_zone.as_ref(),
         &section_titles,
         &ctx.image_resolver,
+        &taxonomy_set,
     )?;
 
     for page in &content.pages {
@@ -154,8 +156,6 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
             &section_titles,
         )?;
     }
-
-    let taxonomy_set = build_taxonomies(&content.pages, Some(&content.content_dir));
 
     home::build_home_pages(&ctx, &artifacts.listed_posts, &output_dir)?;
     archive::build_archive_pages(
