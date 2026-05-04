@@ -20,9 +20,11 @@ pub(crate) fn build_home_pages(
         return Ok(());
     }
 
-    let per_page = paginate_config(&ctx.config.params, &["home", "paginate"])
-        .or_else(|| paginate_config(&ctx.config.params, &["paginate"]))
-        .unwrap_or(10);
+    let per_page = paginate_config(
+        &ctx.config.params,
+        &[&["home", "paginate"], &["paginate"]],
+        10,
+    );
 
     let home_url = format!("{}/", ctx.config.base_url.trim_end_matches('/'));
 

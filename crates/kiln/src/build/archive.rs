@@ -25,9 +25,11 @@ pub(crate) fn build_archive_pages(
         return Ok(());
     }
 
-    let section_per_page = paginate_config(&ctx.config.params, &["section", "paginate"])
-        .or_else(|| paginate_config(&ctx.config.params, &["paginate"]))
-        .unwrap_or(10);
+    let section_per_page = paginate_config(
+        &ctx.config.params,
+        &[&["section", "paginate"], &["paginate"]],
+        10,
+    );
 
     let posts_title = load_index_title(&content_dir.join("posts"))
         .unwrap_or_else(|| ctx.i18n.t("all_posts").into_owned());
@@ -61,7 +63,7 @@ pub(crate) fn build_archive_pages(
         )?;
     }
 
-    let tag_per_page = paginate_config(&ctx.config.params, &["paginate"]).unwrap_or(10);
+    let tag_per_page = paginate_config(&ctx.config.params, &[&["paginate"]], 10);
     for taxonomy in &taxonomy_set.taxonomies {
         let kind = taxonomy.kind;
         for term in &taxonomy.terms {
