@@ -194,11 +194,12 @@ Follows global CLAUDE.md commit / branch / PR conventions, plus:
 
 ## Nix Development
 
-`flake.nix` pins the Rust toolchain, `libdav1d` (AVIF), and `git-cliff`.
+`flake.nix` pins the Rust toolchain, `libdav1d` (AVIF), `pagefind`, and `git-cliff` for the dev shell. It also exposes `packages.{default,kiln,pagefind}` so site repos can consume kiln as a flake input (`inputs.kiln.url = "github:hakula139/kiln";`) — `kiln` is source-built (dav1d wired in by Nix), `pagefind` is a vendored prebuilt under `packages/pagefind/`.
 
 ```bash
-nix develop                            # interactive shell
+nix develop                            # interactive shell (for hacking on kiln)
 nix flake check                        # run pre-commit hooks
+nix build '.#kiln'                     # build kiln from source
 ```
 
 `direnv` auto-activates the shell via `.envrc`.

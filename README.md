@@ -87,6 +87,22 @@ kiln --version
 cargo install --git https://github.com/hakula139/kiln --locked
 ```
 
+### Via Nix
+
+```bash
+nix run github:hakula139/kiln -- build         # one-shot
+nix profile install github:hakula139/kiln      # install to user profile
+```
+
+Or as a flake input from another project (e.g., a site repo):
+
+```nix
+inputs.kiln.url = "github:hakula139/kiln";
+# Outputs: packages.${system}.{default,kiln,pagefind}
+```
+
+`pagefind` ships alongside `kiln` so consumers don't have to pin the search backend separately.
+
 See [`RELEASING.md`](./RELEASING.md) for how releases are produced.
 
 ## Usage
@@ -133,7 +149,7 @@ cargo build --release             # Binary at target/release/kiln
 
 ### Reproducible dev shell (Nix)
 
-The shipped `flake.nix` pins the Rust toolchain, `libdav1d`, `pagefind`, and pre-commit hooks:
+For hacking on kiln itself, the shipped `flake.nix` pins the Rust toolchain, `libdav1d`, `pagefind`, `git-cliff`, and pre-commit hooks:
 
 ```bash
 nix develop                       # interactive shell
