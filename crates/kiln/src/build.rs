@@ -160,7 +160,7 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
 
     home::build_home_pages(&ctx, &artifacts.listed_posts, &output_dir)?;
     archive::build_archive_pages(&ctx, &buckets, &output_dir)?;
-    overview::build_overview_pages(&ctx, &artifacts, &sections, &taxonomy_set, &output_dir)?;
+    overview::build_overview_pages(&ctx, &buckets, &output_dir)?;
 
     feed::build_feeds(&ctx, &artifacts.listed_posts, &buckets, &output_dir)?;
     sitemap::build_sitemap_and_robots(&ctx, &artifacts.listed_pages, &output_dir)?;

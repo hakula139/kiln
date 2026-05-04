@@ -3,13 +3,14 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use jiff::{Timestamp, tz::TimeZone};
+use strum::EnumIter;
 
 use crate::content::frontmatter::FeaturedImage;
 use crate::content::page::{Page, PageKind};
 use crate::render::lqip::ImageResolver;
 use crate::section::Section;
 use crate::taxonomy::TaxonomySet;
-use crate::template::vars::{LinkedTerm, PageGroup, PageSummary};
+use crate::template::vars::{BucketSummary, LinkedTerm, PageGroup, PageSummary};
 use crate::text::slugify;
 
 use super::url::{page_url, resolve_relative_url};
@@ -36,14 +37,17 @@ impl ListedPage {
 pub(crate) struct ListingArtifacts {
     /// All listable pages, indexed to match `TaxonomySet::tag_pages`.
     pub(crate) listed_pages: Vec<ListedPage>,
-    /// Posts only, sorted by date descending.
+    /// Posts only, sorted by date descending. Consumed by the home page (which
+    /// applies a pinned-first sort) and the site-wide RSS feed.
     pub(crate) listed_posts: Vec<ListedPage>,
     /// Posts grouped by section slug, each bucket sorted by date descending.
-    pub(crate) section_posts: HashMap<String, Vec<ListedPage>>,
+    /// Internal to `build_listing_buckets`; not consumed directly by output
+    /// generators.
+    section_posts: HashMap<String, Vec<ListedPage>>,
     /// Pages grouped by tag slug, each bucket sorted by date descending. Built
     /// from `TaxonomySet::tag_pages` indices to avoid re-resolving them per
-    /// archive / feed.
-    pub(crate) tag_pages: HashMap<String, Vec<ListedPage>>,
+    /// archive / feed. Internal to `build_listing_buckets`.
+    tag_pages: HashMap<String, Vec<ListedPage>>,
 }
 
 // ── Listing construction ──
@@ -124,7 +128,7 @@ pub(crate) fn build_listing_artifacts(
 /// `Posts` is the singleton aggregate at `/posts/`, spanning every section.
 /// `Section` and `Tag` correspond to one entry each in their respective
 /// content groupings.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter)]
 pub(crate) enum BucketKind {
     Posts,
     Section,
@@ -153,6 +157,13 @@ impl BucketKind {
             Self::Tag => "tag",
         }
     }
+
+    /// Whether buckets of this kind appear on overview index pages
+    /// (`/sections/`, `/tags/`). Posts has its own archive but no overview.
+    #[must_use]
+    pub(crate) fn has_overview(self) -> bool {
+        matches!(self, Self::Section | Self::Tag)
+    }
 }
 
 /// A named, located collection of pages — the unit of work shared by the
@@ -178,6 +189,22 @@ impl ListingBucket {
             BucketKind::Posts => "/posts".into(),
             BucketKind::Section => format!("/posts/{}", self.slug),
             BucketKind::Tag => format!("/tags/{}", self.slug),
+        }
+    }
+}
+
+impl From<&ListingBucket> for BucketSummary {
+    fn from(bucket: &ListingBucket) -> Self {
+        Self {
+            name: bucket.name.clone(),
+            slug: bucket.slug.clone(),
+            url: format!("{}/", bucket.base_path()),
+            pages: bucket
+                .pages
+                .iter()
+                .cloned()
+                .map(ListedPage::into_summary)
+                .collect(),
         }
     }
 }
