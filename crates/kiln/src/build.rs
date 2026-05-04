@@ -162,14 +162,7 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
     archive::build_archive_pages(&ctx, &buckets, &output_dir)?;
     overview::build_overview_pages(&ctx, &artifacts, &sections, &taxonomy_set, &output_dir)?;
 
-    feed::build_feeds(
-        &ctx,
-        &artifacts,
-        &sections,
-        &taxonomy_set,
-        &content.content_dir,
-        &output_dir,
-    )?;
+    feed::build_feeds(&ctx, &artifacts.listed_posts, &buckets, &output_dir)?;
     sitemap::build_sitemap_and_robots(&ctx, &artifacts.listed_pages, &output_dir)?;
     error::build_404(&ctx, &output_dir)?;
 

@@ -4,23 +4,19 @@ use anyhow::{Context, Result};
 
 use crate::feed::{self, Channel, DEFAULT_FEED_LIMIT};
 use crate::output::write_output;
-use crate::section::{self, Section};
-use crate::taxonomy::{TaxonomySet, Term};
 
 use super::BuildContext;
-use super::listing::{ListedPage, ListingArtifacts};
+use super::listing::{ListedPage, ListingBucket};
 
-/// Generates RSS feeds: main site feed, per-section feeds, and per-term feeds.
+/// Generates the site-wide RSS feed at `index.xml` plus one per listing bucket
+/// (all-posts, per-section, per-tag).
 pub(crate) fn build_feeds(
     ctx: &BuildContext,
-    artifacts: &ListingArtifacts,
-    sections: &[Section],
-    taxonomy_set: &TaxonomySet,
-    content_dir: &Path,
+    listed_posts: &[ListedPage],
+    buckets: &[ListingBucket],
     output_dir: &Path,
 ) -> Result<()> {
     let base = ctx.config.base_url.trim_end_matches('/');
-    let last_build_date = newest_date(&artifacts.listed_posts);
 
     let main_channel = Channel {
         title: ctx.config.title.clone(),
@@ -28,44 +24,14 @@ pub(crate) fn build_feeds(
         feed_url: format!("{base}/index.xml"),
         description: ctx.config.description.clone(),
         language: ctx.config.language.clone(),
-        last_build_date,
+        last_build_date: newest_date(listed_posts),
     };
-    let items: Vec<_> = artifacts
-        .listed_posts
-        .iter()
-        .map(|lp| lp.summary.clone())
-        .collect();
+    let items: Vec<_> = listed_posts.iter().map(|lp| lp.summary.clone()).collect();
     let xml = feed::generate_rss(&main_channel, &items, DEFAULT_FEED_LIMIT);
     write_output(&output_dir.join("index.xml"), &xml).context("failed to write main RSS feed")?;
 
-    let posts_title = section::load_index_title(&content_dir.join("posts"))
-        .unwrap_or_else(|| ctx.i18n.t("all_posts").into_owned());
-    write_section_feed(
-        ctx,
-        base,
-        &posts_title,
-        "posts",
-        &artifacts.listed_posts,
-        output_dir,
-    )?;
-
-    for section in sections {
-        let posts = artifacts
-            .section_posts
-            .get(section.slug.as_str())
-            .map(Vec::as_slice)
-            .unwrap_or_default();
-        let dir_slug = format!("posts/{}", section.slug);
-        write_section_feed(ctx, base, &section.title, &dir_slug, posts, output_dir)?;
-    }
-
-    for term in &taxonomy_set.tags {
-        let pages = artifacts
-            .tag_pages
-            .get(&term.slug)
-            .map(Vec::as_slice)
-            .unwrap_or_default();
-        write_term_feed(ctx, base, term, pages, output_dir)?;
+    for bucket in buckets {
+        write_bucket_feed(ctx, base, bucket, output_dir)?;
     }
 
     Ok(())
@@ -73,47 +39,24 @@ pub(crate) fn build_feeds(
 
 // ── Helpers ──
 
-fn write_section_feed(
+fn write_bucket_feed(
     ctx: &BuildContext,
     base: &str,
-    title: &str,
-    dir_slug: &str,
-    listed_posts: &[ListedPage],
+    bucket: &ListingBucket,
     output_dir: &Path,
 ) -> Result<()> {
+    let dir_slug = bucket.base_path().trim_start_matches('/').to_owned();
     let channel = Channel {
-        title: format!("{title} - {}", ctx.config.title),
+        title: format!("{} - {}", bucket.name, ctx.config.title),
         link: format!("{base}/{dir_slug}/"),
         feed_url: format!("{base}/{dir_slug}/index.xml"),
         description: ctx.config.description.clone(),
         language: ctx.config.language.clone(),
-        last_build_date: newest_date(listed_posts),
+        last_build_date: newest_date(&bucket.pages),
     };
-    let items: Vec<_> = listed_posts.iter().map(|lp| lp.summary.clone()).collect();
+    let items: Vec<_> = bucket.pages.iter().map(|lp| lp.summary.clone()).collect();
     let xml = feed::generate_rss(&channel, &items, DEFAULT_FEED_LIMIT);
-    let dest = output_dir.join(dir_slug).join("index.xml");
-    write_output(&dest, &xml).with_context(|| format!("failed to write RSS feed for {dir_slug}"))
-}
-
-fn write_term_feed(
-    ctx: &BuildContext,
-    base: &str,
-    term: &Term,
-    pages: &[ListedPage],
-    output_dir: &Path,
-) -> Result<()> {
-    let dir_slug = format!("tags/{}", term.slug);
-    let channel = Channel {
-        title: format!("{} - {}", term.name, ctx.config.title),
-        link: format!("{base}/{dir_slug}/"),
-        feed_url: format!("{base}/{dir_slug}/index.xml"),
-        description: ctx.config.description.clone(),
-        language: ctx.config.language.clone(),
-        last_build_date: newest_date(pages),
-    };
-    let items: Vec<_> = pages.iter().map(|lp| lp.summary.clone()).collect();
-    let xml = feed::generate_rss(&channel, &items, DEFAULT_FEED_LIMIT);
-    let dest = output_dir.join("tags").join(&term.slug).join("index.xml");
+    let dest = output_dir.join(&dir_slug).join("index.xml");
     write_output(&dest, &xml).with_context(|| format!("failed to write RSS feed for {dir_slug}"))
 }
 
