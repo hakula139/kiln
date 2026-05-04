@@ -25,13 +25,14 @@ use crate::render::RenderOptions;
 use crate::render::lqip::ImageResolver;
 use crate::render::pipeline::render_page;
 use crate::search;
-use crate::section::collect_sections;
+use crate::section::{self, collect_sections};
 use crate::taxonomy::build_taxonomies;
 use crate::template::TemplateEngine;
 use crate::template::vars::PostTemplateVars;
 
 use self::listing::{
-    build_listing_artifacts, format_page_date, page_section, resolve_featured_image,
+    build_listing_artifacts, build_listing_buckets, format_page_date, page_section,
+    resolve_featured_image,
 };
 use self::url::{page_url, resolve_relative_url};
 
@@ -67,10 +68,6 @@ pub struct BuildOptions<'a> {
 #[expect(
     clippy::needless_pass_by_value,
     reason = "BuildOptions is an owned options bag: callers construct it inline with `..Default::default()`, so taking it by value keeps call sites concise and lets future non-Copy fields land without a signature churn"
-)]
-#[expect(
-    clippy::too_many_lines,
-    reason = "this is the top-level build orchestrator; splitting it would obscure the linear pipeline (config → context → discover → render → write)"
 )]
 pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
     let BuildOptions {
@@ -157,15 +154,12 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
         )?;
     }
 
+    let posts_title = section::load_index_title(&content.content_dir.join("posts"))
+        .unwrap_or_else(|| ctx.i18n.t("all_posts").into_owned());
+    let buckets = build_listing_buckets(&artifacts, &sections, &taxonomy_set, posts_title);
+
     home::build_home_pages(&ctx, &artifacts.listed_posts, &output_dir)?;
-    archive::build_archive_pages(
-        &ctx,
-        &artifacts,
-        &sections,
-        &taxonomy_set,
-        &content.content_dir,
-        &output_dir,
-    )?;
+    archive::build_archive_pages(&ctx, &buckets, &output_dir)?;
     overview::build_overview_pages(&ctx, &artifacts, &sections, &taxonomy_set, &output_dir)?;
 
     feed::build_feeds(

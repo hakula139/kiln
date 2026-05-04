@@ -7,6 +7,7 @@ use jiff::{Timestamp, tz::TimeZone};
 use crate::content::frontmatter::FeaturedImage;
 use crate::content::page::{Page, PageKind};
 use crate::render::lqip::ImageResolver;
+use crate::section::Section;
 use crate::taxonomy::TaxonomySet;
 use crate::template::vars::{LinkedTerm, PageGroup, PageSummary};
 use crate::text::slugify;
@@ -114,6 +115,123 @@ pub(crate) fn build_listing_artifacts(
         section_posts,
         tag_pages,
     })
+}
+
+// ── Listing buckets ──
+
+/// Identifies the flavor of a `ListingBucket`.
+///
+/// `Posts` is the singleton aggregate at `/posts/`, spanning every section.
+/// `Section` and `Tag` correspond to one entry each in their respective
+/// content groupings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BucketKind {
+    Posts,
+    Section,
+    Tag,
+}
+
+impl BucketKind {
+    /// Plural form (`"posts"`, `"sections"`, `"tags"`) — used as the `kind`
+    /// template variable and in URL roots.
+    #[must_use]
+    pub(crate) fn plural(self) -> &'static str {
+        match self {
+            Self::Posts => "posts",
+            Self::Section => "sections",
+            Self::Tag => "tags",
+        }
+    }
+
+    /// Singular form (`"post"`, `"section"`, `"tag"`) — used as the `singular`
+    /// template variable.
+    #[must_use]
+    pub(crate) fn singular(self) -> &'static str {
+        match self {
+            Self::Posts => "post",
+            Self::Section => "section",
+            Self::Tag => "tag",
+        }
+    }
+}
+
+/// A named, located collection of pages — the unit of work shared by the
+/// archive, feed, and overview output generators.
+#[derive(Debug, Clone)]
+pub(crate) struct ListingBucket {
+    pub kind: BucketKind,
+    /// Display name (localized "Posts", section title, tag name).
+    pub name: String,
+    /// URL-safe slug. For `BucketKind::Posts` echoes the plural (`"posts"`).
+    pub slug: String,
+    /// Pages in this bucket, sorted by date descending.
+    pub pages: Vec<ListedPage>,
+}
+
+impl ListingBucket {
+    /// URL path with leading slash and no trailing slash (e.g., `/posts`,
+    /// `/posts/note`, `/tags/rust`). Sections live under `/posts/` rather than
+    /// `/sections/` to match the existing site URL contract.
+    #[must_use]
+    pub(crate) fn base_path(&self) -> String {
+        match self.kind {
+            BucketKind::Posts => "/posts".into(),
+            BucketKind::Section => format!("/posts/{}", self.slug),
+            BucketKind::Tag => format!("/tags/{}", self.slug),
+        }
+    }
+}
+
+/// Assembles every listing bucket: the all-posts aggregate, one per section,
+/// and one per tag.
+///
+/// Pages are cloned out of `artifacts` so each bucket owns its slice; build-
+/// time only, the cost is negligible compared to template rendering.
+#[must_use]
+pub(crate) fn build_listing_buckets(
+    artifacts: &ListingArtifacts,
+    sections: &[Section],
+    taxonomy_set: &TaxonomySet,
+    posts_title: String,
+) -> Vec<ListingBucket> {
+    let mut buckets = Vec::with_capacity(1 + sections.len() + taxonomy_set.tags.len());
+
+    buckets.push(ListingBucket {
+        kind: BucketKind::Posts,
+        name: posts_title,
+        slug: "posts".into(),
+        pages: artifacts.listed_posts.clone(),
+    });
+
+    for section in sections {
+        let pages = artifacts
+            .section_posts
+            .get(section.slug.as_str())
+            .cloned()
+            .unwrap_or_default();
+        buckets.push(ListingBucket {
+            kind: BucketKind::Section,
+            name: section.title.clone(),
+            slug: section.slug.clone(),
+            pages,
+        });
+    }
+
+    for term in &taxonomy_set.tags {
+        let pages = artifacts
+            .tag_pages
+            .get(&term.slug)
+            .cloned()
+            .unwrap_or_default();
+        buckets.push(ListingBucket {
+            kind: BucketKind::Tag,
+            name: term.name.clone(),
+            slug: term.slug.clone(),
+            pages,
+        });
+    }
+
+    buckets
 }
 
 /// Builds a `ListedPage` from a content page.

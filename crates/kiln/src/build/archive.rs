@@ -2,12 +2,10 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
-use crate::section::{Section, load_index_title};
-use crate::taxonomy::TaxonomySet;
 use crate::template::vars::ArchivePageVars;
 
 use super::BuildContext;
-use super::listing::{ListedPage, ListingArtifacts, group_by_year};
+use super::listing::{BucketKind, ListingBucket, group_by_year};
 use super::paginate::{paginate_config, write_paginated};
 
 /// Generates all archive pages: `/posts/`, `/posts/<section>/`, and `/tags/<slug>/`.
@@ -15,10 +13,7 @@ use super::paginate::{paginate_config, write_paginated};
 /// Skipped when `archive.html` is not present in the template set.
 pub(crate) fn build_archive_pages(
     ctx: &BuildContext,
-    artifacts: &ListingArtifacts,
-    sections: &[Section],
-    taxonomy_set: &TaxonomySet,
-    content_dir: &Path,
+    buckets: &[ListingBucket],
     output_dir: &Path,
 ) -> Result<()> {
     if !ctx.template_engine.has_template("archive.html") {
@@ -30,54 +25,14 @@ pub(crate) fn build_archive_pages(
         &[&["section", "paginate"], &["paginate"]],
         10,
     );
-
-    let posts_title = load_index_title(&content_dir.join("posts"))
-        .unwrap_or_else(|| ctx.i18n.t("all_posts").into_owned());
-    write_archive(
-        ctx,
-        &ArchiveSpec::new("posts", "post", &posts_title, "posts", "/posts"),
-        &artifacts.listed_posts,
-        section_per_page,
-        output_dir,
-    )?;
-
-    for section in sections {
-        let posts = artifacts
-            .section_posts
-            .get(section.slug.as_str())
-            .map(Vec::as_slice)
-            .unwrap_or_default();
-        let base_path = format!("/posts/{}", section.slug);
-        write_archive(
-            ctx,
-            &ArchiveSpec::new(
-                "sections",
-                "section",
-                &section.title,
-                &section.slug,
-                &base_path,
-            ),
-            posts,
-            section_per_page,
-            output_dir,
-        )?;
-    }
-
     let tag_per_page = paginate_config(&ctx.config.params, &[&["paginate"]], 10);
-    for term in &taxonomy_set.tags {
-        let pages = artifacts
-            .tag_pages
-            .get(&term.slug)
-            .map(Vec::as_slice)
-            .unwrap_or_default();
-        let base_path = format!("/tags/{}", term.slug);
-        write_archive(
-            ctx,
-            &ArchiveSpec::new("tags", "tag", &term.name, &term.slug, &base_path),
-            pages,
-            tag_per_page,
-            output_dir,
-        )?;
+
+    for bucket in buckets {
+        let per_page = match bucket.kind {
+            BucketKind::Tag => tag_per_page,
+            BucketKind::Posts | BucketKind::Section => section_per_page,
+        };
+        write_archive(ctx, bucket, per_page, output_dir)?;
     }
 
     Ok(())
@@ -85,58 +40,36 @@ pub(crate) fn build_archive_pages(
 
 // ── Helpers ──
 
-struct ArchiveSpec<'a> {
-    kind: &'a str,
-    singular: &'a str,
-    name: &'a str,
-    slug: &'a str,
-    base_path: &'a str,
-}
-
-impl<'a> ArchiveSpec<'a> {
-    fn new(
-        kind: &'a str,
-        singular: &'a str,
-        name: &'a str,
-        slug: &'a str,
-        base_path: &'a str,
-    ) -> Self {
-        Self {
-            kind,
-            singular,
-            name,
-            slug,
-            base_path,
-        }
-    }
-}
-
 fn write_archive(
     ctx: &BuildContext,
-    spec: &ArchiveSpec<'_>,
-    listed_pages: &[ListedPage],
+    bucket: &ListingBucket,
     per_page: usize,
     output_dir: &Path,
 ) -> Result<()> {
+    let base_path = bucket.base_path();
     write_paginated(
-        listed_pages,
+        &bucket.pages,
         per_page,
-        spec.base_path,
+        &base_path,
         output_dir,
         |pages, pagination| {
             let page_groups = group_by_year(pages);
             let vars = ArchivePageVars {
-                kind: spec.kind,
-                singular: spec.singular,
-                name: spec.name,
-                slug: spec.slug,
+                kind: bucket.kind.plural(),
+                singular: bucket.kind.singular(),
+                name: &bucket.name,
+                slug: &bucket.slug,
                 page_groups,
                 pagination,
                 config: &ctx.config,
             };
-            ctx.template_engine
-                .render_archive(&vars)
-                .with_context(|| format!("failed to render archive {}/{}", spec.kind, spec.slug))
+            ctx.template_engine.render_archive(&vars).with_context(|| {
+                format!(
+                    "failed to render archive {}/{}",
+                    bucket.kind.plural(),
+                    bucket.slug,
+                )
+            })
         },
     )
 }
