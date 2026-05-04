@@ -8,7 +8,6 @@ mod paginate;
 mod sitemap;
 mod url;
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -25,7 +24,7 @@ use crate::render::RenderOptions;
 use crate::render::lqip::ImageResolver;
 use crate::render::pipeline::render_page;
 use crate::search;
-use crate::section::{self, collect_sections};
+use crate::section::{self, Section, collect_sections};
 use crate::taxonomy::build_taxonomies;
 use crate::template::TemplateEngine;
 use crate::template::vars::PostTemplateVars;
@@ -128,10 +127,6 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
     copy_static(&root.join("static"), &output_dir)?;
 
     let sections = collect_sections(&content.pages, &content.content_dir);
-    let section_titles: HashMap<&str, &str> = sections
-        .iter()
-        .map(|s| (s.slug.as_str(), s.title.as_str()))
-        .collect();
     let taxonomy_set = build_taxonomies(&content.pages, Some(&content.content_dir));
 
     let artifacts = build_listing_artifacts(
@@ -139,19 +134,13 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
         &content.content_dir,
         &ctx.config.base_url,
         ctx.time_zone.as_ref(),
-        &section_titles,
+        &sections,
         &ctx.image_resolver,
         &taxonomy_set,
     )?;
 
     for page in &content.pages {
-        build_page(
-            &ctx,
-            page,
-            &content.content_dir,
-            &output_dir,
-            &section_titles,
-        )?;
+        build_page(&ctx, page, &content.content_dir, &output_dir, &sections)?;
     }
 
     let posts_title = section::load_index_title(&content.content_dir.join("posts"))
@@ -199,7 +188,7 @@ fn build_page(
     page: &Page,
     content_dir: &Path,
     output_dir: &Path,
-    section_titles: &HashMap<&str, &str>,
+    sections: &[Section],
 ) -> Result<()> {
     let options = RenderOptions::from_params(&ctx.config.params);
 
@@ -240,7 +229,7 @@ fn build_page(
             .frontmatter
             .date
             .map(|date| format_page_date(date, ctx.time_zone.as_ref())),
-        section: page_section(page, &ctx.config.base_url, section_titles),
+        section: page_section(page, &ctx.config.base_url, sections),
         assets: rendered.assets,
         content: &rendered.content_html,
         toc: &rendered.toc_html,

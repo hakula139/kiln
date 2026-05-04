@@ -62,7 +62,7 @@ pub(crate) fn build_listing_artifacts(
     content_dir: &Path,
     base_url: &str,
     time_zone: Option<&TimeZone>,
-    section_titles: &HashMap<&str, &str>,
+    sections: &[Section],
     image_resolver: &ImageResolver,
     taxonomy_set: &TaxonomySet,
 ) -> Result<ListingArtifacts> {
@@ -76,7 +76,7 @@ pub(crate) fn build_listing_artifacts(
             content_dir,
             base_url,
             time_zone,
-            section_titles,
+            sections,
             image_resolver,
         )
         .with_context(|| {
@@ -267,7 +267,7 @@ fn build_listed_page(
     content_dir: &Path,
     base_url: &str,
     time_zone: Option<&TimeZone>,
-    section_titles: &HashMap<&str, &str>,
+    sections: &[Section],
     image_resolver: &ImageResolver,
 ) -> Result<ListedPage> {
     // `output_path` already includes the source and content-dir paths in
@@ -276,7 +276,7 @@ fn build_listed_page(
     let url = page_url(base_url, &output_path);
     let timestamp = page.frontmatter.date;
     let weight = page.frontmatter.weight;
-    let section = page_section(page, base_url, section_titles);
+    let section = page_section(page, base_url, sections);
     let featured_image = resolve_featured_image(
         page.frontmatter.featured_image.as_ref(),
         &url,
@@ -371,7 +371,7 @@ where
 pub(crate) fn page_section(
     page: &Page,
     base_url: &str,
-    section_titles: &HashMap<&str, &str>,
+    sections: &[Section],
 ) -> Option<LinkedTerm> {
     let PageKind::Post {
         section: Some(ref slug),
@@ -379,10 +379,10 @@ pub(crate) fn page_section(
     else {
         return None;
     };
-    let title = section_titles
-        .get(slug.as_str())
-        .copied()
-        .unwrap_or(slug.as_str());
+    let title = sections
+        .iter()
+        .find(|s| &s.slug == slug)
+        .map_or(slug.as_str(), |s| s.title.as_str());
     Some(LinkedTerm {
         name: title.to_owned(),
         url: format!("{base_url}/posts/{slug}/"),
@@ -494,7 +494,7 @@ mod tests {
         // `output_path` errors when the source isn't under `content_dir`.
         page.source_path = PathBuf::from("/elsewhere/stray.md");
         let pages = vec![page];
-        let titles = HashMap::new();
+        let sections: Vec<Section> = Vec::new();
         let taxonomy_set = build_taxonomies(&pages, None);
 
         let result = build_listing_artifacts(
@@ -502,7 +502,7 @@ mod tests {
             Path::new("content"),
             "https://example.com/",
             None,
-            &titles,
+            &sections,
             &EMPTY_RESOLVER,
             &taxonomy_set,
         );
