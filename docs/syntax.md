@@ -175,7 +175,8 @@ Fenced code blocks with a language tag receive syntax highlighting via [syntect]
 
 ````markdown
 ```rust
-fn main() {    println!("Hello, world!");
+fn main() {
+    println!("Hello, world!");
 }
 ```
 ````

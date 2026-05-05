@@ -132,7 +132,8 @@ The CSS is **plain CSS** — not processed by Tailwind or any other tool. To sco
 Then target that class in `style.css`:
 
 ```css
-.rating-table td:first-child {  font-weight: bold;
+.rating-table td:first-child {
+  font-weight: bold;
   color: red;
 }
 ```
