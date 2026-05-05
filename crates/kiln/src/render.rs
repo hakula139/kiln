@@ -1,4 +1,5 @@
 pub mod assets;
+pub(crate) mod code_block;
 pub mod emoji;
 pub mod highlight;
 pub mod icon;
