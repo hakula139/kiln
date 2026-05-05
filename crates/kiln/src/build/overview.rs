@@ -33,6 +33,8 @@ pub(crate) fn build_overview_pages(
     Ok(())
 }
 
+// ── Helpers ──
+
 fn write_overview(
     ctx: &BuildContext,
     kind: BucketKind,
