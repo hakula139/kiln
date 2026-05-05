@@ -21,7 +21,7 @@ pub struct Term {
 pub struct TaxonomySet {
     /// All tags in the site, sorted by page count descending then name ascending.
     pub tags: Vec<Term>,
-    /// Maps `tag_slug → sorted page indices` into the original page slice.
+    /// Maps `tag_slug → page indices` (in input order) into the original page slice.
     pub tag_pages: HashMap<String, Vec<usize>>,
 }
 
