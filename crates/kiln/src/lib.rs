@@ -1,3 +1,4 @@
+pub(crate) mod attrs;
 pub mod build;
 pub mod config;
 pub mod content;
