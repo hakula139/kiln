@@ -185,12 +185,7 @@ impl From<&ListingBucket> for BucketSummary {
             name: bucket.name.clone(),
             slug: bucket.slug.clone(),
             url: format!("{}/", bucket.base_path()),
-            pages: bucket
-                .pages
-                .iter()
-                .cloned()
-                .map(ListedPage::into_summary)
-                .collect(),
+            pages: bucket.pages.iter().map(|lp| lp.summary.clone()).collect(),
         }
     }
 }
