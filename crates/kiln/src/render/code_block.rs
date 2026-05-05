@@ -60,8 +60,6 @@ fn parse_code_block_attrs(
 
     let mut title = None;
     let mut highlight = Vec::new();
-    let mut collapse = None;
-
     for (key, value) in &pandoc.kvs {
         match *key {
             "title" => title = Some(value.to_string()),
@@ -70,17 +68,21 @@ fn parse_code_block_attrs(
         }
     }
 
-    // Collapse / expand are signaled via bare words (skipped by `parse_pandoc_attrs`),
-    // so we check for them directly in the payload.
-    if has_bare_flag(payload, "collapse") {
-        collapse = Some(true);
-    } else if has_bare_flag(payload, "expand") {
-        collapse = Some(false);
-    }
+    // Collapse / expand are signaled via bare words.
+    let collapse = if pandoc.bare.contains(&"collapse") {
+        Some(true)
+    } else if pandoc.bare.contains(&"expand") {
+        Some(false)
+    } else {
+        None
+    };
 
-    let max_lines = match collapse {
-        Some(false) => None,
-        _ => default_max_lines,
+    // An explicit collapse / expand always overrides the site default — the renderer reads
+    // `max_lines` directly without re-checking `collapse`.
+    let max_lines = if collapse.is_some() {
+        None
+    } else {
+        default_max_lines
     };
 
     CodeBlockSpec {
@@ -94,17 +96,10 @@ fn parse_code_block_attrs(
     }
 }
 
-/// Checks whether a bare (unquoted, no `=`) flag word appears in the payload.
-fn has_bare_flag(payload: &str, flag: &str) -> bool {
-    payload.split_ascii_whitespace().any(|word| {
-        word == flag && !word.contains('=') && !word.starts_with('#') && !word.starts_with('.')
-    })
-}
-
 /// Parses a comma-separated highlight range string into inclusive ranges.
 ///
 /// Format: `"1,3-5,7"` → `[1..=1, 3..=5, 7..=7]`. Malformed entries are silently skipped.
-pub(crate) fn parse_highlight_ranges(input: &str) -> Vec<RangeInclusive<usize>> {
+fn parse_highlight_ranges(input: &str) -> Vec<RangeInclusive<usize>> {
     input
         .split(',')
         .filter_map(|entry| {
@@ -164,7 +159,15 @@ mod tests {
         assert_eq!(spec.title.as_deref(), Some("main.rs"));
         assert_eq!(spec.highlight, vec![1..=1, 3..=5]);
         assert_eq!(spec.collapse, Some(true));
-        assert_eq!(spec.max_lines, Some(40));
+        // Explicit collapse / expand always overrides the site default.
+        assert_eq!(spec.max_lines, None);
+    }
+
+    #[test]
+    fn parse_fence_info_collapse_clears_max_lines() {
+        let spec = parse_fence_info("rust {collapse}", Some(40));
+        assert_eq!(spec.collapse, Some(true));
+        assert_eq!(spec.max_lines, None);
     }
 
     #[test]
@@ -202,6 +205,17 @@ mod tests {
         assert!(spec.collapse.is_none());
     }
 
+    #[test]
+    fn parse_fence_info_collapse_keyword_inside_quoted_value_ignored() {
+        // Regression: tokenizing the raw payload would mistake `collapse` inside the title for
+        // the bare flag. Bare-word extraction now goes through the shared parser, which respects
+        // quoting.
+        let spec = parse_fence_info(r#"rust {title="please collapse this"}"#, Some(40));
+        assert_eq!(spec.title.as_deref(), Some("please collapse this"));
+        assert!(spec.collapse.is_none());
+        assert_eq!(spec.max_lines, Some(40));
+    }
+
     // ── parse_highlight_ranges ──
 
     #[test]
@@ -235,22 +249,5 @@ mod tests {
     #[test]
     fn parse_highlight_ranges_empty() {
         assert!(parse_highlight_ranges("").is_empty());
-    }
-
-    // ── has_bare_flag ──
-
-    #[test]
-    fn has_bare_flag_detects_collapse() {
-        assert!(has_bare_flag(r#"title="T" collapse"#, "collapse"));
-    }
-
-    #[test]
-    fn has_bare_flag_ignores_within_value() {
-        assert!(!has_bare_flag(r#"title="collapse""#, "collapse"));
-    }
-
-    #[test]
-    fn has_bare_flag_ignores_key_value_pair() {
-        assert!(!has_bare_flag("collapse=true", "collapse"));
     }
 }

@@ -204,6 +204,31 @@ Code blocks are wrapped in a structured HTML container:
 
 The `code-header` displays the human-readable language name. When `code_max_lines` is set in the site's `[params]`, the `code-body` div includes a `data-max-lines` attribute for JS-driven collapse / expand.
 
+#### Fence Attributes
+
+Pandoc-style attribute blocks can follow the language tag to refine a fenced code block:
+
+````markdown
+```rust {#example .compact title="src/main.rs" highlight="1,3-5" collapse}
+fn main() {
+    println!("Hello, world!");
+}
+```
+````
+
+Recognized attributes:
+
+| Attribute              | Effect                                                                                      |
+| ---------------------- | ------------------------------------------------------------------------------------------- |
+| `#id`                  | Sets the `id` attribute on the wrapper `<div class="code-block">`                           |
+| `.class`               | Appends additional CSS classes to the wrapper                                               |
+| `title="..."`          | Renders a `<span class="code-title">` in place of the language pill                         |
+| `highlight="1,3-5"`    | Comma-separated lines / ranges to mark with `class="line hl"` (and `line-number hl`)        |
+| `collapse`             | Forces the block into the collapsed state regardless of the site default                    |
+| `expand`               | Forces the block into the expanded state, suppressing any `code_max_lines` clamp            |
+
+The language tag is preserved on `data-lang` for syntax CSS even when a `title` is set. `collapse` and `expand` are bare flags — they take no value — and either one wins over the site-level `code_max_lines` default. Unknown attributes are silently ignored. Quoted values support `\"` and `\\` escapes.
+
 ### Table of Contents
 
 Headings are collected during rendering and made available as structured `TocEntry` data for template-driven `<nav>` generation. The table of contents is generated from all headings in the document, preserving their hierarchy.

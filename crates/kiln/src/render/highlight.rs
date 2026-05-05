@@ -5,7 +5,7 @@ use syntect::util::LinesWithEndings;
 use tracing::{debug, warn};
 
 use super::code_block::CodeBlockSpec;
-use crate::html::{escape, writeln_indented};
+use crate::html::{escape, indent, writeln_indented};
 
 /// Highlights a code block with syntax highlighting, line numbers, and a header with a language
 /// label and copy button.
@@ -37,10 +37,10 @@ pub(crate) fn highlight_code(syntax_set: &SyntaxSet, code: &str, spec: &CodeBloc
     // ── Wrapper open ──
 
     let mut wrapper_classes = String::from("code-block");
-    if let Some(true) = spec.collapse {
-        wrapper_classes.push_str(" collapsed");
-    } else if let Some(false) = spec.collapse {
-        wrapper_classes.push_str(" expanded");
+    match spec.collapse {
+        Some(true) => wrapper_classes.push_str(" collapsed"),
+        Some(false) => wrapper_classes.push_str(" expanded"),
+        None => {}
     }
     for cls in &spec.classes {
         wrapper_classes.push(' ');
@@ -60,14 +60,11 @@ pub(crate) fn highlight_code(syntax_set: &SyntaxSet, code: &str, spec: &CodeBloc
     );
 
     // ── Header ──
+    //
+    // When the author supplies a title, it owns the chrome — drop the language pill so the header
+    // shows a single label. The `data-lang` attribute on the wrapper still drives syntax CSS.
 
     writeln_indented!(&mut html, 1, r#"<div class="code-header">"#);
-    writeln_indented!(
-        &mut html,
-        2,
-        r#"<span class="code-lang">{}</span>"#,
-        escape(&display_label)
-    );
     if let Some(title) = &spec.title {
         writeln_indented!(
             &mut html,
@@ -75,19 +72,23 @@ pub(crate) fn highlight_code(syntax_set: &SyntaxSet, code: &str, spec: &CodeBloc
             r#"<span class="code-title">{}</span>"#,
             escape(title)
         );
+    } else {
+        writeln_indented!(
+            &mut html,
+            2,
+            r#"<span class="code-lang">{}</span>"#,
+            escape(&display_label)
+        );
     }
     writeln_indented!(&mut html, 2, r#"<button class="copy-btn">Copy</button>"#);
     writeln_indented!(&mut html, 1, "</div>");
 
     // ── Code body ──
 
-    let max_lines_attr = match spec.collapse {
-        Some(_) => String::new(),
-        None => spec
-            .max_lines
-            .map(|n| format!(r#" data-max-lines="{n}""#))
-            .unwrap_or_default(),
-    };
+    let max_lines_attr = spec
+        .max_lines
+        .map(|n| format!(r#" data-max-lines="{n}""#))
+        .unwrap_or_default();
     writeln_indented!(&mut html, 1, r#"<div class="code-body"{max_lines_attr}>"#);
 
     // ── Highlight table ──
@@ -139,12 +140,12 @@ fn emit_highlighted_lines(
     escaped_lang: &str,
     ranges: &[std::ops::RangeInclusive<usize>],
 ) {
-    use std::fmt::Write;
+    use std::fmt::Write as _;
 
     let is_highlighted = |line_no: usize| ranges.iter().any(|r| r.contains(&line_no));
 
     // Line-numbers column.
-    crate::html::indent(html, 5);
+    indent(html, 5);
     _ = write!(html, r#"<td class="line-numbers"><pre>"#);
     for i in 1..=line_count {
         if i > 1 {
@@ -156,7 +157,7 @@ fn emit_highlighted_lines(
     _ = writeln!(html, "</pre></td>");
 
     // Code column.
-    crate::html::indent(html, 5);
+    indent(html, 5);
     _ = write!(
         html,
         r#"<td class="code"><pre><code class="language-{escaped_lang}" data-lang="{escaped_lang}">"#
@@ -167,7 +168,6 @@ fn emit_highlighted_lines(
         let line_no = idx + 1;
         let hl = if is_highlighted(line_no) { " hl" } else { "" };
         _ = write!(html, r#"<span class="line{hl}">{line}</span>"#);
-        // Preserve newlines between lines (except after the last).
         if idx < last_idx {
             html.push('\n');
         }
@@ -346,7 +346,7 @@ mod tests {
     // ── highlight_code (title) ──
 
     #[test]
-    fn highlight_code_emits_title() {
+    fn highlight_code_title_replaces_lang_pill() {
         let spec = CodeBlockSpec {
             lang: Some("rs".into()),
             title: Some("src/main.rs".into()),
@@ -357,14 +357,26 @@ mod tests {
             html.contains(r#"<span class="code-title">src/main.rs</span>"#),
             "should contain title span, html:\n{html}"
         );
+        assert!(
+            !html.contains(r#"<span class="code-lang">"#),
+            "lang pill should be suppressed when title is set, html:\n{html}"
+        );
+        assert!(
+            html.contains(r#"data-lang="rust""#),
+            "wrapper should still carry data-lang for syntax CSS, html:\n{html}"
+        );
     }
 
     #[test]
-    fn highlight_code_no_title_when_none() {
+    fn highlight_code_no_title_keeps_lang_pill() {
         let html = highlight("rs", "fn main() {}\n");
         assert!(
             !html.contains("code-title"),
             "should not emit title span when no title, html:\n{html}"
+        );
+        assert!(
+            html.contains(r#"<span class="code-lang">Rust</span>"#),
+            "lang pill should appear when no title, html:\n{html}"
         );
     }
 
@@ -422,11 +434,10 @@ mod tests {
     // ── highlight_code (collapse / expand) ──
 
     #[test]
-    fn highlight_code_collapse_attr_forces_class() {
+    fn highlight_code_collapse_emits_class() {
         let spec = CodeBlockSpec {
             lang: Some("rs".into()),
             collapse: Some(true),
-            max_lines: Some(40),
             ..CodeBlockSpec::default()
         };
         let html = highlight_with_spec("fn main() {}\n", &spec);
@@ -434,28 +445,19 @@ mod tests {
             html.contains(r#"<div class="code-block collapsed""#),
             "should have collapsed class, html:\n{html}"
         );
-        assert!(
-            !html.contains("data-max-lines"),
-            "collapsed should suppress data-max-lines, html:\n{html}"
-        );
     }
 
     #[test]
-    fn highlight_code_expand_attr_forces_class() {
+    fn highlight_code_expand_emits_class() {
         let spec = CodeBlockSpec {
             lang: Some("rs".into()),
             collapse: Some(false),
-            max_lines: Some(40),
             ..CodeBlockSpec::default()
         };
         let html = highlight_with_spec("fn main() {}\n", &spec);
         assert!(
             html.contains(r#"<div class="code-block expanded""#),
             "should have expanded class, html:\n{html}"
-        );
-        assert!(
-            !html.contains("data-max-lines"),
-            "expanded should suppress data-max-lines, html:\n{html}"
         );
     }
 

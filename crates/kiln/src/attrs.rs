@@ -2,18 +2,19 @@ use std::borrow::Cow;
 
 /// Parsed Pandoc-style `{...}` attribute block.
 ///
-/// Extracts `#id` (first wins), `.class` tokens, and `key=value` pairs.
+/// Extracts `#id` (first wins), `.class` tokens, `key=value` pairs, and bare words.
 #[derive(Debug, Default)]
 pub(crate) struct PandocAttrs<'a> {
     pub id: Option<&'a str>,
     pub classes: Vec<&'a str>,
     pub kvs: Vec<(&'a str, Cow<'a, str>)>,
+    pub bare: Vec<&'a str>,
 }
 
-/// Parses a Pandoc-style attribute string (`#id`, `.class`, `key=value`).
+/// Parses a Pandoc-style attribute string (`#id`, `.class`, `key=value`, bare words).
 ///
 /// First `#id` wins. Quoted values support `\"` / `\\` escapes. Unclosed quotes consume the
-/// rest of the input. Bare words are skipped.
+/// rest of the input. Bare words (no `=`, no `#` / `.` prefix) are surfaced via `bare`.
 #[must_use]
 pub(crate) fn parse_pandoc_attrs(input: &str) -> PandocAttrs<'_> {
     let mut result = PandocAttrs::default();
@@ -42,6 +43,9 @@ pub(crate) fn parse_pandoc_attrs(input: &str) -> PandocAttrs<'_> {
         let next_ws = rest.find(char::is_whitespace).unwrap_or(rest.len());
 
         let Some(eq) = next_eq.filter(|&p| p < next_ws) else {
+            if next_ws > 0 {
+                result.bare.push(&rest[..next_ws]);
+            }
             rest = rest[next_ws..].trim_start();
             continue;
         };
@@ -212,7 +216,19 @@ mod tests {
     }
 
     #[test]
-    fn parse_pandoc_attrs_skips_bare_words() {
-        assert_eq!(kvs(r#"bare title="Title""#), vec![pair("title", "Title")]);
+    fn parse_pandoc_attrs_collects_bare_words() {
+        let result = parse_pandoc_attrs(r#"collapse title="Title" expand"#);
+        assert_eq!(result.bare, vec!["collapse", "expand"]);
+        assert_eq!(
+            kvs(r#"collapse title="Title" expand"#),
+            vec![pair("title", "Title")]
+        );
+    }
+
+    #[test]
+    fn parse_pandoc_attrs_bare_words_ignore_quoted_content() {
+        // Words inside quoted values must not leak into `bare`.
+        let result = parse_pandoc_attrs(r#"title="please collapse now""#);
+        assert!(result.bare.is_empty(), "got: {:?}", result.bare);
     }
 }
