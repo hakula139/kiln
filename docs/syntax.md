@@ -1,6 +1,6 @@
 # Syntax Reference
 
-kiln processes Markdown content with several extensions beyond standard CommonMark. This document describes the supported syntax.
+kiln processes Markdown content with several extensions beyond standard CommonMark. This document describes the syntax authors write; how themes consume the output is covered in [Theme Authoring](themes.md).
 
 ## Frontmatter
 
@@ -45,68 +45,44 @@ Draft pages (`draft = true`) and pages whose filename starts with `_` are exclud
 
 A post with any `weight` set is pinned on the home page, sorted before unpinned posts and ordered by `weight` ascending (lower floats higher, matching `MenuItem` and Hugo conventions). Archive, tag, and section listings ignore `weight` and stay strictly date-sorted, so a pinned post still appears at its natural date position when readers browse those surfaces.
 
-Frontmatter `date` / `updated` values are parsed as absolute instants. When kiln exposes a page date to templates, it renders that instant in the site's configured `timezone` from `config.toml`, or in UTC when `timezone` is unset:
+`date` / `updated` are absolute instants. When kiln exposes a page date to templates, it renders that instant in the site's configured `timezone` from `config.toml` (UTC if `timezone` is unset):
 
 ```toml
 timezone = "Asia/Shanghai"
 ```
 
+## Pandoc-Style Attributes
+
+A `{...}` attribute block is the shared syntax kiln uses to attach metadata to images, fenced code blocks, and directives. The same parser handles all three; what differs is which keys each consumer recognizes and what bare words mean.
+
+The block accepts four token kinds, in any order:
+
+| Token       | Meaning                                                          |
+| ----------- | ---------------------------------------------------------------- |
+| `#id`       | HTML `id`. First wins if duplicates appear; later `#id`s ignored |
+| `.class`    | CSS class. Multiple `.class` tokens accumulate                   |
+| `key=value` | Key-value pair. Value can be quoted (`key="..."`) or bare        |
+| `bare_word` | Standalone word. Interpretation depends on the consumer          |
+
+Quoted values support `\"` (escaped quote) and `\\` (escaped backslash). An unclosed `"` consumes the rest of the input. Unknown keys are silently ignored, so consumers can evolve their recognized set without breaking older content.
+
+Bare words are interpreted differently by each consumer:
+
+| Consumer   | Bare-word meaning                                                |
+| ---------- | ---------------------------------------------------------------- |
+| Code fence | Boolean flag (`collapse`, `expand`)                              |
+| Directive  | Positional argument (surfaced to templates as `positional_args`) |
+| Image      | Ignored                                                          |
+
+See the corresponding sections for the specific keys each consumer recognizes:
+
+- [Image Attributes](#image-attributes)
+- [Fence Attributes](#fence-attributes)
+- [Directives](#directives)
+
 ## Markdown
 
-kiln uses [pulldown-cmark](https://github.com/raphlinus/pulldown-cmark) for Markdown rendering. Standard CommonMark syntax is fully supported, along with the following extensions.
-
-### GFM Extensions
-
-[GitHub Flavored Markdown](https://github.github.com/gfm/) extensions are enabled:
-
-#### Tables
-
-```markdown
-| Left | Center | Right |
-| :--- | :----: | ----: |
-| a    |   b    |     c |
-```
-
-#### Strikethrough
-
-```markdown
-~~deleted text~~
-```
-
-#### Task lists
-
-```markdown
-- [x] Completed
-- [ ] Pending
-```
-
-#### Autolinks
-
-URLs and email addresses are automatically linked.
-
-### Footnotes
-
-```markdown
-Here is a claim[^1] that needs a source.
-
-[^1]: The source for the claim.
-```
-
-### Math (KaTeX)
-
-Inline math uses single dollar signs, display math uses double:
-
-```markdown
-Inline: $E = mc^2$
-
-Display:
-
-$$
-\int_0^\infty e^{-x^2} dx = \frac{\sqrt{\pi}}{2}
-$$
-```
-
-Math expressions are rendered as KaTeX-compatible markup (`<span class="math math-inline">` / `<span class="math math-display">`). Themes load the [KaTeX](https://katex.org) CSS and JS for client-side rendering by gating on `"math" in assets.features` — see [Theme Authoring](themes.md#template-variables) for the page-scoped asset registry.
+kiln uses [pulldown-cmark](https://github.com/raphlinus/pulldown-cmark) for Markdown rendering. Standard CommonMark is fully supported, along with the following extensions.
 
 ### Headings
 
@@ -114,6 +90,7 @@ Headings automatically receive `id` attributes generated from their text, suitab
 
 ```markdown
 ## Getting Started
+
 <!-- renders as: <h2 id="getting-started">Getting Started</h2> -->
 ```
 
@@ -123,8 +100,11 @@ Explicit heading IDs override the auto-generated one:
 
 ```markdown
 ## My Section {#custom-id}
+
 <!-- renders as: <h2 id="custom-id">My Section</h2> -->
 ```
+
+Headings are also collected into a structured table of contents, exposed to post templates as the `toc` variable — see [Post templates](themes.md#post-templates-posthtml).
 
 ### Images
 
@@ -152,22 +132,20 @@ Renders as a plain `<img>` element.
 
 #### Image Attributes
 
-Pandoc-style attribute blocks can follow an image to set id, classes, width, and height:
+A [Pandoc-style attribute block](#pandoc-style-attributes) can follow the closing `)` to set id, classes, width, and height:
 
 ```markdown
 ![Photo](photo.jpg){#hero .wide width=800 height=600}
 ```
 
-For block images, `#id` and `.class` are applied to the `<figure>` element, while `width` and `height` are applied to the `<img>`. For inline images, all attributes are applied directly to the `<img>`.
+The block must appear immediately after the closing `)` on the same line. Recognized keys:
 
-Attribute blocks must appear immediately after the closing `)` on the same line. Supported attributes:
-
-| Attribute | Target (block) | Target (inline) |
-| --------- | -------------- | --------------- |
-| `#id`     | `<figure>`     | `<img>`         |
-| `.class`  | `<figure>`     | `<img>`         |
-| `width`   | `<img>`        | `<img>`         |
-| `height`  | `<img>`        | `<img>`         |
+| Key      | Target (block) | Target (inline) |
+| -------- | -------------- | --------------- |
+| `#id`    | `<figure>`     | `<img>`         |
+| `.class` | `<figure>`     | `<img>`         |
+| `width`  | `<img>`        | `<img>`         |
+| `height` | `<img>`        | `<img>`         |
 
 ### Syntax Highlighting
 
@@ -206,7 +184,7 @@ The `code-header` displays the human-readable language name. When `code_max_line
 
 #### Fence Attributes
 
-Pandoc-style attribute blocks can follow the language tag to refine a fenced code block:
+A [Pandoc-style attribute block](#pandoc-style-attributes) can follow the language tag to refine a fenced code block:
 
 ````markdown
 ```rust {#example .compact title="src/main.rs" highlight="1,3-5" collapse}
@@ -216,22 +194,76 @@ fn main() {
 ```
 ````
 
-Recognized attributes:
+Recognized keys:
 
-| Attribute              | Effect                                                                                      |
-| ---------------------- | ------------------------------------------------------------------------------------------- |
-| `#id`                  | Sets the `id` attribute on the wrapper `<div class="code-block">`                           |
-| `.class`               | Appends additional CSS classes to the wrapper                                               |
-| `title="..."`          | Renders a `<span class="code-title">` in place of the language pill                         |
-| `highlight="1,3-5"`    | Comma-separated lines / ranges to mark with `class="line hl"` (and `line-number hl`)        |
-| `collapse`             | Forces the block into the collapsed state regardless of the site default                    |
-| `expand`               | Forces the block into the expanded state, suppressing any `code_max_lines` clamp            |
+| Key                 | Effect                                                                               |
+| ------------------- | ------------------------------------------------------------------------------------ |
+| `#id`               | Sets the `id` attribute on the wrapper `<div class="code-block">`                    |
+| `.class`            | Appends additional CSS classes to the wrapper                                        |
+| `title="..."`       | Renders a `<span class="code-title">` in place of the language pill                  |
+| `highlight="1,3-5"` | Comma-separated lines / ranges to mark with `class="line hl"` (and `line-number hl`) |
 
-The language tag is preserved on `data-lang` for syntax CSS even when a `title` is set. `collapse` and `expand` are bare flags — they take no value — and either one wins over the site-level `code_max_lines` default. Unknown attributes are silently ignored. Quoted values support `\"` and `\\` escapes.
+Bare flags:
 
-### Table of Contents
+| Flag       | Effect                                                                           |
+| ---------- | -------------------------------------------------------------------------------- |
+| `collapse` | Forces the block into the collapsed state regardless of the site default         |
+| `expand`   | Forces the block into the expanded state, suppressing any `code_max_lines` clamp |
 
-Headings are collected during rendering and made available as structured `TocEntry` data for template-driven `<nav>` generation. The table of contents is generated from all headings in the document, preserving their hierarchy.
+Either flag wins over the site-level `code_max_lines` default. The language tag is preserved on `data-lang` for syntax CSS even when a `title` is set.
+
+### Math (KaTeX)
+
+Inline math uses single dollar signs, display math uses double:
+
+```markdown
+Inline: $E = mc^2$
+
+Display:
+
+$$
+\int_0^\infty e^{-x^2} dx = \frac{\sqrt{\pi}}{2}
+$$
+```
+
+Math expressions render as KaTeX-compatible markup (`<span class="math math-inline">` / `<span class="math math-display">`). Themes load the [KaTeX](https://katex.org) CSS and JS for client-side rendering by gating on `"math" in assets.features` — see [Theme Authoring](themes.md#template-variables) for the page-scoped asset registry.
+
+### Footnotes
+
+```markdown
+Here is a claim[^1] that needs a source.
+
+[^1]: The source for the claim.
+```
+
+### GFM Extensions
+
+[GitHub Flavored Markdown](https://github.github.com/gfm/) extensions are enabled:
+
+#### Tables
+
+```markdown
+| Left | Center | Right |
+| :--- | :----: | ----: |
+| a    |   b    |     c |
+```
+
+#### Strikethrough
+
+```markdown
+~~deleted text~~
+```
+
+#### Task lists
+
+```markdown
+- [x] Completed
+- [ ] Pending
+```
+
+#### Autolinks
+
+URLs and email addresses are automatically linked.
 
 ## Shortcodes
 
@@ -243,6 +275,7 @@ When `emojis = true` is set in `[params]`, GitHub-style emoji shortcodes are rep
 
 ```markdown
 Hello :smile: and :wave:
+
 <!-- renders as: Hello 😄 and 👋 -->
 ```
 
@@ -254,6 +287,7 @@ When `fontawesome = true` is set in `[params]`, icon shortcodes produce `<i>` el
 
 ```markdown
 :(fas fa-link): Click here :(fab fa-github):
+
 <!-- renders as: <i class="fas fa-link" aria-hidden="true"></i> Click here <i class="fab fa-github" aria-hidden="true"></i> -->
 ```
 
@@ -273,13 +307,45 @@ This is a note.
 :::
 ```
 
-Pandoc-style attributes (`#id`, `.class`, `key=value`) are specified inside curly braces after the directive name:
+A [Pandoc-style attribute block](#pandoc-style-attributes) can follow the directive name. Bare words inside `{...}` become positional arguments accessible in templates as `positional_args`:
 
 ```markdown
 ::: callout {#my-id .custom-class type=tip title="Read This"}
 Content here.
 :::
 ```
+
+### Parser Behavior
+
+#### Nesting
+
+Directives can be nested by using more colons for the outer fence:
+
+```markdown
+:::: callout {type=warning}
+::: callout {type=tip}
+This tip is inside a warning.
+:::
+More warning content.
+::::
+```
+
+The closing fence must have at least as many colons as the opening fence it closes. A `:::` fence cannot close a `::::` block, but a `::::` fence can close a `:::` block.
+
+#### Code Blocks Inside Directives
+
+Fenced code blocks inside directives work normally — the parser is aware of code fences and will not interpret `:::` inside a code block as a directive boundary:
+
+````markdown
+::: callout
+Here is an example:
+
+```python
+print("Hello")
+```
+
+:::
+````
 
 ### Callouts
 
@@ -311,7 +377,7 @@ Each callout renders as a collapsible `<details>` element:
 
 #### Type and Options
 
-The callout type defaults to `note`. Use `type=` to specify a different type. Custom titles and collapse behavior are set via Pandoc-style key-value attributes:
+The callout type defaults to `note`. Use `type=` to specify a different type. Custom titles and collapse behavior are set via key-value attributes:
 
 ```markdown
 ::: callout {type=warning title="Careful" open=false}
@@ -319,36 +385,27 @@ This warning starts collapsed.
 :::
 ```
 
-Recognized attributes:
+Recognized keys:
 
-| Attribute | Values           | Default | Description                              |
-| --------- | ---------------- | ------- | ---------------------------------------- |
-| `type`    | see table above  | `note`  | Callout type (determines icon and style) |
-| `title`   | any string       | none    | Overrides the default title              |
-| `open`    | `true` / `false` | `true`  | Controls whether the `<details>` is open |
+| Key     | Values           | Default | Description                              |
+| ------- | ---------------- | ------- | ---------------------------------------- |
+| `type`  | see table above  | `note`  | Callout type (determines icon and style) |
+| `title` | any string       | none    | Overrides the default title              |
+| `open`  | `true` / `false` | `true`  | Controls whether the `<details>` is open |
 
-`::: callout` without attributes uses the default type (`note`), default title, and is open by default. Attributes always require `{...}` braces.
+`#id` and `.class` attributes work as documented under [Pandoc-Style Attributes](#pandoc-style-attributes): `#id` lands on the `<details>` element, `.class` tokens append after `callout <type>`.
 
-#### Pandoc Attributes
-
-Callouts support `#id` and `.class` attributes inside `{...}`:
-
-```markdown
-::: callout {#important .highlight type=tip}
-This tip has a custom id and extra CSS class.
-:::
-```
-
-- `#id` sets the HTML `id` attribute on the `<details>` element; the first `#id` wins if duplicates are specified.
-- `.class` appends extra CSS classes after `callout <type>`; multiple `.class` tokens are allowed.
+`::: callout` without attributes uses the default type (`note`), default title, and is open by default.
 
 #### Body Content
 
 The body of a callout is standard Markdown. It is rendered to HTML before being placed inside the callout wrapper, so all Markdown features (formatting, code blocks, images, etc.) work inside callouts.
 
-### Fenced Divs
+### Generic Div Wrappers
 
-Directives using only Pandoc attributes (no directive name) render as `<div>` wrappers:
+A directive renders as a plain `<div>` wrapper in two cases:
+
+**Untyped (no name)** — Pandoc fenced div convention, useful for applying CSS classes to content blocks without semantic meaning:
 
 ```markdown
 ::: {.compact-table}
@@ -358,119 +415,15 @@ Directives using only Pandoc attributes (no directive name) render as `<div>` wr
 :::
 ```
 
-Renders as:
-
 ```html
 <div class="compact-table">
-  <table>...</table>
+  <table>
+    ...
+  </table>
 </div>
 ```
 
-This follows the [Pandoc fenced div](https://pandoc.org/MANUAL.html#divs-and-spans) convention and is useful for applying CSS classes to content blocks without semantic meaning.
-
-Both `#id` and `.class` attributes are supported:
-
-```markdown
-::: {#results .wide .striped}
-Content here.
-:::
-```
-
-### Nesting
-
-Directives can be nested by using more colons for the outer fence:
-
-```markdown
-:::: callout {type=warning}
-::: callout {type=tip}
-This tip is inside a warning.
-:::
-More warning content.
-::::
-```
-
-The closing fence must have at least as many colons as the opening fence it closes. A `:::` fence cannot close a `::::` block, but a `::::` fence can close a `:::` block.
-
-### Code Blocks Inside Directives
-
-Fenced code blocks inside directives work normally — the parser is aware of code fences and will not interpret `:::` inside a code block as a directive boundary:
-
-````markdown
-::: callout
-Here is an example:
-
-```python
-print("Hello")
-```
-:::
-````
-
-### Template-Based Directives
-
-Themes can provide custom directive renderers as MiniJinja templates at `templates/directives/<name>.html`. When a directive name matches a template, kiln renders it using the template instead of the default `<div>` wrapper:
-
-```markdown
-::: site
-https://example.com
-:::
-```
-
-If `templates/directives/site.html` exists, kiln renders it with the [directive template variables](themes.md#directive-templates-directivesnamehtml). Otherwise, it falls back to a `<div>` wrapper.
-
-#### Directive Arguments
-
-Arguments inside `{...}` (after `#id` and `.class` extraction) are parsed into **positional** and **named** components, available to templates as `positional_args` and `named_args`. For example, in `::: music {#player .wide server="netease"}`, `id` is `"player"`, `classes` is `["wide"]`, and `named_args` contains `server → "netease"`.
-
-```markdown
-::: music {server="netease" type="song" id="12345"}
-:::
-```
-
-Templates access these as:
-
-```html
-<iframe src="https://{{ named_args.server }}.com/embed/{{ named_args.type }}/{{ named_args.id }}"></iframe>
-```
-
-Parsing rules:
-
-| Input form        | Example            | Result                      |
-| ----------------- | ------------------ | --------------------------- |
-| `"quoted string"` | `"scores.csv"`     | Positional: `"scores.csv"`  |
-| `key="value"`     | `server="netease"` | Named: `server → "netease"` |
-| `key=value`       | `cols=3`           | Named: `cols → "3"`         |
-| `bare_word`       | `inline`           | Positional: `"inline"`      |
-
-Quoted values support `\"` and `\\` escape sequences.
-
-#### Reading Files from Templates
-
-Templates can read files co-located with the page source using the `read_file` function:
-
-```html
-{% set csv = read_file(positional_args[0]) %}
-```
-
-`read_file` resolves the filename relative to the page's source directory. The return value is auto-escaped; use `| safe` if the content should be rendered as raw HTML. Path traversal (`..`) and absolute paths are rejected.
-
-#### Parsing CSV Data
-
-The `parse_csv` function parses CSV text into a list of rows, where each row is a list of field strings:
-
-```html
-{% set rows = parse_csv(read_file(positional_args[0])) %}
-<table>
-{% for row in rows %}
-  <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
-{% endfor %}
-</table>
-```
-
-Standard CSV quoting rules apply (double-quoted fields, escaped quotes). The function does not treat the first row as a header — all rows are returned uniformly.
-
-### Unknown Directives
-
-Directives with no matching template are rendered as `<div>` elements with the name as a CSS class:
+**Unknown name** — when no `templates/directives/<name>.html` template exists, the directive name becomes a CSS class on the wrapper:
 
 ```markdown
 ::: custom-type
@@ -478,10 +431,43 @@ Body content.
 :::
 ```
 
-Renders as:
-
 ```html
 <div class="custom-type">
   <p>Body content.</p>
 </div>
 ```
+
+In both cases, `#id` and `.class` from the `{...}` block are applied to the `<div>` as expected.
+
+### Template-Based Directives
+
+Themes can provide custom directive renderers as MiniJinja templates at `templates/directives/<name>.html`. When a directive name matches a template, kiln renders it using the template instead of the generic `<div>` wrapper:
+
+```markdown
+::: site
+https://example.com
+:::
+```
+
+If `templates/directives/site.html` exists, kiln renders it with the [directive template variables](themes.md#directive-templates-directivesnamehtml).
+
+#### Directive Arguments
+
+Arguments inside `{...}` (after `#id` and `.class` extraction) are split into **positional** and **named** components, exposed to templates as `positional_args` and `named_args`:
+
+| Input form        | Example            | Result                      |
+| ----------------- | ------------------ | --------------------------- |
+| `"quoted string"` | `"scores.csv"`     | Positional: `"scores.csv"`  |
+| `bare_word`       | `inline`           | Positional: `"inline"`      |
+| `key="value"`     | `server="netease"` | Named: `server → "netease"` |
+| `key=value`       | `cols=3`           | Named: `cols → "3"`         |
+
+For example, `::: music {#player .wide server="netease" type="song" id="12345"}` parses to: `id="player"`, `classes=["wide"]`, and `named_args={server: "netease", type: "song", id: "12345"}`.
+
+```html
+<iframe
+  src="https://{{ named_args.server }}.com/embed/{{ named_args.type }}/{{ named_args.id }}"
+></iframe>
+```
+
+For data-driven directives, the template-side helpers `read_file`, `parse_csv`, and `register_script` are documented under [Template Functions](themes.md#template-functions).
