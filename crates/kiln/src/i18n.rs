@@ -30,9 +30,8 @@ struct Inner {
     warned: Mutex<HashSet<WarnKey>>,
 }
 
-/// Deduplication key for warnings emitted by [`I18n::t`] and
-/// [`I18n::t_interp`]. Each unique variant is logged once per `I18n`
-/// instance regardless of how many pages trigger it.
+/// Deduplication key for warnings emitted by [`I18n::t`] and [`I18n::t_interp`]. Each unique
+/// variant is logged once per `I18n` instance.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum WarnKey {
     /// `t(key)` miss.
@@ -44,19 +43,16 @@ enum WarnKey {
 }
 
 impl I18n {
-    /// Loads i18n tables from `<theme>/i18n/{en,<language>}.toml` and
-    /// `<site_root>/i18n/<language>.toml` and merges them.
+    /// Loads and merges i18n tables from `<theme>/i18n/{en,<language>}.toml` and
+    /// `<site_root>/i18n/<language>.toml`.
     ///
-    /// Precedence (highest to lowest): site override → theme active-language
-    /// → theme English. If the theme has no `i18n/` directory at all,
-    /// site-only i18n is allowed.
+    /// Precedence: site override → theme active-language → theme English. If the theme has no
+    /// `i18n/` directory, site-only i18n is allowed.
     ///
     /// # Errors
     ///
-    /// Returns an error if:
-    /// - a theme i18n directory exists with any `*.toml` other than `en.toml`
-    ///   but `en.toml` is missing
-    /// - any loaded file is not a flat table of string values
+    /// Returns an error if a theme i18n directory has locale files but no `en.toml`, or if any
+    /// loaded file is not a flat table of string values.
     pub fn load(site_root: &Path, theme_dir: Option<&Path>, language: &str) -> Result<Self> {
         // Paths below interpolate `language` into filenames — guard against
         // traversal or oddly-shaped tags before anything touches the FS.

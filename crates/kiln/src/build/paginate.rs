@@ -38,12 +38,12 @@ where
     Ok(())
 }
 
-/// Resolves a pagination count from `params`, trying each TOML path in order
-/// and falling back to `default` when none matches.
+/// Resolves a pagination count from `params`, trying each TOML path in order and falling back to
+/// `default` when none matches.
 ///
-/// Each path is a sequence of keys to traverse (e.g., `&["home", "paginate"]`
-/// reads `params.home.paginate`). Non-positive integers are treated as missing
-/// so a `paginate = 0` override falls through to the next path or `default`.
+/// Each path is a sequence of keys to traverse (e.g., `&["home", "paginate"]` reads
+/// `params.home.paginate`). Non-positive integers are treated as missing so `paginate = 0` falls
+/// through to the next path or `default`.
 #[must_use]
 pub(crate) fn paginate_config(
     params: &toml::value::Table,
@@ -56,8 +56,8 @@ pub(crate) fn paginate_config(
         .unwrap_or(default)
 }
 
-/// Reads a single nested integer at `path` from `params`. Returns `None` for
-/// missing keys, non-integer values, and non-positive integers.
+/// Reads a single nested integer at `path` from `params`. Returns `None` for missing keys,
+/// non-integer values, and non-positive integers.
 fn paginate_at(params: &toml::value::Table, path: &[&str]) -> Option<usize> {
     let (&first, rest) = path.split_first()?;
     let mut current: &toml::Value = params.get(first)?;

@@ -69,11 +69,8 @@ pub fn discover_content(root: &Path) -> Result<ContentSet> {
     Ok(ContentSet { pages, content_dir })
 }
 
-/// Returns `true` if the file starts with a `+++` frontmatter delimiter
-/// (optionally preceded by a UTF-8 BOM).
-///
-/// Markdown files without frontmatter (e.g., CLAUDE.md, README.md) are
-/// skipped during discovery rather than causing a parse error.
+/// Returns `true` if the file starts with a `+++` frontmatter delimiter (optionally preceded
+/// by a UTF-8 BOM). Files without frontmatter are skipped during discovery.
 fn has_frontmatter(path: &Path) -> bool {
     std::fs::read_to_string(path).is_ok_and(|content| {
         let content = content.strip_prefix('\u{feff}').unwrap_or(&content);

@@ -2,8 +2,7 @@ use serde::Serialize;
 
 /// A paginator that provides windowed views over a slice of items.
 ///
-/// Page numbers are 1-indexed. The paginator borrows the items and
-/// performs zero allocation for pagination math.
+/// Page numbers are 1-indexed. Borrows items and performs zero allocation for pagination math.
 #[derive(Debug)]
 pub struct Paginator<'a, T> {
     items: &'a [T],

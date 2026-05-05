@@ -8,10 +8,8 @@ use image::ImageReader;
 use image::imageops::FilterType;
 use serde::{Deserialize, Serialize};
 
-/// Image-pipeline configuration loaded from the `[image]` section of
-/// `config.toml`. Unknown keys are rejected so removed fields (e.g. the
-/// pre-0.2 `lqip` toggle) and typos surface as build errors instead of
-/// silently being ignored.
+/// Image-pipeline configuration loaded from the `[image]` section of `config.toml`.
+/// Unknown keys are rejected so removed fields and typos surface as build errors.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ImageConfig {

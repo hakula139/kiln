@@ -37,16 +37,11 @@ impl ListedPage {
 pub(crate) struct ListingArtifacts {
     /// All listable pages, indexed to match `TaxonomySet::tag_pages`.
     pub(crate) listed_pages: Vec<ListedPage>,
-    /// Posts only, sorted by date descending. Consumed by the home page (which
-    /// applies a pinned-first sort) and the site-wide RSS feed.
+    /// Posts only, sorted by date descending.
     pub(crate) listed_posts: Vec<ListedPage>,
     /// Posts grouped by section slug, each bucket sorted by date descending.
-    /// Internal to `build_listing_buckets`; not consumed directly by output
-    /// generators.
     section_posts: HashMap<String, Vec<ListedPage>>,
-    /// Pages grouped by tag slug, each bucket sorted by date descending. Built
-    /// from `TaxonomySet::tag_pages` indices to avoid re-resolving them per
-    /// archive / feed. Internal to `build_listing_buckets`.
+    /// Pages grouped by tag slug, each bucket sorted by date descending.
     tag_pages: HashMap<String, Vec<ListedPage>>,
 }
 
@@ -124,10 +119,6 @@ pub(crate) fn build_listing_artifacts(
 // ── Listing buckets ──
 
 /// Identifies the flavor of a `ListingBucket`.
-///
-/// `Posts` is the singleton aggregate at `/posts/`, spanning every section.
-/// `Section` and `Tag` correspond to one entry each in their respective
-/// content groupings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter)]
 pub(crate) enum BucketKind {
     Posts,
@@ -136,8 +127,7 @@ pub(crate) enum BucketKind {
 }
 
 impl BucketKind {
-    /// Plural form (`"posts"`, `"sections"`, `"tags"`) — used as the `kind`
-    /// template variable and in URL roots.
+    /// Plural form — used as the `kind` template variable and in URL roots.
     #[must_use]
     pub(crate) fn plural(self) -> &'static str {
         match self {
@@ -147,8 +137,7 @@ impl BucketKind {
         }
     }
 
-    /// Singular form (`"post"`, `"section"`, `"tag"`) — used as the `singular`
-    /// template variable.
+    /// Singular form — used as the `singular` template variable.
     #[must_use]
     pub(crate) fn singular(self) -> &'static str {
         match self {
@@ -158,16 +147,14 @@ impl BucketKind {
         }
     }
 
-    /// Whether buckets of this kind appear on overview index pages
-    /// (`/sections/`, `/tags/`). Posts has its own archive but no overview.
+    /// Whether buckets of this kind appear on overview index pages (`/sections/`, `/tags/`).
     #[must_use]
     pub(crate) fn has_overview(self) -> bool {
         matches!(self, Self::Section | Self::Tag)
     }
 }
 
-/// A named, located collection of pages — the unit of work shared by the
-/// archive, feed, and overview output generators.
+/// A named collection of pages shared by the archive, feed, and overview output generators.
 #[derive(Debug, Clone)]
 pub(crate) struct ListingBucket {
     pub kind: BucketKind,
@@ -180,9 +167,8 @@ pub(crate) struct ListingBucket {
 }
 
 impl ListingBucket {
-    /// URL path with leading slash and no trailing slash (e.g., `/posts`,
-    /// `/posts/note`, `/tags/rust`). Sections live under `/posts/` rather than
-    /// `/sections/` to match the existing site URL contract.
+    /// URL path with leading slash, no trailing slash (e.g., `/posts`, `/posts/note`, `/tags/rust`).
+    /// Sections live under `/posts/` to match the existing site URL contract.
     #[must_use]
     pub(crate) fn base_path(&self) -> String {
         match self.kind {
@@ -209,11 +195,8 @@ impl From<&ListingBucket> for BucketSummary {
     }
 }
 
-/// Assembles every listing bucket: the all-posts aggregate, one per section,
-/// and one per tag.
-///
-/// Pages are cloned out of `artifacts` so each bucket owns its slice; build-
-/// time only, the cost is negligible compared to template rendering.
+/// Assembles every listing bucket: the all-posts aggregate, one per section, and one per tag.
+/// Each bucket owns its pages (cloned from `artifacts`).
 #[must_use]
 pub(crate) fn build_listing_buckets(
     artifacts: &ListingArtifacts,
@@ -317,8 +300,7 @@ pub(crate) fn sort_by_date_desc(pages: &mut [ListedPage]) {
 
 /// Sorts pinned posts first (by `weight` ascending), then by date descending.
 ///
-/// Used only for the home page. Any `weight` value marks a post as pinned;
-/// lower values sort higher. Posts without `weight` are unpinned.
+/// Any `weight` value marks a post as pinned; lower values sort higher.
 pub(crate) fn sort_pinned_first(pages: &mut [ListedPage]) {
     pages.sort_by_key(|page| {
         (
@@ -329,10 +311,8 @@ pub(crate) fn sort_pinned_first(pages: &mut [ListedPage]) {
     });
 }
 
-/// Groups pages into year-based sections.
-///
-/// Assumes pages are already sorted by date descending. Consecutive pages
-/// with the same year are grouped together.
+/// Groups pages into year-based sections. Consecutive pages with the same year are grouped
+/// together (assumes input is pre-sorted by date descending).
 #[must_use]
 pub(crate) fn group_by_year(pages: Vec<ListedPage>) -> Vec<PageGroup> {
     let mut groups: Vec<PageGroup> = Vec::new();
@@ -389,9 +369,8 @@ pub(crate) fn page_section(
     })
 }
 
-/// Resolves a `FeaturedImage`'s `src` path against the page's output URL and
-/// stamps on the source's natural dimensions plus an LQIP placeholder when
-/// the image is local and decodable.
+/// Resolves a `FeaturedImage`'s `src` path against the page's output URL and stamps on
+/// dimensions plus an LQIP placeholder when the image is local and decodable.
 #[must_use]
 pub(crate) fn resolve_featured_image(
     featured_image: Option<&FeaturedImage>,
@@ -423,8 +402,7 @@ fn linked_tags(tags: &[String], base_url: &str) -> Vec<LinkedTerm> {
         .collect()
 }
 
-/// Formats a page date for templates using the configured site time zone,
-/// falling back to UTC when no site time zone is set.
+/// Formats a page date for templates using the configured site time zone (falls back to UTC).
 #[must_use]
 pub(crate) fn format_page_date(date: Timestamp, time_zone: Option<&TimeZone>) -> String {
     let Some(time_zone) = time_zone else {

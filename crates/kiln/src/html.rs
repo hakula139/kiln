@@ -25,9 +25,7 @@ pub fn indent(html: &mut String, level: u8) {
     }
 }
 
-/// Appends indentation, writes formatted content, and adds a newline.
-///
-/// Equivalent to `indent` + `writeln!`, suppressing the infallible `fmt::Result`.
+/// `indent` + `writeln!`, suppressing the infallible `fmt::Result`.
 macro_rules! writeln_indented {
     ($html:expr, $level:expr, $($arg:tt)*) => {{
         use ::std::fmt::Write as _;

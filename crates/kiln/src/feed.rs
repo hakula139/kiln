@@ -21,8 +21,8 @@ pub const DEFAULT_FEED_LIMIT: usize = 20;
 
 /// Generates an RSS 2.0 XML feed from a channel description and page entries.
 ///
-/// Items are included in the order given — callers should pre-sort by date
-/// descending (newest first). The feed limits output to `limit` items.
+/// Items are included in the order given (callers pre-sort by date descending). Output is
+/// limited to `limit` items.
 #[must_use]
 pub fn generate_rss(channel: &Channel, items: &[PageSummary], limit: usize) -> String {
     let mut xml = String::from(indoc! {r#"

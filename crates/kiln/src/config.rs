@@ -22,10 +22,7 @@ pub struct Config {
     #[serde(default = "default_language")]
     pub language: String,
 
-    /// Site time zone used to render page dates exposed to templates.
-    ///
-    /// Uses IANA time zone names such as `Asia/Shanghai`. When unset, kiln
-    /// renders dates in UTC.
+    /// Site time zone (IANA name, e.g., `Asia/Shanghai`). When unset, dates render in UTC.
     #[serde(default)]
     pub timezone: Option<String>,
 
@@ -78,9 +75,8 @@ pub struct Author {
 
 /// Full-text search configuration.
 ///
-/// When enabled, kiln runs Pagefind as a post-build step to generate a search
-/// index under `{output_dir}/pagefind/`. The `pagefind` binary must be
-/// installed separately — see <https://pagefind.app/docs/installation/>.
+/// When enabled, kiln runs Pagefind as a post-build step to generate a search index under
+/// `{output_dir}/pagefind/`. The `pagefind` binary must be installed separately.
 #[derive(Debug, Default, Deserialize, Serialize)]
 pub struct Search {
     /// Enable Pagefind search indexing after build.

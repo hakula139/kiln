@@ -16,11 +16,7 @@ pub struct Term {
     pub page_count: usize,
 }
 
-/// The full taxonomy collection built from content pages.
-///
-/// Currently only tags are tracked. Adding a new taxonomy (e.g., categories)
-/// would mean a parallel `categories` / `category_pages` pair on this struct,
-/// or a re-introduced kind enum if the count grows.
+/// The full taxonomy collection built from content pages. Currently tracks tags only.
 #[derive(Debug)]
 pub struct TaxonomySet {
     /// All tags in the site, sorted by page count descending then name ascending.
@@ -31,12 +27,9 @@ pub struct TaxonomySet {
 
 /// Builds the taxonomy set from the given page collection.
 ///
-/// Groups pages by their tag values, deduplicates terms by slug, and sorts
-/// terms by page count descending (then name ascending). Page indices within
-/// each term are in the same order as the input (newest first).
-///
-/// When `content_dir` is provided, looks for `tags/<slug>/_index.md` files
-/// with a `title` field to override the display name.
+/// Groups pages by tag, deduplicates terms by slug, and sorts by page count descending (then
+/// name ascending). Page indices are in input order (newest first). When `content_dir` is
+/// provided, looks for `tags/<slug>/_index.md` to override the display name.
 #[must_use]
 pub fn build_taxonomies(pages: &[Page], content_dir: Option<&Path>) -> TaxonomySet {
     // Collect slug → (display_name, Vec<page_index>).
@@ -67,11 +60,9 @@ pub fn build_taxonomies(pages: &[Page], content_dir: Option<&Path>) -> TaxonomyS
     TaxonomySet { tags, tag_pages }
 }
 
-/// Loads the display title from a tag's `_index.md` file.
+/// Loads the display title from `<content_dir>/tags/<slug>/_index.md`.
 ///
-/// Looks for `<content_dir>/tags/<slug>/_index.md` with TOML frontmatter
-/// containing a non-empty `title` field. Returns `None` if the file doesn't
-/// exist or has no title.
+/// Returns `None` if the file doesn't exist, has invalid frontmatter, or an empty title.
 fn load_term_title(content_dir: &Path, slug: &str) -> Option<String> {
     let path = content_dir.join("tags").join(slug).join("_index.md");
     let content = std::fs::read_to_string(&path).ok()?;

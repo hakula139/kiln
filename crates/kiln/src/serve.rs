@@ -41,11 +41,10 @@ const DEBOUNCE: Duration = Duration::from_millis(100);
 
 /// JavaScript snippet injected before `</body>` in HTML responses.
 ///
-/// Uses a WebSocket instead of `EventSource` (SSE) for live reload.
-/// SSE connections count against Chrome's 6-connection-per-origin HTTP/1.1
-/// limit and create "zombie" sockets on navigation that silently block
-/// subsequent requests for tens of seconds. WebSocket connections are
-/// upgraded out of the HTTP pool, avoiding the limit entirely.
+/// Uses a WebSocket instead of SSE for live reload. SSE connections count against Chrome's
+/// 6-connection-per-origin HTTP/1.1 limit and create "zombie" sockets on navigation that silently
+/// block subsequent requests for tens of seconds. WebSocket connections are upgraded out of the
+/// HTTP pool, avoiding the limit entirely.
 const LIVE_RELOAD_SCRIPT: &str = indoc! {r#"
 
     <script>
@@ -84,15 +83,12 @@ const LIVE_RELOAD_SCRIPT: &str = indoc! {r#"
     </script>
 "#};
 
-/// Starts the dev server with file watching and live reload.
-///
-/// Performs an initial build, then serves the output directory while
-/// watching source files for changes. Blocks until Ctrl+C.
+/// Starts the dev server with file watching and live reload. Blocks until Ctrl+C.
 ///
 /// # Errors
 ///
-/// Returns an error if the initial build fails, the server cannot bind,
-/// or file watching cannot be initialized.
+/// Returns an error if the initial build fails, the server cannot bind, or file watching cannot
+/// be initialized.
 ///
 /// # Panics
 ///
@@ -109,8 +105,8 @@ pub async fn serve(root: &Path, port: u16, open: bool) -> Result<()> {
 
 /// Builds the site, starts file watching, and serves until `shutdown` completes.
 ///
-/// Separated from [`serve`] so that tests can supply a pre-bound listener
-/// (port 0 for dynamic allocation) and a controlled shutdown signal.
+/// Separated from [`serve`] so tests can supply a pre-bound listener (port 0) and a controlled
+/// shutdown signal.
 async fn serve_until(
     root: &Path,
     listener: tokio::net::TcpListener,
@@ -132,8 +128,7 @@ async fn serve_until(
     .context("initial build failed")?;
 
     let config = Config::load(root).context("failed to load config")?;
-    // output_dir is captured once; if config.toml changes output_dir at runtime,
-    // the server must be restarted (same limitation as theme directory watching).
+    // output_dir is captured once; if config.toml changes it, the server must be restarted.
     let output_dir = root.join(&config.output_dir);
 
     let (reload_tx, _) = broadcast::channel::<()>(16);
@@ -164,10 +159,8 @@ async fn serve_until(
         eprintln!("Failed to open browser: {e}");
     }
 
-    // Race the server against the shutdown signal. `with_graceful_shutdown`
-    // would wait for all connections to close, but WebSocket live-reload
-    // connections stay open indefinitely, causing the server to hang on
-    // Ctrl+C. For a dev server, dropping connections immediately is acceptable.
+    // `with_graceful_shutdown` would wait for WebSocket connections to close, hanging on Ctrl+C.
+    // For a dev server, dropping connections immediately is acceptable.
     tokio::select! {
         result = axum::serve(listener, app).into_future() => {
             result.context("server error")?;
@@ -224,8 +217,7 @@ fn setup_watcher(
 
 /// Computes which paths should be watched for changes.
 ///
-/// Returns only paths that exist on disk. Directories that don't exist
-/// (e.g., no `static/` folder) are silently skipped.
+/// Returns only paths that exist on disk. Missing directories (e.g., no `static/`) are skipped.
 fn watch_paths(root: &Path, config: &Config) -> Vec<WatchEntry> {
     let mut paths = Vec::new();
 
@@ -247,8 +239,7 @@ fn watch_paths(root: &Path, config: &Config) -> Vec<WatchEntry> {
         }
     }
 
-    // Watch the active theme directory. If the theme changes in config.toml,
-    // the server must be restarted to pick up the new theme directory.
+    // Watch the active theme directory. Restart required if the theme changes in config.toml.
     if let Some(theme_dir) = config.theme_dir(root)
         && theme_dir.is_dir()
     {
@@ -359,10 +350,8 @@ fn build_router(output_dir: &Path, reload_tx: broadcast::Sender<()>) -> Router {
 
 /// WebSocket upgrade handler for live reload.
 ///
-/// Accepts the upgrade, then forwards rebuild notifications from the
-/// broadcast channel as `"reload"` text messages. The connection lives
-/// outside Chrome's HTTP/1.1 connection pool, so it never competes with
-/// regular page / asset requests.
+/// Forwards rebuild notifications from the broadcast channel as `"reload"` text messages. The
+/// connection lives outside Chrome's HTTP/1.1 pool, so it never competes with page / asset requests.
 async fn ws_handler(
     ws: WebSocketUpgrade,
     State(tx): State<broadcast::Sender<()>>,
@@ -397,10 +386,7 @@ async fn ws_relay(mut socket: WebSocket, tx: broadcast::Sender<()>) {
 
 /// Serves a request from the output directory.
 ///
-/// Handles three cases in order:
-/// 1. **Trailing-slash redirect** — when the path has no trailing slash and
-///    a directory with `index.html` exists, responds with 301 to the
-///    slash-suffixed path (standard HTTP behavior for pretty URLs).
+/// 1. **Trailing-slash redirect** — 301 to `path/` when a directory with `index.html` exists.
 /// 2. **HTML response** — injects the live reload script before `</body>`.
 /// 3. **Non-HTML response** — passes through untouched.
 async fn serve_request(
@@ -477,8 +463,7 @@ async fn has_index_html(output_dir: &Path, path: &str) -> bool {
 /// Injects the live reload script before `</body>` in HTML content.
 /// If no `</body>` is found, appends the script at the end.
 fn inject_script(html: &str) -> String {
-    // to_ascii_lowercase only changes single-byte ASCII chars, so byte
-    // positions in the lowercased string are valid for slicing the original.
+    // to_ascii_lowercase preserves byte positions, so slicing the original at `pos` is safe.
     if let Some(pos) = html.to_ascii_lowercase().rfind("</body>") {
         let mut result = String::with_capacity(html.len() + LIVE_RELOAD_SCRIPT.len());
         result.push_str(&html[..pos]);

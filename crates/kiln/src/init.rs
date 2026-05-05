@@ -6,15 +6,13 @@ use indoc::indoc;
 
 /// Scaffolds a new theme directory under `themes/<name>/`.
 ///
-/// Creates `theme.toml`, `templates/base.html`, `templates/post.html`,
-/// `i18n/en.toml`, `i18n/zh-Hans.toml`, and empty `static/` and `i18n/`
-/// directories. Fails if the theme directory already exists to prevent
-/// accidental overwrites.
+/// Creates `theme.toml`, `templates/base.html`, `templates/post.html`, `i18n/en.toml`,
+/// `i18n/zh-Hans.toml`, and empty `static/` and `i18n/` directories. Fails if the theme
+/// directory already exists to prevent accidental overwrites.
 ///
 /// # Errors
 ///
-/// Returns an error if the theme directory already exists or if any file
-/// operation fails.
+/// Returns an error if the theme directory already exists or if any file operation fails.
 pub fn init_theme(root: &Path, name: &str) -> Result<()> {
     let theme_dir = root.join("themes").join(name);
     if theme_dir.exists() {
@@ -74,8 +72,7 @@ pub fn init_theme(root: &Path, name: &str) -> Result<()> {
 
 /// Default English i18n table written to new themes.
 ///
-/// The resolver loads strings from three layers in descending precedence:
-/// `<site>/i18n/<lang>.toml` → `<theme>/i18n/<lang>.toml` →
+/// Resolution precedence: `<site>/i18n/<lang>.toml` → `<theme>/i18n/<lang>.toml` →
 /// `<theme>/i18n/en.toml`.
 const DEFAULT_I18N_EN: &str = indoc! {r#"
     # English strings for this theme.

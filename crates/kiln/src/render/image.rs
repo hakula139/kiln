@@ -6,10 +6,8 @@ use crate::html::escape;
 /// Renders a standalone (block-level) image as a `<figure>` element.
 ///
 /// The image gets `loading="lazy" decoding="async"`. If `alt` is non-empty, a `<figcaption>` is
-/// included. The `title` attribute is omitted when empty. Optional `attrs`
-/// apply `id` CSS classes to `<figure>`, and `width` / `height` to `<img>`.
-/// When `attrs.lqip_uri` is set, the `<img>` is wrapped in a `<span class="lqip">`
-/// inside the figure so themes can paint a blurred placeholder behind it.
+/// included. Optional `attrs` apply `id` / classes to `<figure>`, and `width` / `height` to
+/// `<img>`. When `attrs.lqip_uri` is set, the `<img>` is wrapped in `<span class="lqip">`.
 #[must_use]
 pub fn render_block_image(src: &str, alt: &str, title: &str, attrs: Option<&ImageAttrs>) -> String {
     let fig_id = attrs
@@ -37,9 +35,8 @@ pub fn render_block_image(src: &str, alt: &str, title: &str, attrs: Option<&Imag
 
 /// Renders an inline image as a plain `<img>` element with `loading="lazy" decoding="async"`.
 ///
-/// The `title` attribute is omitted when empty. Optional `attrs` apply `id`,
-/// CSS classes, `width`, and `height` directly to the `<img>` element. When
-/// `attrs.lqip_uri` is set, the `<img>` is wrapped in `<span class="lqip">`.
+/// Optional `attrs` apply `id`, CSS classes, `width`, and `height` directly to the `<img>`.
+/// When `attrs.lqip_uri` is set, the `<img>` is wrapped in `<span class="lqip">`.
 #[must_use]
 pub fn render_inline_image(
     src: &str,
