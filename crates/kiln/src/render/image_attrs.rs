@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use super::lqip::ImageMeta;
-use crate::directive::parse_pandoc_attrs;
+use crate::attrs::parse_pandoc_attrs;
 use crate::markdown::{for_each_non_code_line, scan_code_span};
 
 /// Attributes extracted from Pandoc-style `{...}` blocks after images,

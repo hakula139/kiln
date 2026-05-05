@@ -5,6 +5,7 @@ use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, T
 use syntect::parsing::SyntaxSet;
 
 use super::assets::Feature;
+use super::code_block::{CodeBlockSpec, parse_fence_info};
 use super::highlight::highlight_code;
 use super::image::{render_block_image, render_inline_image};
 use super::image_attrs::ImageAttrs;
@@ -46,7 +47,7 @@ pub(crate) fn render_markdown(
 
     let mut heading_index: usize = 0;
     let mut in_code_block = false;
-    let mut code_lang: Option<String> = None;
+    let mut code_spec = CodeBlockSpec::default();
     let mut code_buf = String::new();
     let mut is_mermaid_block = false;
     let mut para_buf: Vec<(Event<'_>, std::ops::Range<usize>)> = Vec::new();
@@ -69,17 +70,15 @@ pub(crate) fn render_markdown(
             // ── Code blocks: buffer content, emit on End ──
             Event::Start(Tag::CodeBlock(kind)) => {
                 in_code_block = true;
-                code_lang = match kind {
-                    // Info strings can contain metadata after the language
-                    // token (e.g., "rust no_run"); extract just the first word.
-                    CodeBlockKind::Fenced(lang) => lang
-                        .split_ascii_whitespace()
-                        .next()
-                        .filter(|s| !s.is_empty())
-                        .map(String::from),
-                    CodeBlockKind::Indented => None,
+                code_spec = match kind {
+                    CodeBlockKind::Fenced(lang) => parse_fence_info(&lang, code_max_lines),
+                    CodeBlockKind::Indented => CodeBlockSpec {
+                        max_lines: code_max_lines,
+                        ..CodeBlockSpec::default()
+                    },
                 };
-                is_mermaid_block = code_lang
+                is_mermaid_block = code_spec
+                    .lang
                     .as_deref()
                     .is_some_and(|l| l.eq_ignore_ascii_case("mermaid"));
                 if is_mermaid_block {
@@ -92,8 +91,7 @@ pub(crate) fn render_markdown(
                 let html = if is_mermaid_block {
                     render_mermaid(&code_buf)
                 } else {
-                    let lang = code_lang.take().unwrap_or_default();
-                    highlight_code(syntax_set, &lang, &code_buf, code_max_lines)
+                    highlight_code(syntax_set, &code_buf, &code_spec)
                 };
                 output_events.push(Event::Html(html.into()));
                 code_buf.clear();

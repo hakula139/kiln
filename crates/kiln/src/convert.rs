@@ -554,7 +554,7 @@ mod tests {
 
                 Full content
 
-                ::: callout { type=info title="Note" open=false }
+                ::: callout {type=info title="Note" open=false}
                 Body
                 :::
             "#}

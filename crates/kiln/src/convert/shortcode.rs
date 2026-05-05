@@ -153,9 +153,9 @@ fn emit_callout(sc: &ShortcodeArgs, out: &mut String) {
     if !open {
         attrs.push("open=false".to_string());
     }
-    out.push_str("::: callout { ");
+    out.push_str("::: callout {");
     out.push_str(&attrs.join(" "));
-    out.push_str(" }\n");
+    out.push_str("}\n");
 }
 
 // ── Self-closing shortcodes ──
@@ -197,9 +197,9 @@ fn emit_directive(name: &str, sc: &ShortcodeArgs) -> String {
         for (key, value) in &sc.named {
             args.push(format!(r#"{key}="{value}""#));
         }
-        out.push_str(" { ");
+        out.push_str(" {");
         out.push_str(&args.join(" "));
-        out.push_str(" }");
+        out.push('}');
     }
     out.push_str("\n:::");
     out
@@ -254,7 +254,7 @@ mod tests {
         assert_eq!(
             result,
             indoc! {r#"
-                ::: callout { type=info title="Title" }
+                ::: callout {type=info title="Title"}
                 Body content
                 :::
             "#}
@@ -272,7 +272,7 @@ mod tests {
         assert_eq!(
             result,
             indoc! {"
-                ::: callout { type=warning }
+                ::: callout {type=warning}
                 Content
                 :::
             "}
@@ -290,7 +290,7 @@ mod tests {
         assert_eq!(
             result,
             indoc! {r#"
-                ::: callout { type=info title="封面出处" }
+                ::: callout {type=info title="封面出处"}
                 Body
                 :::
             "#}
@@ -308,7 +308,7 @@ mod tests {
         assert_eq!(
             result,
             indoc! {r#"
-                ::: callout { type=abstract title="Collapsed Block" open=false }
+                ::: callout {type=abstract title="Collapsed Block" open=false}
                 Hidden content
                 :::
             "#}
@@ -425,7 +425,7 @@ mod tests {
         assert_eq!(
             result,
             indoc! {r#"
-                ::: my-widget { "Title" "https://example.com" "Description" }
+                ::: my-widget {"Title" "https://example.com" "Description"}
                 :::
             "#}
         );
@@ -440,7 +440,7 @@ mod tests {
         assert_eq!(
             result,
             indoc! {r#"
-                ::: music { server="abc" type="song" id="123" }
+                ::: music {server="abc" type="song" id="123"}
                 :::
             "#}
         );

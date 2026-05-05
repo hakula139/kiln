@@ -1,0 +1,250 @@
+use std::ops::RangeInclusive;
+
+use crate::attrs::parse_pandoc_attrs;
+
+/// Attributes extracted from a fenced code block's Pandoc-style `{...}` block.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct CodeBlockSpec {
+    pub lang: Option<String>,
+    pub id: Option<String>,
+    pub classes: Vec<String>,
+    pub title: Option<String>,
+    pub highlight: Vec<RangeInclusive<usize>>,
+    pub collapse: Option<bool>,
+    pub max_lines: Option<usize>,
+}
+
+/// Parses a fence info-string into a `CodeBlockSpec`.
+///
+/// The info-string format is `lang {#id .class key=value ...}`. The language is the first
+/// whitespace-delimited word. The `{...}` payload (if present) is parsed as Pandoc attrs.
+/// Content outside `{...}` (after the language) is ignored.
+#[must_use]
+pub(crate) fn parse_fence_info(info: &str, default_max_lines: Option<usize>) -> CodeBlockSpec {
+    let trimmed = info.trim();
+    let Some(lang_token) = trimmed.split_ascii_whitespace().next() else {
+        return CodeBlockSpec {
+            max_lines: default_max_lines,
+            ..CodeBlockSpec::default()
+        };
+    };
+
+    let after_lang = trimmed[lang_token.len()..].trim_start();
+    let payload = extract_brace_payload(after_lang);
+    parse_code_block_attrs(Some(lang_token.to_string()), payload, default_max_lines)
+}
+
+/// Extracts the content between the first `{` and its matching `}`.
+fn extract_brace_payload(s: &str) -> &str {
+    let Some(open) = s.find('{') else { return "" };
+    let inner = &s[open + 1..];
+    let close = inner.find('}').unwrap_or(inner.len());
+    &inner[..close]
+}
+
+/// Parses a pandoc-attrs payload into a `CodeBlockSpec`.
+fn parse_code_block_attrs(
+    lang: Option<String>,
+    payload: &str,
+    default_max_lines: Option<usize>,
+) -> CodeBlockSpec {
+    if payload.is_empty() {
+        return CodeBlockSpec {
+            lang,
+            max_lines: default_max_lines,
+            ..CodeBlockSpec::default()
+        };
+    }
+
+    let pandoc = parse_pandoc_attrs(payload);
+
+    let mut title = None;
+    let mut highlight = Vec::new();
+    for (key, value) in &pandoc.kvs {
+        match *key {
+            "title" => title = Some(value.to_string()),
+            "highlight" => highlight = parse_highlight_ranges(value),
+            _ => {}
+        }
+    }
+
+    let collapse = if pandoc.bare.contains(&"collapse") {
+        Some(true)
+    } else if pandoc.bare.contains(&"expand") {
+        Some(false)
+    } else {
+        None
+    };
+
+    // Explicit collapse / expand wins over the site default; the renderer reads `max_lines`
+    // directly without re-checking `collapse`.
+    let max_lines = if collapse.is_some() {
+        None
+    } else {
+        default_max_lines
+    };
+
+    CodeBlockSpec {
+        lang,
+        id: pandoc.id.map(str::to_string),
+        classes: pandoc.classes.into_iter().map(str::to_string).collect(),
+        title,
+        highlight,
+        collapse,
+        max_lines,
+    }
+}
+
+/// Parses a comma-separated highlight range string into inclusive ranges.
+///
+/// Format: `"1,3-5,7"` → `[1..=1, 3..=5, 7..=7]`. Malformed entries are silently skipped.
+fn parse_highlight_ranges(input: &str) -> Vec<RangeInclusive<usize>> {
+    input
+        .split(',')
+        .filter_map(|entry| {
+            let entry = entry.trim();
+            if let Some((start, end)) = entry.split_once('-') {
+                let start: usize = start.trim().parse().ok()?;
+                let end: usize = end.trim().parse().ok()?;
+                Some(start..=end)
+            } else {
+                let n: usize = entry.parse().ok()?;
+                Some(n..=n)
+            }
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── parse_fence_info ──
+
+    #[test]
+    fn parse_fence_info_empty() {
+        let spec = parse_fence_info("", Some(40));
+        assert!(spec.lang.is_none());
+        assert!(spec.title.is_none());
+        assert_eq!(spec.max_lines, Some(40));
+    }
+
+    #[test]
+    fn parse_fence_info_lang_only() {
+        let spec = parse_fence_info("rust", Some(40));
+        assert_eq!(spec.lang.as_deref(), Some("rust"));
+        assert!(spec.title.is_none());
+        assert!(spec.highlight.is_empty());
+        assert!(spec.collapse.is_none());
+        assert_eq!(spec.max_lines, Some(40));
+    }
+
+    #[test]
+    fn parse_fence_info_lang_with_title() {
+        let spec = parse_fence_info(r#"rust {title="src/main.rs"}"#, Some(40));
+        assert_eq!(spec.lang.as_deref(), Some("rust"));
+        assert_eq!(spec.title.as_deref(), Some("src/main.rs"));
+    }
+
+    #[test]
+    fn parse_fence_info_all_attrs() {
+        let spec = parse_fence_info(
+            r#"rust {#my-id .special title="main.rs" highlight="1,3-5" collapse}"#,
+            Some(40),
+        );
+        assert_eq!(spec.lang.as_deref(), Some("rust"));
+        assert_eq!(spec.id.as_deref(), Some("my-id"));
+        assert_eq!(spec.classes, vec!["special"]);
+        assert_eq!(spec.title.as_deref(), Some("main.rs"));
+        assert_eq!(spec.highlight, vec![1..=1, 3..=5]);
+        assert_eq!(spec.collapse, Some(true));
+        // Explicit collapse / expand always overrides the site default.
+        assert_eq!(spec.max_lines, None);
+    }
+
+    #[test]
+    fn parse_fence_info_collapse_clears_max_lines() {
+        let spec = parse_fence_info("rust {collapse}", Some(40));
+        assert_eq!(spec.collapse, Some(true));
+        assert_eq!(spec.max_lines, None);
+    }
+
+    #[test]
+    fn parse_fence_info_expand_clears_max_lines() {
+        let spec = parse_fence_info("rust {expand}", Some(40));
+        assert_eq!(spec.collapse, Some(false));
+        assert_eq!(spec.max_lines, None);
+    }
+
+    #[test]
+    fn parse_fence_info_trailing_content_after_braces_ignored() {
+        let spec = parse_fence_info(r#"rust {title="T"} ignored"#, Some(40));
+        assert_eq!(spec.title.as_deref(), Some("T"));
+    }
+
+    #[test]
+    fn parse_fence_info_no_braces_discards_trailing() {
+        let spec = parse_fence_info("rust no_run playground", Some(40));
+        assert_eq!(spec.lang.as_deref(), Some("rust"));
+        assert!(spec.title.is_none());
+    }
+
+    #[test]
+    fn parse_fence_info_id_and_class_propagate() {
+        let spec = parse_fence_info("js {#snippet .wide .dark}", None);
+        assert_eq!(spec.id.as_deref(), Some("snippet"));
+        assert_eq!(spec.classes, vec!["wide", "dark"]);
+    }
+
+    #[test]
+    fn parse_fence_info_unknown_attrs_discarded() {
+        let spec = parse_fence_info(r#"rust {title="T" unknown="val" foo=bar}"#, None);
+        assert_eq!(spec.title.as_deref(), Some("T"));
+        assert!(spec.highlight.is_empty());
+        assert!(spec.collapse.is_none());
+    }
+
+    #[test]
+    fn parse_fence_info_collapse_keyword_inside_quoted_value_ignored() {
+        // Bare-word extraction must respect quoting; otherwise `collapse` inside the title leaks.
+        let spec = parse_fence_info(r#"rust {title="please collapse this"}"#, Some(40));
+        assert_eq!(spec.title.as_deref(), Some("please collapse this"));
+        assert!(spec.collapse.is_none());
+        assert_eq!(spec.max_lines, Some(40));
+    }
+
+    // ── parse_highlight_ranges ──
+
+    #[test]
+    fn parse_highlight_ranges_single_line() {
+        assert_eq!(parse_highlight_ranges("3"), vec![3..=3]);
+    }
+
+    #[test]
+    fn parse_highlight_ranges_range() {
+        assert_eq!(parse_highlight_ranges("2-5"), vec![2..=5]);
+    }
+
+    #[test]
+    fn parse_highlight_ranges_mixed() {
+        assert_eq!(parse_highlight_ranges("1,3-5,7"), vec![1..=1, 3..=5, 7..=7]);
+    }
+
+    #[test]
+    fn parse_highlight_ranges_with_spaces() {
+        assert_eq!(
+            parse_highlight_ranges(" 1 , 3 - 5 , 7 "),
+            vec![1..=1, 3..=5, 7..=7]
+        );
+    }
+
+    #[test]
+    fn parse_highlight_ranges_malformed_skipped() {
+        assert_eq!(parse_highlight_ranges("1,bad,3"), vec![1..=1, 3..=3]);
+    }
+
+    #[test]
+    fn parse_highlight_ranges_empty() {
+        assert!(parse_highlight_ranges("").is_empty());
+    }
+}
