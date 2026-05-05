@@ -31,6 +31,7 @@ nixfmt
 nixos
 nixpkgs
 numtide
+objc
 onclose
 onig
 oxalica
@@ -51,8 +52,8 @@ stdenv
 strftime
 swatinem
 syntect
-tmpl
 tera
+tmpl
 tracing
 tungstenite
 twikoo

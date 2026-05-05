@@ -174,10 +174,13 @@ fn emit_highlighted_lines(
 /// Resolves a markdown language token to a syntect `SyntaxReference`, a canonical language label,
 /// and a human-readable display label.
 ///
-/// Tries: file extension → exact name → case-insensitive name → plain text fallback. Canonical
-/// label is lowercased (spaces → hyphens) for HTML attributes. Unrecognized tokens get
-/// `"plaintext"` with a title-cased display label.
+/// Tries: file extension → exact name → case-insensitive name → plain text fallback. The canonical
+/// label is lowercased (spaces → hyphens) for HTML attributes. The display label is derived from
+/// the author's input via [`display_label`] — independent of the (often verbose / inconsistently
+/// cased) syntax name syntect carries internally.
 fn find_syntax<'a>(syntax_set: &'a SyntaxSet, lang: &str) -> (&'a SyntaxReference, String, String) {
+    let display = display_label(lang);
+
     if !lang.is_empty() {
         let syntax = syntax_set
             .find_syntax_by_extension(lang)
@@ -190,19 +193,10 @@ fn find_syntax<'a>(syntax_set: &'a SyntaxSet, lang: &str) -> (&'a SyntaxReferenc
             });
 
         if let Some(s) = syntax {
-            return (s, canonical_lang(&s.name), s.name.clone());
+            return (s, canonical_lang(&s.name), display);
         }
+        debug!(lang, "unrecognized language, falling back to plain text");
     }
-
-    // No syntax found or empty tag — fall back to plain text.
-    let lower = lang.to_ascii_lowercase();
-    let display = match lower.as_str() {
-        "" | "text" | "plaintext" | "plain" => "Plain Text".into(),
-        _ => {
-            debug!(lang, "unrecognized language, falling back to plain text");
-            capitalize_first(&lower)
-        }
-    };
 
     (
         syntax_set.find_syntax_plain_text(),
@@ -220,6 +214,54 @@ fn canonical_lang(syntax_name: &str) -> String {
         return "plaintext".into();
     }
     syntax_name.to_ascii_lowercase().replace(' ', "-")
+}
+
+/// Picks a human-readable display label from the author's fence language token.
+///
+/// Author-driven so the label matches the input rather than syntect's internal syntax name (which
+/// is verbose and inconsistently cased — `"Bourne Again Shell (bash)"` is one example). Authors
+/// who need a custom label per-block already have the `title="..."` fence attribute.
+///
+/// The match handles three categories explicitly: plaintext aliases, common aliases that map to
+/// a canonical name (`rs` → `Rust`, `bash` → `Shell`), special punctuation (`cpp` → `C++`,
+/// `cs` → `C#`), and ALL-CAPS conventions (`html` → `HTML`). Anything else falls through to
+/// `capitalize_first`, which gives the right result for the long form of most languages
+/// (`rust` → `Rust`, `python` → `Python`, `go` → `Go`).
+fn display_label(lang: &str) -> String {
+    let lower = lang.to_ascii_lowercase();
+    let mapped: &str = match lower.as_str() {
+        "" | "text" | "plaintext" | "plain" => "Plain Text",
+
+        // Aliases → canonical name.
+        "rs" => "Rust",
+        "py" => "Python",
+        "ts" | "tsx" => "TypeScript",
+        "js" | "jsx" => "JavaScript",
+        "rb" => "Ruby",
+        "kt" | "kts" => "Kotlin",
+        "md" | "mdx" => "Markdown",
+        "sh" | "bash" | "zsh" | "fish" => "Shell",
+        "ps1" => "PowerShell",
+        "objc" => "Objective-C",
+        "tex" | "latex" => "LaTeX",
+
+        // Special punctuation.
+        "cpp" | "c++" | "cxx" | "cc" | "hpp" | "h++" => "C++",
+        "cs" | "csharp" => "C#",
+        "fs" | "fsharp" => "F#",
+
+        // Mixed-case conventions.
+        "sass" => "Sass",
+        "scss" => "SCSS",
+
+        // ALL-CAPS conventions.
+        "html" | "css" | "json" | "toml" | "xml" | "sql" | "yaml" | "yml" | "graphql" | "gql"
+        | "ini" | "csv" | "tsv" | "wasm" | "asm" | "http" => return lower.to_uppercase(),
+
+        // Default: title-case the author's input.
+        _ => return capitalize_first(&lower),
+    };
+    mapped.to_string()
 }
 
 /// Capitalizes the first ASCII character of a string.
@@ -610,6 +652,88 @@ mod tests {
             html.contains(r#"data-lang="toml""#),
             "should resolve toml, html:\n{html}"
         );
+    }
+
+    #[test]
+    fn highlight_code_display_label_independent_of_syntect_name() {
+        // syntect names bash as "Bourne Again Shell (bash)"; the rendered header uses the
+        // author-driven display_label instead of the verbose internal name.
+        let html = highlight("bash", "echo hi\n");
+        assert!(
+            html.contains(r#"<span class="code-lang">Shell</span>"#),
+            "display label should come from display_label, html:\n{html}"
+        );
+    }
+
+    // ── display_label ──
+
+    #[test]
+    fn display_label_plaintext_aliases() {
+        assert_eq!(display_label(""), "Plain Text");
+        assert_eq!(display_label("text"), "Plain Text");
+        assert_eq!(display_label("plaintext"), "Plain Text");
+        assert_eq!(display_label("plain"), "Plain Text");
+    }
+
+    #[test]
+    fn display_label_short_form_aliases() {
+        assert_eq!(display_label("rs"), "Rust");
+        assert_eq!(display_label("py"), "Python");
+        assert_eq!(display_label("ts"), "TypeScript");
+        assert_eq!(display_label("js"), "JavaScript");
+    }
+
+    #[test]
+    fn display_label_shell_family_canonicalized() {
+        // Different shell flavors share the same syntect grammar; the display label canonicalizes
+        // to "Shell" rather than leaking the specific flavor.
+        for shell in ["bash", "sh", "zsh", "fish"] {
+            assert_eq!(display_label(shell), "Shell", "for input {shell:?}");
+        }
+    }
+
+    #[test]
+    fn display_label_special_punctuation() {
+        assert_eq!(display_label("cpp"), "C++");
+        assert_eq!(display_label("c++"), "C++");
+        assert_eq!(display_label("cs"), "C#");
+        assert_eq!(display_label("fs"), "F#");
+    }
+
+    #[test]
+    fn display_label_all_caps_conventions() {
+        for token in [
+            "html", "css", "json", "toml", "xml", "sql", "yaml", "graphql",
+        ] {
+            assert_eq!(
+                display_label(token),
+                token.to_uppercase(),
+                "for input {token:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn display_label_mixed_case_conventions() {
+        assert_eq!(display_label("sass"), "Sass");
+        assert_eq!(display_label("scss"), "SCSS");
+    }
+
+    #[test]
+    fn display_label_default_capitalizes_first() {
+        assert_eq!(display_label("rust"), "Rust");
+        assert_eq!(display_label("python"), "Python");
+        assert_eq!(display_label("go"), "Go");
+        assert_eq!(display_label("dockerfile"), "Dockerfile");
+        assert_eq!(display_label("unknown-lang"), "Unknown-lang");
+    }
+
+    #[test]
+    fn display_label_input_case_insensitive() {
+        // Author casing doesn't affect output; "RUST" / "Rust" / "rust" all render the same.
+        assert_eq!(display_label("RUST"), "Rust");
+        assert_eq!(display_label("Rust"), "Rust");
+        assert_eq!(display_label("BASH"), "Shell");
     }
 
     // ── capitalize_first ──
