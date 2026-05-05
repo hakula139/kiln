@@ -7,11 +7,10 @@ use tracing::{debug, warn};
 use super::code_block::CodeBlockSpec;
 use crate::html::{escape, indent, writeln_indented};
 
-/// Highlights a code block with syntax highlighting, line numbers, and a header with a language
-/// label and copy button.
+/// Highlights a code block with line numbers and a header (language pill or title, copy button).
 ///
-/// Language labels are canonicalized from syntect's syntax name, lowercased. Empty and
-/// unrecognized tags normalize to `"plaintext"`. Display label uses original casing.
+/// Empty and unrecognized fence tags normalize to `plaintext`. The display label is derived from
+/// the author's input by [`display_label`], not from syntect's internal name.
 #[must_use]
 pub(crate) fn highlight_code(syntax_set: &SyntaxSet, code: &str, spec: &CodeBlockSpec) -> String {
     let lang = spec.lang.as_deref().unwrap_or("");
@@ -61,8 +60,8 @@ pub(crate) fn highlight_code(syntax_set: &SyntaxSet, code: &str, spec: &CodeBloc
 
     // ── Header ──
     //
-    // An explicit title owns the chrome — drop the language pill so the header shows one label.
-    // `data-lang` on the wrapper still drives syntax CSS.
+    // Title (when present) replaces the language pill so the header shows one label; `data-lang`
+    // on the wrapper still drives syntax CSS.
 
     writeln_indented!(&mut html, 1, r#"<div class="code-header">"#);
     if let Some(title) = &spec.title {
@@ -171,13 +170,10 @@ fn emit_highlighted_lines(
     _ = writeln!(html, "</code></pre></td>");
 }
 
-/// Resolves a markdown language token to a syntect `SyntaxReference`, a canonical language label,
+/// Resolves a markdown language token to a syntect `SyntaxReference`, a canonical HTML-safe label,
 /// and a human-readable display label.
 ///
-/// Tries: file extension → exact name → case-insensitive name → plain text fallback. The canonical
-/// label is lowercased (spaces → hyphens) for HTML attributes. The display label is derived from
-/// the author's input via [`display_label`] — independent of the (often verbose / inconsistently
-/// cased) syntax name syntect carries internally.
+/// Lookup order: file extension → exact name → case-insensitive name → plain-text fallback.
 fn find_syntax<'a>(syntax_set: &'a SyntaxSet, lang: &str) -> (&'a SyntaxReference, String, String) {
     let display = display_label(lang);
 
@@ -205,10 +201,9 @@ fn find_syntax<'a>(syntax_set: &'a SyntaxSet, lang: &str) -> (&'a SyntaxReferenc
     )
 }
 
-/// Derives a canonical HTML-safe language label from a syntect syntax name.
+/// Returns a canonical HTML-safe label from a syntect syntax name.
 ///
-/// Lowercases the name and replaces spaces with hyphens. The "Plain Text" syntax is special-cased
-/// to the web-standard `"plaintext"`.
+/// Lowercases and replaces spaces with hyphens; "Plain Text" maps to the web-standard `plaintext`.
 fn canonical_lang(syntax_name: &str) -> String {
     if syntax_name == "Plain Text" {
         return "plaintext".into();
@@ -216,55 +211,48 @@ fn canonical_lang(syntax_name: &str) -> String {
     syntax_name.to_ascii_lowercase().replace(' ', "-")
 }
 
-/// Picks a human-readable display label from the author's fence language token.
+/// Derives a human-readable display label from the author's fence token.
 ///
-/// Author-driven so the label matches the input rather than syntect's internal syntax name (which
-/// is verbose and inconsistently cased — `"Bourne Again Shell (bash)"` is one example). Authors
-/// who need a custom label per-block already have the `title="..."` fence attribute.
-///
-/// The match handles three categories explicitly: plaintext aliases, common aliases that map to
-/// a canonical name (`rs` → `Rust`, `bash` → `Shell`), special punctuation (`cpp` → `C++`,
-/// `cs` → `C#`), and ALL-CAPS conventions (`html` → `HTML`). Anything else falls through to
-/// `capitalize_first`, which gives the right result for the long form of most languages
-/// (`rust` → `Rust`, `python` → `Python`, `go` → `Go`).
+/// Author-driven so the label tracks the input — syntect's internal name is often verbose
+/// (`"Bourne Again Shell (bash)"`) and inconsistently cased. Per-block overrides go through the
+/// `title="..."` fence attribute instead.
 fn display_label(lang: &str) -> String {
     let lower = lang.to_ascii_lowercase();
     let mapped: &str = match lower.as_str() {
-        "" | "text" | "plaintext" | "plain" => "Plain Text",
+        "" | "plain" | "plaintext" | "text" => "Plain Text",
 
-        // Aliases → canonical name.
-        "rs" => "Rust",
-        "py" => "Python",
-        "ts" | "tsx" => "TypeScript",
+        // Short alias → canonical name (sorted by output).
         "js" | "jsx" => "JavaScript",
-        "rb" => "Ruby",
         "kt" | "kts" => "Kotlin",
+        "latex" | "tex" => "LaTeX",
         "md" | "mdx" => "Markdown",
-        "sh" | "bash" | "zsh" | "fish" => "Shell",
-        "ps1" => "PowerShell",
         "objc" => "Objective-C",
-        "tex" | "latex" => "LaTeX",
+        "ps1" => "PowerShell",
+        "py" => "Python",
+        "rb" => "Ruby",
+        "rs" => "Rust",
+        "bash" | "fish" | "sh" | "zsh" => "Shell",
+        "ts" | "tsx" => "TypeScript",
 
-        // Special punctuation.
-        "cpp" | "c++" | "cxx" | "cc" | "hpp" | "h++" => "C++",
+        // Special punctuation in the canonical name (sorted by output).
         "cs" | "csharp" => "C#",
+        "c++" | "cc" | "cpp" | "cxx" | "h++" | "hpp" => "C++",
         "fs" | "fsharp" => "F#",
 
-        // Mixed-case conventions.
+        // Mixed-case brand names (sorted by output).
+        "gql" | "graphql" => "GraphQL",
         "sass" => "Sass",
-        "scss" => "SCSS",
 
-        // ALL-CAPS conventions.
-        "html" | "css" | "json" | "toml" | "xml" | "sql" | "yaml" | "yml" | "graphql" | "gql"
-        | "ini" | "csv" | "tsv" | "wasm" | "asm" | "http" => return lower.to_uppercase(),
+        // ALL-CAPS acronyms; output is just the input uppercased.
+        "asm" | "css" | "csv" | "html" | "http" | "ini" | "json" | "php" | "scss" | "sql"
+        | "toml" | "tsv" | "wasm" | "xml" | "yaml" | "yml" => return lower.to_uppercase(),
 
-        // Default: title-case the author's input.
         _ => return capitalize_first(&lower),
     };
     mapped.to_string()
 }
 
-/// Capitalizes the first ASCII character of a string.
+/// Uppercases the first ASCII character of a string.
 fn capitalize_first(s: &str) -> String {
     let mut chars = s.chars();
     match chars.next() {
@@ -339,26 +327,17 @@ mod tests {
     }
 
     #[test]
-    fn highlight_code_max_lines() {
+    fn highlight_code_no_attrs_omits_optional_chrome() {
         let spec = CodeBlockSpec {
             lang: Some("rs".into()),
-            max_lines: Some(40),
             ..CodeBlockSpec::default()
         };
         let html = highlight_with_spec("fn main() {}\n", &spec);
-        assert!(
-            html.contains(r#"<div class="code-body" data-max-lines="40">"#),
-            "should have data-max-lines attribute, html:\n{html}"
-        );
-    }
-
-    #[test]
-    fn highlight_code_no_max_lines() {
-        let html = highlight("rs", "fn main() {}\n");
-        assert!(
-            !html.contains("data-max-lines"),
-            "should not have data-max-lines when None, html:\n{html}"
-        );
+        assert!(html.starts_with(r#"<div class="code-block" data-lang="rust">"#));
+        assert!(!html.contains("code-title"));
+        assert!(!html.contains("collapsed"));
+        assert!(!html.contains("expanded"));
+        assert!(!html.contains(r"id="));
     }
 
     #[test]
@@ -381,7 +360,35 @@ mod tests {
         );
     }
 
+    #[test]
+    fn highlight_code_propagates_id_and_classes() {
+        let spec = CodeBlockSpec {
+            lang: Some("rs".into()),
+            id: Some("my-code".into()),
+            classes: vec!["wide".into(), "dark".into()],
+            ..CodeBlockSpec::default()
+        };
+        let html = highlight_with_spec("fn main() {}\n", &spec);
+        assert!(
+            html.contains(r#"<div class="code-block wide dark" id="my-code""#),
+            "should propagate id and classes, html:\n{html}"
+        );
+    }
+
     // ── highlight_code (title) ──
+
+    #[test]
+    fn highlight_code_no_title_keeps_lang_pill() {
+        let html = highlight("rs", "fn main() {}\n");
+        assert!(
+            !html.contains("code-title"),
+            "should not emit title span when no title, html:\n{html}"
+        );
+        assert!(
+            html.contains(r#"<span class="code-lang">Rust</span>"#),
+            "lang pill should appear when no title, html:\n{html}"
+        );
+    }
 
     #[test]
     fn highlight_code_title_replaces_lang_pill() {
@@ -402,19 +409,6 @@ mod tests {
         assert!(
             html.contains(r#"data-lang="rust""#),
             "wrapper should still carry data-lang for syntax CSS, html:\n{html}"
-        );
-    }
-
-    #[test]
-    fn highlight_code_no_title_keeps_lang_pill() {
-        let html = highlight("rs", "fn main() {}\n");
-        assert!(
-            !html.contains("code-title"),
-            "should not emit title span when no title, html:\n{html}"
-        );
-        assert!(
-            html.contains(r#"<span class="code-lang">Rust</span>"#),
-            "lang pill should appear when no title, html:\n{html}"
         );
     }
 
@@ -499,57 +493,35 @@ mod tests {
         );
     }
 
-    // ── highlight_code (ID and classes) ──
+    // ── highlight_code (max lines) ──
 
     #[test]
-    fn highlight_code_propagates_id_and_classes() {
+    fn highlight_code_max_lines() {
         let spec = CodeBlockSpec {
             lang: Some("rs".into()),
-            id: Some("my-code".into()),
-            classes: vec!["wide".into(), "dark".into()],
+            max_lines: Some(40),
             ..CodeBlockSpec::default()
         };
         let html = highlight_with_spec("fn main() {}\n", &spec);
         assert!(
-            html.contains(r#"<div class="code-block wide dark" id="my-code""#),
-            "should propagate id and classes, html:\n{html}"
+            html.contains(r#"<div class="code-body" data-max-lines="40">"#),
+            "should have data-max-lines attribute, html:\n{html}"
         );
     }
 
-    // ── highlight_code (no-attrs baseline) ──
-
     #[test]
-    fn highlight_code_no_attrs_omits_optional_chrome() {
-        let spec = CodeBlockSpec {
-            lang: Some("rs".into()),
-            ..CodeBlockSpec::default()
-        };
-        let html = highlight_with_spec("fn main() {}\n", &spec);
-        assert!(html.starts_with(r#"<div class="code-block" data-lang="rust">"#));
-        assert!(!html.contains("code-title"));
-        assert!(!html.contains("collapsed"));
-        assert!(!html.contains("expanded"));
-        assert!(!html.contains(r"id="));
+    fn highlight_code_no_max_lines_omits_attr() {
+        let html = highlight("rs", "fn main() {}\n");
+        assert!(
+            !html.contains("data-max-lines"),
+            "should not have data-max-lines when None, html:\n{html}"
+        );
     }
 
     // ── highlight_code (language resolution) ──
 
     #[test]
-    fn highlight_code_empty_input() {
-        let html = highlight("rs", "");
-        assert!(
-            html.contains(r#"data-lang="rust""#),
-            "should still resolve language, html:\n{html}"
-        );
-        assert!(
-            html.contains("<pre>1</pre>"),
-            "should have single line number, html:\n{html}"
-        );
-    }
-
-    #[test]
     fn highlight_code_known_language() {
-        // By extension
         let html = highlight("rs", "fn main() {}\n");
         assert!(
             html.contains(r#"data-lang="rust""#),
@@ -560,71 +532,12 @@ mod tests {
             "display label should be proper-cased, html:\n{html}"
         );
 
-        // By name (case-insensitive)
         let html = highlight("Rust", "fn main() {}\n");
         assert!(
             html.contains(r#"data-lang="rust""#),
             "should canonicalize to lowercase, html:\n{html}"
         );
     }
-
-    #[test]
-    fn highlight_code_empty_language() {
-        let html = highlight("", "hello\n");
-        assert!(
-            html.contains(r#"data-lang="plaintext""#),
-            "should default to plaintext, html:\n{html}"
-        );
-        assert!(
-            html.contains(r#"<span class="code-lang">Plain Text</span>"#),
-            "display label should be Plain Text, html:\n{html}"
-        );
-    }
-
-    #[test]
-    fn highlight_code_unknown_language() {
-        let html = highlight("Unknown", "hello\n");
-        assert!(
-            html.contains(r#"data-lang="plaintext""#),
-            "should normalize unrecognized token to plaintext, html:\n{html}"
-        );
-        assert!(
-            html.contains(r#"<span class="code-lang">Unknown</span>"#),
-            "display label should title-case the lowercased token, html:\n{html}"
-        );
-    }
-
-    #[test]
-    fn highlight_code_special_chars_in_language() {
-        let html = highlight("c++", "int main() {}\n");
-        assert!(
-            html.contains(r#"data-lang="c++""#),
-            "should preserve special chars, html:\n{html}"
-        );
-        assert!(
-            html.contains(r#"<span class="code-lang">C++</span>"#),
-            "display label should preserve original casing, html:\n{html}"
-        );
-    }
-
-    #[test]
-    fn highlight_code_html_chars_in_language() {
-        let html = highlight("<script>", "alert(1)\n");
-        assert!(
-            html.contains(r#"data-lang="plaintext""#),
-            "should normalize to plaintext, html:\n{html}"
-        );
-        assert!(
-            html.contains(r#"<span class="code-lang">&lt;script&gt;</span>"#),
-            "display label should be escaped, html:\n{html}"
-        );
-        assert!(
-            !html.contains("<script>"),
-            "raw script tag must not appear, html:\n{html}"
-        );
-    }
-
-    // ── find_syntax ──
 
     #[test]
     fn highlight_code_text_alias() {
@@ -655,9 +568,21 @@ mod tests {
     }
 
     #[test]
+    fn highlight_code_special_chars_in_language() {
+        let html = highlight("c++", "int main() {}\n");
+        assert!(
+            html.contains(r#"data-lang="c++""#),
+            "should preserve special chars, html:\n{html}"
+        );
+        assert!(
+            html.contains(r#"<span class="code-lang">C++</span>"#),
+            "display label should preserve special punctuation, html:\n{html}"
+        );
+    }
+
+    #[test]
     fn highlight_code_display_label_independent_of_syntect_name() {
-        // syntect names bash as "Bourne Again Shell (bash)"; the rendered header uses the
-        // author-driven display_label instead of the verbose internal name.
+        // syntect names bash as "Bourne Again Shell (bash)"; display_label sidesteps that.
         let html = highlight("bash", "echo hi\n");
         assert!(
             html.contains(r#"<span class="code-lang">Shell</span>"#),
@@ -665,58 +590,114 @@ mod tests {
         );
     }
 
+    #[test]
+    fn highlight_code_empty_language() {
+        let html = highlight("", "hello\n");
+        assert!(
+            html.contains(r#"data-lang="plaintext""#),
+            "should default to plaintext, html:\n{html}"
+        );
+        assert!(
+            html.contains(r#"<span class="code-lang">Plain Text</span>"#),
+            "display label should be Plain Text, html:\n{html}"
+        );
+    }
+
+    #[test]
+    fn highlight_code_empty_input() {
+        let html = highlight("rs", "");
+        assert!(
+            html.contains(r#"data-lang="rust""#),
+            "should still resolve language, html:\n{html}"
+        );
+        assert!(
+            html.contains("<pre>1</pre>"),
+            "should have single line number, html:\n{html}"
+        );
+    }
+
+    #[test]
+    fn highlight_code_unknown_language() {
+        let html = highlight("Unknown", "hello\n");
+        assert!(
+            html.contains(r#"data-lang="plaintext""#),
+            "should normalize unrecognized token to plaintext, html:\n{html}"
+        );
+        assert!(
+            html.contains(r#"<span class="code-lang">Unknown</span>"#),
+            "display label should title-case the lowercased token, html:\n{html}"
+        );
+    }
+
+    #[test]
+    fn highlight_code_html_chars_in_language() {
+        let html = highlight("<script>", "alert(1)\n");
+        assert!(
+            html.contains(r#"data-lang="plaintext""#),
+            "should normalize to plaintext, html:\n{html}"
+        );
+        assert!(
+            html.contains(r#"<span class="code-lang">&lt;script&gt;</span>"#),
+            "display label should be escaped, html:\n{html}"
+        );
+        assert!(
+            !html.contains("<script>"),
+            "raw script tag must not appear, html:\n{html}"
+        );
+    }
+
     // ── display_label ──
 
     #[test]
     fn display_label_plaintext_aliases() {
-        assert_eq!(display_label(""), "Plain Text");
-        assert_eq!(display_label("text"), "Plain Text");
-        assert_eq!(display_label("plaintext"), "Plain Text");
-        assert_eq!(display_label("plain"), "Plain Text");
+        for token in ["", "plain", "plaintext", "text"] {
+            assert_eq!(display_label(token), "Plain Text", "for input {token:?}");
+        }
     }
 
     #[test]
     fn display_label_short_form_aliases() {
-        assert_eq!(display_label("rs"), "Rust");
-        assert_eq!(display_label("py"), "Python");
-        assert_eq!(display_label("ts"), "TypeScript");
         assert_eq!(display_label("js"), "JavaScript");
+        assert_eq!(display_label("kt"), "Kotlin");
+        assert_eq!(display_label("md"), "Markdown");
+        assert_eq!(display_label("ps1"), "PowerShell");
+        assert_eq!(display_label("py"), "Python");
+        assert_eq!(display_label("rs"), "Rust");
+        assert_eq!(display_label("ts"), "TypeScript");
     }
 
     #[test]
     fn display_label_shell_family_canonicalized() {
-        // Different shell flavors share the same syntect grammar; the display label canonicalizes
-        // to "Shell" rather than leaking the specific flavor.
-        for shell in ["bash", "sh", "zsh", "fish"] {
+        // Different shell flavors share the syntect grammar; the label collapses to "Shell".
+        for shell in ["bash", "fish", "sh", "zsh"] {
             assert_eq!(display_label(shell), "Shell", "for input {shell:?}");
         }
     }
 
     #[test]
     fn display_label_special_punctuation() {
+        assert_eq!(display_label("cs"), "C#");
         assert_eq!(display_label("cpp"), "C++");
         assert_eq!(display_label("c++"), "C++");
-        assert_eq!(display_label("cs"), "C#");
         assert_eq!(display_label("fs"), "F#");
     }
 
     #[test]
-    fn display_label_all_caps_conventions() {
-        for token in [
-            "html", "css", "json", "toml", "xml", "sql", "yaml", "graphql",
-        ] {
+    fn display_label_mixed_case_brand_names() {
+        assert_eq!(display_label("gql"), "GraphQL");
+        assert_eq!(display_label("graphql"), "GraphQL");
+        assert_eq!(display_label("sass"), "Sass");
+    }
+
+    #[test]
+    fn display_label_all_caps_acronyms() {
+        for token in ["css", "html", "json", "php", "scss", "toml", "yaml"] {
             assert_eq!(
                 display_label(token),
                 token.to_uppercase(),
                 "for input {token:?}"
             );
         }
-    }
-
-    #[test]
-    fn display_label_mixed_case_conventions() {
-        assert_eq!(display_label("sass"), "Sass");
-        assert_eq!(display_label("scss"), "SCSS");
     }
 
     #[test]
@@ -730,10 +711,10 @@ mod tests {
 
     #[test]
     fn display_label_input_case_insensitive() {
-        // Author casing doesn't affect output; "RUST" / "Rust" / "rust" all render the same.
         assert_eq!(display_label("RUST"), "Rust");
         assert_eq!(display_label("Rust"), "Rust");
         assert_eq!(display_label("BASH"), "Shell");
+        assert_eq!(display_label("GraphQL"), "GraphQL");
     }
 
     // ── capitalize_first ──
