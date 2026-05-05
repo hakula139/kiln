@@ -157,13 +157,13 @@ impl BucketKind {
 /// A named collection of pages shared by the archive, feed, and overview output generators.
 #[derive(Debug, Clone)]
 pub(crate) struct ListingBucket {
-    pub kind: BucketKind,
+    pub(crate) kind: BucketKind,
     /// Display name (localized "Posts", section title, tag name).
-    pub name: String,
+    pub(crate) name: String,
     /// URL-safe slug. For `BucketKind::Posts` echoes the plural (`"posts"`).
-    pub slug: String,
+    pub(crate) slug: String,
     /// Pages in this bucket, sorted by date descending.
-    pub pages: Vec<ListedPage>,
+    pub(crate) pages: Vec<ListedPage>,
 }
 
 impl ListingBucket {
