@@ -22,25 +22,16 @@ pub(crate) struct CodeBlockSpec {
 #[must_use]
 pub(crate) fn parse_fence_info(info: &str, default_max_lines: Option<usize>) -> CodeBlockSpec {
     let trimmed = info.trim();
-    if trimmed.is_empty() {
+    let Some(lang_token) = trimmed.split_ascii_whitespace().next() else {
         return CodeBlockSpec {
             max_lines: default_max_lines,
             ..CodeBlockSpec::default()
         };
-    }
+    };
 
-    let lang = trimmed
-        .split_ascii_whitespace()
-        .next()
-        .filter(|s| !s.is_empty())
-        .map(String::from);
-
-    let after_lang = lang
-        .as_ref()
-        .map_or(trimmed, |l| trimmed[l.len()..].trim_start());
-
+    let after_lang = trimmed[lang_token.len()..].trim_start();
     let payload = extract_brace_payload(after_lang);
-    parse_code_block_attrs(lang, payload, default_max_lines)
+    parse_code_block_attrs(Some(lang_token.to_string()), payload, default_max_lines)
 }
 
 /// Extracts the content between the first `{` and its matching `}`.
@@ -201,6 +192,14 @@ mod tests {
         let spec = parse_fence_info("js {#snippet .wide .dark}", None);
         assert_eq!(spec.id.as_deref(), Some("snippet"));
         assert_eq!(spec.classes, vec!["wide", "dark"]);
+    }
+
+    #[test]
+    fn parse_fence_info_unknown_attrs_discarded() {
+        let spec = parse_fence_info(r#"rust {title="T" unknown="val" foo=bar}"#, None);
+        assert_eq!(spec.title.as_deref(), Some("T"));
+        assert!(spec.highlight.is_empty());
+        assert!(spec.collapse.is_none());
     }
 
     // ── parse_highlight_ranges ──
