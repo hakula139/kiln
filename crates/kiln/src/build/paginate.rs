@@ -38,12 +38,27 @@ where
     Ok(())
 }
 
-/// Reads a pagination count from a nested TOML params path.
+/// Resolves a pagination count from `params`, trying each TOML path in order and falling back to
+/// `default` when none matches.
 ///
-/// `path` specifies the keys to traverse (e.g., `["home", "paginate"]` reads
-/// `params.home.paginate`).
+/// Each path is a sequence of keys to traverse (e.g., `&["home", "paginate"]` reads
+/// `params.home.paginate`). Non-positive integers are treated as missing so `paginate = 0` falls
+/// through to the next path or `default`.
 #[must_use]
-pub(crate) fn paginate_config(params: &toml::value::Table, path: &[&str]) -> Option<usize> {
+pub(crate) fn paginate_config(
+    params: &toml::value::Table,
+    paths: &[&[&str]],
+    default: usize,
+) -> usize {
+    paths
+        .iter()
+        .find_map(|path| paginate_at(params, path))
+        .unwrap_or(default)
+}
+
+/// Reads a single nested integer at `path` from `params`. Returns `None` for missing keys,
+/// non-integer values, and non-positive integers.
+fn paginate_at(params: &toml::value::Table, path: &[&str]) -> Option<usize> {
     let (&first, rest) = path.split_first()?;
     let mut current: &toml::Value = params.get(first)?;
     for key in rest {
@@ -64,42 +79,46 @@ mod tests {
     // ── paginate_config ──
 
     #[test]
-    fn paginate_config_nested() {
+    fn paginate_config_returns_first_matching_path() {
         let params: toml::value::Table = toml::from_str(indoc! {r"
                 [home]
                 paginate = 8
             "})
         .unwrap();
-        assert_eq!(paginate_config(&params, &["home", "paginate"]), Some(8));
+        let per_page = paginate_config(&params, &[&["home", "paginate"], &["paginate"]], 10);
+        assert_eq!(per_page, 8);
     }
 
     #[test]
-    fn paginate_config_flat() {
+    fn paginate_config_falls_back_to_next_path() {
         let params: toml::value::Table = toml::from_str("paginate = 16").unwrap();
-        assert_eq!(paginate_config(&params, &["paginate"]), Some(16));
+        let per_page = paginate_config(&params, &[&["home", "paginate"], &["paginate"]], 10);
+        assert_eq!(per_page, 16);
     }
 
     #[test]
-    fn paginate_config_missing_returns_none() {
+    fn paginate_config_falls_back_to_default_when_missing() {
         let params: toml::value::Table = toml::from_str("").unwrap();
-        assert_eq!(paginate_config(&params, &["paginate"]), None);
+        assert_eq!(paginate_config(&params, &[&["paginate"]], 10), 10);
     }
 
     #[test]
-    fn paginate_config_negative_returns_none() {
-        let params: toml::value::Table = toml::from_str("paginate = -1").unwrap();
-        assert_eq!(paginate_config(&params, &["paginate"]), None);
+    fn paginate_config_skips_non_positive_values() {
+        // `0` is rejected so it falls through to the next path or the default.
+        let params: toml::value::Table = toml::from_str(indoc! {r"
+                paginate = 0
+
+                [home]
+                paginate = -1
+            "})
+        .unwrap();
+        let per_page = paginate_config(&params, &[&["home", "paginate"], &["paginate"]], 10);
+        assert_eq!(per_page, 10);
     }
 
     #[test]
-    fn paginate_config_zero_returns_none() {
-        let params: toml::value::Table = toml::from_str("paginate = 0").unwrap();
-        assert_eq!(paginate_config(&params, &["paginate"]), None);
-    }
-
-    #[test]
-    fn paginate_config_empty_path_returns_none() {
-        let params: toml::value::Table = toml::from_str("paginate = 10").unwrap();
-        assert_eq!(paginate_config(&params, &[]), None);
+    fn paginate_config_falls_back_to_default_with_no_paths() {
+        let params: toml::value::Table = toml::from_str("paginate = 8").unwrap();
+        assert_eq!(paginate_config(&params, &[], 10), 10);
     }
 }

@@ -8,7 +8,6 @@ mod paginate;
 mod sitemap;
 mod url;
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -25,13 +24,14 @@ use crate::render::RenderOptions;
 use crate::render::lqip::ImageResolver;
 use crate::render::pipeline::render_page;
 use crate::search;
-use crate::section::collect_sections;
+use crate::section::{self, Section, collect_sections};
 use crate::taxonomy::build_taxonomies;
 use crate::template::TemplateEngine;
 use crate::template::vars::PostTemplateVars;
 
 use self::listing::{
-    build_listing_artifacts, format_page_date, page_section, resolve_featured_image,
+    build_listing_artifacts, build_listing_buckets, format_page_date, page_section,
+    resolve_featured_image,
 };
 use self::url::{page_url, resolve_relative_url};
 
@@ -67,10 +67,6 @@ pub struct BuildOptions<'a> {
 #[expect(
     clippy::needless_pass_by_value,
     reason = "BuildOptions is an owned options bag: callers construct it inline with `..Default::default()`, so taking it by value keeps call sites concise and lets future non-Copy fields land without a signature churn"
-)]
-#[expect(
-    clippy::too_many_lines,
-    reason = "this is the top-level build orchestrator; splitting it would obscure the linear pipeline (config → context → discover → render → write)"
 )]
 pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
     let BuildOptions {
@@ -131,51 +127,31 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
     copy_static(&root.join("static"), &output_dir)?;
 
     let sections = collect_sections(&content.pages, &content.content_dir);
-    let section_titles: HashMap<&str, &str> = sections
-        .iter()
-        .map(|s| (s.slug.as_str(), s.title.as_str()))
-        .collect();
+    let taxonomy_set = build_taxonomies(&content.pages, Some(&content.content_dir));
 
     let artifacts = build_listing_artifacts(
         &content.pages,
         &content.content_dir,
         &ctx.config.base_url,
         ctx.time_zone.as_ref(),
-        &section_titles,
+        &sections,
         &ctx.image_resolver,
+        &taxonomy_set,
     )?;
 
     for page in &content.pages {
-        build_page(
-            &ctx,
-            page,
-            &content.content_dir,
-            &output_dir,
-            &section_titles,
-        )?;
+        build_page(&ctx, page, &content.content_dir, &output_dir, &sections)?;
     }
 
-    let taxonomy_set = build_taxonomies(&content.pages, Some(&content.content_dir));
+    let posts_title = section::load_index_title(&content.content_dir.join("posts"))
+        .unwrap_or_else(|| ctx.i18n.t("all_posts").into_owned());
+    let buckets = build_listing_buckets(&artifacts, &sections, &taxonomy_set, posts_title);
 
     home::build_home_pages(&ctx, &artifacts.listed_posts, &output_dir)?;
-    archive::build_archive_pages(
-        &ctx,
-        &artifacts,
-        &sections,
-        &taxonomy_set,
-        &content.content_dir,
-        &output_dir,
-    )?;
-    overview::build_overview_pages(&ctx, &artifacts, &sections, &taxonomy_set, &output_dir)?;
+    archive::build_archive_pages(&ctx, &buckets, &output_dir)?;
+    overview::build_overview_pages(&ctx, &buckets, &output_dir)?;
 
-    feed::build_feeds(
-        &ctx,
-        &artifacts,
-        &sections,
-        &taxonomy_set,
-        &content.content_dir,
-        &output_dir,
-    )?;
+    feed::build_feeds(&ctx, &artifacts.listed_posts, &buckets, &output_dir)?;
     sitemap::build_sitemap_and_robots(&ctx, &artifacts.listed_pages, &output_dir)?;
     error::build_404(&ctx, &output_dir)?;
 
@@ -212,7 +188,7 @@ fn build_page(
     page: &Page,
     content_dir: &Path,
     output_dir: &Path,
-    section_titles: &HashMap<&str, &str>,
+    sections: &[Section],
 ) -> Result<()> {
     let options = RenderOptions::from_params(&ctx.config.params);
 
@@ -253,7 +229,7 @@ fn build_page(
             .frontmatter
             .date
             .map(|date| format_page_date(date, ctx.time_zone.as_ref())),
-        section: page_section(page, &ctx.config.base_url, section_titles),
+        section: page_section(page, &ctx.config.base_url, sections),
         assets: rendered.assets,
         content: &rendered.content_html,
         toc: &rendered.toc_html,
@@ -2028,13 +2004,12 @@ mod tests {
         );
     }
 
-    #[test]
-    fn build_broken_post_template_returns_error() {
+    fn assert_broken_template_fails(template_name: &str) {
         let root = tempfile::tempdir().unwrap();
         setup_site_with_page(root.path());
 
         fs::write(
-            root.path().join("templates").join("post.html"),
+            root.path().join("templates").join(template_name),
             "{% invalid %}",
         )
         .unwrap();
@@ -2044,8 +2019,23 @@ mod tests {
             .to_string();
         assert!(
             err.contains("failed to render"),
-            "should report render failure, got: {err}"
+            "should report render failure for {template_name}, got: {err}"
         );
+    }
+
+    #[test]
+    fn build_broken_post_template_returns_error() {
+        assert_broken_template_fails("post.html");
+    }
+
+    #[test]
+    fn build_broken_archive_template_returns_error() {
+        assert_broken_template_fails("archive.html");
+    }
+
+    #[test]
+    fn build_broken_overview_template_returns_error() {
+        assert_broken_template_fails("overview.html");
     }
 
     #[test]

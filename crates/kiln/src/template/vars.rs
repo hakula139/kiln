@@ -7,9 +7,8 @@ use crate::render::assets::PageAssets;
 
 /// Template variables for rendering a post page.
 ///
-/// The `date` field is pre-formatted as a string so the template doesn't need
-/// date logic. HTML fields (`content`, `toc`) use `| safe` in the template to
-/// avoid double-escaping. All other string fields are auto-escaped by `MiniJinja`.
+/// `date` is pre-formatted; HTML fields (`content`, `toc`) use `| safe` in templates to avoid
+/// double-escaping. All other string fields are auto-escaped by `MiniJinja`.
 #[derive(Debug, Serialize)]
 pub struct PostTemplateVars<'a> {
     pub title: &'a str,
@@ -19,9 +18,8 @@ pub struct PostTemplateVars<'a> {
     pub page_css: Option<String>,
     pub date: Option<String>,
     pub section: Option<LinkedTerm>,
-    /// Auto-detected runtime dependencies (math, mermaid, registered scripts).
-    /// Themes iterate `assets.features` and `assets.scripts` to load the right
-    /// CSS / JS without per-feature frontmatter flags.
+    /// Auto-detected runtime dependencies (math, mermaid, registered scripts). Themes iterate
+    /// `assets.features` and `assets.scripts` to load the right CSS / JS.
     pub assets: PageAssets,
     pub content: &'a str,
     pub toc: &'a str,
@@ -41,9 +39,8 @@ pub struct PageSummary {
     pub title: String,
     pub url: String,
     pub date: Option<String>,
-    /// True when the page has any `weight` set in its frontmatter. Themes use
-    /// it to render a pinned-post visual treatment; the canonical sort already
-    /// puts pinned posts at the top of listings.
+    /// True when the page has `weight` set in frontmatter. Themes use it to render a pinned-post
+    /// visual treatment; the canonical sort already puts pinned posts at the top.
     pub pinned: bool,
     pub description: String,
     pub featured_image: Option<FeaturedImage>,
@@ -69,10 +66,7 @@ pub struct HomePageVars<'a> {
     pub config: &'a Config,
 }
 
-/// Template variables for a paginated, year-grouped archive page.
-///
-/// Used for the posts index (`/posts/`), per-section archives
-/// (`/posts/<slug>/`), and per-tag archives (`/tags/<slug>/`).
+/// Template variables for a paginated, year-grouped archive page (`/posts/`, per-section, per-tag).
 #[derive(Debug, Serialize)]
 pub struct ArchivePageVars<'a> {
     pub kind: &'a str,

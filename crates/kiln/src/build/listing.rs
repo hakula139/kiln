@@ -3,12 +3,14 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use jiff::{Timestamp, tz::TimeZone};
+use strum::EnumIter;
 
 use crate::content::frontmatter::FeaturedImage;
 use crate::content::page::{Page, PageKind};
 use crate::render::lqip::ImageResolver;
-use crate::taxonomy::{TaxonomyKind, TaxonomySet};
-use crate::template::vars::{LinkedTerm, PageGroup, PageSummary};
+use crate::section::Section;
+use crate::taxonomy::TaxonomySet;
+use crate::template::vars::{BucketSummary, LinkedTerm, PageGroup, PageSummary};
 use crate::text::slugify;
 
 use super::url::{page_url, resolve_relative_url};
@@ -33,12 +35,14 @@ impl ListedPage {
 
 /// Precomputed listing data for all output generators.
 pub(crate) struct ListingArtifacts {
-    /// All listable pages, indexed to match `TaxonomySet::term_pages`.
+    /// All listable pages, indexed to match `TaxonomySet::tag_pages`.
     pub(crate) listed_pages: Vec<ListedPage>,
     /// Posts only, sorted by date descending.
     pub(crate) listed_posts: Vec<ListedPage>,
     /// Posts grouped by section slug, each bucket sorted by date descending.
-    pub(crate) section_posts: HashMap<String, Vec<ListedPage>>,
+    section_posts: HashMap<String, Vec<ListedPage>>,
+    /// Pages grouped by tag slug, each bucket sorted by date descending.
+    tag_pages: HashMap<String, Vec<ListedPage>>,
 }
 
 // ── Listing construction ──
@@ -46,14 +50,16 @@ pub(crate) struct ListingArtifacts {
 /// Builds listing artifacts from discovered pages in a single pass.
 ///
 /// Index alignment with the input slice is maintained (required by
-/// `TaxonomySet::term_pages`). Post lists are pre-sorted by date descending.
+/// `TaxonomySet::tag_pages`). Post and tag lists are pre-sorted by date
+/// descending.
 pub(crate) fn build_listing_artifacts(
     pages: &[Page],
     content_dir: &Path,
     base_url: &str,
     time_zone: Option<&TimeZone>,
-    section_titles: &HashMap<&str, &str>,
+    sections: &[Section],
     image_resolver: &ImageResolver,
+    taxonomy_set: &TaxonomySet,
 ) -> Result<ListingArtifacts> {
     let mut listed_pages = Vec::with_capacity(pages.len());
     let mut listed_posts = Vec::new();
@@ -65,7 +71,7 @@ pub(crate) fn build_listing_artifacts(
             content_dir,
             base_url,
             time_zone,
-            section_titles,
+            sections,
             image_resolver,
         )
         .with_context(|| {
@@ -92,11 +98,145 @@ pub(crate) fn build_listing_artifacts(
         sort_by_date_desc(posts);
     }
 
+    let mut tag_pages = HashMap::with_capacity(taxonomy_set.tag_pages.len());
+    for (slug, indices) in &taxonomy_set.tag_pages {
+        let mut pages: Vec<ListedPage> = indices
+            .iter()
+            .filter_map(|&idx| listed_pages.get(idx).cloned())
+            .collect();
+        sort_by_date_desc(&mut pages);
+        tag_pages.insert(slug.clone(), pages);
+    }
+
     Ok(ListingArtifacts {
         listed_pages,
         listed_posts,
         section_posts,
+        tag_pages,
     })
+}
+
+// ── Listing buckets ──
+
+/// Identifies the flavor of a `ListingBucket`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter)]
+pub(crate) enum BucketKind {
+    Posts,
+    Section,
+    Tag,
+}
+
+impl BucketKind {
+    /// Plural form — used as the `kind` template variable and in URL roots.
+    #[must_use]
+    pub(crate) fn plural(self) -> &'static str {
+        match self {
+            Self::Posts => "posts",
+            Self::Section => "sections",
+            Self::Tag => "tags",
+        }
+    }
+
+    /// Singular form — used as the `singular` template variable.
+    #[must_use]
+    pub(crate) fn singular(self) -> &'static str {
+        match self {
+            Self::Posts => "post",
+            Self::Section => "section",
+            Self::Tag => "tag",
+        }
+    }
+
+    /// Whether buckets of this kind appear on overview index pages (`/sections/`, `/tags/`).
+    #[must_use]
+    pub(crate) fn has_overview(self) -> bool {
+        matches!(self, Self::Section | Self::Tag)
+    }
+}
+
+/// A named collection of pages shared by the archive, feed, and overview output generators.
+#[derive(Debug, Clone)]
+pub(crate) struct ListingBucket {
+    pub(crate) kind: BucketKind,
+    /// Display name (localized "Posts", section title, tag name).
+    pub(crate) name: String,
+    /// URL-safe slug. For `BucketKind::Posts` echoes the plural (`"posts"`).
+    pub(crate) slug: String,
+    /// Pages in this bucket, sorted by date descending.
+    pub(crate) pages: Vec<ListedPage>,
+}
+
+impl ListingBucket {
+    /// URL path with leading slash, no trailing slash (e.g., `/posts`, `/posts/note`, `/tags/rust`).
+    /// Sections live under `/posts/` to match the existing site URL contract.
+    #[must_use]
+    pub(crate) fn base_path(&self) -> String {
+        match self.kind {
+            BucketKind::Posts => "/posts".into(),
+            BucketKind::Section => format!("/posts/{}", self.slug),
+            BucketKind::Tag => format!("/tags/{}", self.slug),
+        }
+    }
+}
+
+impl From<&ListingBucket> for BucketSummary {
+    fn from(bucket: &ListingBucket) -> Self {
+        Self {
+            name: bucket.name.clone(),
+            slug: bucket.slug.clone(),
+            url: format!("{}/", bucket.base_path()),
+            pages: bucket.pages.iter().map(|lp| lp.summary.clone()).collect(),
+        }
+    }
+}
+
+/// Assembles every listing bucket: the all-posts aggregate, one per section, and one per tag.
+/// Each bucket owns its pages (cloned from `artifacts`).
+#[must_use]
+pub(crate) fn build_listing_buckets(
+    artifacts: &ListingArtifacts,
+    sections: &[Section],
+    taxonomy_set: &TaxonomySet,
+    posts_title: String,
+) -> Vec<ListingBucket> {
+    let mut buckets = Vec::with_capacity(1 + sections.len() + taxonomy_set.tags.len());
+
+    buckets.push(ListingBucket {
+        kind: BucketKind::Posts,
+        name: posts_title,
+        slug: "posts".into(),
+        pages: artifacts.listed_posts.clone(),
+    });
+
+    for section in sections {
+        let pages = artifacts
+            .section_posts
+            .get(section.slug.as_str())
+            .cloned()
+            .unwrap_or_default();
+        buckets.push(ListingBucket {
+            kind: BucketKind::Section,
+            name: section.title.clone(),
+            slug: section.slug.clone(),
+            pages,
+        });
+    }
+
+    for term in &taxonomy_set.tags {
+        let pages = artifacts
+            .tag_pages
+            .get(&term.slug)
+            .cloned()
+            .unwrap_or_default();
+        buckets.push(ListingBucket {
+            kind: BucketKind::Tag,
+            name: term.name.clone(),
+            slug: term.slug.clone(),
+            pages,
+        });
+    }
+
+    buckets
 }
 
 /// Builds a `ListedPage` from a content page.
@@ -105,7 +245,7 @@ fn build_listed_page(
     content_dir: &Path,
     base_url: &str,
     time_zone: Option<&TimeZone>,
-    section_titles: &HashMap<&str, &str>,
+    sections: &[Section],
     image_resolver: &ImageResolver,
 ) -> Result<ListedPage> {
     // `output_path` already includes the source and content-dir paths in
@@ -114,7 +254,7 @@ fn build_listed_page(
     let url = page_url(base_url, &output_path);
     let timestamp = page.frontmatter.date;
     let weight = page.frontmatter.weight;
-    let section = page_section(page, base_url, section_titles);
+    let section = page_section(page, base_url, sections);
     let featured_image = resolve_featured_image(
         page.frontmatter.featured_image.as_ref(),
         &url,
@@ -155,8 +295,7 @@ pub(crate) fn sort_by_date_desc(pages: &mut [ListedPage]) {
 
 /// Sorts pinned posts first (by `weight` ascending), then by date descending.
 ///
-/// Used only for the home page. Any `weight` value marks a post as pinned;
-/// lower values sort higher. Posts without `weight` are unpinned.
+/// Any `weight` value marks a post as pinned; lower values sort higher.
 pub(crate) fn sort_pinned_first(pages: &mut [ListedPage]) {
     pages.sort_by_key(|page| {
         (
@@ -167,34 +306,8 @@ pub(crate) fn sort_pinned_first(pages: &mut [ListedPage]) {
     });
 }
 
-/// Resolves the listed pages for a taxonomy term, sorted by date descending.
-#[must_use]
-pub(crate) fn resolve_term_pages(
-    taxonomy_set: &TaxonomySet,
-    kind: TaxonomyKind,
-    slug: &str,
-    listed_pages: &[ListedPage],
-) -> Vec<ListedPage> {
-    let key = (kind, slug.to_owned());
-    let mut pages: Vec<ListedPage> = taxonomy_set
-        .term_pages
-        .get(&key)
-        .map(|indices| {
-            indices
-                .iter()
-                .filter_map(|&idx| listed_pages.get(idx))
-                .cloned()
-                .collect()
-        })
-        .unwrap_or_default();
-    sort_by_date_desc(&mut pages);
-    pages
-}
-
-/// Groups pages into year-based sections.
-///
-/// Assumes pages are already sorted by date descending. Consecutive pages
-/// with the same year are grouped together.
+/// Groups pages into year-based sections. Consecutive pages with the same year are grouped
+/// together (assumes input is pre-sorted by date descending).
 #[must_use]
 pub(crate) fn group_by_year(pages: Vec<ListedPage>) -> Vec<PageGroup> {
     let mut groups: Vec<PageGroup> = Vec::new();
@@ -233,7 +346,7 @@ where
 pub(crate) fn page_section(
     page: &Page,
     base_url: &str,
-    section_titles: &HashMap<&str, &str>,
+    sections: &[Section],
 ) -> Option<LinkedTerm> {
     let PageKind::Post {
         section: Some(ref slug),
@@ -241,19 +354,18 @@ pub(crate) fn page_section(
     else {
         return None;
     };
-    let title = section_titles
-        .get(slug.as_str())
-        .copied()
-        .unwrap_or(slug.as_str());
+    let title = sections
+        .iter()
+        .find(|s| &s.slug == slug)
+        .map_or(slug.as_str(), |s| s.title.as_str());
     Some(LinkedTerm {
         name: title.to_owned(),
         url: format!("{base_url}/posts/{slug}/"),
     })
 }
 
-/// Resolves a `FeaturedImage`'s `src` path against the page's output URL and
-/// stamps on the source's natural dimensions plus an LQIP placeholder when
-/// the image is local and decodable.
+/// Resolves a `FeaturedImage`'s `src` path against the page's output URL and stamps on
+/// dimensions plus an LQIP placeholder when the image is local and decodable.
 #[must_use]
 pub(crate) fn resolve_featured_image(
     featured_image: Option<&FeaturedImage>,
@@ -285,8 +397,7 @@ fn linked_tags(tags: &[String], base_url: &str) -> Vec<LinkedTerm> {
         .collect()
 }
 
-/// Formats a page date for templates using the configured site time zone,
-/// falling back to UTC when no site time zone is set.
+/// Formats a page date for templates using the configured site time zone (falls back to UTC).
 #[must_use]
 pub(crate) fn format_page_date(date: Timestamp, time_zone: Option<&TimeZone>) -> String {
     let Some(time_zone) = time_zone else {
@@ -349,21 +460,24 @@ mod tests {
     fn build_listing_artifacts_propagates_output_path_error() {
         use std::path::PathBuf;
 
+        use crate::taxonomy::build_taxonomies;
         use crate::test_utils::test_page;
 
         let mut page = test_page("Stray");
         // `output_path` errors when the source isn't under `content_dir`.
         page.source_path = PathBuf::from("/elsewhere/stray.md");
         let pages = vec![page];
-        let titles = HashMap::new();
+        let sections: Vec<Section> = Vec::new();
+        let taxonomy_set = build_taxonomies(&pages, None);
 
         let result = build_listing_artifacts(
             &pages,
             Path::new("content"),
             "https://example.com/",
             None,
-            &titles,
+            &sections,
             &EMPTY_RESOLVER,
+            &taxonomy_set,
         );
         let Err(err) = result else {
             panic!("expected an error from build_listing_artifacts");
@@ -373,6 +487,155 @@ mod tests {
             chain.contains("failed to build listing entry"),
             "expected with_context wrapper, got: {chain}"
         );
+    }
+
+    // ── BucketKind ──
+
+    #[test]
+    fn bucket_kind_plural() {
+        assert_eq!(BucketKind::Posts.plural(), "posts");
+        assert_eq!(BucketKind::Section.plural(), "sections");
+        assert_eq!(BucketKind::Tag.plural(), "tags");
+    }
+
+    #[test]
+    fn bucket_kind_singular() {
+        assert_eq!(BucketKind::Posts.singular(), "post");
+        assert_eq!(BucketKind::Section.singular(), "section");
+        assert_eq!(BucketKind::Tag.singular(), "tag");
+    }
+
+    #[test]
+    fn bucket_kind_has_overview() {
+        assert!(!BucketKind::Posts.has_overview());
+        assert!(BucketKind::Section.has_overview());
+        assert!(BucketKind::Tag.has_overview());
+    }
+
+    // ── ListingBucket::base_path ──
+
+    #[test]
+    fn base_path_posts() {
+        let bucket = ListingBucket {
+            kind: BucketKind::Posts,
+            name: "Posts".into(),
+            slug: "posts".into(),
+            pages: Vec::new(),
+        };
+        assert_eq!(bucket.base_path(), "/posts");
+    }
+
+    #[test]
+    fn base_path_section() {
+        let bucket = ListingBucket {
+            kind: BucketKind::Section,
+            name: "Note".into(),
+            slug: "note".into(),
+            pages: Vec::new(),
+        };
+        assert_eq!(bucket.base_path(), "/posts/note");
+    }
+
+    #[test]
+    fn base_path_tag() {
+        let bucket = ListingBucket {
+            kind: BucketKind::Tag,
+            name: "Rust".into(),
+            slug: "rust".into(),
+            pages: Vec::new(),
+        };
+        assert_eq!(bucket.base_path(), "/tags/rust");
+    }
+
+    // ── build_listing_buckets ──
+
+    #[test]
+    fn build_listing_buckets_ordering() {
+        use crate::taxonomy::TaxonomySet;
+
+        let posts = vec![make_listed_page("A", Some("2026-01-01T00:00:00Z"))];
+        let artifacts = ListingArtifacts {
+            listed_pages: posts.clone(),
+            listed_posts: posts.clone(),
+            section_posts: HashMap::from([("note".into(), posts.clone())]),
+            tag_pages: HashMap::from([("rust".into(), posts)]),
+        };
+        let sections = vec![Section {
+            slug: "note".into(),
+            title: "Note".into(),
+            page_count: 1,
+        }];
+        let taxonomy_set = TaxonomySet {
+            tags: vec![crate::taxonomy::Term {
+                name: "Rust".into(),
+                slug: "rust".into(),
+                page_count: 1,
+            }],
+            tag_pages: HashMap::from([("rust".into(), vec![0])]),
+        };
+
+        let buckets = build_listing_buckets(&artifacts, &sections, &taxonomy_set, "Posts".into());
+
+        assert_eq!(buckets.len(), 3);
+        assert_eq!(buckets[0].kind, BucketKind::Posts);
+        assert_eq!(buckets[0].name, "Posts");
+        assert_eq!(buckets[1].kind, BucketKind::Section);
+        assert_eq!(buckets[1].slug, "note");
+        assert_eq!(buckets[2].kind, BucketKind::Tag);
+        assert_eq!(buckets[2].slug, "rust");
+    }
+
+    #[test]
+    fn build_listing_buckets_empty_inputs() {
+        use crate::taxonomy::TaxonomySet;
+
+        let artifacts = ListingArtifacts {
+            listed_pages: Vec::new(),
+            listed_posts: Vec::new(),
+            section_posts: HashMap::new(),
+            tag_pages: HashMap::new(),
+        };
+        let taxonomy_set = TaxonomySet {
+            tags: Vec::new(),
+            tag_pages: HashMap::new(),
+        };
+
+        let buckets = build_listing_buckets(&artifacts, &[], &taxonomy_set, "Posts".into());
+
+        assert_eq!(
+            buckets.len(),
+            1,
+            "only the Posts bucket when no sections/tags"
+        );
+        assert_eq!(buckets[0].kind, BucketKind::Posts);
+        assert!(buckets[0].pages.is_empty());
+    }
+
+    #[test]
+    fn build_listing_buckets_missing_section_gives_empty_pages() {
+        use crate::taxonomy::TaxonomySet;
+
+        let artifacts = ListingArtifacts {
+            listed_pages: Vec::new(),
+            listed_posts: Vec::new(),
+            section_posts: HashMap::new(),
+            tag_pages: HashMap::new(),
+        };
+        let sections = vec![Section {
+            slug: "orphan".into(),
+            title: "Orphan".into(),
+            page_count: 0,
+        }];
+        let taxonomy_set = TaxonomySet {
+            tags: Vec::new(),
+            tag_pages: HashMap::new(),
+        };
+
+        let buckets = build_listing_buckets(&artifacts, &sections, &taxonomy_set, "Posts".into());
+
+        assert_eq!(buckets[1].kind, BucketKind::Section);
+        assert_eq!(buckets[1].slug, "orphan");
+        assert!(buckets[1].pages.is_empty());
     }
 
     // ── sort_by_date_desc ──

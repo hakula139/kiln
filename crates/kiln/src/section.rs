@@ -13,14 +13,11 @@ pub struct Section {
     pub page_count: usize,
 }
 
-/// Collects sections from discovered pages.
+/// Collects sections from discovered pages. Returns sections sorted alphabetically by slug.
 ///
 /// A section is the first subdirectory under `content/posts/` for pages with
-/// `PageKind::Post { section: Some(_) }`. Each section's display title is loaded
-/// from `content/posts/<section>/_index.md` if present, falling back to the
-/// titlecased slug.
-///
-/// Returns sections sorted alphabetically by slug.
+/// `PageKind::Post { section: Some(_) }`. Display title is loaded from
+/// `content/posts/<section>/_index.md` if present, falling back to the titlecased slug.
 #[must_use]
 pub fn collect_sections(pages: &[Page], content_dir: &Path) -> Vec<Section> {
     let mut counts: BTreeMap<String, usize> = BTreeMap::new();
@@ -49,8 +46,7 @@ pub fn collect_sections(pages: &[Page], content_dir: &Path) -> Vec<Section> {
 
 /// Loads the display title from `_index.md` in the given directory.
 ///
-/// Returns `None` if the file is missing, has invalid frontmatter, or an
-/// empty title.
+/// Returns `None` if the file is missing, has invalid frontmatter, or an empty title.
 pub(crate) fn load_index_title(dir: &Path) -> Option<String> {
     let content = std::fs::read_to_string(dir.join("_index.md")).ok()?;
     let (fm, _) = frontmatter::parse(&content).ok()?;

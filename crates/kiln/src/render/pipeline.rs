@@ -22,9 +22,8 @@ use crate::template::TemplateEngine;
 pub struct RenderedPage {
     pub content_html: String,
     pub toc_html: String,
-    /// Page-level asset declarations rolled up from the markdown body and any
-    /// nested directive bodies. Templates iterate this to load conditional
-    /// runtime dependencies (`KaTeX` for math, `mermaid.js` for diagrams).
+    /// Page-level asset declarations rolled up from the markdown body and nested directive bodies.
+    /// Templates iterate this to load conditional runtime dependencies (`KaTeX`, `mermaid.js`).
     pub assets: PageAssets,
 }
 

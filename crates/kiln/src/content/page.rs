@@ -21,15 +21,13 @@ pub enum PageKind {
 pub struct Page {
     pub frontmatter: Frontmatter,
     pub raw_content: String,
-    /// Whether this is a blog post or a standalone page.
-    /// Set by content discovery based on the file's position in the content
-    /// directory; defaults to `PageKind::Page` when created via `from_content`.
+    /// Set by content discovery based on position in the content directory; defaults to
+    /// `PageKind::Page` when created via `from_content`.
     pub kind: PageKind,
     pub slug: String,
     pub summary: Option<String>,
     pub source_path: PathBuf,
-    /// Co-located non-markdown files for page bundles (e.g., images).
-    /// Empty for standalone pages and pages created via `from_content`.
+    /// Co-located non-markdown files for page bundles (e.g., images). Empty for standalone pages.
     pub assets: Vec<PathBuf>,
 }
 

@@ -1,12 +1,5 @@
-/// Converts text into a URL-safe slug.
-///
-/// Used for heading IDs and taxonomy term slugs. Unicode-aware lowercasing
-/// preserves CJK and accented characters.
-///
-/// - Lowercases all characters (Unicode-aware)
-/// - Preserves alphanumeric characters (ASCII, CJK, accented letters)
-/// - Replaces non-alphanumeric characters with `-`
-/// - Collapses consecutive `-` and strips leading / trailing `-`
+/// Converts text into a URL-safe slug. Unicode-aware lowercasing preserves CJK and accented
+/// characters. Collapses consecutive `-` and strips leading / trailing `-`.
 #[must_use]
 pub fn slugify(text: &str) -> String {
     let mut result = String::with_capacity(text.len());

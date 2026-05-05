@@ -13,13 +13,10 @@ pub struct TocEntry {
     pub title: String,
 }
 
-/// Renders a list of `TocEntry` values into a `<nav>` HTML structure with
-/// nested `<ul>` / `<li>` / `<a>` elements.
+/// Renders `TocEntry` values into a nested `<nav>` / `<ul>` / `<li>` / `<a>` structure.
 ///
-/// Heading levels are normalized so the smallest level in the input becomes
-/// depth 1, avoiding empty outer wrappers when content starts at H2 or deeper.
-///
-/// Returns an empty string if `entries` is empty.
+/// Heading levels are normalized so the smallest level becomes depth 1, avoiding empty outer
+/// wrappers when content starts at H2 or deeper. Returns an empty string if `entries` is empty.
 #[must_use]
 pub fn render_toc_html(entries: &[TocEntry]) -> String {
     if entries.is_empty() {

@@ -6,33 +6,11 @@ use tracing::{debug, warn};
 
 use crate::html::{escape, writeln_indented};
 
-/// Highlights a code block with syntax highlighting, line numbers, and a
-/// header with a language label and copy button.
+/// Highlights a code block with syntax highlighting, line numbers, and a header with a language
+/// label and copy button.
 ///
-/// Output structure:
-///
-/// ```html
-/// <div class="code-block" data-lang="rust">
-///   <div class="code-header">
-///     <span class="code-lang">Rust</span>
-///     <button class="copy-btn">Copy</button>
-///   </div>
-///   <div class="code-body" data-max-lines="40">
-///     <div class="highlight">
-///       <table>
-///         <tr>
-///           <td class="line-numbers"><pre>...</pre></td>
-///           <td class="code"><pre><code>...</code></pre></td>
-///         </tr>
-///       </table>
-///     </div>
-///   </div>
-/// </div>
-/// ```
-///
-/// Language labels are canonicalized: derived from syntect's syntax name,
-/// lowercased. Empty and unrecognized tags normalize to `"plaintext"`.
-/// The header's display label uses the original syntax name casing.
+/// Language labels are canonicalized from syntect's syntax name, lowercased. Empty and
+/// unrecognized tags normalize to `"plaintext"`. Display label uses original casing.
 #[must_use]
 pub fn highlight_code(
     syntax_set: &SyntaxSet,
@@ -112,20 +90,12 @@ pub fn highlight_code(
     html
 }
 
-/// Resolves a markdown language token to a syntect `SyntaxReference`, a
-/// canonical language label, and a human-readable display label.
+/// Resolves a markdown language token to a syntect `SyntaxReference`, a canonical language label,
+/// and a human-readable display label.
 ///
-/// Tries, in order: file extension match → exact name → case-insensitive name
-/// → plain text fallback.
-///
-/// The canonical label is lowercased (spaces → hyphens) for HTML class / data
-/// attributes. The display label uses the original syntax name casing (e.g.,
-/// "Rust", "JavaScript", "C++") for the code block header.
-///
-/// Unrecognized tokens always get `"plaintext"` as the canonical label (for
-/// consistent CSS targeting) with a title-cased display label derived from
-/// the lowercased token. Known plain text names ("text", "plaintext",
-/// "plain") display as "Plain Text".
+/// Tries: file extension → exact name → case-insensitive name → plain text fallback. Canonical
+/// label is lowercased (spaces → hyphens) for HTML attributes. Unrecognized tokens get
+/// `"plaintext"` with a title-cased display label.
 fn find_syntax<'a>(syntax_set: &'a SyntaxSet, lang: &str) -> (&'a SyntaxReference, String, String) {
     if !lang.is_empty() {
         let syntax = syntax_set
@@ -162,8 +132,8 @@ fn find_syntax<'a>(syntax_set: &'a SyntaxSet, lang: &str) -> (&'a SyntaxReferenc
 
 /// Derives a canonical HTML-safe language label from a syntect syntax name.
 ///
-/// Lowercases the name and replaces spaces with hyphens. The "Plain Text"
-/// syntax is special-cased to the web-standard `"plaintext"`.
+/// Lowercases the name and replaces spaces with hyphens. The "Plain Text" syntax is special-cased
+/// to the web-standard `"plaintext"`.
 fn canonical_lang(syntax_name: &str) -> String {
     if syntax_name == "Plain Text" {
         return "plaintext".into();

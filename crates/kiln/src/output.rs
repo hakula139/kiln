@@ -20,10 +20,8 @@ pub fn clean_output_dir(path: &Path) -> Result<()> {
         .with_context(|| format!("failed to create output directory {}", path.display()))
 }
 
-/// Recursively copies files from `src` into `dest`, skipping `_`-prefixed
-/// entries (except top-level deployment config files like `_headers`).
-///
-/// No-op if `src` does not exist.
+/// Recursively copies files from `src` into `dest`, skipping `_`-prefixed entries (except
+/// top-level deployment config files like `_headers`). No-op if `src` does not exist.
 ///
 /// # Errors
 ///
@@ -56,9 +54,8 @@ pub fn copy_static(src: &Path, dest: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Returns `true` for entries whose file name starts with `_`, except for the
-/// deployment-config files in [`STATIC_DEPLOYMENT_CONFIG_FILES`] when they
-/// appear at the top level of the walked tree.
+/// Returns `true` for entries whose file name starts with `_`, except for deployment-config
+/// files in [`STATIC_DEPLOYMENT_CONFIG_FILES`] at the top level of the walked tree.
 fn is_build_private(entry: &walkdir::DirEntry) -> bool {
     let Some(name) = entry.file_name().to_str() else {
         return false;
@@ -245,9 +242,8 @@ mod tests {
         );
     }
 
-    // macOS APFS rejects non-UTF-8 byte sequences in filenames; Linux ext4 /
-    // btrfs accept arbitrary bytes. CI runs on ubuntu-latest, so coverage of
-    // the `to_str() == None` branch lands there.
+    // macOS APFS rejects non-UTF-8 filenames; Linux ext4/btrfs accept them.
+    // CI runs on ubuntu-latest, so coverage of the `to_str() == None` branch lands there.
     #[cfg(target_os = "linux")]
     #[test]
     fn copy_static_copies_files_with_non_utf8_names() {
@@ -265,8 +261,7 @@ mod tests {
 
         copy_static(&src, &dest).unwrap();
 
-        // `is_build_private`'s `None` branch returns false (not classified as
-        // build-private), so the file flows through and lands in dest.
+        // `is_build_private` returns false for non-UTF-8 names, so the file passes through.
         assert!(
             dest.join(bad_name).exists(),
             "non-UTF-8 filenames should not be filtered",

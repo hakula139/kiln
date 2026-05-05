@@ -1,91 +1,49 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
+use strum::IntoEnumIterator;
 
 use crate::output::write_output;
-use crate::section::Section;
-use crate::taxonomy::TaxonomySet;
 use crate::template::vars::{BucketSummary, OverviewPageVars};
 
 use super::BuildContext;
-use super::listing::{ListingArtifacts, collect_page_summaries};
+use super::listing::{BucketKind, ListingBucket};
 
 /// Generates overview index pages: `/sections/` and `/tags/`.
 ///
 /// Skipped when `overview.html` is not present in the template set.
 pub(crate) fn build_overview_pages(
     ctx: &BuildContext,
-    artifacts: &ListingArtifacts,
-    sections: &[Section],
-    taxonomy_set: &TaxonomySet,
+    buckets: &[ListingBucket],
     output_dir: &Path,
 ) -> Result<()> {
     if !ctx.template_engine.has_template("overview.html") {
         return Ok(());
     }
 
-    let section_buckets: Vec<BucketSummary> = sections
-        .iter()
-        .map(|section| {
-            let pages = artifacts
-                .section_posts
-                .get(section.slug.as_str())
-                .map(|posts| collect_page_summaries(posts.iter().cloned()))
-                .unwrap_or_default();
-            BucketSummary {
-                name: section.title.clone(),
-                slug: section.slug.clone(),
-                url: format!("/posts/{}/", section.slug),
-                pages,
-            }
-        })
-        .collect();
-    write_overview(ctx, "sections", "section", section_buckets, output_dir)?;
-
-    for taxonomy in &taxonomy_set.taxonomies {
-        let kind = taxonomy.kind;
-        let kind_path = format!("/{}", kind.plural());
-        let buckets: Vec<BucketSummary> = taxonomy
-            .terms
+    for kind in BucketKind::iter().filter(|k| k.has_overview()) {
+        let summaries: Vec<BucketSummary> = buckets
             .iter()
-            .map(|term| {
-                let key = (kind, term.slug.clone());
-                let pages = taxonomy_set
-                    .term_pages
-                    .get(&key)
-                    .map(|indices| {
-                        collect_page_summaries(
-                            indices
-                                .iter()
-                                .filter_map(|&idx| artifacts.listed_pages.get(idx))
-                                .cloned(),
-                        )
-                    })
-                    .unwrap_or_default();
-                BucketSummary {
-                    name: term.name.clone(),
-                    slug: term.slug.clone(),
-                    url: format!("{kind_path}/{}/", term.slug),
-                    pages,
-                }
-            })
+            .filter(|b| b.kind == kind)
+            .map(BucketSummary::from)
             .collect();
-        write_overview(ctx, kind.plural(), kind.singular(), buckets, output_dir)?;
+        write_overview(ctx, kind, summaries, output_dir)?;
     }
 
     Ok(())
 }
 
+// ── Helpers ──
+
 fn write_overview(
     ctx: &BuildContext,
-    kind: &str,
-    singular: &str,
+    kind: BucketKind,
     buckets: Vec<BucketSummary>,
     output_dir: &Path,
 ) -> Result<()> {
     let vars = OverviewPageVars {
-        kind,
-        singular,
+        kind: kind.plural(),
+        singular: kind.singular(),
         buckets,
         config: &ctx.config,
     };
@@ -93,8 +51,8 @@ fn write_overview(
     let html = ctx
         .template_engine
         .render_overview(&vars)
-        .with_context(|| format!("failed to render {kind} overview"))?;
+        .with_context(|| format!("failed to render {} overview", kind.plural()))?;
 
-    let dest = output_dir.join(kind).join("index.html");
+    let dest = output_dir.join(kind.plural()).join("index.html");
     write_output(&dest, &html).with_context(|| format!("failed to write {}", dest.display()))
 }

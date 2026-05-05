@@ -199,8 +199,14 @@ impl TemplateEngine {
     }
 
     /// Returns `true` if a template with the given name exists.
+    ///
+    /// A broken template (e.g., syntax error) counts as existing — the caller's render call will
+    /// surface the parse error rather than silently skipping the output.
     pub fn has_template(&self, name: &str) -> bool {
-        self.env.get_template(name).is_ok()
+        match self.env.get_template(name) {
+            Ok(_) => true,
+            Err(e) => e.kind() != minijinja::ErrorKind::TemplateNotFound,
+        }
     }
 }
 
@@ -1134,6 +1140,17 @@ mod tests {
     fn has_template_missing() {
         let engine = test_engine();
         assert!(!engine.has_template("nonexistent.html"));
+    }
+
+    #[test]
+    fn has_template_broken_returns_true() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("broken.html"), "{% invalid %}").unwrap();
+        let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
+        assert!(
+            engine.has_template("broken.html"),
+            "broken templates exist; render should surface the parse error",
+        );
     }
 
     // ── tpl_now ──

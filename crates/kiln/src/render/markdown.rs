@@ -23,10 +23,8 @@ pub struct MarkdownOutput {
     pub headings: Vec<TocEntry>,
 }
 
-/// Renders markdown content to HTML with GFM extensions, math support,
-/// syntax highlighting, and image enhancement.
-///
-/// Auto-detected features (math, mermaid) are inserted into `features`.
+/// Renders markdown content to HTML with GFM extensions, math support, syntax highlighting,
+/// and image enhancement. Auto-detected features (math, mermaid) are inserted into `features`.
 #[must_use]
 pub(crate) fn render_markdown(
     content: &str,
