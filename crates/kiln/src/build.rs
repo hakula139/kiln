@@ -2004,13 +2004,12 @@ mod tests {
         );
     }
 
-    #[test]
-    fn build_broken_post_template_returns_error() {
+    fn assert_broken_template_fails(template_name: &str) {
         let root = tempfile::tempdir().unwrap();
         setup_site_with_page(root.path());
 
         fs::write(
-            root.path().join("templates").join("post.html"),
+            root.path().join("templates").join(template_name),
             "{% invalid %}",
         )
         .unwrap();
@@ -2020,8 +2019,23 @@ mod tests {
             .to_string();
         assert!(
             err.contains("failed to render"),
-            "should report render failure, got: {err}"
+            "should report render failure for {template_name}, got: {err}"
         );
+    }
+
+    #[test]
+    fn build_broken_post_template_returns_error() {
+        assert_broken_template_fails("post.html");
+    }
+
+    #[test]
+    fn build_broken_archive_template_returns_error() {
+        assert_broken_template_fails("archive.html");
+    }
+
+    #[test]
+    fn build_broken_overview_template_returns_error() {
+        assert_broken_template_fails("overview.html");
     }
 
     #[test]
