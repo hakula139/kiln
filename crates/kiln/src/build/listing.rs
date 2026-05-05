@@ -489,6 +489,155 @@ mod tests {
         );
     }
 
+    // ── BucketKind ──
+
+    #[test]
+    fn bucket_kind_plural() {
+        assert_eq!(BucketKind::Posts.plural(), "posts");
+        assert_eq!(BucketKind::Section.plural(), "sections");
+        assert_eq!(BucketKind::Tag.plural(), "tags");
+    }
+
+    #[test]
+    fn bucket_kind_singular() {
+        assert_eq!(BucketKind::Posts.singular(), "post");
+        assert_eq!(BucketKind::Section.singular(), "section");
+        assert_eq!(BucketKind::Tag.singular(), "tag");
+    }
+
+    #[test]
+    fn bucket_kind_has_overview() {
+        assert!(!BucketKind::Posts.has_overview());
+        assert!(BucketKind::Section.has_overview());
+        assert!(BucketKind::Tag.has_overview());
+    }
+
+    // ── ListingBucket::base_path ──
+
+    #[test]
+    fn base_path_posts() {
+        let bucket = ListingBucket {
+            kind: BucketKind::Posts,
+            name: "Posts".into(),
+            slug: "posts".into(),
+            pages: Vec::new(),
+        };
+        assert_eq!(bucket.base_path(), "/posts");
+    }
+
+    #[test]
+    fn base_path_section() {
+        let bucket = ListingBucket {
+            kind: BucketKind::Section,
+            name: "Note".into(),
+            slug: "note".into(),
+            pages: Vec::new(),
+        };
+        assert_eq!(bucket.base_path(), "/posts/note");
+    }
+
+    #[test]
+    fn base_path_tag() {
+        let bucket = ListingBucket {
+            kind: BucketKind::Tag,
+            name: "Rust".into(),
+            slug: "rust".into(),
+            pages: Vec::new(),
+        };
+        assert_eq!(bucket.base_path(), "/tags/rust");
+    }
+
+    // ── build_listing_buckets ──
+
+    #[test]
+    fn build_listing_buckets_ordering() {
+        use crate::taxonomy::TaxonomySet;
+
+        let posts = vec![make_listed_page("A", Some("2026-01-01T00:00:00Z"))];
+        let artifacts = ListingArtifacts {
+            listed_pages: posts.clone(),
+            listed_posts: posts.clone(),
+            section_posts: HashMap::from([("note".into(), posts.clone())]),
+            tag_pages: HashMap::from([("rust".into(), posts)]),
+        };
+        let sections = vec![Section {
+            slug: "note".into(),
+            title: "Note".into(),
+            page_count: 1,
+        }];
+        let taxonomy_set = TaxonomySet {
+            tags: vec![crate::taxonomy::Term {
+                name: "Rust".into(),
+                slug: "rust".into(),
+                page_count: 1,
+            }],
+            tag_pages: HashMap::from([("rust".into(), vec![0])]),
+        };
+
+        let buckets = build_listing_buckets(&artifacts, &sections, &taxonomy_set, "Posts".into());
+
+        assert_eq!(buckets.len(), 3);
+        assert_eq!(buckets[0].kind, BucketKind::Posts);
+        assert_eq!(buckets[0].name, "Posts");
+        assert_eq!(buckets[1].kind, BucketKind::Section);
+        assert_eq!(buckets[1].slug, "note");
+        assert_eq!(buckets[2].kind, BucketKind::Tag);
+        assert_eq!(buckets[2].slug, "rust");
+    }
+
+    #[test]
+    fn build_listing_buckets_empty_inputs() {
+        use crate::taxonomy::TaxonomySet;
+
+        let artifacts = ListingArtifacts {
+            listed_pages: Vec::new(),
+            listed_posts: Vec::new(),
+            section_posts: HashMap::new(),
+            tag_pages: HashMap::new(),
+        };
+        let taxonomy_set = TaxonomySet {
+            tags: Vec::new(),
+            tag_pages: HashMap::new(),
+        };
+
+        let buckets = build_listing_buckets(&artifacts, &[], &taxonomy_set, "Posts".into());
+
+        assert_eq!(
+            buckets.len(),
+            1,
+            "only the Posts bucket when no sections/tags"
+        );
+        assert_eq!(buckets[0].kind, BucketKind::Posts);
+        assert!(buckets[0].pages.is_empty());
+    }
+
+    #[test]
+    fn build_listing_buckets_missing_section_gives_empty_pages() {
+        use crate::taxonomy::TaxonomySet;
+
+        let artifacts = ListingArtifacts {
+            listed_pages: Vec::new(),
+            listed_posts: Vec::new(),
+            section_posts: HashMap::new(),
+            tag_pages: HashMap::new(),
+        };
+        let sections = vec![Section {
+            slug: "orphan".into(),
+            title: "Orphan".into(),
+            page_count: 0,
+        }];
+        let taxonomy_set = TaxonomySet {
+            tags: Vec::new(),
+            tag_pages: HashMap::new(),
+        };
+
+        let buckets = build_listing_buckets(&artifacts, &sections, &taxonomy_set, "Posts".into());
+
+        assert_eq!(buckets[1].kind, BucketKind::Section);
+        assert_eq!(buckets[1].slug, "orphan");
+        assert!(buckets[1].pages.is_empty());
+    }
+
     // ── sort_by_date_desc ──
 
     #[test]
