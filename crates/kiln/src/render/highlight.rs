@@ -61,8 +61,8 @@ pub(crate) fn highlight_code(syntax_set: &SyntaxSet, code: &str, spec: &CodeBloc
 
     // ── Header ──
     //
-    // When the author supplies a title, it owns the chrome — drop the language pill so the header
-    // shows a single label. The `data-lang` attribute on the wrapper still drives syntax CSS.
+    // An explicit title owns the chrome — drop the language pill so the header shows one label.
+    // `data-lang` on the wrapper still drives syntax CSS.
 
     writeln_indented!(&mut html, 1, r#"<div class="code-header">"#);
     if let Some(title) = &spec.title {
@@ -98,7 +98,6 @@ pub(crate) fn highlight_code(syntax_set: &SyntaxSet, code: &str, spec: &CodeBloc
     writeln_indented!(&mut html, 4, "<tr>");
 
     if spec.highlight.is_empty() {
-        // Fast path: no per-line highlight. Emit the classic single-row structure.
         let line_numbers: String = (1..=line_count)
             .map(|i| i.to_string())
             .collect::<Vec<_>>()
@@ -114,7 +113,6 @@ pub(crate) fn highlight_code(syntax_set: &SyntaxSet, code: &str, spec: &CodeBloc
             r#"<td class="code"><pre><code class="language-{escaped_lang}" data-lang="{escaped_lang}">{highlighted}</code></pre></td>"#
         );
     } else {
-        // Per-line highlight path: wrap each line for targeted styling.
         emit_highlighted_lines(
             &mut html,
             &highlighted,
@@ -144,7 +142,6 @@ fn emit_highlighted_lines(
 
     let is_highlighted = |line_no: usize| ranges.iter().any(|r| r.contains(&line_no));
 
-    // Line-numbers column.
     indent(html, 5);
     _ = write!(html, r#"<td class="line-numbers"><pre>"#);
     for i in 1..=line_count {
@@ -156,7 +153,6 @@ fn emit_highlighted_lines(
     }
     _ = writeln!(html, "</pre></td>");
 
-    // Code column.
     indent(html, 5);
     _ = write!(
         html,
@@ -481,20 +477,17 @@ mod tests {
     // ── highlight_code (no-attrs baseline) ──
 
     #[test]
-    fn highlight_code_no_attrs_byte_identical_to_baseline() {
-        // Baseline: the old API shape.
+    fn highlight_code_no_attrs_omits_optional_chrome() {
         let spec = CodeBlockSpec {
             lang: Some("rs".into()),
             ..CodeBlockSpec::default()
         };
-        let new_html = highlight_with_spec("fn main() {}\n", &spec);
-
-        // The output should match the classic structure exactly.
-        assert!(new_html.starts_with(r#"<div class="code-block" data-lang="rust">"#));
-        assert!(!new_html.contains("code-title"));
-        assert!(!new_html.contains("collapsed"));
-        assert!(!new_html.contains("expanded"));
-        assert!(!new_html.contains(r"id="));
+        let html = highlight_with_spec("fn main() {}\n", &spec);
+        assert!(html.starts_with(r#"<div class="code-block" data-lang="rust">"#));
+        assert!(!html.contains("code-title"));
+        assert!(!html.contains("collapsed"));
+        assert!(!html.contains("expanded"));
+        assert!(!html.contains(r"id="));
     }
 
     // ── highlight_code (language resolution) ──

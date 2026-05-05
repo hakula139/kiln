@@ -68,7 +68,6 @@ fn parse_code_block_attrs(
         }
     }
 
-    // Collapse / expand are signaled via bare words.
     let collapse = if pandoc.bare.contains(&"collapse") {
         Some(true)
     } else if pandoc.bare.contains(&"expand") {
@@ -77,8 +76,8 @@ fn parse_code_block_attrs(
         None
     };
 
-    // An explicit collapse / expand always overrides the site default — the renderer reads
-    // `max_lines` directly without re-checking `collapse`.
+    // Explicit collapse / expand wins over the site default; the renderer reads `max_lines`
+    // directly without re-checking `collapse`.
     let max_lines = if collapse.is_some() {
         None
     } else {
@@ -207,9 +206,7 @@ mod tests {
 
     #[test]
     fn parse_fence_info_collapse_keyword_inside_quoted_value_ignored() {
-        // Regression: tokenizing the raw payload would mistake `collapse` inside the title for
-        // the bare flag. Bare-word extraction now goes through the shared parser, which respects
-        // quoting.
+        // Bare-word extraction must respect quoting; otherwise `collapse` inside the title leaks.
         let spec = parse_fence_info(r#"rust {title="please collapse this"}"#, Some(40));
         assert_eq!(spec.title.as_deref(), Some("please collapse this"));
         assert!(spec.collapse.is_none());
