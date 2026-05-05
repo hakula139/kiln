@@ -30,6 +30,7 @@ The project's shape is deliberate:
 - Full-text search via [Pagefind](https://pagefind.app), wired in at build time
 - Optional HTML / CSS / JS minification with `kiln build --minify` — pure Rust, no Node toolchain required
 - Page-scoped asset registry: themes load KaTeX, Mermaid, search, and other scripts only on pages that need them, no frontmatter flag required
+- Directive templates can call `register_script(path, load="defer|async|sync")` to bundle scripts page-scoped, retiring the inline `<script>` workaround
 - `output_dir` validation prevents writing outside the project root
 
 ### Internationalization
@@ -66,7 +67,6 @@ The default theme [**IgnIt**](https://github.com/hakula139/IgnIt) ships with Tai
 ### Richer Authoring
 
 - Code-block attributes: titles, line highlighting (`highlight="1,3-5"`), collapse / expand
-- Bundled scripts for directive templates via a `register_script()` mechanism, retiring the inline `<script>` workaround
 
 ### Reader Experience
 
