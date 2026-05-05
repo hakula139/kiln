@@ -4,6 +4,7 @@ use syntect::util::LinesWithEndings;
 
 use tracing::{debug, warn};
 
+use super::code_block::CodeBlockSpec;
 use crate::html::{escape, writeln_indented};
 
 /// Highlights a code block with syntax highlighting, line numbers, and a header with a language
@@ -12,12 +13,8 @@ use crate::html::{escape, writeln_indented};
 /// Language labels are canonicalized from syntect's syntax name, lowercased. Empty and
 /// unrecognized tags normalize to `"plaintext"`. Display label uses original casing.
 #[must_use]
-pub fn highlight_code(
-    syntax_set: &SyntaxSet,
-    lang: &str,
-    code: &str,
-    max_lines: Option<usize>,
-) -> String {
+pub(crate) fn highlight_code(syntax_set: &SyntaxSet, code: &str, spec: &CodeBlockSpec) -> String {
+    let lang = spec.lang.as_deref().unwrap_or("");
     let (syntax, effective_lang, display_label) = find_syntax(syntax_set, lang);
 
     let mut generator =
@@ -37,12 +34,33 @@ pub fn highlight_code(
 
     let escaped_lang = escape(&effective_lang);
 
-    // Outer wrapper + header.
+    // ── Wrapper open ──
+
+    let mut wrapper_classes = String::from("code-block");
+    if let Some(true) = spec.collapse {
+        wrapper_classes.push_str(" collapsed");
+    } else if let Some(false) = spec.collapse {
+        wrapper_classes.push_str(" expanded");
+    }
+    for cls in &spec.classes {
+        wrapper_classes.push(' ');
+        wrapper_classes.push_str(cls);
+    }
+
+    let id_attr = spec
+        .id
+        .as_ref()
+        .map(|id| format!(r#" id="{}""#, escape(id)))
+        .unwrap_or_default();
+
     writeln_indented!(
         &mut html,
         0,
-        r#"<div class="code-block" data-lang="{escaped_lang}">"#
+        r#"<div class="{wrapper_classes}"{id_attr} data-lang="{escaped_lang}">"#
     );
+
+    // ── Header ──
+
     writeln_indented!(&mut html, 1, r#"<div class="code-header">"#);
     writeln_indented!(
         &mut html,
@@ -50,37 +68,60 @@ pub fn highlight_code(
         r#"<span class="code-lang">{}</span>"#,
         escape(&display_label)
     );
+    if let Some(title) = &spec.title {
+        writeln_indented!(
+            &mut html,
+            2,
+            r#"<span class="code-title">{}</span>"#,
+            escape(title)
+        );
+    }
     writeln_indented!(&mut html, 2, r#"<button class="copy-btn">Copy</button>"#);
     writeln_indented!(&mut html, 1, "</div>");
 
-    // Code body (with optional max-lines for JS-driven collapse).
-    let max_lines_attr = max_lines
-        .map(|n| format!(r#" data-max-lines="{n}""#))
-        .unwrap_or_default();
+    // ── Code body ──
+
+    let max_lines_attr = match spec.collapse {
+        Some(_) => String::new(),
+        None => spec
+            .max_lines
+            .map(|n| format!(r#" data-max-lines="{n}""#))
+            .unwrap_or_default(),
+    };
     writeln_indented!(&mut html, 1, r#"<div class="code-body"{max_lines_attr}>"#);
 
-    // Highlight table.
+    // ── Highlight table ──
+
     writeln_indented!(&mut html, 2, r#"<div class="highlight">"#);
     writeln_indented!(&mut html, 3, "<table>");
     writeln_indented!(&mut html, 4, "<tr>");
 
-    // Line numbers column.
-    let line_numbers: String = (1..=line_count)
-        .map(|i| i.to_string())
-        .collect::<Vec<_>>()
-        .join("\n");
-    writeln_indented!(
-        &mut html,
-        5,
-        r#"<td class="line-numbers"><pre>{line_numbers}</pre></td>"#
-    );
-
-    // Code column.
-    writeln_indented!(
-        &mut html,
-        5,
-        r#"<td class="code"><pre><code class="language-{escaped_lang}" data-lang="{escaped_lang}">{highlighted}</code></pre></td>"#
-    );
+    if spec.highlight.is_empty() {
+        // Fast path: no per-line highlight. Emit the classic single-row structure.
+        let line_numbers: String = (1..=line_count)
+            .map(|i| i.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+        writeln_indented!(
+            &mut html,
+            5,
+            r#"<td class="line-numbers"><pre>{line_numbers}</pre></td>"#
+        );
+        writeln_indented!(
+            &mut html,
+            5,
+            r#"<td class="code"><pre><code class="language-{escaped_lang}" data-lang="{escaped_lang}">{highlighted}</code></pre></td>"#
+        );
+    } else {
+        // Per-line highlight path: wrap each line for targeted styling.
+        emit_highlighted_lines(
+            &mut html,
+            &highlighted,
+            line_count,
+            &escaped_lang,
+            &spec.highlight,
+        );
+    }
 
     writeln_indented!(&mut html, 4, "</tr>");
     writeln_indented!(&mut html, 3, "</table>");
@@ -88,6 +129,50 @@ pub fn highlight_code(
     writeln_indented!(&mut html, 1, "</div>");
     writeln_indented!(&mut html, 0, "</div>");
     html
+}
+
+/// Emits line-numbers and code columns with per-line `<span>` wrappers for highlight support.
+fn emit_highlighted_lines(
+    html: &mut String,
+    highlighted: &str,
+    line_count: usize,
+    escaped_lang: &str,
+    ranges: &[std::ops::RangeInclusive<usize>],
+) {
+    use std::fmt::Write;
+
+    let is_highlighted = |line_no: usize| ranges.iter().any(|r| r.contains(&line_no));
+
+    // Line-numbers column.
+    crate::html::indent(html, 5);
+    _ = write!(html, r#"<td class="line-numbers"><pre>"#);
+    for i in 1..=line_count {
+        if i > 1 {
+            html.push('\n');
+        }
+        let hl = if is_highlighted(i) { " hl" } else { "" };
+        _ = write!(html, r#"<span class="line-number{hl}">{i}</span>"#);
+    }
+    _ = writeln!(html, "</pre></td>");
+
+    // Code column.
+    crate::html::indent(html, 5);
+    _ = write!(
+        html,
+        r#"<td class="code"><pre><code class="language-{escaped_lang}" data-lang="{escaped_lang}">"#
+    );
+    let lines: Vec<&str> = highlighted.split('\n').collect();
+    let last_idx = lines.len().saturating_sub(1);
+    for (idx, line) in lines.iter().enumerate() {
+        let line_no = idx + 1;
+        let hl = if is_highlighted(line_no) { " hl" } else { "" };
+        _ = write!(html, r#"<span class="line{hl}">{line}</span>"#);
+        // Preserve newlines between lines (except after the last).
+        if idx < last_idx {
+            html.push('\n');
+        }
+    }
+    _ = writeln!(html, "</code></pre></td>");
 }
 
 /// Resolves a markdown language token to a syntect `SyntaxReference`, a canonical language label,
@@ -166,7 +251,18 @@ mod tests {
     static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(two_face::syntax::extra_newlines);
 
     fn highlight(lang: &str, code: &str) -> String {
-        highlight_code(&SYNTAX_SET, lang, code, None)
+        highlight_code(
+            &SYNTAX_SET,
+            code,
+            &CodeBlockSpec {
+                lang: Some(lang.to_string()),
+                ..CodeBlockSpec::default()
+            },
+        )
+    }
+
+    fn highlight_with_spec(code: &str, spec: &CodeBlockSpec) -> String {
+        highlight_code(&SYNTAX_SET, code, spec)
     }
 
     // ── highlight_code (structure) ──
@@ -206,7 +302,12 @@ mod tests {
 
     #[test]
     fn highlight_code_max_lines() {
-        let html = highlight_code(&SYNTAX_SET, "rs", "fn main() {}\n", Some(40));
+        let spec = CodeBlockSpec {
+            lang: Some("rs".into()),
+            max_lines: Some(40),
+            ..CodeBlockSpec::default()
+        };
+        let html = highlight_with_spec("fn main() {}\n", &spec);
         assert!(
             html.contains(r#"<div class="code-body" data-max-lines="40">"#),
             "should have data-max-lines attribute, html:\n{html}"
@@ -240,6 +341,158 @@ mod tests {
             }),
             "should have 3 line numbers, html:\n{html}"
         );
+    }
+
+    // ── highlight_code (title) ──
+
+    #[test]
+    fn highlight_code_emits_title() {
+        let spec = CodeBlockSpec {
+            lang: Some("rs".into()),
+            title: Some("src/main.rs".into()),
+            ..CodeBlockSpec::default()
+        };
+        let html = highlight_with_spec("fn main() {}\n", &spec);
+        assert!(
+            html.contains(r#"<span class="code-title">src/main.rs</span>"#),
+            "should contain title span, html:\n{html}"
+        );
+    }
+
+    #[test]
+    fn highlight_code_no_title_when_none() {
+        let html = highlight("rs", "fn main() {}\n");
+        assert!(
+            !html.contains("code-title"),
+            "should not emit title span when no title, html:\n{html}"
+        );
+    }
+
+    #[test]
+    fn highlight_code_title_html_escaped() {
+        let spec = CodeBlockSpec {
+            lang: Some("html".into()),
+            title: Some("<script>.js".into()),
+            ..CodeBlockSpec::default()
+        };
+        let html = highlight_with_spec("<div></div>\n", &spec);
+        assert!(
+            html.contains(r#"<span class="code-title">&lt;script&gt;.js</span>"#),
+            "title should be HTML-escaped, html:\n{html}"
+        );
+    }
+
+    // ── highlight_code (highlight ranges) ──
+
+    #[test]
+    fn highlight_code_emits_highlight_class() {
+        let spec = CodeBlockSpec {
+            lang: Some("txt".into()),
+            highlight: vec![2..=2],
+            ..CodeBlockSpec::default()
+        };
+        let html = highlight_with_spec("line 1\nline 2\nline 3\n", &spec);
+        assert!(
+            html.contains(r#"<span class="line-number hl">2</span>"#),
+            "line-number 2 should have hl class, html:\n{html}"
+        );
+        assert!(
+            html.contains(r#"<span class="line hl">"#),
+            "code line 2 should have hl class, html:\n{html}"
+        );
+        assert!(
+            html.contains(r#"<span class="line-number">1</span>"#),
+            "line-number 1 should NOT have hl class, html:\n{html}"
+        );
+    }
+
+    #[test]
+    fn highlight_code_highlight_range() {
+        let spec = CodeBlockSpec {
+            lang: Some("txt".into()),
+            highlight: vec![1..=2],
+            ..CodeBlockSpec::default()
+        };
+        let html = highlight_with_spec("a\nb\nc\n", &spec);
+        assert!(html.contains(r#"<span class="line-number hl">1</span>"#));
+        assert!(html.contains(r#"<span class="line-number hl">2</span>"#));
+        assert!(html.contains(r#"<span class="line-number">3</span>"#));
+    }
+
+    // ── highlight_code (collapse / expand) ──
+
+    #[test]
+    fn highlight_code_collapse_attr_forces_class() {
+        let spec = CodeBlockSpec {
+            lang: Some("rs".into()),
+            collapse: Some(true),
+            max_lines: Some(40),
+            ..CodeBlockSpec::default()
+        };
+        let html = highlight_with_spec("fn main() {}\n", &spec);
+        assert!(
+            html.contains(r#"<div class="code-block collapsed""#),
+            "should have collapsed class, html:\n{html}"
+        );
+        assert!(
+            !html.contains("data-max-lines"),
+            "collapsed should suppress data-max-lines, html:\n{html}"
+        );
+    }
+
+    #[test]
+    fn highlight_code_expand_attr_forces_class() {
+        let spec = CodeBlockSpec {
+            lang: Some("rs".into()),
+            collapse: Some(false),
+            max_lines: Some(40),
+            ..CodeBlockSpec::default()
+        };
+        let html = highlight_with_spec("fn main() {}\n", &spec);
+        assert!(
+            html.contains(r#"<div class="code-block expanded""#),
+            "should have expanded class, html:\n{html}"
+        );
+        assert!(
+            !html.contains("data-max-lines"),
+            "expanded should suppress data-max-lines, html:\n{html}"
+        );
+    }
+
+    // ── highlight_code (ID and classes) ──
+
+    #[test]
+    fn highlight_code_propagates_id_and_classes() {
+        let spec = CodeBlockSpec {
+            lang: Some("rs".into()),
+            id: Some("my-code".into()),
+            classes: vec!["wide".into(), "dark".into()],
+            ..CodeBlockSpec::default()
+        };
+        let html = highlight_with_spec("fn main() {}\n", &spec);
+        assert!(
+            html.contains(r#"<div class="code-block wide dark" id="my-code""#),
+            "should propagate id and classes, html:\n{html}"
+        );
+    }
+
+    // ── highlight_code (no-attrs baseline) ──
+
+    #[test]
+    fn highlight_code_no_attrs_byte_identical_to_baseline() {
+        // Baseline: the old API shape.
+        let spec = CodeBlockSpec {
+            lang: Some("rs".into()),
+            ..CodeBlockSpec::default()
+        };
+        let new_html = highlight_with_spec("fn main() {}\n", &spec);
+
+        // The output should match the classic structure exactly.
+        assert!(new_html.starts_with(r#"<div class="code-block" data-lang="rust">"#));
+        assert!(!new_html.contains("code-title"));
+        assert!(!new_html.contains("collapsed"));
+        assert!(!new_html.contains("expanded"));
+        assert!(!new_html.contains(r"id="));
     }
 
     // ── highlight_code (language resolution) ──

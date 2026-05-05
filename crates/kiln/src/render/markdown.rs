@@ -91,8 +91,7 @@ pub(crate) fn render_markdown(
                 let html = if is_mermaid_block {
                     render_mermaid(&code_buf)
                 } else {
-                    let lang = code_spec.lang.take().unwrap_or_default();
-                    highlight_code(syntax_set, &lang, &code_buf, code_spec.max_lines)
+                    highlight_code(syntax_set, &code_buf, &code_spec)
                 };
                 output_events.push(Event::Html(html.into()));
                 code_buf.clear();
