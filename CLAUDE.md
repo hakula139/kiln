@@ -36,6 +36,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 
 ```text
 .
+├── attrs.rs            # Pandoc-style `{#id .class key=value}` attribute parser, shared across renderers
 ├── build.rs            # BuildContext, build orchestration, per-page rendering, static / asset copying
 ├── build/              # Listing pipeline and output generators (submodules of build.rs)
 │   ├── archive.rs      # Paginated year-grouped archive pages (/posts/, /posts/<section>/, /tags/<slug>/)
@@ -70,8 +71,9 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 ├── pagination.rs       # Paginator for windowed views over slices, page URL computation
 ├── render/             # Markdown rendering pipeline (RenderOptions in render.rs)
 │   ├── assets.rs       # PageAssets registry: scripts + auto-detected Feature flags (Math, Mermaid)
+│   ├── code_block.rs   # Fence info-string parsing → CodeBlockSpec (lang, title, highlights, collapse / expand)
 │   ├── emoji.rs        # GitHub-style :shortcode: → Unicode emoji replacement
-│   ├── highlight.rs    # syntect + two-face CSS-class highlighting with line numbers, code-block wrapper
+│   ├── highlight.rs    # syntect + two-face CSS-class highlighting with line numbers, header (lang or title)
 │   ├── icon.rs         # :(class): → <i> FontAwesome icon shortcode replacement
 │   ├── image.rs        # Block (<figure>) and inline (<img>) image rendering, lazy loading, <span class="lqip"> wrapper emission
 │   ├── image_attrs.rs  # Pandoc-style {#id .class width=N} extraction for images

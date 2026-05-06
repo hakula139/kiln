@@ -16,6 +16,7 @@ The project's shape is deliberate:
 - CJK-aware heading IDs and table of contents — Chinese / Japanese / Korean headings stay linkable
 - `:::` directive blocks rendered through theme templates: callouts, link cards, music embeds, anything you can template
 - Image attributes, emoji and Font Awesome icon shortcodes, and rich code-block presentation helpers
+- Pandoc-style code-block attributes — `` ```rust {title="src/main.rs" highlight="1,3-5" collapse} `` for titles, line highlighting, and forced collapse / expand
 - Mermaid diagrams via `` ```mermaid `` fences — themes load mermaid.js only on pages that contain a diagram, with `data-source` mirroring the DSL for dark-mode re-render
 
 ### Publishing
@@ -63,10 +64,6 @@ The default theme [**IgnIt**](https://github.com/hakula139/IgnIt) ships with Tai
 - `kiln convert` to migrate Hugo sites into kiln, frontmatter and shortcodes included
 
 ## What's Next
-
-### Richer Authoring
-
-- Code-block attributes: titles, line highlighting (`highlight="1,3-5"`), collapse / expand
 
 ### Reader Experience
 
