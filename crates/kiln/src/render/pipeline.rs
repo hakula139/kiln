@@ -11,6 +11,7 @@ use super::image_attrs::extract_image_attrs;
 use super::lqip::ImageResolver;
 use super::markdown::render_markdown;
 use super::toc::render_toc_html;
+use crate::config::Config;
 use crate::directive::callout::render_callout;
 use crate::directive::div::render_div;
 use crate::directive::parser::parse_directives;
@@ -37,6 +38,7 @@ pub fn render_page(
     raw_content: &str,
     syntax_set: &SyntaxSet,
     engine: &TemplateEngine,
+    config: &Config,
     options: &RenderOptions,
     source_dir: Option<&Path>,
     image_resolver: &ImageResolver,
@@ -46,6 +48,7 @@ pub fn render_page(
         raw_content,
         syntax_set,
         engine,
+        config,
         source_dir,
         image_resolver,
         &assets,
@@ -91,6 +94,7 @@ fn render_directives(
     content: &str,
     syntax_set: &SyntaxSet,
     engine: &TemplateEngine,
+    config: &Config,
     source_dir: Option<&Path>,
     image_resolver: &ImageResolver,
     assets: &AssetsHandle,
@@ -109,6 +113,7 @@ fn render_directives(
             &block.body,
             syntax_set,
             engine,
+            config,
             source_dir,
             image_resolver,
             assets,
@@ -126,7 +131,8 @@ fn render_directives(
                 &mut guard.features,
             )
         };
-        let html = render_directive_block(block, &md_output.html, engine, source_dir, assets)?;
+        let html =
+            render_directive_block(block, &md_output.html, engine, config, source_dir, assets)?;
 
         // Blank-line padding: <details> / <div> are CommonMark type 6 HTML
         // blocks which cannot interrupt paragraphs. Safe because the directive
@@ -164,6 +170,7 @@ fn render_directive_block(
     block: &DirectiveBlock,
     body_html: &str,
     engine: &TemplateEngine,
+    config: &Config,
     source_dir: Option<&Path>,
     assets: &AssetsHandle,
 ) -> Result<String> {
@@ -194,7 +201,7 @@ fn render_directive_block(
                 body_raw: block.body.clone(),
                 source_dir: source_dir.map(|p| p.to_string_lossy().into_owned()),
             };
-            match engine.render_directive(name, ctx, assets) {
+            match engine.render_directive(name, ctx, assets, config) {
                 Some(result) => result,
                 None => Ok(render_div(name, id, classes, body_html)),
             }
@@ -212,7 +219,7 @@ mod tests {
     use super::*;
     use crate::render::assets::Feature;
     use crate::render::lqip::ImageConfig;
-    use crate::test_utils::{test_engine, test_i18n};
+    use crate::test_utils::{test_config, test_engine, test_i18n};
 
     static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(two_face::syntax::extra_newlines);
 
@@ -230,6 +237,7 @@ mod tests {
             input,
             &SYNTAX_SET,
             engine,
+            &test_config(),
             &RenderOptions::default(),
             None,
             &EMPTY_RESOLVER,
@@ -266,8 +274,16 @@ mod tests {
             ..RenderOptions::default()
         };
         let input = "Hello :smile: and :(fas fa-link):";
-        let page =
-            render_page(input, &SYNTAX_SET, &engine, &options, None, &EMPTY_RESOLVER).unwrap();
+        let page = render_page(
+            input,
+            &SYNTAX_SET,
+            &engine,
+            &test_config(),
+            &options,
+            None,
+            &EMPTY_RESOLVER,
+        )
+        .unwrap();
         assert!(
             page.content_html.contains('\u{1f604}'),
             "emoji should be replaced, html:\n{}",
@@ -616,6 +632,7 @@ mod tests {
             "#},
             &SYNTAX_SET,
             &engine,
+            &test_config(),
             &RenderOptions::default(),
             Some(source.path()),
             &EMPTY_RESOLVER,

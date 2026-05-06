@@ -393,16 +393,17 @@ The number of items per page is configurable via `paginate` in `[params]` (defau
 
 #### Directive templates (`directives/<name>.html`)
 
-| Variable          | Type                | Description                               |
-| ----------------- | ------------------- | ----------------------------------------- |
-| `name`            | string              | Directive name                            |
-| `positional_args` | list of strings     | Parsed positional arguments               |
-| `named_args`      | map (string→string) | Parsed named arguments (`key=value`)      |
-| `id`              | string or `none`    | Pandoc `#id` attribute                    |
-| `classes`         | list of strings     | Pandoc `.class` attributes                |
-| `body_html`       | string              | Rendered HTML body of the directive block |
-| `body_raw`        | string              | Raw markdown source of the directive body |
-| `source_dir`      | string or `none`    | Page source directory (for `read_file`)   |
+| Variable          | Type                | Description                                |
+| ----------------- | ------------------- | ------------------------------------------ |
+| `name`            | string              | Directive name                             |
+| `positional_args` | list of strings     | Parsed positional arguments                |
+| `named_args`      | map (string→string) | Parsed named arguments (`key=value`)       |
+| `id`              | string or `none`    | Pandoc `#id` attribute                     |
+| `classes`         | list of strings     | Pandoc `.class` attributes                 |
+| `body_html`       | string              | Rendered HTML body of the directive block  |
+| `body_raw`        | string              | Raw markdown source of the directive body  |
+| `source_dir`      | string or `none`    | Page source directory (for `read_file`)    |
+| `config`          | object              | Site `Config` (`base_url`, `params`, etc.) |
 
 Keys prefixed with `__` (such as the `__assets` handle backing `register_script()`) are engine-reserved. Directive payload fields with those names are masked by the engine value; pick a different name in your directive arguments to avoid surprises.
 
