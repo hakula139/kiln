@@ -61,7 +61,7 @@ kiln is purpose-built for hakula.xyz: strong CJK-friendly authoring, explicit re
 
 ## Current Focus
 
-Comment integration via Twikoo in the [IgnIt](https://github.com/hakula139/IgnIt) theme, plus ongoing engine and theme polish. See the [roadmap](docs/roadmap.md) for details.
+Ongoing engine and theme polish driven by real publishing needs. See the [roadmap](docs/roadmap.md) for details.
 
 ## Installation
 
