@@ -61,7 +61,7 @@ kiln is purpose-built for hakula.xyz: strong CJK-friendly authoring, explicit re
 
 ## Current Focus
 
-Richer code-block presentation, bundled scripts for directive templates, and ongoing runtime ergonomics polish. See the [roadmap](docs/roadmap.md) for details.
+Ongoing engine and theme polish driven by real publishing needs. See the [roadmap](docs/roadmap.md) for details.
 
 ## Installation
 

@@ -196,6 +196,7 @@ fn build_page(
         &page.raw_content,
         &ctx.syntax_set,
         &ctx.template_engine,
+        &ctx.config,
         &options,
         page.source_path.parent(),
         &ctx.image_resolver,

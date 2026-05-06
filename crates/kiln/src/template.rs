@@ -10,6 +10,7 @@ use serde::Serialize;
 use self::vars::{
     ArchivePageVars, ErrorPageVars, HomePageVars, OverviewPageVars, PostTemplateVars,
 };
+use crate::config::Config;
 use crate::i18n::I18n;
 use crate::render::assets::{AssetsHandle, LoadStrategy, ScriptTag};
 
@@ -19,22 +20,14 @@ pub struct TemplateEngine {
 }
 
 impl TemplateEngine {
-    /// Creates a new template engine with layered template loading.
+    /// Creates a layered template engine: `site_dir` overrides `theme_dir`.
     ///
-    /// Templates are resolved by checking `site_dir` first (user overrides),
-    /// then `theme_dir` (theme defaults). At least one directory must be
-    /// provided.
-    ///
-    /// `site_dir` is silently ignored if it doesn't exist (it's an optional
-    /// override layer). `theme_dir`, when provided, must exist.
-    ///
-    /// `i18n` powers the `t()` function exposed to templates. The engine
-    /// clones a cheap `I18n` handle into the closure.
+    /// `site_dir` is silently ignored when missing (optional override). `theme_dir`, when set,
+    /// must exist. At least one directory is required. `i18n` backs the `t()` function.
     ///
     /// # Errors
     ///
-    /// Returns an error if neither directory is provided, or if `theme_dir`
-    /// is provided but does not exist.
+    /// Errors if neither directory is provided, or if `theme_dir` is set but does not exist.
     pub fn new(site_dir: Option<&Path>, theme_dir: Option<&Path>, i18n: &I18n) -> Result<Self> {
         if let Some(d) = theme_dir {
             ensure!(
@@ -175,19 +168,20 @@ impl TemplateEngine {
 
     /// Tries to render a directive using `directives/<name>.html`.
     ///
-    /// Returns `None` if no template exists. Returns `Some(Err(_))` if it
-    /// exists but rendering fails.
+    /// Returns `None` if no template exists. `Some(Err(_))` if it exists but rendering fails.
     pub fn render_directive(
         &self,
         name: &str,
         ctx: impl Serialize,
         assets: &AssetsHandle,
+        config: &Config,
     ) -> Option<Result<String>> {
         let template_name = format!("directives/{name}.html");
         let template = self.env.get_template(&template_name).ok()?;
         let merged = merge_maps([
             minijinja::context! {
                 __assets => Value::from_object(assets.clone()),
+                config => Value::from_serialize(config),
             },
             Value::from_serialize(&ctx),
         ]);
@@ -278,11 +272,9 @@ fn tpl_t(i18n: &I18n, key: &str, kwargs: &Kwargs) -> std::result::Result<String,
         return Ok(i18n.t(key).into_owned());
     }
 
-    // MiniJinja `Value`s don't borrow from `kwargs`, so materialize owned
-    // strings for each argument before calling into the borrow-based
-    // `t_interp` API. Treat explicit `none` / undefined as empty string so
-    // templates like `t("greeting", name=user.name)` don't render the
-    // literal text `"none"` when `user.name` is missing.
+    // Materialize owned strings: minijinja `Value`s don't borrow from `kwargs`, but `t_interp`
+    // takes borrowed `&str`. Map `none` / undefined to empty so missing fields don't render
+    // as the literal text `"none"`.
     let mut owned: Vec<(&str, String)> = Vec::with_capacity(arg_names.len());
     for name in arg_names {
         let value: minijinja::Value = kwargs.get(name)?;
@@ -1063,7 +1055,7 @@ mod tests {
             body_html: "<p>hello</p>".into(),
         };
 
-        let result = engine.render_directive("test", ctx, &AssetsHandle::default());
+        let result = engine.render_directive("test", ctx, &AssetsHandle::default(), &test_config());
         assert!(result.is_some(), "should find template");
         let html = result.unwrap().unwrap();
         assert!(
@@ -1078,7 +1070,7 @@ mod tests {
         let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
         assert!(
             engine
-                .render_directive("nonexistent", (), &AssetsHandle::default())
+                .render_directive("nonexistent", (), &AssetsHandle::default(), &test_config())
                 .is_none()
         );
     }
@@ -1093,8 +1085,35 @@ mod tests {
 
         let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
         // `render_directive` builds "directives/../secret.html" — safe_join rejects "..".
-        let result = engine.render_directive("../secret", (), &AssetsHandle::default());
+        let result =
+            engine.render_directive("../secret", (), &AssetsHandle::default(), &test_config());
         assert!(result.is_none(), "path traversal should not find template");
+    }
+
+    #[test]
+    fn render_directive_exposes_config_to_template() {
+        let dir = tempfile::tempdir().unwrap();
+        let directives_dir = dir.path().join("directives");
+        test_fs::create_dir_all(&directives_dir).unwrap();
+        test_fs::write(
+            directives_dir.join("probe.html"),
+            "title={{ config.title }} lang={{ config.language }}",
+        )
+        .unwrap();
+
+        let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
+        let config: Config = toml::from_str(indoc! {r#"
+            base_url = "https://example.com"
+            title = "Probe"
+            language = "fr"
+        "#})
+        .unwrap();
+
+        let html = engine
+            .render_directive("probe", (), &AssetsHandle::default(), &config)
+            .unwrap()
+            .unwrap();
+        assert_eq!(html, "title=Probe lang=fr");
     }
 
     #[test]
@@ -1114,7 +1133,12 @@ mod tests {
         .unwrap();
 
         let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
-        let result = engine.render_directive("bad", Ctx { items: 42 }, &AssetsHandle::default());
+        let result = engine.render_directive(
+            "bad",
+            Ctx { items: 42 },
+            &AssetsHandle::default(),
+            &test_config(),
+        );
         assert!(result.is_some(), "template exists so should return Some");
         let err = result.unwrap().unwrap_err().to_string();
         assert!(
@@ -1194,7 +1218,8 @@ mod tests {
             source_dir: Some(source.path().to_string_lossy().into_owned()),
         };
 
-        let result = engine.render_directive("csv-reader", ctx, &AssetsHandle::default());
+        let result =
+            engine.render_directive("csv-reader", ctx, &AssetsHandle::default(), &test_config());
         let html = result.unwrap().unwrap();
         assert!(
             html.contains("DATA:A,B\n1,2"),
@@ -1229,7 +1254,8 @@ mod tests {
             source_dir: Some(source.path().join("subdir").to_string_lossy().into_owned()),
         };
 
-        let result = engine.render_directive("reader", ctx, &AssetsHandle::default());
+        let result =
+            engine.render_directive("reader", ctx, &AssetsHandle::default(), &test_config());
         let err = format!("{:#}", result.unwrap().unwrap_err());
         assert!(
             err.contains("path traversal not allowed"),
@@ -1262,7 +1288,8 @@ mod tests {
             source_dir: Some(source.path().to_string_lossy().into_owned()),
         };
 
-        let result = engine.render_directive("reader", ctx, &AssetsHandle::default());
+        let result =
+            engine.render_directive("reader", ctx, &AssetsHandle::default(), &test_config());
         let err = format!("{:#}", result.unwrap().unwrap_err());
         assert!(
             err.contains("path traversal not allowed"),
@@ -1293,7 +1320,8 @@ mod tests {
             source_dir: None,
         };
 
-        let result = engine.render_directive("reader", ctx, &AssetsHandle::default());
+        let result =
+            engine.render_directive("reader", ctx, &AssetsHandle::default(), &test_config());
         let err = format!("{:#}", result.unwrap().unwrap_err());
         assert!(
             err.contains("read_file requires source_dir"),
@@ -1326,7 +1354,8 @@ mod tests {
             source_dir: Some(source.path().to_string_lossy().into_owned()),
         };
 
-        let result = engine.render_directive("reader", ctx, &AssetsHandle::default());
+        let result =
+            engine.render_directive("reader", ctx, &AssetsHandle::default(), &test_config());
         let err = format!("{:#}", result.unwrap().unwrap_err());
         assert!(
             err.contains("failed to read"),
@@ -1433,7 +1462,7 @@ mod tests {
         );
         let assets = AssetsHandle::default();
         let html = engine
-            .render_directive("widget", empty_ctx("widget"), &assets)
+            .render_directive("widget", empty_ctx("widget"), &assets, &test_config())
             .unwrap()
             .unwrap();
 
@@ -1453,7 +1482,7 @@ mod tests {
         );
         let assets = AssetsHandle::default();
         engine
-            .render_directive("widget", empty_ctx("widget"), &assets)
+            .render_directive("widget", empty_ctx("widget"), &assets, &test_config())
             .unwrap()
             .unwrap();
 
@@ -1470,7 +1499,7 @@ mod tests {
         );
         let assets = AssetsHandle::default();
         engine
-            .render_directive("widget", empty_ctx("widget"), &assets)
+            .render_directive("widget", empty_ctx("widget"), &assets, &test_config())
             .unwrap()
             .unwrap();
 
@@ -1486,7 +1515,7 @@ mod tests {
         let assets = AssetsHandle::default();
         for _ in 0..5 {
             engine
-                .render_directive("widget", empty_ctx("widget"), &assets)
+                .render_directive("widget", empty_ctx("widget"), &assets, &test_config())
                 .unwrap()
                 .unwrap();
         }
@@ -1506,7 +1535,7 @@ mod tests {
         let err = format!(
             "{:#}",
             engine
-                .render_directive("widget", empty_ctx("widget"), &assets)
+                .render_directive("widget", empty_ctx("widget"), &assets, &test_config())
                 .unwrap()
                 .unwrap_err(),
         );
@@ -1558,7 +1587,12 @@ mod tests {
         let err = format!(
             "{:#}",
             engine
-                .render_directive("widget", empty_ctx("widget"), &AssetsHandle::default())
+                .render_directive(
+                    "widget",
+                    empty_ctx("widget"),
+                    &AssetsHandle::default(),
+                    &test_config()
+                )
                 .unwrap()
                 .unwrap_err(),
         );
@@ -1575,7 +1609,12 @@ mod tests {
         let err = format!(
             "{:#}",
             engine
-                .render_directive("widget", empty_ctx("widget"), &AssetsHandle::default())
+                .render_directive(
+                    "widget",
+                    empty_ctx("widget"),
+                    &AssetsHandle::default(),
+                    &test_config()
+                )
                 .unwrap()
                 .unwrap_err(),
         );
@@ -1592,7 +1631,12 @@ mod tests {
         let err = format!(
             "{:#}",
             engine
-                .render_directive("widget", empty_ctx("widget"), &AssetsHandle::default())
+                .render_directive(
+                    "widget",
+                    empty_ctx("widget"),
+                    &AssetsHandle::default(),
+                    &test_config()
+                )
                 .unwrap()
                 .unwrap_err(),
         );
@@ -1643,7 +1687,7 @@ mod tests {
         };
 
         let html = engine
-            .render_directive("csv-test", ctx, &AssetsHandle::default())
+            .render_directive("csv-test", ctx, &AssetsHandle::default(), &test_config())
             .unwrap()
             .unwrap();
         assert_eq!(html, "A,B;1,2;3,4;");
@@ -1683,7 +1727,7 @@ mod tests {
         };
 
         let html = engine
-            .render_directive("csv-test", ctx, &AssetsHandle::default())
+            .render_directive("csv-test", ctx, &AssetsHandle::default(), &test_config())
             .unwrap()
             .unwrap();
         assert_eq!(
@@ -1716,7 +1760,7 @@ mod tests {
         };
 
         let html = engine
-            .render_directive("csv-test", ctx, &AssetsHandle::default())
+            .render_directive("csv-test", ctx, &AssetsHandle::default(), &test_config())
             .unwrap()
             .unwrap();
         assert_eq!(html, "0");
@@ -1748,7 +1792,8 @@ mod tests {
             source_dir: Some(source.path().to_string_lossy().into_owned()),
         };
 
-        let result = engine.render_directive("csv-test", ctx, &AssetsHandle::default());
+        let result =
+            engine.render_directive("csv-test", ctx, &AssetsHandle::default(), &test_config());
         let err = format!("{:#}", result.unwrap().unwrap_err());
         assert!(
             err.contains("CSV parse error"),
