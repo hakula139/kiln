@@ -405,7 +405,7 @@ The number of items per page is configurable via `paginate` in `[params]` (defau
 | `source_dir`      | string or `none`    | Page source directory (for `read_file`)    |
 | `config`          | object              | Site `Config` (`base_url`, `params`, etc.) |
 
-Keys prefixed with `__` (such as the `__assets` handle backing `register_script()`) are engine-reserved. Directive payload fields with those names are masked by the engine value; pick a different name in your directive arguments to avoid surprises.
+The engine reserves two classes of top-level keys: documented variables in the table above (e.g., `config`, `body_html`) and `__`-prefixed internal handles (e.g., `__assets`, which backs `register_script()`). Directive payload fields with those names are masked by the engine value; pick a different name in your directive arguments to avoid surprises.
 
 ### Template Functions
 
