@@ -20,22 +20,14 @@ pub struct TemplateEngine {
 }
 
 impl TemplateEngine {
-    /// Creates a new template engine with layered template loading.
+    /// Creates a layered template engine: `site_dir` overrides `theme_dir`.
     ///
-    /// Templates are resolved by checking `site_dir` first (user overrides),
-    /// then `theme_dir` (theme defaults). At least one directory must be
-    /// provided.
-    ///
-    /// `site_dir` is silently ignored if it doesn't exist (it's an optional
-    /// override layer). `theme_dir`, when provided, must exist.
-    ///
-    /// `i18n` powers the `t()` function exposed to templates. The engine
-    /// clones a cheap `I18n` handle into the closure.
+    /// `site_dir` is silently ignored when missing (optional override). `theme_dir`, when set,
+    /// must exist. At least one directory is required. `i18n` backs the `t()` function.
     ///
     /// # Errors
     ///
-    /// Returns an error if neither directory is provided, or if `theme_dir`
-    /// is provided but does not exist.
+    /// Errors if neither directory is provided, or if `theme_dir` is set but does not exist.
     pub fn new(site_dir: Option<&Path>, theme_dir: Option<&Path>, i18n: &I18n) -> Result<Self> {
         if let Some(d) = theme_dir {
             ensure!(
@@ -280,11 +272,9 @@ fn tpl_t(i18n: &I18n, key: &str, kwargs: &Kwargs) -> std::result::Result<String,
         return Ok(i18n.t(key).into_owned());
     }
 
-    // MiniJinja `Value`s don't borrow from `kwargs`, so materialize owned
-    // strings for each argument before calling into the borrow-based
-    // `t_interp` API. Treat explicit `none` / undefined as empty string so
-    // templates like `t("greeting", name=user.name)` don't render the
-    // literal text `"none"` when `user.name` is missing.
+    // Materialize owned strings: minijinja `Value`s don't borrow from `kwargs`, but `t_interp`
+    // takes borrowed `&str`. Map `none` / undefined to empty so missing fields don't render
+    // as the literal text `"none"`.
     let mut owned: Vec<(&str, String)> = Vec::with_capacity(arg_names.len());
     for name in arg_names {
         let value: minijinja::Value = kwargs.get(name)?;
