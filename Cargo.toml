@@ -33,6 +33,7 @@ image = { version = "0.25", default-features = false, features = [
 ] }
 imagesize = "0.13"
 indoc = "2"
+itertools = "0.14"
 jiff = { version = "0.2", features = ["serde"] }
 lightningcss = "1.0.0-alpha.71"
 minify-html = "0.18"

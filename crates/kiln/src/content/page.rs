@@ -2,6 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
+use itertools::Itertools;
 use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 use walkdir::WalkDir;
 
@@ -35,12 +36,6 @@ pub struct Page {
 const SUMMARY_SEPARATOR: &str = "<!--more-->";
 
 impl Page {
-    /// Returns `true` if this page is a blog post (under `content/posts/`).
-    #[must_use]
-    pub fn is_post(&self) -> bool {
-        matches!(self.kind, PageKind::Post { .. })
-    }
-
     /// Loads a page from a markdown file on disk.
     ///
     /// # Errors
@@ -250,9 +245,8 @@ fn strip_markdown(full_text: &str, summary_end: usize) -> String {
     // Collapse whitespace runs within each line and trim.
     plain
         .lines()
-        .map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
+        .map(|line| line.split_whitespace().join(" "))
         .filter(|line| !line.is_empty())
-        .collect::<Vec<_>>()
         .join("\n")
 }
 
