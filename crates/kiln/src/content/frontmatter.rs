@@ -115,8 +115,10 @@ mod timestamp_serde {
         deserializer.deserialize_option(OptionVisitor)
     }
 
-    // Signature is dictated by serde's `serialize_with` attribute.
-    #[expect(clippy::ref_option)]
+    #[expect(
+        clippy::ref_option,
+        reason = "serde's `serialize_with` requires &Option<T> here"
+    )]
     pub fn serialize_option<S>(ts: &Option<Timestamp>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
