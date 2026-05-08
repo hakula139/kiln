@@ -187,8 +187,8 @@ fn try_render_block_image(
     Some(render_block_image(&src, &alt, &title, enriched.as_ref()))
 }
 
-/// Flushes buffered paragraph events, replacing inline image sequences with
-/// `render_inline_image()` output while passing other events through.
+/// Flushes buffered paragraph events, replacing inline image sequences with `render_inline_image`
+/// output while passing other events through.
 fn flush_paragraph<'a>(
     events: &[(Event<'a>, std::ops::Range<usize>)],
     image_attrs: &HashMap<usize, ImageAttrs>,
@@ -271,8 +271,7 @@ fn markdown_options() -> Options {
         | Options::ENABLE_MATH
 }
 
-/// Scans the markdown for headings, collecting their level, plain text, and
-/// generating unique slugified IDs.
+/// Scans the markdown for headings, collecting their level, plain text, and unique slugified IDs.
 fn collect_headings(content: &str, options: Options) -> Vec<TocEntry> {
     let parser = Parser::new_ext(content, options);
     let mut headings = Vec::new();
@@ -350,8 +349,8 @@ fn transform_math<'a>(event: Event<'a>, features: &mut BTreeSet<Feature>) -> Eve
     }
 }
 
-/// Appends a numeric suffix to make `id` unique. First use is unchanged,
-/// then `-1`, `-2`, etc. Handles collisions between suffixed and natural IDs.
+/// Appends a numeric suffix to make `id` unique. First use is unchanged, then `-1`, `-2`, etc.
+/// Handles collisions between suffixed and natural IDs.
 fn deduplicate_id(used: &mut HashSet<String>, id: &str) -> String {
     if used.insert(id.to_owned()) {
         return id.to_owned();

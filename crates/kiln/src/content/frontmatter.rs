@@ -221,9 +221,6 @@ pub(crate) fn parse(content: &str) -> Result<(Frontmatter, &str)> {
 
 /// Splits content into raw TOML frontmatter and the remaining body.
 ///
-/// Expects the content to start with `+++` on its own line, followed by TOML,
-/// then a closing `+++` on its own line.
-///
 /// # Errors
 ///
 /// Returns an error if the `+++` delimiters are missing or malformed.

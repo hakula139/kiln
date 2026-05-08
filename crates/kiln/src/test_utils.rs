@@ -225,10 +225,7 @@ pub fn test_config() -> Config {
     Config::default()
 }
 
-/// Creates a minimal `Page` with defaults for testing.
-///
-/// Returns a `PageKind::Page` (standalone) with an empty body.
-/// Callers override fields as needed (e.g., `.kind`, `.source_path`).
+/// Creates a minimal standalone `Page` with the given title and an empty body.
 pub fn test_page(title: &str) -> Page {
     Page {
         frontmatter: Frontmatter {
