@@ -450,7 +450,7 @@ Resolves a translatable string for the active language. See [Internationalizatio
 <p>{{ t("page_counter", current=page, total=pages) }}</p>
 ```
 
-When `kwargs` are supplied, Python-style `{name}` placeholders in the string are replaced with the corresponding values. Missing keys emit a warning and render as the key literal (or `«missing:<key>»` under `KILN_DEV`) so the build does not crash.
+When `kwargs` are supplied, Python-style `{name}` placeholders in the string are replaced with the corresponding values. Missing keys emit a warning and render as the key literal (or `[missing: <key>]` under `KILN_DEV`) so the build does not crash.
 
 #### `register_script(url, load="defer", module=false)`
 
@@ -611,4 +611,4 @@ menu_posts = "文章"
 
 ### Missing-Key Behavior
 
-A missing key emits a warning the first time it is requested and renders as the key literal, so a broken translation is visible in the output without crashing the build. Set the `KILN_DEV` environment variable (to any non-empty value) while developing to render misses as `«missing:<key>»` instead — useful for spotting untranslated strings in preview builds.
+A missing key emits a warning the first time it is requested and renders as the key literal, so a broken translation is visible in the output without crashing the build. Set the `KILN_DEV` environment variable (to any non-empty value) while developing to render misses as `[missing: <key>]` instead — useful for spotting untranslated strings in preview builds.

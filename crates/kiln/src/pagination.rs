@@ -43,8 +43,7 @@ impl<'a, T> Paginator<'a, T> {
 
 /// Computes the URL for a paginated page.
 ///
-/// Page 1 is the canonical URL (just `base_path`).
-/// Page N>1 appends `page/{n}/`.
+/// Page 1 is the canonical URL (just `base_path`). Page N>1 appends `page/{n}/`.
 #[must_use]
 pub fn paginated_url(base_path: &str, page_num: usize) -> String {
     let base = base_path.trim_end_matches('/');

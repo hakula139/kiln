@@ -143,10 +143,7 @@ pub(crate) fn render_markdown(
     MarkdownOutput { html, headings }
 }
 
-/// Checks if a paragraph's buffered events represent a sole image (block image).
-///
-/// Pattern: `Start(Image)`, any inner events (alt text, formatting), `End(Image)`,
-/// with no other images in the paragraph.
+/// Checks if a paragraph's buffered events represent a sole image (block image promotion).
 fn try_render_block_image(
     events: &[(Event<'_>, std::ops::Range<usize>)],
     image_attrs: &HashMap<usize, ImageAttrs>,
@@ -190,8 +187,8 @@ fn try_render_block_image(
     Some(render_block_image(&src, &alt, &title, enriched.as_ref()))
 }
 
-/// Flushes buffered paragraph events, replacing inline image sequences with
-/// `render_inline_image()` output while passing other events through.
+/// Flushes buffered paragraph events, replacing inline image sequences with `render_inline_image`
+/// output while passing other events through.
 fn flush_paragraph<'a>(
     events: &[(Event<'a>, std::ops::Range<usize>)],
     image_attrs: &HashMap<usize, ImageAttrs>,
@@ -274,8 +271,7 @@ fn markdown_options() -> Options {
         | Options::ENABLE_MATH
 }
 
-/// Scans the markdown for headings, collecting their level, plain text, and
-/// generating unique slugified IDs.
+/// Scans the markdown for headings, collecting their level, plain text, and unique slugified IDs.
 fn collect_headings(content: &str, options: Options) -> Vec<TocEntry> {
     let parser = Parser::new_ext(content, options);
     let mut headings = Vec::new();
@@ -353,8 +349,8 @@ fn transform_math<'a>(event: Event<'a>, features: &mut BTreeSet<Feature>) -> Eve
     }
 }
 
-/// Appends a numeric suffix to make `id` unique. First use is unchanged,
-/// then `-1`, `-2`, etc. Handles collisions between suffixed and natural IDs.
+/// Appends a numeric suffix to make `id` unique. First use is unchanged, then `-1`, `-2`, etc.
+/// Handles collisions between suffixed and natural IDs.
 fn deduplicate_id(used: &mut HashSet<String>, id: &str) -> String {
     if used.insert(id.to_owned()) {
         return id.to_owned();
@@ -425,20 +421,20 @@ mod tests {
     // ── deduplicate_id ──
 
     #[test]
-    fn dedup_first_use_unchanged() {
+    fn deduplicate_id_first_use_unchanged() {
         let mut used = HashSet::new();
         assert_eq!(deduplicate_id(&mut used, "foo"), "foo");
     }
 
     #[test]
-    fn dedup_second_use_gets_suffix_1() {
+    fn deduplicate_id_second_use_gets_suffix_1() {
         let mut used = HashSet::new();
         deduplicate_id(&mut used, "foo");
         assert_eq!(deduplicate_id(&mut used, "foo"), "foo-1");
     }
 
     #[test]
-    fn dedup_third_use_gets_suffix_2() {
+    fn deduplicate_id_third_use_gets_suffix_2() {
         let mut used = HashSet::new();
         deduplicate_id(&mut used, "foo");
         deduplicate_id(&mut used, "foo");
@@ -446,7 +442,7 @@ mod tests {
     }
 
     #[test]
-    fn dedup_avoids_collision() {
+    fn deduplicate_id_avoids_collision() {
         let mut used = HashSet::new();
         assert_eq!(deduplicate_id(&mut used, "foo"), "foo");
         assert_eq!(deduplicate_id(&mut used, "foo-1"), "foo-1");
@@ -591,29 +587,23 @@ mod tests {
     #[test]
     fn render_gfm_table() {
         let md = indoc! {"
-            | A | B |
-            |---|---|
-            | 1 | 2 |
+            | Name | City |
+            |------|------|
+            | Alice | Paris |
+            | Bob | Tokyo |
         "};
         let out = render(md);
+
+        // Each cell carries distinct content so a column-swap or row-swap bug breaks the test.
+        let expected = indoc! {"
+            <table><thead><tr><th>Name</th><th>City</th></tr></thead><tbody>
+            <tr><td>Alice</td><td>Paris</td></tr>
+            <tr><td>Bob</td><td>Tokyo</td></tr>
+            </tbody></table>"
+        };
         assert!(
-            out.html.contains("<table>"),
-            "should have table, html:\n{}",
-            out.html
-        );
-        assert!(
-            out.html.contains("<thead>"),
-            "should have thead, html:\n{}",
-            out.html
-        );
-        assert!(
-            out.html.contains("<th>A</th>"),
-            "should have header cells, html:\n{}",
-            out.html
-        );
-        assert!(
-            out.html.contains("<td>1</td>"),
-            "should have data cells, html:\n{}",
+            out.html.contains(expected),
+            "should preserve table nesting and cell order, html:\n{}",
             out.html
         );
     }

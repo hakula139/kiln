@@ -30,12 +30,9 @@ pub(super) fn tpl_read_file(
             )
         })?;
 
-    let source_dir = source_dir.as_str().ok_or_else(|| {
-        minijinja::Error::new(
-            minijinja::ErrorKind::InvalidOperation,
-            "source_dir must be a string",
-        )
-    })?;
+    // `DirectiveContext.source_dir: Option<String>` is the only producer of this value, so when
+    // present it's always a string — no need to re-check the dynamic type.
+    let source_dir = source_dir.as_str().unwrap_or_default();
 
     let rel = Path::new(filename);
     for component in rel.components() {

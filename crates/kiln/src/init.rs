@@ -4,11 +4,7 @@ use std::path::Path;
 use anyhow::{Context, Result, bail};
 use indoc::indoc;
 
-/// Scaffolds a new theme directory under `themes/<name>/`.
-///
-/// Creates `theme.toml`, `templates/base.html`, `templates/post.html`, `i18n/en.toml`,
-/// `i18n/zh-Hans.toml`, and empty `static/` and `i18n/` directories. Fails if the theme
-/// directory already exists to prevent accidental overwrites.
+/// Scaffolds a new theme directory under `themes/<name>/`. Fails if the directory already exists.
 ///
 /// # Errors
 ///
@@ -71,9 +67,6 @@ pub fn init_theme(root: &Path, name: &str) -> Result<()> {
 }
 
 /// Default English i18n table written to new themes.
-///
-/// Resolution precedence: `<site>/i18n/<lang>.toml` → `<theme>/i18n/<lang>.toml` →
-/// `<theme>/i18n/en.toml`.
 const DEFAULT_I18N_EN: &str = indoc! {r#"
     # English strings for this theme.
     #

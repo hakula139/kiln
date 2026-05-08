@@ -54,8 +54,8 @@ impl I18n {
     /// Returns an error if a theme i18n directory has locale files but no `en.toml`, or if any
     /// loaded file is not a flat table of string values.
     pub fn load(site_root: &Path, theme_dir: Option<&Path>, language: &str) -> Result<Self> {
-        // Paths below interpolate `language` into filenames — guard against
-        // traversal or oddly-shaped tags before anything touches the FS.
+        // Paths below interpolate `language` into filenames — guard against traversal or
+        // oddly-shaped tags before anything touches the FS.
         if !language
             .chars()
             .next()
@@ -112,8 +112,8 @@ impl I18n {
         &self.inner.language
     }
 
-    /// Looks up a string by key. On miss, warns once per key and returns
-    /// `«missing:<key>»` in dev mode or the raw key otherwise.
+    /// Looks up a string by key. On miss, warns once per key and returns `[missing: <key>]` in dev
+    /// mode or the raw key otherwise.
     #[must_use]
     pub fn t<'a>(&'a self, key: &str) -> Cow<'a, str> {
         if let Some(value) = self.inner.strings.get(key) {
@@ -127,8 +127,7 @@ impl I18n {
         Cow::Owned(render_miss(key, kiln_dev_enabled()).into_owned())
     }
 
-    /// Looks up a string by key and interpolates Python-style `{name}`
-    /// placeholders from `args`.
+    /// Looks up a string by key and interpolates Python-style `{name}` placeholders from `args`.
     ///
     /// `{{` renders as a literal `{`, `}}` renders as a literal `}`. Missing
     /// placeholders substitute an empty string and emit a warning. An
@@ -179,7 +178,7 @@ impl I18n {
 /// Returns the rendered value for a missing i18n key.
 fn render_miss(key: &str, dev_mode: bool) -> Cow<'_, str> {
     if dev_mode {
-        Cow::Owned(format!("«missing:{key}»"))
+        Cow::Owned(format!("[missing: {key}]"))
     } else {
         Cow::Borrowed(key)
     }
@@ -457,9 +456,8 @@ mod tests {
 
     #[test]
     fn load_ignores_non_toml_entries_in_i18n_dir() {
-        // Non-TOML files (READMEs, editor swap files, etc.) and
-        // subdirectories must be skipped without tripping the
-        // "missing en.toml fallback" check.
+        // Non-TOML files (READMEs, editor swap files, etc.) and subdirectories must be skipped
+        // without tripping the "missing en.toml fallback" check.
         let site = tempfile::tempdir().unwrap();
         let theme = tempfile::tempdir().unwrap();
         write_file(
@@ -738,7 +736,7 @@ mod tests {
     fn render_miss_returns_marker_when_dev_on() {
         assert_eq!(
             render_miss("missing_key", true).as_ref(),
-            "«missing:missing_key»",
+            "[missing: missing_key]",
         );
     }
 }

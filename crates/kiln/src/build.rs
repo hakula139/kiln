@@ -48,14 +48,13 @@ struct BuildContext {
 /// Options controlling a single `build()` invocation.
 #[derive(Default)]
 pub struct BuildOptions<'a> {
-    /// Replaces `base_url` from config when set. Used by `kiln serve` so
-    /// rendered URLs match the actual server port.
+    /// Replaces `base_url` from config when set. Used by `kiln serve` so rendered URLs match the
+    /// actual server port.
     pub base_url_override: Option<&'a str>,
-    /// Writes into this directory instead of `root/<config.output_dir>`.
-    /// Used by the dev server to stage a fresh build before swapping it in.
+    /// Writes into this directory instead of `root/<config.output_dir>`. Used by the dev server to
+    /// stage a fresh build before swapping it in.
     pub output_dir_override: Option<&'a Path>,
-    /// Runs HTML / CSS / JS minification over the output directory before
-    /// Pagefind indexing.
+    /// Runs HTML / CSS / JS minification over the output directory before Pagefind indexing.
     pub minify: bool,
 }
 
@@ -265,8 +264,8 @@ fn build_page(
     Ok(())
 }
 
-/// Finds a `style.css` file in the page bundle's assets and returns its
-/// resolved URL path (e.g., `/posts/my-post/style.css`).
+/// Finds a `style.css` file in the page bundle's assets and returns its resolved URL path (e.g.,
+/// `/posts/my-post/style.css`).
 fn find_page_css(assets: &[PathBuf], bundle_dir: Option<&Path>, page_url: &str) -> Option<String> {
     let dir = bundle_dir?;
     let css = assets

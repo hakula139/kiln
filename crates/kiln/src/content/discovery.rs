@@ -22,8 +22,8 @@ pub struct ContentSet {
 ///
 /// # Errors
 ///
-/// Returns an error if the content directory cannot be read, or if any
-/// non-draft markdown file has invalid frontmatter.
+/// Returns an error if the content directory cannot be read, or if any non-draft markdown file has
+/// invalid frontmatter.
 pub fn discover_content(root: &Path) -> Result<ContentSet> {
     let content_dir = root.join("content");
     if !content_dir.is_dir() {

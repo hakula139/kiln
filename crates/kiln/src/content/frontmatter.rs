@@ -98,9 +98,8 @@ fn is_default<T: Default + PartialEq>(t: &T) -> bool {
 
 /// Handles (de)serialization of `jiff::Timestamp` as a string.
 ///
-/// This is format-agnostic: it handles both TOML (where the `toml` crate
-/// passes native datetimes through as single-entry maps) and YAML (where
-/// datetimes are plain strings).
+/// This is format-agnostic: it handles both TOML (where the `toml` crate passes native datetimes
+/// through as single-entry maps) and YAML (where datetimes are plain strings).
 mod timestamp_serde {
     use std::fmt;
 
@@ -179,8 +178,8 @@ mod timestamp_serde {
     }
 }
 
-/// Handles deserialization of `FeaturedImage` from either a string (Hugo YAML
-/// compat: `featuredImage: /img.webp`) or a TOML table.
+/// Handles deserialization of `FeaturedImage` from either a string (Hugo YAML compat:
+/// `featuredImage: /img.webp`) or a TOML table.
 mod featured_image_serde {
     use serde::{Deserialize, Deserializer};
 
@@ -221,9 +220,6 @@ pub(crate) fn parse(content: &str) -> Result<(Frontmatter, &str)> {
 }
 
 /// Splits content into raw TOML frontmatter and the remaining body.
-///
-/// Expects the content to start with `+++` on its own line, followed by TOML,
-/// then a closing `+++` on its own line.
 ///
 /// # Errors
 ///

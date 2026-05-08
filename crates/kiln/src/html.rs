@@ -1,7 +1,6 @@
 /// Escapes characters that are special in HTML.
 ///
-/// Escapes `&`, `<`, `>`, `"`, `'`.
-/// Safe for use in both element content and attribute values.
+/// Escapes `&`, `<`, `>`, `"`, `'`. Safe for use in both element content and attribute values.
 #[must_use]
 pub fn escape(input: &str) -> String {
     let mut output = String::with_capacity(input.len());

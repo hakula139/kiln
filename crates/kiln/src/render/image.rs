@@ -47,8 +47,7 @@ pub fn render_inline_image(
     render_img(src, alt, title, attrs, true)
 }
 
-/// Builds the `<img>` tag, wrapping in `<span class="lqip">` when an LQIP
-/// URI is available.
+/// Builds the `<img>` tag, wrapping in `<span class="lqip">` when an LQIP URI is available.
 fn render_img(
     src: &str,
     alt: &str,
@@ -59,14 +58,12 @@ fn render_img(
     let mut img = String::new();
     push_img_tag(&mut img, src, alt, title, attrs, include_identity);
 
-    // An empty URI is treated as no URI: a `url('')` placeholder is broken
-    // and would still trigger the wrapper's CSS path on the theme side.
+    // Filter empty: `url('')` is a broken CSS placeholder.
     match attrs
         .and_then(|a| a.lqip_uri.as_deref())
         .filter(|s| !s.is_empty())
     {
-        // Base64 contains only `[A-Za-z0-9+/=]`, so no escaping needed for
-        // the surrounding `"` or the CSS `url('...')` delimiters.
+        // Base64 uses safe chars (`A-Za-z0-9+/=`); no escape needed in `"..."` or `url('...')`.
         Some(uri) => format!(r#"<span class="lqip" style="--lqip-uri:url('{uri}')">{img}</span>"#),
         None => img,
     }
@@ -142,12 +139,23 @@ fn final_dimensions(attrs: &ImageAttrs) -> (Option<String>, Option<String>) {
 mod tests {
     use super::*;
 
+    /// Asserts that `<img` appears between the opening `<figure` tag and `</figure>` close.
+    fn assert_img_inside_figure(html: &str) {
+        assert!(
+            matches!(
+                (html.find("<figure"), html.find("<img"), html.find("</figure>")),
+                (Some(open), Some(img), Some(close)) if open < img && img < close
+            ),
+            "<img> should sit inside <figure>, html:\n{html}"
+        );
+    }
+
     // ── render_block_image ──
 
     #[test]
-    fn block_image_produces_figure() {
+    fn render_block_image_produces_figure() {
         let html = render_block_image("img.png", "A photo", "", None);
-        assert!(html.contains("<figure>"), "html:\n{html}");
+        assert_img_inside_figure(&html);
         assert!(html.contains(r#"src="img.png""#), "html:\n{html}");
         assert!(html.contains(r#"alt="A photo""#), "html:\n{html}");
         assert!(html.contains(r#"loading="lazy""#), "html:\n{html}");
@@ -159,14 +167,14 @@ mod tests {
     }
 
     #[test]
-    fn block_image_empty_alt_no_figcaption() {
+    fn render_block_image_empty_alt_no_figcaption() {
         let html = render_block_image("img.png", "", "", None);
         assert!(html.contains("<figure>"), "html:\n{html}");
         assert!(!html.contains("<figcaption>"), "html:\n{html}");
     }
 
     #[test]
-    fn block_image_with_title() {
+    fn render_block_image_with_title() {
         let html = render_block_image("img.png", "alt text", "My Title", None);
         assert!(html.contains(r#"title="My Title""#), "html:\n{html}");
         assert!(
@@ -176,7 +184,7 @@ mod tests {
     }
 
     #[test]
-    fn block_image_escapes_special_characters() {
+    fn render_block_image_escapes_special_characters() {
         let html = render_block_image(
             "img.png?a=1&b=2",
             r#"a <photo> & "test""#,
@@ -198,7 +206,7 @@ mod tests {
     }
 
     #[test]
-    fn block_image_with_id() {
+    fn render_block_image_with_id() {
         let attrs = ImageAttrs {
             id: Some("fig-1".into()),
             ..ImageAttrs::default()
@@ -208,7 +216,7 @@ mod tests {
     }
 
     #[test]
-    fn block_image_with_class() {
+    fn render_block_image_with_class() {
         let attrs = ImageAttrs {
             classes: vec!["hero".into()],
             ..ImageAttrs::default()
@@ -218,7 +226,7 @@ mod tests {
     }
 
     #[test]
-    fn block_image_with_width() {
+    fn render_block_image_with_width() {
         let attrs = ImageAttrs {
             width: Some("500".into()),
             ..ImageAttrs::default()
@@ -228,7 +236,7 @@ mod tests {
     }
 
     #[test]
-    fn block_image_with_height() {
+    fn render_block_image_with_height() {
         let attrs = ImageAttrs {
             height: Some("300".into()),
             ..ImageAttrs::default()
@@ -392,7 +400,7 @@ mod tests {
     }
 
     #[test]
-    fn block_image_with_lqip_wraps_inside_figure() {
+    fn render_block_image_with_lqip_wraps_inside_figure() {
         let attrs = ImageAttrs {
             auto_width: Some(100),
             auto_height: Some(60),
@@ -400,7 +408,7 @@ mod tests {
             ..ImageAttrs::default()
         };
         let html = render_block_image("img.avif", "alt", "", Some(&attrs));
-        assert!(html.contains("<figure>"), "html:\n{html}");
+        assert_img_inside_figure(&html);
         assert!(
             html.contains(
                 r#"<span class="lqip" style="--lqip-uri:url('data:image/webp;base64,AAA')"><img "#
@@ -415,19 +423,18 @@ mod tests {
     }
 
     #[test]
-    fn block_image_without_lqip_emits_bare_img_inside_figure() {
+    fn render_block_image_without_lqip_emits_bare_img_inside_figure() {
         let attrs = ImageAttrs {
             auto_width: Some(100),
             auto_height: Some(60),
             ..ImageAttrs::default()
         };
         let html = render_block_image("img.avif", "alt", "", Some(&attrs));
-        assert!(html.contains("<figure>"), "html:\n{html}");
+        assert_img_inside_figure(&html);
         assert!(
             !html.contains(r#"class="lqip""#),
             "no wrapper without lqip, html:\n{html}",
         );
-        assert!(html.contains("<img "), "img is rendered, html:\n{html}");
     }
 
     #[test]

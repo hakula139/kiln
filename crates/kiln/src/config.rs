@@ -106,7 +106,7 @@ pub struct MenuItem {
 
     /// Sort order (ascending). Items without a weight default to 0.
     #[serde(default)]
-    pub weight: i32,
+    pub weight: i64,
 
     /// Whether this link points to an external site.
     #[serde(default)]
@@ -135,13 +135,13 @@ impl Default for Config {
 impl Config {
     /// Loads site configuration from `config.toml` in the given root.
     ///
-    /// When a theme is configured, also loads its `theme.toml` and merges
-    /// default params. Falls back to defaults if the file does not exist.
+    /// When a theme is configured, also loads its `theme.toml` and merges default params. Falls
+    /// back to defaults if the file does not exist.
     ///
     /// # Errors
     ///
-    /// Returns an error if the config file exists but cannot be read or parsed,
-    /// or if a configured theme's `theme.toml` is missing or incompatible.
+    /// Returns an error if the config file exists but cannot be read or parsed, or if a configured
+    /// theme's `theme.toml` is missing or incompatible.
     pub fn load(root: &Path) -> Result<Self> {
         let path = root.join("config.toml");
         let mut config: Self = if path.exists() {
@@ -176,8 +176,8 @@ impl Config {
     ///
     /// # Errors
     ///
-    /// Returns an error if `output_dir` is empty, cannot be canonicalized,
-    /// or would overlap with the project root.
+    /// Returns an error if `output_dir` is empty, cannot be canonicalized, or would overlap with
+    /// the project root.
     pub fn resolved_output_dir(&self, root: &Path) -> Result<PathBuf> {
         if self.output_dir.is_empty() {
             bail!("output_dir cannot be empty");
@@ -206,8 +206,8 @@ impl Config {
     ///
     /// # Errors
     ///
-    /// Returns an error if `timezone` is set but is not a valid IANA time zone
-    /// name recognized by `jiff`.
+    /// Returns an error if `timezone` is set but is not a valid IANA time zone name recognized by
+    /// `jiff`.
     pub fn time_zone(&self) -> Result<Option<TimeZone>> {
         self.timezone
             .as_deref()

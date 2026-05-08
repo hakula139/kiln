@@ -13,8 +13,7 @@ const DEFAULT_BINARY: &str = "pagefind";
 ///
 /// # Errors
 ///
-/// Returns an error if the Pagefind binary cannot be executed or exits
-/// with a non-zero status.
+/// Returns an error if the Pagefind binary cannot be executed or exits with a non-zero status.
 pub fn run_pagefind(output_dir: &Path, binary: Option<&str>) -> Result<()> {
     let binary = binary.unwrap_or(DEFAULT_BINARY);
     let site_arg = output_dir

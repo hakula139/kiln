@@ -19,12 +19,10 @@ pub struct ImageAttrs {
 
 /// Extracts `![alt](url){...}` attribute blocks from markdown.
 ///
-/// Returns the cleaned markdown (with `{...}` stripped) and a map from the
-/// image's byte position (start of `![`) in the **cleaned** output to its
-/// attributes.
+/// Returns the cleaned markdown (with `{...}` stripped) and a map from the image's byte position
+/// (start of `![`) in the **cleaned** output to its attributes.
 ///
-/// Skips images inside fenced code blocks (` ``` ` / `~~~`) and
-/// inline code spans (`` ` ``).
+/// Skips images inside fenced code blocks (` ``` ` / `~~~`) and inline code spans (`` ` ``).
 #[must_use]
 pub fn extract_image_attrs(input: &str) -> (String, HashMap<usize, ImageAttrs>) {
     let mut output = String::with_capacity(input.len());

@@ -48,9 +48,8 @@ pub struct ImageMeta {
     pub lqip_uri: Option<String>,
 }
 
-/// Resolves `<img src>` strings to on-disk paths, reads dimensions, and
-/// (per [`ImageConfig`]) encodes a small WebP LQIP. Memoised per canonical
-/// path for the build's lifetime.
+/// Resolves `<img src>` strings to on-disk paths, reads dimensions, and (per [`ImageConfig`])
+/// encodes a small WebP LQIP. Memoised per canonical path for the build's lifetime.
 pub struct ImageResolver {
     static_root: PathBuf,
     config: ImageConfig,
@@ -58,9 +57,9 @@ pub struct ImageResolver {
 }
 
 impl ImageResolver {
-    /// Constructs a resolver. `static_root` anchors `src` strings that begin
-    /// with `/` (i.e., site-absolute references); page-bundle-relative paths
-    /// resolve through the `base_dir` argument to [`Self::resolve`].
+    /// Constructs a resolver. `static_root` anchors `src` strings that begin with `/` (i.e.,
+    /// site-absolute references); page-bundle-relative paths resolve through the `base_dir`
+    /// argument to [`Self::resolve`].
     #[must_use]
     pub fn new(static_root: &Path, config: ImageConfig) -> Self {
         Self {
@@ -70,11 +69,11 @@ impl ImageResolver {
         }
     }
 
-    /// Resolves a `src` string to image metadata, or returns `None` when the
-    /// path can't be located or the format isn't recognised.
+    /// Resolves a `src` string to image metadata, or returns `None` when the path can't be located
+    /// or the format isn't recognised.
     ///
-    /// `base_dir` is the page-bundle anchor for relative paths; pass `None`
-    /// for contexts without a bundle (e.g., feed generation).
+    /// `base_dir` is the page-bundle anchor for relative paths; pass `None` for contexts without a
+    /// bundle (e.g., feed generation).
     ///
     /// # Panics
     ///
@@ -93,8 +92,8 @@ impl ImageResolver {
             .clone()
     }
 
-    /// Maps a `src` reference to a filesystem path under one of the known
-    /// roots. Returns `None` for remote URLs and `data:` schemes.
+    /// Maps a `src` reference to a filesystem path under one of the known roots. Returns `None`
+    /// for remote URLs and `data:` schemes.
     fn resolve_path(&self, src: &str, base_dir: Option<&Path>) -> Option<PathBuf> {
         if src.is_empty()
             || src.starts_with("http://")

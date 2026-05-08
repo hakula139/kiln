@@ -8,14 +8,14 @@ use strum::{AsRefStr, EnumString};
 
 /// Per-page collection of asset declarations gathered during render.
 ///
-/// Surfaced on [`PostTemplateVars`] so themes can iterate `assets.scripts`
-/// and `assets.features` without per-feature frontmatter flags.
+/// Surfaced on [`PostTemplateVars`] so themes can iterate `assets.scripts` and `assets.features`
+/// without per-feature frontmatter flags.
 ///
 /// [`PostTemplateVars`]: crate::template::vars::PostTemplateVars
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct PageAssets {
-    /// Scripts in registration order. Order matters for dependency chains
-    /// (e.g., a library script must be registered before its consumer).
+    /// Scripts in registration order. Order matters for dependency chains (e.g., a library script
+    /// must be registered before its consumer).
     pub scripts: Vec<ScriptTag>,
 
     /// Features auto-detected during render (math expressions, mermaid fences).
@@ -26,16 +26,14 @@ pub struct PageAssets {
 impl PageAssets {
     /// Registers a script for the current page.
     ///
-    /// Re-registering the exact same [`ScriptTag`] (same `url`, `load`, and
-    /// `module`) is a no-op. Linear search is fine here — a page registers
-    /// at most a handful of scripts.
+    /// Re-registering the exact same [`ScriptTag`] (same `url`, `load`, and `module`) is a no-op.
+    /// Linear search is fine here — a page registers at most a handful of scripts.
     ///
     /// # Errors
     ///
-    /// Returns an error if a script with the same URL has already been
-    /// registered with a different `load` strategy or `module` flag, since
-    /// the browser would otherwise see two `<script>` tags fighting for the
-    /// same source.
+    /// Returns an error if a script with the same URL has already been registered with a different
+    /// `load` strategy or `module` flag, since the browser would otherwise see two `<script>` tags
+    /// fighting for the same source.
     pub fn register_script(&mut self, tag: ScriptTag) -> Result<()> {
         if let Some(existing) = self.scripts.iter().find(|s| s.url == tag.url) {
             if existing == &tag {
@@ -62,11 +60,11 @@ impl PageAssets {
     }
 }
 
-/// Mutable handle to a [`PageAssets`] that templates can update via
-/// `register_script(...)`. Cheap to clone (internally `Arc<Mutex<_>>`).
+/// Mutable handle to a [`PageAssets`] that templates can update via `register_script(...)`. Cheap
+/// to clone (internally `Arc<Mutex<_>>`).
 ///
-/// The mutex satisfies `MiniJinja`'s `Object: Send + Sync` requirement;
-/// the build pipeline is single-threaded so it never contends.
+/// The mutex satisfies `MiniJinja`'s `Object: Send + Sync` requirement; the build pipeline is
+/// single-threaded so it never contends.
 #[derive(Debug, Default, Clone)]
 pub struct AssetsHandle {
     inner: Arc<Mutex<PageAssets>>,
@@ -77,9 +75,9 @@ impl AssetsHandle {
     ///
     /// # Panics
     ///
-    /// Panics if the underlying mutex is poisoned, which only happens when
-    /// another thread holding the lock panicked. The build pipeline holds the
-    /// lock for tiny synchronous mutations, so this should never trigger.
+    /// Panics if the underlying mutex is poisoned, which only happens when another thread holding
+    /// the lock panicked. The build pipeline holds the lock for tiny synchronous mutations, so
+    /// this should never trigger.
     pub(crate) fn lock(&self) -> MutexGuard<'_, PageAssets> {
         self.inner.lock().expect("PageAssets mutex poisoned")
     }
@@ -95,8 +93,8 @@ impl Object for AssetsHandle {}
 
 /// A `<script>` tag declaration.
 ///
-/// Equality compares all fields — re-registering the same URL with different
-/// `load` or `module` is a conflict, not a duplicate.
+/// Equality compares all fields — re-registering the same URL with different `load` or `module`
+/// is a conflict, not a duplicate.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ScriptTag {
     pub url: String,
@@ -116,8 +114,8 @@ impl ScriptTag {
     }
 }
 
-/// How a `<script>` tag is loaded. `defer` and `async` are mutually exclusive
-/// in HTML, so they share an enum rather than two `bool` fields.
+/// How a `<script>` tag is loaded. `defer` and `async` are mutually exclusive in HTML, so they
+/// share an enum rather than two `bool` fields.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, AsRefStr, EnumString)]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
@@ -229,10 +227,9 @@ mod tests {
 
     #[test]
     fn feature_string_form_is_lowercase_for_templates() {
-        // Themes test membership with `"math" in assets.features`. Verify the
-        // strum (AsRef) and serde (Serialize) string forms agree, since
-        // MiniJinja serializes via serde while strum drives our internal
-        // tooling.
+        // Themes test membership with `"math" in assets.features`. Verify the strum (AsRef) and
+        // serde (Serialize) string forms agree, since MiniJinja serializes via serde while strum
+        // drives our internal tooling.
         assert_eq!(Feature::Math.as_ref(), "math");
         assert_eq!(Feature::Mermaid.as_ref(), "mermaid");
 

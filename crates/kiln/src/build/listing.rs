@@ -49,9 +49,8 @@ pub(crate) struct ListingArtifacts {
 
 /// Builds listing artifacts from discovered pages in a single pass.
 ///
-/// Index alignment with the input slice is maintained (required by
-/// `TaxonomySet::tag_pages`). Post and tag lists are pre-sorted by date
-/// descending.
+/// Index alignment with the input slice is maintained (required by `TaxonomySet::tag_pages`). Post
+/// and tag lists are pre-sorted by date descending.
 pub(crate) fn build_listing_artifacts(
     pages: &[Page],
     content_dir: &Path,
@@ -62,8 +61,8 @@ pub(crate) fn build_listing_artifacts(
     taxonomy_set: &TaxonomySet,
 ) -> Result<ListingArtifacts> {
     let mut listed_pages = Vec::with_capacity(pages.len());
-    let mut listed_posts = Vec::new();
-    let mut section_posts: HashMap<String, Vec<ListedPage>> = HashMap::new();
+    let mut post_indices: Vec<usize> = Vec::new();
+    let mut section_post_indices: HashMap<String, Vec<usize>> = HashMap::new();
 
     for page in pages {
         let lp = build_listed_page(
@@ -81,21 +80,34 @@ pub(crate) fn build_listing_artifacts(
             )
         })?;
 
+        let idx = listed_pages.len();
         if let PageKind::Post { section } = &page.kind {
             if let Some(slug) = section {
-                section_posts
+                section_post_indices
                     .entry(slug.clone())
                     .or_default()
-                    .push(lp.clone());
+                    .push(idx);
             }
-            listed_posts.push(lp.clone());
+            post_indices.push(idx);
         }
         listed_pages.push(lp);
     }
 
+    let mut listed_posts: Vec<ListedPage> = post_indices
+        .iter()
+        .filter_map(|&idx| listed_pages.get(idx).cloned())
+        .collect();
     sort_by_date_desc(&mut listed_posts);
-    for posts in section_posts.values_mut() {
-        sort_by_date_desc(posts);
+
+    let mut section_posts: HashMap<String, Vec<ListedPage>> =
+        HashMap::with_capacity(section_post_indices.len());
+    for (slug, indices) in section_post_indices {
+        let mut pages: Vec<ListedPage> = indices
+            .iter()
+            .filter_map(|&idx| listed_pages.get(idx).cloned())
+            .collect();
+        sort_by_date_desc(&mut pages);
+        section_posts.insert(slug, pages);
     }
 
     let mut tag_pages = HashMap::with_capacity(taxonomy_set.tag_pages.len());

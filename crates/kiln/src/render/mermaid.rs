@@ -9,8 +9,7 @@ use crate::html::escape;
 /// - In `data-source`, so a theme-toggle handler can restore the source
 ///   after mermaid replaces the inner content with `<svg>`.
 ///
-/// Both copies are HTML-escaped for safety in inner-text and attribute-value
-/// contexts.
+/// Both copies are HTML-escaped for safety in inner-text and attribute-value contexts.
 #[must_use]
 pub(crate) fn render_mermaid(source: &str) -> String {
     let escaped = escape(source);
