@@ -1,4 +1,5 @@
 apfs
+apos
 bfcache
 btrfs
 cachix
