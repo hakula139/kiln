@@ -171,10 +171,10 @@ mod tests {
     use super::*;
     use crate::directive::CalloutKind;
 
-    // ── Callout ──
+    // ── parse_directives: callout ──
 
     #[test]
-    fn callout_default_type() {
+    fn parse_directives_callout_default_type() {
         let input = indoc! {"
             ::: callout
             Hello world
@@ -197,7 +197,7 @@ mod tests {
     }
 
     #[test]
-    fn callout_name_case_insensitive() {
+    fn parse_directives_callout_name_case_insensitive() {
         let input = indoc! {"
             ::: Callout
             Body
@@ -216,18 +216,7 @@ mod tests {
     }
 
     #[test]
-    fn callout_empty_body() {
-        let input = indoc! {"
-            ::: callout
-            :::
-        "};
-        let blocks = parse_directives(input);
-        assert_eq!(blocks.len(), 1);
-        assert_eq!(blocks[0].body, "");
-    }
-
-    #[test]
-    fn callout_with_type_and_attrs() {
+    fn parse_directives_callout_with_type_and_attrs() {
         let input = indoc! {r#"
             ::: callout {type=warning title="Careful" open=false}
             Body
@@ -246,7 +235,7 @@ mod tests {
     }
 
     #[test]
-    fn callout_multiple_sequential() {
+    fn parse_directives_callout_multiple_sequential() {
         let input = indoc! {"
             ::: callout
             First
@@ -263,7 +252,7 @@ mod tests {
     }
 
     #[test]
-    fn callout_multiline_body() {
+    fn parse_directives_callout_multiline_body() {
         let input = indoc! {"
             ::: callout
             First paragraph.
@@ -283,10 +272,21 @@ mod tests {
         );
     }
 
-    // ── Unknown directives ──
+    #[test]
+    fn parse_directives_callout_empty_body() {
+        let input = indoc! {"
+            ::: callout
+            :::
+        "};
+        let blocks = parse_directives(input);
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].body, "");
+    }
+
+    // ── parse_directives: unknown ──
 
     #[test]
-    fn unknown_name_only() {
+    fn parse_directives_unknown_name_only() {
         let input = indoc! {"
             ::: custom
             Body
@@ -305,7 +305,7 @@ mod tests {
     }
 
     #[test]
-    fn unknown_name_and_args() {
+    fn parse_directives_unknown_name_and_args() {
         let input = indoc! {"
             ::: table {cols=3}
             Body
@@ -324,10 +324,10 @@ mod tests {
         assert_eq!(blocks[0].body, "Body");
     }
 
-    // ── Pandoc attributes ──
+    // ── parse_directives: pandoc attributes ──
 
     #[test]
-    fn pandoc_id_extracted() {
+    fn parse_directives_pandoc_id_extracted() {
         let input = indoc! {"
             ::: callout {#my-id}
             Body
@@ -348,7 +348,7 @@ mod tests {
     }
 
     #[test]
-    fn pandoc_extra_classes_collected() {
+    fn parse_directives_pandoc_extra_classes_collected() {
         let input = indoc! {"
             ::: callout {.highlight .compact}
             Body
@@ -361,7 +361,7 @@ mod tests {
     }
 
     #[test]
-    fn pandoc_id_and_classes_with_args() {
+    fn parse_directives_pandoc_id_and_classes_with_args() {
         let input = indoc! {r#"
             ::: callout {#box .wide type=warning title="Careful"}
             Body
@@ -382,7 +382,41 @@ mod tests {
     }
 
     #[test]
-    fn pandoc_class_only_no_name() {
+    fn parse_directives_pandoc_id_after_class() {
+        let input = indoc! {"
+            ::: callout {.extra #late-id}
+            Body
+            :::
+        "};
+        let blocks = parse_directives(input);
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].id.as_deref(), Some("late-id"));
+        assert_eq!(blocks[0].classes, ["extra"]);
+    }
+
+    #[test]
+    fn parse_directives_pandoc_interleaved_attrs() {
+        let input = indoc! {"
+            ::: callout {.highlight type=tip #my-id .wide}
+            Body
+            :::
+        "};
+        let blocks = parse_directives(input);
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(
+            blocks[0].kind,
+            DirectiveKind::Callout {
+                kind: CalloutKind::Tip,
+                title: None,
+                open: true,
+            }
+        );
+        assert_eq!(blocks[0].id.as_deref(), Some("my-id"));
+        assert_eq!(blocks[0].classes, ["highlight", "wide"]);
+    }
+
+    #[test]
+    fn parse_directives_pandoc_class_only_no_name() {
         // {.note} without a name word is a generic div, not a callout.
         let input = indoc! {"
             ::: {.note}
@@ -403,7 +437,7 @@ mod tests {
     }
 
     #[test]
-    fn pandoc_id_only_no_name() {
+    fn parse_directives_pandoc_id_only_no_name() {
         // {#section} without a name word is a generic div, not a callout.
         let input = indoc! {"
             ::: {#section}
@@ -425,7 +459,7 @@ mod tests {
     }
 
     #[test]
-    fn pandoc_attrs_bare_words_become_positional_args() {
+    fn parse_directives_pandoc_attrs_bare_words_become_positional_args() {
         let input = indoc! {r#"
             ::: {note title="Custom"}
             Body
@@ -444,41 +478,7 @@ mod tests {
     }
 
     #[test]
-    fn pandoc_id_after_class() {
-        let input = indoc! {"
-            ::: callout {.extra #late-id}
-            Body
-            :::
-        "};
-        let blocks = parse_directives(input);
-        assert_eq!(blocks.len(), 1);
-        assert_eq!(blocks[0].id.as_deref(), Some("late-id"));
-        assert_eq!(blocks[0].classes, ["extra"]);
-    }
-
-    #[test]
-    fn pandoc_interleaved_attrs() {
-        let input = indoc! {"
-            ::: callout {.highlight type=tip #my-id .wide}
-            Body
-            :::
-        "};
-        let blocks = parse_directives(input);
-        assert_eq!(blocks.len(), 1);
-        assert_eq!(
-            blocks[0].kind,
-            DirectiveKind::Callout {
-                kind: CalloutKind::Tip,
-                title: None,
-                open: true,
-            }
-        );
-        assert_eq!(blocks[0].id.as_deref(), Some("my-id"));
-        assert_eq!(blocks[0].classes, ["highlight", "wide"]);
-    }
-
-    #[test]
-    fn pandoc_multiple_ids_first_wins() {
+    fn parse_directives_pandoc_multiple_ids_first_wins() {
         let input = indoc! {"
             ::: callout {#first #second .extra}
             Body
@@ -491,7 +491,7 @@ mod tests {
     }
 
     #[test]
-    fn pandoc_empty_hash_and_dot_ignored() {
+    fn parse_directives_pandoc_empty_hash_and_dot_ignored() {
         let input = indoc! {"
             ::: callout {# . .real}
             Body
@@ -504,7 +504,7 @@ mod tests {
     }
 
     #[test]
-    fn pandoc_quoted_value_shields_hash_and_dot() {
+    fn parse_directives_pandoc_quoted_value_shields_hash_and_dot() {
         let input = indoc! {r#"
             ::: callout {title="Hello #world .bold" #real-id .real-class}
             Body
@@ -524,10 +524,10 @@ mod tests {
         assert_eq!(blocks[0].classes, ["real-class"]);
     }
 
-    // ── Nesting ──
+    // ── parse_directives: nesting ──
 
     #[test]
-    fn nested_directives() {
+    fn parse_directives_nested_directives() {
         let input = indoc! {"
             :::: callout {type=warning}
             ::: callout
@@ -568,7 +568,7 @@ mod tests {
     }
 
     #[test]
-    fn nested_directive_siblings() {
+    fn parse_directives_nested_directive_siblings() {
         let input = indoc! {"
             ::::: wrapper
             ::: callout
@@ -587,20 +587,10 @@ mod tests {
         assert_eq!(blocks[2].body, "Second");
     }
 
-    // ── Closing fence ──
+    // ── parse_directives: closing fence ──
 
     #[test]
-    fn unclosed_directive_skipped() {
-        let input = indoc! {"
-            ::: callout
-            No closing fence
-        "};
-        let blocks = parse_directives(input);
-        assert!(blocks.is_empty(), "unclosed directive should be skipped");
-    }
-
-    #[test]
-    fn closing_fence_colon_count() {
+    fn parse_directives_closing_fence_colon_count() {
         let input = indoc! {"
             ::: callout
             Body
@@ -620,7 +610,7 @@ mod tests {
     }
 
     #[test]
-    fn closing_fence_cannot_skip_unclosed_inner() {
+    fn parse_directives_closing_fence_cannot_skip_unclosed_inner() {
         let input = indoc! {"
             :::: outer
             ::: inner-a
@@ -645,10 +635,20 @@ mod tests {
         );
     }
 
-    // ── Code fence interaction ──
+    #[test]
+    fn parse_directives_unclosed_directive_skipped() {
+        let input = indoc! {"
+            ::: callout
+            No closing fence
+        "};
+        let blocks = parse_directives(input);
+        assert!(blocks.is_empty(), "unclosed directive should be skipped");
+    }
+
+    // ── parse_directives: code fence ──
 
     #[test]
-    fn directives_inside_code_fences_ignored() {
+    fn parse_directives_directives_inside_code_fences_ignored() {
         // Backtick fences.
         let input = indoc! {"
             ```
@@ -671,7 +671,7 @@ mod tests {
     }
 
     #[test]
-    fn code_fence_inside_directive() {
+    fn parse_directives_code_fence_inside_directive() {
         let input = indoc! {"
             ::: callout
             ```
@@ -698,7 +698,7 @@ mod tests {
     }
 
     #[test]
-    fn indented_code_fence_ignores_directives() {
+    fn parse_directives_indented_code_fence_ignores_directives() {
         let input = indoc! {"
                ```
             ::: callout
@@ -713,7 +713,7 @@ mod tests {
     }
 
     #[test]
-    fn over_indented_code_fence_not_recognized() {
+    fn parse_directives_over_indented_code_fence_not_recognized() {
         // Opening fence.
         let input = indoc! {"
                 ```
@@ -742,7 +742,7 @@ mod tests {
     }
 
     #[test]
-    fn short_backtick_run_not_a_code_fence() {
+    fn parse_directives_short_backtick_run_not_a_code_fence() {
         let input = indoc! {"
             ``
             ::: callout
@@ -757,7 +757,7 @@ mod tests {
     }
 
     #[test]
-    fn mismatched_code_fence_chars_not_closed() {
+    fn parse_directives_mismatched_code_fence_chars_not_closed() {
         let input = indoc! {"
             ```
             ::: callout
@@ -772,7 +772,7 @@ mod tests {
     }
 
     #[test]
-    fn backtick_fence_with_backtick_in_info_not_a_fence() {
+    fn parse_directives_backtick_fence_with_backtick_in_info_not_a_fence() {
         let input = indoc! {"
             ```foo`bar
             ::: callout
@@ -786,10 +786,10 @@ mod tests {
         );
     }
 
-    // ── Edge cases ──
+    // ── parse_directives: edge cases ──
 
     #[test]
-    fn indented_directive_fence_ignored() {
+    fn parse_directives_indented_directive_fence_ignored() {
         let input = indoc! {"
              ::: callout
             Body
@@ -802,7 +802,7 @@ mod tests {
     }
 
     #[test]
-    fn directive_trailing_whitespace_on_fences() {
+    fn parse_directives_trailing_whitespace_on_fences() {
         let input = concat!("::: callout   \n", "Body\n", ":::   \n",);
         let blocks = parse_directives(input);
         assert_eq!(blocks.len(), 1);
@@ -810,7 +810,7 @@ mod tests {
     }
 
     #[test]
-    fn trailing_content_after_attrs_preserved() {
+    fn parse_directives_trailing_content_after_attrs_preserved() {
         let input = indoc! {r#"
             ::: embed { src="example.com" mode="full" } <!-- comment -->
             :::
@@ -831,7 +831,7 @@ mod tests {
     }
 
     #[test]
-    fn utf8_body_and_range() {
+    fn parse_directives_utf8_body_and_range() {
         let prefix = "前言：世界\n";
         let directive = indoc! {"
             ::: callout
@@ -850,7 +850,7 @@ mod tests {
     }
 
     #[test]
-    fn no_directives_returns_empty() {
+    fn parse_directives_no_directives_returns_empty() {
         let input = indoc! {"
             Just some regular markdown.
 
@@ -860,7 +860,7 @@ mod tests {
     }
 
     #[test]
-    fn eof_without_trailing_newline() {
+    fn parse_directives_eof_without_trailing_newline() {
         let input = indoc! {"
             ::: callout
             Body
@@ -876,7 +876,7 @@ mod tests {
     }
 
     #[test]
-    fn crlf_line_endings() {
+    fn parse_directives_crlf_line_endings() {
         let input = indoc! {"
             ::: callout\r
             Hello\r

@@ -203,8 +203,6 @@ fn build_page(
     )
     .with_context(|| format!("failed to render {}", page.source_path.display()))?;
 
-    // `output_path` already includes the source and content-dir paths in
-    // its error, so no extra `with_context` is needed here.
     let output_path = page.output_path(content_dir)?;
     let url = page_url(&ctx.config.base_url, &output_path);
 

@@ -96,7 +96,6 @@ mod tests {
 
     #[test]
     fn replace_icons_unclosed_backtick() {
-        // Unclosed backtick is treated as literal, so the icon is still replaced.
         let input = "`:(fas fa-link):";
         let output = replace_icons(input);
         assert!(
