@@ -104,9 +104,6 @@ mod tests {
     use super::*;
 
     /// Extracts the inner content of the first `<item>...</item>` block in `xml`.
-    ///
-    /// Panics if the block is missing or unterminated — the tests using this helper assert that an
-    /// item exists, so a missing block is a test failure.
     fn first_item(xml: &str) -> &str {
         let start = xml.find("<item>").expect("xml should contain <item>") + "<item>".len();
         let end = xml[start..]

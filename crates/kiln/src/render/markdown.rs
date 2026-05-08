@@ -143,10 +143,7 @@ pub(crate) fn render_markdown(
     MarkdownOutput { html, headings }
 }
 
-/// Checks if a paragraph's buffered events represent a sole image (block image).
-///
-/// Pattern: `Start(Image)`, any inner events (alt text, formatting), `End(Image)`,
-/// with no other images in the paragraph.
+/// Checks if a paragraph's buffered events represent a sole image (block image promotion).
 fn try_render_block_image(
     events: &[(Event<'_>, std::ops::Range<usize>)],
     image_attrs: &HashMap<usize, ImageAttrs>,

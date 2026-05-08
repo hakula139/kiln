@@ -59,14 +59,12 @@ fn render_img(
     let mut img = String::new();
     push_img_tag(&mut img, src, alt, title, attrs, include_identity);
 
-    // An empty URI is treated as no URI: a `url('')` placeholder is broken
-    // and would still trigger the wrapper's CSS path on the theme side.
+    // Filter empty: `url('')` is a broken CSS placeholder.
     match attrs
         .and_then(|a| a.lqip_uri.as_deref())
         .filter(|s| !s.is_empty())
     {
-        // Base64 contains only `[A-Za-z0-9+/=]`, so no escaping needed for
-        // the surrounding `"` or the CSS `url('...')` delimiters.
+        // Base64 uses safe chars (`A-Za-z0-9+/=`); no escape needed in `"..."` or `url('...')`.
         Some(uri) => format!(r#"<span class="lqip" style="--lqip-uri:url('{uri}')">{img}</span>"#),
         None => img,
     }
