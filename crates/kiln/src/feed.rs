@@ -103,6 +103,18 @@ fn iso_to_rfc2822(iso: &str) -> Option<String> {
 mod tests {
     use super::*;
 
+    /// Extracts the inner content of the first `<item>...</item>` block in `xml`.
+    ///
+    /// Panics if the block is missing or unterminated — the tests using this helper assert that an
+    /// item exists, so a missing block is a test failure.
+    fn first_item(xml: &str) -> &str {
+        let start = xml.find("<item>").expect("xml should contain <item>") + "<item>".len();
+        let end = xml[start..]
+            .find("</item>")
+            .expect("xml should contain </item>");
+        &xml[start..start + end]
+    }
+
     fn make_summary(title: &str, url: &str, date: Option<&str>) -> PageSummary {
         PageSummary {
             title: title.into(),
@@ -258,9 +270,13 @@ mod tests {
 
         let xml = generate_rss(&channel, &items, DEFAULT_FEED_LIMIT);
 
-        let item_section = xml.split("<item>").nth(1).unwrap();
+        let item = first_item(&xml);
         assert!(
-            !item_section.contains("<description>"),
+            item.contains("<title>Post</title>"),
+            "item should contain its title, xml:\n{xml}"
+        );
+        assert!(
+            !item.contains("<description>"),
             "should omit empty description from item, xml:\n{xml}"
         );
     }
@@ -280,9 +296,10 @@ mod tests {
 
         let xml = generate_rss(&channel, &[item], DEFAULT_FEED_LIMIT);
 
+        let item_xml = first_item(&xml);
         assert!(
-            xml.contains("<description>A summary of the post</description>"),
-            "should include non-empty description, xml:\n{xml}"
+            item_xml.contains("<description>A summary of the post</description>"),
+            "should include non-empty description inside item, xml:\n{xml}"
         );
     }
 
@@ -300,9 +317,13 @@ mod tests {
 
         let xml = generate_rss(&channel, &items, DEFAULT_FEED_LIMIT);
 
-        let item_section = xml.split("<item>").nth(1).unwrap();
+        let item = first_item(&xml);
         assert!(
-            !item_section.contains("<pubDate>"),
+            item.contains("<title>Post</title>"),
+            "item should contain its title, xml:\n{xml}"
+        );
+        assert!(
+            !item.contains("<pubDate>"),
             "should omit pubDate for undated item, xml:\n{xml}"
         );
     }
@@ -325,9 +346,13 @@ mod tests {
 
         let xml = generate_rss(&channel, &items, DEFAULT_FEED_LIMIT);
 
-        let item_section = xml.split("<item>").nth(1).unwrap();
+        let item = first_item(&xml);
         assert!(
-            !item_section.contains("<pubDate>"),
+            item.contains("<title>Post</title>"),
+            "item should contain its title, xml:\n{xml}"
+        );
+        assert!(
+            !item.contains("<pubDate>"),
             "should omit pubDate for unparsable date, xml:\n{xml}"
         );
     }
