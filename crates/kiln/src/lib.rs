@@ -24,8 +24,7 @@ pub mod text;
 pub use build::{BuildOptions, build};
 pub use convert::convert;
 pub use init::init_theme;
-pub use serve::DEFAULT_PORT;
-pub use serve::serve;
+pub use serve::{DEFAULT_PORT, serve};
 
 #[cfg(test)]
 pub(crate) mod test_utils;
