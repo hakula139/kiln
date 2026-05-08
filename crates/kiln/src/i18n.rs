@@ -112,7 +112,7 @@ impl I18n {
         &self.inner.language
     }
 
-    /// Looks up a string by key. On miss, warns once per key and returns `«missing:<key>»` in dev
+    /// Looks up a string by key. On miss, warns once per key and returns `[missing: <key>]` in dev
     /// mode or the raw key otherwise.
     #[must_use]
     pub fn t<'a>(&'a self, key: &str) -> Cow<'a, str> {
@@ -178,7 +178,7 @@ impl I18n {
 /// Returns the rendered value for a missing i18n key.
 fn render_miss(key: &str, dev_mode: bool) -> Cow<'_, str> {
     if dev_mode {
-        Cow::Owned(format!("«missing:{key}»"))
+        Cow::Owned(format!("[missing: {key}]"))
     } else {
         Cow::Borrowed(key)
     }
@@ -736,7 +736,7 @@ mod tests {
     fn render_miss_returns_marker_when_dev_on() {
         assert_eq!(
             render_miss("missing_key", true).as_ref(),
-            "«missing:missing_key»",
+            "[missing: missing_key]",
         );
     }
 }
