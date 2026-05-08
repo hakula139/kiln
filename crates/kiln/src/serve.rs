@@ -449,8 +449,7 @@ async fn serve_request(
     Response::from_parts(parts, Body::from(modified))
 }
 
-/// Checks whether `{output_dir}/{path}/index.html` exists without
-/// blocking the async runtime.
+/// Checks whether `{output_dir}/{path}/index.html` exists without blocking the async runtime.
 async fn has_index_html(output_dir: &Path, path: &str) -> bool {
     let candidate = output_dir
         .join(path.trim_start_matches('/'))
@@ -528,8 +527,7 @@ mod tests {
         panic!("server did not start within 5 seconds");
     }
 
-    /// Starts `serve_until` in a background task and returns the address
-    /// and a shutdown sender.
+    /// Starts `serve_until` in a background task and returns the address and a shutdown sender.
     async fn spawn_server(root: &Path) -> (SocketAddr, tokio::sync::oneshot::Sender<()>) {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();

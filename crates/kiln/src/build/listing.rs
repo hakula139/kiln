@@ -49,9 +49,8 @@ pub(crate) struct ListingArtifacts {
 
 /// Builds listing artifacts from discovered pages in a single pass.
 ///
-/// Index alignment with the input slice is maintained (required by
-/// `TaxonomySet::tag_pages`). Post and tag lists are pre-sorted by date
-/// descending.
+/// Index alignment with the input slice is maintained (required by `TaxonomySet::tag_pages`). Post
+/// and tag lists are pre-sorted by date descending.
 pub(crate) fn build_listing_artifacts(
     pages: &[Page],
     content_dir: &Path,

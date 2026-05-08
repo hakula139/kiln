@@ -1,7 +1,7 @@
 //! Post-build asset minification for HTML, CSS, and JS files.
 //!
-//! Parse failures are logged as warnings and leave the original file
-//! untouched, so `--minify` never aborts builds on unusual input.
+//! Parse failures are logged as warnings and leave the original file untouched, so `--minify`
+//! never aborts builds on unusual input.
 
 use std::fmt;
 use std::fs;
@@ -40,11 +40,11 @@ enum AssetKind {
 
 /// Minifies every HTML, CSS, and JS file under `output_dir` in place.
 ///
-/// Pre-minified files (`*.min.css`, `*.min.js`) are skipped so that vendor
-/// bundles (e.g., Pagefind's UI JS) pass through untouched.
+/// Pre-minified files (`*.min.css`, `*.min.js`) are skipped so that vendor bundles (e.g.,
+/// Pagefind's UI JS) pass through untouched.
 ///
-/// Minifier parse failures are logged at warn level and leave the original
-/// file intact. Only filesystem errors (read, write, walk) abort the pass.
+/// Minifier parse failures are logged at warn level and leave the original file intact. Only
+/// filesystem errors (read, write, walk) abort the pass.
 ///
 /// # Errors
 ///
@@ -69,11 +69,10 @@ pub fn minify_output_dir(output_dir: &Path) -> Result<MinifyStats> {
     Ok(stats)
 }
 
-/// Returns the minifier to use for `path`, or `None` if the file should
-/// be skipped.
+/// Returns the minifier to use for `path`, or `None` if the file should be skipped.
 ///
-/// Matching is case-insensitive so files with uppercase extensions (e.g.,
-/// `INDEX.HTML` from a migrated Hugo / legacy site) are still handled.
+/// Matching is case-insensitive so files with uppercase extensions (e.g., `INDEX.HTML` from a
+/// migrated Hugo / legacy site) are still handled.
 fn classify(path: &Path) -> Option<AssetKind> {
     let name = path.file_name()?.to_str()?.to_ascii_lowercase();
     if name.ends_with(".min.css") || name.ends_with(".min.js") {
@@ -465,9 +464,8 @@ mod tests {
 
     #[test]
     fn display_reports_zero_percent_when_no_input_bytes() {
-        // Empty files get counted in `files_processed` but contribute zero
-        // bytes, so the percent calculation must short-circuit to avoid
-        // dividing by zero.
+        // Empty files get counted in `files_processed` but contribute zero bytes, so the percent
+        // calculation must short-circuit to avoid dividing by zero.
         let stats = MinifyStats {
             files_processed: 1,
             files_shrunk: 0,

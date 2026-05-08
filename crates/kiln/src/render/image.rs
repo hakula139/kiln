@@ -47,8 +47,7 @@ pub fn render_inline_image(
     render_img(src, alt, title, attrs, true)
 }
 
-/// Builds the `<img>` tag, wrapping in `<span class="lqip">` when an LQIP
-/// URI is available.
+/// Builds the `<img>` tag, wrapping in `<span class="lqip">` when an LQIP URI is available.
 fn render_img(
     src: &str,
     alt: &str,

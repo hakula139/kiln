@@ -163,9 +163,8 @@ fn top_level_blocks(blocks: &[DirectiveBlock]) -> Vec<&DirectiveBlock> {
 
 /// Dispatches a directive block to its renderer.
 ///
-/// For `Unknown` directives, checks the template engine for a
-/// `directives/<name>.html` template. Falls back to `render_div` if no
-/// template exists.
+/// For `Unknown` directives, checks the template engine for a `directives/<name>.html` template.
+/// Falls back to `render_div` if no template exists.
 fn render_directive_block(
     block: &DirectiveBlock,
     body_html: &str,
@@ -223,8 +222,7 @@ mod tests {
 
     static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(two_face::syntax::extra_newlines);
 
-    // Empty static-root resolver — `resolve` returns `None` for any path
-    // these tests reference.
+    // Empty static-root resolver — `resolve` returns `None` for any path these tests reference.
     static EMPTY_RESOLVER: LazyLock<ImageResolver> =
         LazyLock::new(|| ImageResolver::new(Path::new(""), ImageConfig::default()));
 

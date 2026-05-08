@@ -39,9 +39,8 @@ fn strip_fence_indent(line: &str) -> Option<&str> {
 
 /// Scans a backtick code span starting at `start` within `line`.
 ///
-/// Returns `(end, span)` where `end` is the byte offset past the closing
-/// backticks and `span` is the raw slice. Treats unclosed backtick runs as
-/// literal text.
+/// Returns `(end, span)` where `end` is the byte offset past the closing backticks and `span` is
+/// the raw slice. Treats unclosed backtick runs as literal text.
 #[must_use]
 pub(crate) fn scan_code_span(line: &str, start: usize) -> (usize, &str) {
     let bytes = line.as_bytes();

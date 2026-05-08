@@ -12,8 +12,7 @@ static ICON_RE: LazyLock<Regex> =
 
 /// Replaces `:(class):` shortcodes with `<i>` tags.
 ///
-/// Skips replacements inside fenced code blocks (` ``` ` / `~~~`) and
-/// inline code spans (`` ` ``).
+/// Skips replacements inside fenced code blocks (` ``` ` / `~~~`) and inline code spans (`` ` ``).
 #[must_use]
 pub fn replace_icons(input: &str) -> String {
     let mut output = String::with_capacity(input.len());

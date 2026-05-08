@@ -25,8 +25,7 @@ struct DirectiveHead {
 
 /// Scans content for `:::`-fenced directive blocks.
 ///
-/// Returns blocks sorted by ascending byte offset.
-/// Unclosed directives are silently skipped.
+/// Returns blocks sorted by ascending byte offset. Unclosed directives are silently skipped.
 #[must_use]
 pub fn parse_directives(content: &str) -> Vec<DirectiveBlock> {
     let mut blocks = Vec::new();
