@@ -142,12 +142,23 @@ fn final_dimensions(attrs: &ImageAttrs) -> (Option<String>, Option<String>) {
 mod tests {
     use super::*;
 
+    /// Asserts that `<img` appears between the opening `<figure` tag and `</figure>` close.
+    fn assert_img_inside_figure(html: &str) {
+        assert!(
+            matches!(
+                (html.find("<figure"), html.find("<img"), html.find("</figure>")),
+                (Some(open), Some(img), Some(close)) if open < img && img < close
+            ),
+            "<img> should sit inside <figure>, html:\n{html}"
+        );
+    }
+
     // ── render_block_image ──
 
     #[test]
     fn block_image_produces_figure() {
         let html = render_block_image("img.png", "A photo", "", None);
-        assert!(html.contains("<figure>"), "html:\n{html}");
+        assert_img_inside_figure(&html);
         assert!(html.contains(r#"src="img.png""#), "html:\n{html}");
         assert!(html.contains(r#"alt="A photo""#), "html:\n{html}");
         assert!(html.contains(r#"loading="lazy""#), "html:\n{html}");
@@ -400,7 +411,7 @@ mod tests {
             ..ImageAttrs::default()
         };
         let html = render_block_image("img.avif", "alt", "", Some(&attrs));
-        assert!(html.contains("<figure>"), "html:\n{html}");
+        assert_img_inside_figure(&html);
         assert!(
             html.contains(
                 r#"<span class="lqip" style="--lqip-uri:url('data:image/webp;base64,AAA')"><img "#
@@ -422,12 +433,11 @@ mod tests {
             ..ImageAttrs::default()
         };
         let html = render_block_image("img.avif", "alt", "", Some(&attrs));
-        assert!(html.contains("<figure>"), "html:\n{html}");
+        assert_img_inside_figure(&html);
         assert!(
             !html.contains(r#"class="lqip""#),
             "no wrapper without lqip, html:\n{html}",
         );
-        assert!(html.contains("<img "), "img is rendered, html:\n{html}");
     }
 
     #[test]

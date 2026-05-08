@@ -591,29 +591,23 @@ mod tests {
     #[test]
     fn render_gfm_table() {
         let md = indoc! {"
-            | A | B |
-            |---|---|
-            | 1 | 2 |
+            | Name | City |
+            |------|------|
+            | Alice | Paris |
+            | Bob | Tokyo |
         "};
         let out = render(md);
+
+        // Each cell carries distinct content so a column-swap or row-swap bug breaks the test.
+        let expected = indoc! {"
+            <table><thead><tr><th>Name</th><th>City</th></tr></thead><tbody>
+            <tr><td>Alice</td><td>Paris</td></tr>
+            <tr><td>Bob</td><td>Tokyo</td></tr>
+            </tbody></table>"
+        };
         assert!(
-            out.html.contains("<table>"),
-            "should have table, html:\n{}",
-            out.html
-        );
-        assert!(
-            out.html.contains("<thead>"),
-            "should have thead, html:\n{}",
-            out.html
-        );
-        assert!(
-            out.html.contains("<th>A</th>"),
-            "should have header cells, html:\n{}",
-            out.html
-        );
-        assert!(
-            out.html.contains("<td>1</td>"),
-            "should have data cells, html:\n{}",
+            out.html.contains(expected),
+            "should preserve table nesting and cell order, html:\n{}",
             out.html
         );
     }
