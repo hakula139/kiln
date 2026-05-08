@@ -113,6 +113,25 @@ pub struct MenuItem {
     pub external: bool,
 }
 
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            base_url: default_base_url(),
+            title: default_title(),
+            description: String::new(),
+            language: default_language(),
+            timezone: None,
+            output_dir: default_output_dir(),
+            theme: None,
+            params: toml::Table::new(),
+            search: Search::default(),
+            menu: Menu::default(),
+            author: Author::default(),
+            image: ImageConfig::default(),
+        }
+    }
+}
+
 impl Config {
     /// Loads site configuration from `config.toml` in the given root.
     ///
@@ -129,7 +148,7 @@ impl Config {
             let contents = fs::read_to_string(&path).context("failed to read config.toml")?;
             toml::from_str(&contents).context("failed to parse config.toml")?
         } else {
-            toml::from_str("").context("failed to construct default config")?
+            Self::default()
         };
 
         if let Some(ref theme_name) = config.theme {
@@ -314,7 +333,7 @@ mod tests {
 
     #[test]
     fn defaults_when_empty() {
-        let config: Config = toml::from_str("").unwrap();
+        let config = Config::default();
         assert_eq!(config.base_url, localhost_url(DEFAULT_PORT));
         assert_eq!(config.title, "My Site");
         assert!(config.description.is_empty());
@@ -331,6 +350,16 @@ mod tests {
         assert!(config.author.link.is_empty());
         assert_eq!(config.image.lqip_size, 16);
         assert_eq!(config.image.lqip_quality, 25);
+    }
+
+    #[test]
+    fn default_matches_empty_toml() {
+        let from_default = Config::default();
+        let from_toml: Config = toml::from_str("").unwrap();
+        assert_eq!(
+            toml::to_string(&from_default).unwrap(),
+            toml::to_string(&from_toml).unwrap(),
+        );
     }
 
     #[test]
@@ -762,7 +791,7 @@ mod tests {
 
     #[test]
     fn theme_dir_returns_none_without_theme() {
-        let config: Config = toml::from_str("").unwrap();
+        let config = Config::default();
         let root = Path::new("/project");
         assert!(config.theme_dir(root).is_none());
     }
@@ -779,7 +808,7 @@ mod tests {
     fn resolved_output_dir_default_relative_path() {
         let dir = tempfile::tempdir().unwrap();
         let canonical_root = dir.path().canonicalize().unwrap();
-        let config: Config = toml::from_str("").unwrap();
+        let config = Config::default();
 
         let resolved = config.resolved_output_dir(dir.path()).unwrap();
 

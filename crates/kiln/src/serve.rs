@@ -709,7 +709,7 @@ mod tests {
         fs::create_dir(&content).unwrap();
         fs::write(root.path().join("config.toml"), "").unwrap();
 
-        let config: Config = toml::from_str("").unwrap();
+        let config = Config::default();
         let (tx, mut rx) = mpsc::unbounded_channel();
 
         // Watcher must stay alive while we wait for events.
@@ -736,7 +736,7 @@ mod tests {
         fs::create_dir(root.path().join("static")).unwrap();
         fs::write(root.path().join("config.toml"), "").unwrap();
 
-        let config: Config = toml::from_str("").unwrap();
+        let config = Config::default();
         let paths = watch_paths(root.path(), &config);
 
         assert_eq!(paths.len(), 4);
@@ -752,7 +752,7 @@ mod tests {
         fs::create_dir(root.path().join("content")).unwrap();
         // No templates/, static/, or config.toml
 
-        let config: Config = toml::from_str("").unwrap();
+        let config = Config::default();
         let paths = watch_paths(root.path(), &config);
 
         assert_eq!(paths.len(), 1);
@@ -779,7 +779,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         fs::write(root.path().join("config.toml"), "").unwrap();
 
-        let config: Config = toml::from_str("").unwrap();
+        let config = Config::default();
         let paths = watch_paths(root.path(), &config);
 
         let theme_entry = paths
