@@ -17,6 +17,7 @@ impls
 indoc
 infty
 interp
+itertools
 jiff
 katex
 kwarg

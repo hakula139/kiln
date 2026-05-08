@@ -1,7 +1,6 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use jiff::Timestamp;
 
 use crate::output::write_output;
 use crate::sitemap::{self, SitemapEntry};
@@ -33,16 +32,12 @@ fn build_sitemap(ctx: &BuildContext, listed_pages: &[ListedPage], output_dir: &P
     for lp in listed_pages {
         entries.push(SitemapEntry {
             loc: lp.summary.url.clone(),
-            lastmod: lp.timestamp.map(format_iso_date),
+            lastmod: lp.timestamp.map(|ts| ts.to_string()),
         });
     }
 
     let xml = sitemap::generate_sitemap(&entries);
     write_output(&output_dir.join("sitemap.xml"), &xml).context("failed to write sitemap.xml")
-}
-
-fn format_iso_date(ts: Timestamp) -> String {
-    ts.to_string()
 }
 
 // ── robots.txt ──
