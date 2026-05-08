@@ -7,23 +7,15 @@ use crate::render::assets::{AssetsHandle, LoadStrategy, ScriptTag};
 
 // ── Date / Time ──
 
-/// `MiniJinja` template function: returns the current local timestamp as an
-/// ISO 8601 string (e.g., `"2026-03-29T23:00:00+08:00[Asia/Shanghai]"`).
-///
-/// Usage in templates: `{% set current_year = now()[0:4] %}`
+/// Returns the current local timestamp as an ISO 8601 string.
 pub(super) fn tpl_now() -> String {
     jiff::Zoned::now().to_string()
 }
 
 // ── File IO ──
 
-/// `MiniJinja` template function: reads a file relative to the directive's
-/// `source_dir` context variable.
-///
-/// Usage in templates: `{% set data = read_file("data.csv") %}`
-///
-/// Rejects `..`, absolute, and rooted path components to prevent reading
-/// outside the page's source directory.
+/// Reads a file relative to the directive's `source_dir`. Rejects `..`, absolute, and rooted
+/// path components to keep reads inside the page's source directory.
 pub(super) fn tpl_read_file(
     state: &minijinja::State,
     filename: &str,
@@ -67,10 +59,7 @@ pub(super) fn tpl_read_file(
     })
 }
 
-/// `MiniJinja` template function: parses CSV text into a list of rows,
-/// where each row is a list of field strings.
-///
-/// Usage in templates: `{% set rows = parse_csv(read_file("data.csv")) %}`
+/// Parses CSV text into a list of rows; each row is a list of field strings.
 pub(super) fn tpl_parse_csv(text: &str) -> std::result::Result<minijinja::Value, minijinja::Error> {
     let mut reader = csv::ReaderBuilder::new()
         .has_headers(false)
@@ -99,10 +88,7 @@ pub(super) fn tpl_parse_csv(text: &str) -> std::result::Result<minijinja::Value,
 
 // ── i18n ──
 
-/// `MiniJinja` template function: looks up an i18n string and interpolates
-/// keyword arguments into Python-style `{name}` placeholders.
-///
-/// Usage in templates: `{{ t("back_to_top") }}`, `{{ t("page_of", current=1, total=3) }}`.
+/// Looks up an i18n string and interpolates kwargs into Python-style `{name}` placeholders.
 pub(super) fn tpl_t(
     i18n: &I18n,
     key: &str,
@@ -135,17 +121,12 @@ pub(super) fn tpl_t(
 
 // ── Asset Registration ──
 
-/// `MiniJinja` template function: registers a `<script>` for the current
-/// page on the per-render [`AssetsHandle`].
-///
-/// Usage in directive templates: `{{ register_script("/js/widget.js") }}`
-/// (defaults to `load="defer"`). Pass `load="async"` or `load="sync"` to pick
-/// a different strategy and `module=true` for `type="module"`. Returns the
+/// Registers a `<script>` for the current page on the per-render [`AssetsHandle`]. Returns the
 /// empty string so the call can be used as a statement.
 ///
-/// Re-registering the same `(url, load, module)` is a no-op so repeated
-/// directive instances on the same page coalesce to a single tag. Registering
-/// the same URL with different attributes is an error.
+/// Accepts `load="defer"` (default), `"async"`, or `"sync"`, and `module=true` for
+/// `type="module"`. Re-registering the same `(url, load, module)` is a no-op; re-registering the
+/// same URL with different attributes is an error.
 pub(super) fn tpl_register_script(
     state: &minijinja::State,
     url: &str,
