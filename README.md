@@ -41,7 +41,7 @@ kiln is purpose-built for hakula.xyz: strong CJK-friendly authoring, explicit re
 ### Theming
 
 - MiniJinja templates with layered site overrides and theme parameter merging
-- Ships with [IgnIt](https://github.com/hakula139/IgnIt): Tailwind CSS v4, glassmorphism panels with cursor-tracking glow, dark mode, responsive layout, search modal, back-to-top, mobile menu animations, print styles, keyboard accessibility
+- Ships with [IgnIt](https://github.com/hakula139/IgnIt): Tailwind CSS v4, glassmorphism panels with optional cursor-tracking glow, dark mode, responsive layout, search modal, back-to-top, mobile menu animations, print styles, keyboard accessibility
 
 ### Tooling
 
@@ -90,8 +90,8 @@ cargo install --git https://github.com/hakula139/kiln --locked
 ### Via Nix
 
 ```bash
-nix run github:hakula139/kiln -- build         # one-shot
-nix profile install github:hakula139/kiln      # install to user profile
+nix run github:hakula139/kiln -- build     # one-shot
+nix profile install github:hakula139/kiln  # install to user profile
 ```
 
 Or as a flake input from another project (e.g., a site repo):
@@ -108,13 +108,13 @@ See [`RELEASING.md`](./RELEASING.md) for how releases are produced.
 ## Usage
 
 ```bash
-kiln build                                                  # Build the site
-kiln build --root /path/to/site                             # Build from a specific root
-kiln build --minify                                         # Build, then minify HTML / CSS / JS
-kiln serve                                                  # Dev server with live reload
-kiln serve --port 3000 --open                               # Custom port, auto-open browser
-kiln init-theme my-theme                                    # Scaffold a new theme
-kiln convert --source /path/to/hugo --dest /path/to/kiln    # Convert a Hugo site
+kiln build                                                # Build the site
+kiln build --root /path/to/site                           # Build from a specific root
+kiln build --minify                                       # Build, then minify HTML / CSS / JS
+kiln serve                                                # Dev server with live reload
+kiln serve --port 3000 --open                             # Custom port, auto-open browser
+kiln init-theme my-theme                                  # Scaffold a new theme
+kiln convert --source /path/to/hugo --dest /path/to/kiln  # Convert a Hugo site
 ```
 
 ### Minification
@@ -134,7 +134,7 @@ kiln integrates with [Pagefind](https://pagefind.app) for full-text search. Inst
 ```toml
 [search]
 enabled = true
-# binary = "/path/to/pagefind"    # optional, if not on $PATH
+# binary = "/path/to/pagefind"  # optional, if not on $PATH
 ```
 
 `kiln build` and `kiln serve` both run Pagefind automatically after HTML generation.
@@ -144,7 +144,7 @@ enabled = true
 Requires [Rust](https://www.rust-lang.org/tools/install) 1.85+ (edition 2024) and `libdav1d` (for the `image` crate's AVIF decoder).
 
 ```bash
-cargo build --release             # Binary at target/release/kiln
+cargo build --release  # Binary at target/release/kiln
 ```
 
 ### Reproducible dev shell (Nix)
@@ -152,8 +152,8 @@ cargo build --release             # Binary at target/release/kiln
 For hacking on kiln itself, the shipped `flake.nix` pins the Rust toolchain, `libdav1d`, `pagefind`, `git-cliff`, and pre-commit hooks:
 
 ```bash
-nix develop                       # interactive shell
-nix flake check                   # run pre-commit hooks
+nix develop      # interactive shell
+nix flake check  # run pre-commit hooks
 ```
 
 `direnv` auto-activates the shell via `.envrc`.

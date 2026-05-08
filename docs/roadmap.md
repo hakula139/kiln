@@ -35,7 +35,7 @@ The project's shape is deliberate:
 
 ### Reader Experience
 
-- Comments via [Twikoo](https://twikoo.js.org/) in the IgnIt theme — per-post threads plus a site-wide aggregate via the `:::comments-recent:::` directive, behind a provider switch so other backends can drop in.
+- Comments via [Twikoo](https://twikoo.js.org/) in the IgnIt theme — per-post threads behind a provider switch, so other backends can drop in.
 
 ### Internationalization
 
@@ -52,7 +52,7 @@ The project's shape is deliberate:
 
 The default theme [**IgnIt**](https://github.com/hakula139/IgnIt) ships with Tailwind CSS v4 and a polished feature set:
 
-- Glassmorphism panels with cursor-tracking glow and a configurable background image.
+- Glassmorphism panels with a configurable background image and optional cursor-tracking glow.
 - Dark / light mode (system preference + manual toggle, flash-free).
 - Responsive layout with hover-reveal image cards on the home page.
 - Pagefind search modal, link card directives, modern favicon set.
