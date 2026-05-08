@@ -24,14 +24,11 @@ pub struct RenderOptions {
 }
 
 impl RenderOptions {
-    /// Extracts render options from the site `[params]` table. Unknown keys are
-    /// ignored (the table holds unrelated theme / site params); type mismatches
-    /// surface as errors.
+    /// Extracts render options from the site `[params]` table.
     ///
     /// # Errors
     ///
-    /// Returns an error if a known render option key has an incompatible type
-    /// (e.g., `emojis = "true"` instead of a boolean).
+    /// Returns an error if a known render option has an incompatible type.
     pub fn from_params(params: &toml::Table) -> Result<Self> {
         params
             .clone()
