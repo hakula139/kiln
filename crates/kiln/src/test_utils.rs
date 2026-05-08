@@ -222,7 +222,7 @@ pub fn test_i18n() -> I18n {
 
 /// Creates a `Config` with all defaults.
 pub fn test_config() -> Config {
-    toml::from_str("").unwrap()
+    Config::default()
 }
 
 /// Creates a minimal `Page` with defaults for testing.
