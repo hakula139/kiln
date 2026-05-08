@@ -425,20 +425,20 @@ mod tests {
     // ── deduplicate_id ──
 
     #[test]
-    fn dedup_first_use_unchanged() {
+    fn deduplicate_id_first_use_unchanged() {
         let mut used = HashSet::new();
         assert_eq!(deduplicate_id(&mut used, "foo"), "foo");
     }
 
     #[test]
-    fn dedup_second_use_gets_suffix_1() {
+    fn deduplicate_id_second_use_gets_suffix_1() {
         let mut used = HashSet::new();
         deduplicate_id(&mut used, "foo");
         assert_eq!(deduplicate_id(&mut used, "foo"), "foo-1");
     }
 
     #[test]
-    fn dedup_third_use_gets_suffix_2() {
+    fn deduplicate_id_third_use_gets_suffix_2() {
         let mut used = HashSet::new();
         deduplicate_id(&mut used, "foo");
         deduplicate_id(&mut used, "foo");
@@ -446,7 +446,7 @@ mod tests {
     }
 
     #[test]
-    fn dedup_avoids_collision() {
+    fn deduplicate_id_avoids_collision() {
         let mut used = HashSet::new();
         assert_eq!(deduplicate_id(&mut used, "foo"), "foo");
         assert_eq!(deduplicate_id(&mut used, "foo-1"), "foo-1");

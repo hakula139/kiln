@@ -156,7 +156,7 @@ mod tests {
     // ── render_block_image ──
 
     #[test]
-    fn block_image_produces_figure() {
+    fn render_block_image_produces_figure() {
         let html = render_block_image("img.png", "A photo", "", None);
         assert_img_inside_figure(&html);
         assert!(html.contains(r#"src="img.png""#), "html:\n{html}");
@@ -170,14 +170,14 @@ mod tests {
     }
 
     #[test]
-    fn block_image_empty_alt_no_figcaption() {
+    fn render_block_image_empty_alt_no_figcaption() {
         let html = render_block_image("img.png", "", "", None);
         assert!(html.contains("<figure>"), "html:\n{html}");
         assert!(!html.contains("<figcaption>"), "html:\n{html}");
     }
 
     #[test]
-    fn block_image_with_title() {
+    fn render_block_image_with_title() {
         let html = render_block_image("img.png", "alt text", "My Title", None);
         assert!(html.contains(r#"title="My Title""#), "html:\n{html}");
         assert!(
@@ -187,7 +187,7 @@ mod tests {
     }
 
     #[test]
-    fn block_image_escapes_special_characters() {
+    fn render_block_image_escapes_special_characters() {
         let html = render_block_image(
             "img.png?a=1&b=2",
             r#"a <photo> & "test""#,
@@ -209,7 +209,7 @@ mod tests {
     }
 
     #[test]
-    fn block_image_with_id() {
+    fn render_block_image_with_id() {
         let attrs = ImageAttrs {
             id: Some("fig-1".into()),
             ..ImageAttrs::default()
@@ -219,7 +219,7 @@ mod tests {
     }
 
     #[test]
-    fn block_image_with_class() {
+    fn render_block_image_with_class() {
         let attrs = ImageAttrs {
             classes: vec!["hero".into()],
             ..ImageAttrs::default()
@@ -229,7 +229,7 @@ mod tests {
     }
 
     #[test]
-    fn block_image_with_width() {
+    fn render_block_image_with_width() {
         let attrs = ImageAttrs {
             width: Some("500".into()),
             ..ImageAttrs::default()
@@ -239,7 +239,7 @@ mod tests {
     }
 
     #[test]
-    fn block_image_with_height() {
+    fn render_block_image_with_height() {
         let attrs = ImageAttrs {
             height: Some("300".into()),
             ..ImageAttrs::default()
@@ -403,7 +403,7 @@ mod tests {
     }
 
     #[test]
-    fn block_image_with_lqip_wraps_inside_figure() {
+    fn render_block_image_with_lqip_wraps_inside_figure() {
         let attrs = ImageAttrs {
             auto_width: Some(100),
             auto_height: Some(60),
@@ -426,7 +426,7 @@ mod tests {
     }
 
     #[test]
-    fn block_image_without_lqip_emits_bare_img_inside_figure() {
+    fn render_block_image_without_lqip_emits_bare_img_inside_figure() {
         let attrs = ImageAttrs {
             auto_width: Some(100),
             auto_height: Some(60),
