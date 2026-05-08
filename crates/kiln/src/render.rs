@@ -11,8 +11,12 @@ pub mod mermaid;
 pub mod pipeline;
 pub mod toc;
 
+use anyhow::{Context, Result};
+use serde::Deserialize;
+
 /// Feature flags and settings for the render pipeline.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
 pub struct RenderOptions {
     pub code_max_lines: Option<usize>,
     pub emojis: bool,
@@ -21,22 +25,15 @@ pub struct RenderOptions {
 
 impl RenderOptions {
     /// Extracts render options from the site `[params]` table.
-    #[must_use]
-    pub fn from_params(params: &toml::Table) -> Self {
-        Self {
-            code_max_lines: params
-                .get("code_max_lines")
-                .and_then(toml::Value::as_integer)
-                .and_then(|n| usize::try_from(n).ok()),
-            emojis: params
-                .get("emojis")
-                .and_then(toml::Value::as_bool)
-                .unwrap_or(false),
-            fontawesome: params
-                .get("fontawesome")
-                .and_then(toml::Value::as_bool)
-                .unwrap_or(false),
-        }
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a known render option has an incompatible type.
+    pub fn from_params(params: &toml::Table) -> Result<Self> {
+        params
+            .clone()
+            .try_into()
+            .context("failed to parse render options from [params]")
     }
 }
 
@@ -50,7 +47,7 @@ mod tests {
 
     #[test]
     fn render_options_defaults() {
-        let options = RenderOptions::from_params(&toml::Table::new());
+        let options = RenderOptions::from_params(&toml::Table::new()).unwrap();
         assert!(!options.emojis);
         assert!(!options.fontawesome);
         assert!(options.code_max_lines.is_none());
@@ -64,9 +61,32 @@ mod tests {
             fontawesome = true
         "})
         .unwrap();
-        let options = RenderOptions::from_params(&params);
+        let options = RenderOptions::from_params(&params).unwrap();
         assert_eq!(options.code_max_lines, Some(40));
         assert!(options.emojis);
         assert!(options.fontawesome);
+    }
+
+    #[test]
+    fn render_options_ignores_unknown_keys() {
+        let params: toml::Table = toml::from_str(indoc! {r#"
+            emojis = true
+            site_title = "Example"
+            social = { github = "user" }
+        "#})
+        .unwrap();
+        let options = RenderOptions::from_params(&params).unwrap();
+        assert!(options.emojis);
+        assert!(!options.fontawesome);
+        assert!(options.code_max_lines.is_none());
+    }
+
+    #[test]
+    fn render_options_type_mismatch_returns_error() {
+        let params: toml::Table = toml::from_str(indoc! {r#"
+            emojis = "yes"
+        "#})
+        .unwrap();
+        assert!(RenderOptions::from_params(&params).is_err());
     }
 }

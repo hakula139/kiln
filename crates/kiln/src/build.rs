@@ -190,7 +190,7 @@ fn build_page(
     output_dir: &Path,
     sections: &[Section],
 ) -> Result<()> {
-    let options = RenderOptions::from_params(&ctx.config.params);
+    let options = RenderOptions::from_params(&ctx.config.params)?;
 
     let rendered = render_page(
         &page.raw_content,
