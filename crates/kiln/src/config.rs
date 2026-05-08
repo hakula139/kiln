@@ -106,7 +106,7 @@ pub struct MenuItem {
 
     /// Sort order (ascending). Items without a weight default to 0.
     #[serde(default)]
-    pub weight: i32,
+    pub weight: i64,
 
     /// Whether this link points to an external site.
     #[serde(default)]
