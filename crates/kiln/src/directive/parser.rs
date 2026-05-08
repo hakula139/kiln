@@ -864,7 +864,8 @@ mod tests {
         let input = indoc! {"
             ::: callout
             Body
-            :::"};
+            :::"
+        };
         let blocks = parse_directives(input);
         assert_eq!(blocks.len(), 1);
         assert_eq!(blocks[0].body, "Body");
