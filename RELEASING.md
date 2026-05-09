@@ -12,17 +12,21 @@ Any prose that should land in the changelog must come from a commit message: use
 
 2. Run `cargo build` to refresh `Cargo.lock`.
 
-3. Regenerate `CHANGELOG.md` from commits:
+3. Prepend the new changelog section:
 
    ```bash
-   git cliff --tag vX.Y.Z --output CHANGELOG.md
+   git cliff --unreleased --tag vX.Y.Z --prepend CHANGELOG.md
    ```
 
-   Inspect the diff to confirm the new section reads well. If it doesn't, fix the underlying commits (rebase, amend, reword the squash commit subject) and regenerate — never edit `CHANGELOG.md` directly.
+   Use `--unreleased --prepend`, not `--output`. `--output` re-derives the whole file and resurfaces past pre-release tags as separate sections.
 
-4. Commit: `chore(release): vX.Y.Z`.
+   Inspect the diff to confirm the new section reads well. If it doesn't, fix the underlying commits (rebase, amend, reword the squash commit subject) and regenerate — never edit the body sections of `CHANGELOG.md` directly.
 
-5. Tag and push:
+4. Add the compare-link footer line manually. `--prepend` does not touch the footer block, so insert this line above the previous-version line: `[X.Y.Z]: https://github.com/hakula139/kiln/compare/<prev-tag>..vX.Y.Z`.
+
+5. Commit: `chore(release): vX.Y.Z`.
+
+6. Tag and push:
 
    ```bash
    git tag vX.Y.Z
@@ -30,7 +34,7 @@ Any prose that should land in the changelog must come from a commit message: use
    git push origin vX.Y.Z
    ```
 
-6. The workflow creates the GitHub Release, extracting the matching `[X.Y.Z]` section from `CHANGELOG.md` as release notes, and uploads:
+7. The workflow creates the GitHub Release, extracting the matching `[X.Y.Z]` section from `CHANGELOG.md` as release notes, and uploads:
 
    - `kiln-x86_64-unknown-linux-gnu.tar.gz` (+ `.sha256`)
    - `kiln-aarch64-apple-darwin.tar.gz` (+ `.sha256`)
@@ -48,7 +52,7 @@ If a release needs to be redone (e.g., bad assets):
 
 ```bash
 gh release delete vX.Y.Z --cleanup-tag --yes
-git tag vX.Y.Z   # re-tag locally on the desired commit
+git tag vX.Y.Z               # re-tag locally on the desired commit
 git push origin vX.Y.Z
 ```
 
