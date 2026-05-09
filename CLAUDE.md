@@ -38,7 +38,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 .
 ├── attrs.rs            # Pandoc-style `{#id .class key=value}` attribute parser, shared across renderers
 ├── build.rs            # BuildContext, build orchestration, per-page rendering, static / asset copying
-├── build/              # Listing pipeline and output generators (submodules of build.rs)
+├── build/              # Listing pipeline and output generator submodules
 │   ├── archive.rs      # Paginated year-grouped archive pages (/posts/, /posts/<section>/, /tags/<slug>/)
 │   ├── error.rs        # 404 error page generation
 │   ├── feed.rs         # RSS feed orchestration (main + per-section + per-term feeds)
@@ -49,15 +49,17 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 │   ├── sitemap.rs      # sitemap.xml + robots.txt generation
 │   └── url.rs          # page_url, resolve_relative_url — build-time URL resolution helpers
 ├── config.rs           # TOML site configuration loading, theme resolution, param merging
-├── content/            # Content model (module declarations in content.rs)
+├── content.rs          # Module declarations for content/ submodules
+├── content/            # Content model submodules
 │   ├── discovery.rs    # Recursive content walking with draft / _-prefix / no-frontmatter exclusion
 │   ├── frontmatter.rs  # TOML frontmatter parsing (+++), Frontmatter / FeaturedImage / ImageCredit
 │   └── page.rs         # Page struct, PageKind, slug derivation, summary, output paths, co-located assets
 ├── convert.rs          # Hugo → kiln content converter orchestrator
-├── convert/            # Hugo → kiln converter submodules (orchestrator in convert.rs)
+├── convert/            # Hugo → kiln converter submodules
 │   ├── frontmatter.rs  # YAML → TOML frontmatter serde round-trip
 │   └── shortcode.rs    # Hugo shortcode → kiln directive conversion
-├── directive/          # :::-fenced directive parsing + rendering (shared types in directive.rs)
+├── directive.rs        # Directive shared types (CalloutKind, DirectiveKind, DirectiveContext) + arg parser
+├── directive/          # :::-fenced directive parsing + rendering submodules
 │   ├── callout.rs      # 12 callout types (<details> with id / class propagation)
 │   ├── div.rs          # Fenced divs and unknown directives (<div> with id / class propagation)
 │   └── parser.rs       # Line-based stack parser, nesting, single-pass arg + Pandoc attr parsing
@@ -69,7 +71,8 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 ├── minify.rs           # Post-build HTML / CSS / JS minification (lightningcss, oxc_minifier, minify-html)
 ├── output.rs           # File output, static file copying, output directory cleaning
 ├── pagination.rs       # Paginator for windowed views over slices, page URL computation
-├── render/             # Markdown rendering pipeline (RenderOptions in render.rs)
+├── render.rs           # RenderOptions struct + render submodule declarations
+├── render/             # Markdown rendering pipeline submodules
 │   ├── assets.rs       # PageAssets registry: scripts + auto-detected Feature flags (Math, Mermaid)
 │   ├── code_block.rs   # Fence info-string parsing → CodeBlockSpec (lang, title, highlights, collapse / expand)
 │   ├── emoji.rs        # GitHub-style :shortcode: → Unicode emoji replacement
@@ -111,7 +114,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 
 - Use `#[expect(lint)]` instead of `#[allow(lint)]`. `#[expect]` warns when the suppressed lint is no longer triggered, preventing stale suppressions from accumulating.
 - `#[expect]` reason strings must describe the current state, not future plans.
-- For complexity / size lints (`clippy::too_many_lines`, `clippy::cognitive_complexity`, etc.), the default response is to **extract a helper**. Reach for `#[expect]` only when the function is irreducibly cohesive — and say so in the reason string.
+- For complexity / size lints (`clippy::too_many_lines`, `clippy::cognitive_complexity`, etc.), the default response is to **extract a helper**. Reach for `#[expect]` only when the function is irreducibly cohesive. Say so in the reason string.
 
 ### Comments
 
@@ -129,7 +132,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 ### Blank Lines
 
 - One blank line between top-level items (functions, structs, enums, impls, constants). Exception: runs of closely-related one-line `const` / `static` declarations sharing a theme may sit together without blanks.
-- One blank line before and after section dividers (`// ── Name ──`). This applies inside `#[cfg(test)]` modules too — the first divider takes a blank line after the `use super::*;` block.
+- One blank line before and after section dividers (`// ── Name ──`). This applies inside `#[cfg(test)]` modules too. The first divider takes a blank line after the `use super::*;` block.
 - Inside function bodies, use blank lines to separate logical phases (e.g., setup → validation → execution → result).
 - Group a single-line computation with its immediate validation guard (early-return `if`) — no blank between them. Multi-line `let` bindings (async chains, builder patterns) keep the blank before their guard.
 
@@ -156,7 +159,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 
 - Prefer raw strings (`r"..."`) when the string contains characters that would need escaping. Always use the minimum delimiter level needed (`r"..."` → `r#"..."#` → `r##"..."##`).
 - Use `indoc!` / `formatdoc!` for multiline string content so the literal can be indented with surrounding code. Inline at the call site when the string is used once; use a named constant only when it is shared or very large. Avoid `\n` escapes and `\x20` workarounds for multiline content.
-- Ellipsis: always `...` (three ASCII dots), never `…` (U+2026). Applies everywhere — prose, comments, doc comments, production strings, tests.
+- Ellipsis: always `...` (three ASCII dots), never `…` (U+2026). Applies everywhere: prose, comments, doc comments, and strings.
 
 ### Enum String Mappings
 

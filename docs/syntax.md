@@ -1,6 +1,6 @@
 # Syntax Reference
 
-kiln processes Markdown content with several extensions beyond standard CommonMark. This document describes the syntax authors write; how themes consume the output is covered in [Theme Authoring](themes.md).
+kiln processes Markdown content with several extensions beyond standard CommonMark. This document describes the syntax authors write. How themes consume the output is covered in [Theming](themes.md).
 
 ## Frontmatter
 
@@ -43,7 +43,7 @@ All fields are optional. Defaults:
 
 Draft pages (`draft = true`) and pages whose filename starts with `_` are excluded from the build.
 
-A post with any `weight` set is pinned on the home page, sorted before unpinned posts and ordered by `weight` ascending (lower floats higher, matching `MenuItem` and Hugo conventions). Archive, tag, and section listings ignore `weight` and stay strictly date-sorted, so a pinned post still appears at its natural date position when readers browse those surfaces.
+A post with any `weight` set is pinned on the home page, sorted before unpinned posts and ordered by `weight` ascending (lower floats higher, matching Hugo's `weight` semantics). Archive, tag, and section listings ignore `weight` and stay strictly date-sorted, so a pinned post still appears at its natural date position in those listings.
 
 `date` / `updated` are absolute instants. When kiln exposes a page date to templates, it renders that instant in the site's configured `timezone` from `config.toml` (UTC if `timezone` is unset):
 
@@ -53,7 +53,7 @@ timezone = "Asia/Shanghai"
 
 ## Pandoc-Style Attributes
 
-A `{...}` attribute block is the shared syntax kiln uses to attach metadata to images, fenced code blocks, and directives. The same parser handles all three; what differs is which keys each consumer recognizes and what bare words mean.
+A `{...}` attribute block is the shared syntax kiln uses to attach metadata to images, fenced code blocks, and directives. The same parser handles all three. They differ in which keys they recognize and how bare words are interpreted.
 
 The block accepts four token kinds, in any order:
 
@@ -226,7 +226,7 @@ $$
 $$
 ```
 
-Math expressions render as KaTeX-compatible markup (`<span class="math math-inline">` / `<span class="math math-display">`). Themes load the [KaTeX](https://katex.org) CSS and JS for client-side rendering by gating on `"math" in assets.features` — see [Theme Authoring](themes.md#template-variables) for the page-scoped asset registry.
+Math expressions render as KaTeX-compatible markup (`<span class="math math-inline">` / `<span class="math math-display">`). Themes load the [KaTeX](https://katex.org) CSS and JS for client-side rendering by gating on `"math" in assets.features` — see [Theming](themes.md#template-variables) for the page-scoped asset registry.
 
 ### Footnotes
 

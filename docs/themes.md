@@ -43,7 +43,6 @@ themes/IgnIt/
 Every theme must have a `theme.toml` at its root. It contains metadata and default parameters:
 
 ```toml
-name = "IgnIt"
 min_kiln_version = "0.1.0"
 
 [params]
@@ -64,6 +63,7 @@ The theme name is inferred from the directory name (e.g., `themes/IgnIt/` → `"
 Additional fields (`name`, `description`, `license`, `[author]`, etc.) are ignored by kiln but recommended for discoverability:
 
 ```toml
+name = "IgnIt"
 description = "A clean, feature-rich theme for kiln"
 license = "MIT"
 
@@ -254,7 +254,7 @@ Whenever a template variable includes a page `date`, kiln renders it as an ISO 8
 | `features` | list of strings | Auto-detected runtime dependencies. Current values: `"math"` (set when the page contains math expressions), `"mermaid"` (set when a `` ```mermaid `` fence is present). |
 | `scripts`  | list of objects | Scripts registered via [`register_script(...)`](#register_scripturl-loaddefer-modulefalse). Each entry has `url`, `load` (string), and `module` (bool).                 |
 
-Templates gate conditional CDN loads with membership tests on `assets.features`. Use the `assets is defined` guard when the include is shared with listing templates (`home.html`, `archive.html`, `overview.html`, `404.html`) — only `post.html` and `page.html` receive `assets`:
+Templates gate conditional CDN loads with membership tests on `assets.features`. Use the `assets is defined` guard when the include is shared with listing templates (`home.html`, `archive.html`, `overview.html`, `404.html`). Only `post.html` and `page.html` receive `assets`:
 
 ```jinja
 {%- if assets is defined and "math" in assets.features %}
@@ -405,7 +405,7 @@ The number of items per page is configurable via `paginate` in `[params]` (defau
 | `source_dir`      | string or `none`    | Page source directory (for `read_file`)    |
 | `config`          | object              | Site `Config` (`base_url`, `params`, etc.) |
 
-The engine reserves two classes of top-level keys: documented variables in the table above (e.g., `config`, `body_html`) and `__`-prefixed internal handles (e.g., `__assets`, which backs `register_script()`). Directive payload fields with those names are masked by the engine value; pick a different name in your directive arguments to avoid surprises.
+Don't reuse the names in the table above (e.g., `config`, `body_html`) or any `__`-prefixed key as directive arguments — the engine's binding shadows them, so your value never reaches the template.
 
 ### Template Functions
 
@@ -460,7 +460,7 @@ Registers a `<script>` tag for the current page. Only callable from directive te
 {{ register_script("/js/score-table.js") }}
 ```
 
-The script appears once on the page no matter how many times the directive renders. Re-registering the same `(url, load, module)` triple is a no-op; registering the same URL with different attributes is a build-time error so a page can never load two conflicting tags for the same source. `load` defaults to `"defer"`; the other accepted values are `"async"` and `"sync"`. Pass `module=true` for ES modules.
+The script appears once on the page no matter how many times the directive renders. Re-registering the same `(url, load, module)` triple is a no-op. Registering the same URL with different attributes is a build-time error, so a page never loads two conflicting tags for the same source. `load` accepts `"defer"` (default), `"async"`, or `"sync"`. Pass `module=true` for ES modules.
 
 Themes consume the registered scripts via the page's `assets.scripts` list — see [Post templates](#post-templates-posthtml).
 
@@ -548,7 +548,7 @@ lqip_quality = 25     # WebP quality, 1-100 (default: 25)
 
 ## Navigation Menus
 
-Sites declare named menu groups under `[[menu.<group>]]`. Themes pick which groups they render and where; kiln has no opinion about group names, so `main`, `social`, `footer`, or anything else works.
+Sites declare named menu groups under `[[menu.<group>]]`. Themes pick which groups they render and where. Group names are free-form: `main`, `social`, `footer`, or whatever your theme expects.
 
 ```toml
 [[menu.main]]

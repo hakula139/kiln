@@ -22,7 +22,7 @@ The project's shape is deliberate:
 ### Publishing
 
 - Pretty URLs, page bundles with co-located assets, and per-page CSS injection.
-- Build-time image pipeline — natural `width` / `height` and a base64 WebP placeholder stamped onto every local image, so the browser reserves the right slot and paints a low-frequency preview while the source decodes.
+- Build-time image pipeline: every local image gets natural `width` / `height` plus a base64 WebP placeholder for instant first paint.
 - Home, section, standalone, and paginated taxonomy / term pages.
 - Pinned posts on the home page via a `weight` frontmatter field — hero pieces stay above the fold without affecting archive, tag, or RSS order.
 - Time-zone-aware dates rendered in your site's local time.
@@ -71,7 +71,7 @@ The default theme [**IgnIt**](https://github.com/hakula139/IgnIt) ships with Tai
 
 ## Later
 
-A demo site to show kiln in motion, once the core publishing workflow feels finished. Beyond that, engine work continues to be opportunistic — driven by concrete publishing needs, not speculative parity.
+A demo site to show kiln in motion, once the core publishing workflow feels finished. Beyond that, engine work continues to be opportunistic.
 
 ## Not the Goal Right Now
 

@@ -28,7 +28,7 @@ kiln is purpose-built for hakula.xyz: strong CJK-friendly authoring, explicit re
 - Home pages, section pages, standalone pages, taxonomy indexes, and paginated term pages
 - Pinned posts on the home page via `weight` frontmatter
 - Page-scoped asset registry — themes load KaTeX / Mermaid / search only on pages that need them
-- Configurable site time zones for rendered dates
+- Configurable site time zone for rendered dates
 - Build-time image pipeline — every `<img>` gets natural `width`/`height` plus a base64 WebP LQIP backdrop, so the browser reserves the exact box and paints a low-frequency placeholder while the source decodes
 - RSS feeds, sitemap, custom 404 page
 - Full-text search via [Pagefind](https://pagefind.app)
@@ -57,7 +57,7 @@ kiln is purpose-built for hakula.xyz: strong CJK-friendly authoring, explicit re
 | [Roadmap](docs/roadmap.md)       | Current shipped capability areas and planned work   |
 | [Content Guide](docs/content.md) | Page bundles, co-located assets, per-page CSS       |
 | [Syntax Guide](docs/syntax.md)   | Markdown extensions, frontmatter fields, directives |
-| [Theming](docs/themes.md)        | Theme installation, configuration, and creation     |
+| [Theming](docs/themes.md)        | Themes, templates, navigation menus, and i18n       |
 
 ## Current Focus
 
