@@ -43,7 +43,7 @@ All fields are optional. Defaults:
 
 Draft pages (`draft = true`) and pages whose filename starts with `_` are excluded from the build.
 
-A post with any `weight` set is pinned on the home page, sorted before unpinned posts and ordered by `weight` ascending (lower floats higher, matching Hugo's convention). Archive, tag, and section listings ignore `weight` and stay strictly date-sorted, so a pinned post still appears at its natural date position in those listings.
+A post with any `weight` set is pinned on the home page, sorted before unpinned posts and ordered by `weight` ascending (lower floats higher, matching Hugo's `weight` semantics). Archive, tag, and section listings ignore `weight` and stay strictly date-sorted, so a pinned post still appears at its natural date position in those listings.
 
 `date` / `updated` are absolute instants. When kiln exposes a page date to templates, it renders that instant in the site's configured `timezone` from `config.toml` (UTC if `timezone` is unset):
 

@@ -38,7 +38,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 .
 ├── attrs.rs            # Pandoc-style `{#id .class key=value}` attribute parser, shared across renderers
 ├── build.rs            # BuildContext, build orchestration, per-page rendering, static / asset copying
-├── build/              # Listing pipeline and output generators (submodules of build.rs)
+├── build/              # Listing pipeline and output generator submodules
 │   ├── archive.rs      # Paginated year-grouped archive pages (/posts/, /posts/<section>/, /tags/<slug>/)
 │   ├── error.rs        # 404 error page generation
 │   ├── feed.rs         # RSS feed orchestration (main + per-section + per-term feeds)
@@ -49,7 +49,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 │   ├── sitemap.rs      # sitemap.xml + robots.txt generation
 │   └── url.rs          # page_url, resolve_relative_url — build-time URL resolution helpers
 ├── config.rs           # TOML site configuration loading, theme resolution, param merging
-├── content.rs          # Content module declarations (page, frontmatter, discovery)
+├── content.rs          # Module declarations for content/ submodules
 ├── content/            # Content model submodules
 │   ├── discovery.rs    # Recursive content walking with draft / _-prefix / no-frontmatter exclusion
 │   ├── frontmatter.rs  # TOML frontmatter parsing (+++), Frontmatter / FeaturedImage / ImageCredit

@@ -405,7 +405,7 @@ The number of items per page is configurable via `paginate` in `[params]` (defau
 | `source_dir`      | string or `none`    | Page source directory (for `read_file`)    |
 | `config`          | object              | Site `Config` (`base_url`, `params`, etc.) |
 
-Don't reuse the names in the table above (e.g., `config`, `body_html`) or any `__`-prefixed key as directive arguments. kiln's value wins.
+Don't reuse the names in the table above (e.g., `config`, `body_html`) or any `__`-prefixed key as directive arguments — the engine's binding shadows them, so your value never reaches the template.
 
 ### Template Functions
 
@@ -460,7 +460,7 @@ Registers a `<script>` tag for the current page. Only callable from directive te
 {{ register_script("/js/score-table.js") }}
 ```
 
-The script appears once on the page no matter how many times the directive renders. Re-registering the same `(url, load, module)` triple is a no-op. Registering the same URL with different attributes is a build-time error, so a page never loads two conflicting tags for the same source. `load` defaults to `"defer"`; `"async"` and `"sync"` are also accepted. Pass `module=true` for ES modules.
+The script appears once on the page no matter how many times the directive renders. Re-registering the same `(url, load, module)` triple is a no-op. Registering the same URL with different attributes is a build-time error, so a page never loads two conflicting tags for the same source. `load` accepts `"defer"` (default), `"async"`, or `"sync"`. Pass `module=true` for ES modules.
 
 Themes consume the registered scripts via the page's `assets.scripts` list — see [Post templates](#post-templates-posthtml).
 
@@ -548,7 +548,7 @@ lqip_quality = 25     # WebP quality, 1-100 (default: 25)
 
 ## Navigation Menus
 
-Sites declare named menu groups under `[[menu.<group>]]`. Themes pick which groups they render and where. kiln imposes no naming convention, so `main`, `social`, `footer`, or anything else works.
+Sites declare named menu groups under `[[menu.<group>]]`. Themes pick which groups they render and where. Group names are free-form: `main`, `social`, `footer`, or whatever your theme expects.
 
 ```toml
 [[menu.main]]
