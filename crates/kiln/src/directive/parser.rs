@@ -891,4 +891,107 @@ mod tests {
             "range should span entire input"
         );
     }
+
+    // ── count_leading_colons ──
+
+    #[test]
+    fn count_leading_colons_returns_count_for_three_or_more() {
+        assert_eq!(count_leading_colons(":::"), Some(3));
+        assert_eq!(count_leading_colons("::::"), Some(4));
+        assert_eq!(count_leading_colons("::::: callout"), Some(5));
+    }
+
+    #[test]
+    fn count_leading_colons_returns_none_for_fewer_than_three() {
+        assert_eq!(count_leading_colons(""), None);
+        assert_eq!(count_leading_colons(":"), None);
+        assert_eq!(count_leading_colons("::"), None);
+    }
+
+    #[test]
+    fn count_leading_colons_returns_none_for_indented_line() {
+        assert_eq!(count_leading_colons(" :::"), None);
+        assert_eq!(count_leading_colons("\t:::"), None);
+    }
+
+    // ── parse_directive_head ──
+
+    #[test]
+    fn parse_directive_head_bare_name() {
+        let head = parse_directive_head("callout");
+        assert_eq!(head.name, "callout");
+        assert!(head.positional_args.is_empty());
+        assert!(head.named_args.is_empty());
+        assert_eq!(head.id, None);
+        assert!(head.classes.is_empty());
+    }
+
+    #[test]
+    fn parse_directive_head_name_and_attrs() {
+        let head = parse_directive_head(r#"callout {#box .wide type=warning title="Careful"}"#);
+        assert_eq!(head.name, "callout");
+        assert_eq!(head.id.as_deref(), Some("box"));
+        assert_eq!(head.classes, ["wide"]);
+        assert_eq!(
+            head.named_args,
+            BTreeMap::from([
+                ("type".into(), "warning".into()),
+                ("title".into(), "Careful".into()),
+            ]),
+        );
+    }
+
+    #[test]
+    fn parse_directive_head_attrs_only_yields_empty_name() {
+        let head = parse_directive_head("{#section .note}");
+        assert_eq!(head.name, "");
+        assert_eq!(head.id.as_deref(), Some("section"));
+        assert_eq!(head.classes, ["note"]);
+    }
+
+    #[test]
+    fn parse_directive_head_trailing_content_after_close_brace_kept() {
+        let head = parse_directive_head(r#"embed {src="example.com"} <!-- note -->"#);
+        assert_eq!(head.name, "embed");
+        assert_eq!(
+            head.named_args,
+            BTreeMap::from([("src".into(), "example.com".into())]),
+        );
+    }
+
+    #[test]
+    fn parse_directive_head_extra_text_after_name_without_braces_ignored() {
+        let head = parse_directive_head("name extra text");
+        assert_eq!(head.name, "name");
+        assert!(head.positional_args.is_empty());
+        assert!(head.named_args.is_empty());
+        assert_eq!(head.id, None);
+        assert!(head.classes.is_empty());
+    }
+
+    // ── extract_body ──
+
+    #[test]
+    fn extract_body_strips_trailing_newline() {
+        let content = "Hello\n";
+        assert_eq!(extract_body(content, 0, content.len()), "Hello");
+    }
+
+    #[test]
+    fn extract_body_strips_trailing_crlf() {
+        let content = "Hello\r\n";
+        assert_eq!(extract_body(content, 0, content.len()), "Hello");
+    }
+
+    #[test]
+    fn extract_body_keeps_content_without_trailing_newline() {
+        let content = "Hello";
+        assert_eq!(extract_body(content, 0, content.len()), "Hello");
+    }
+
+    #[test]
+    fn extract_body_returns_empty_for_empty_or_inverted_range() {
+        assert_eq!(extract_body("Hello", 3, 3), "");
+        assert_eq!(extract_body("Hello", 5, 2), "");
+    }
 }
