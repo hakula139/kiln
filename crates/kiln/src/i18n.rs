@@ -30,12 +30,10 @@ struct Inner {
     warned: Mutex<HashSet<WarnKey>>,
 }
 
-/// Deduplication key for warnings emitted by [`I18n::t`] and [`I18n::t_interp`]. Each unique
-/// variant is logged once per `I18n` instance.
+/// Deduplication key for warnings emitted by [`I18n::t_interp`]. Each unique variant is logged
+/// once per `I18n` instance. `t()` misses are not warnings — see [`I18n::t`].
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum WarnKey {
-    /// `t(key)` miss.
-    MissingKey(String),
     /// Placeholder `{name}` missing from `t_interp` args for `key`.
     MissingPlaceholder { key: String, name: String },
     /// Unclosed `{` in the value for `key`.
@@ -112,19 +110,15 @@ impl I18n {
         &self.inner.language
     }
 
-    /// Looks up a string by key. On miss, warns once per key and returns `[missing: <key>]` in dev
-    /// mode or the raw key otherwise.
+    /// Looks up a string by key, or returns the key itself on miss.
     #[must_use]
     pub fn t<'a>(&'a self, key: &str) -> Cow<'a, str> {
         if let Some(value) = self.inner.strings.get(key) {
             return Cow::Borrowed(value);
         }
-        self.warn_once(WarnKey::MissingKey(key.to_owned()));
-        // Miss path always allocates: borrowing `key` here would tie the
-        // returned `Cow` to the caller's stack, forcing every call site to
-        // immediately clone. Owning here keeps the hit path zero-copy
-        // without punishing the miss path further.
-        Cow::Owned(render_miss(key, kiln_dev_enabled()).into_owned())
+        // Miss path always allocates: borrowing `key` here would tie the returned `Cow` to the
+        // caller's stack, forcing every call site to immediately clone.
+        Cow::Owned(key.to_owned())
     }
 
     /// Looks up a string by key and interpolates Python-style `{name}` placeholders from `args`.
@@ -148,7 +142,6 @@ impl I18n {
         // re-entrant deadlock and needlessly extends the critical section.
         drop(warned);
         match warning {
-            WarnKey::MissingKey(key) => tracing::warn!(key, "missing i18n key"),
             WarnKey::MissingPlaceholder { key, name } => {
                 tracing::warn!(key, name, "missing placeholder for i18n key");
             }
@@ -171,21 +164,6 @@ impl I18n {
         };
         self.warn_once(warn_key);
     }
-}
-
-// ── Miss rendering ──
-
-/// Returns the rendered value for a missing i18n key.
-fn render_miss(key: &str, dev_mode: bool) -> Cow<'_, str> {
-    if dev_mode {
-        Cow::Owned(format!("[missing: {key}]"))
-    } else {
-        Cow::Borrowed(key)
-    }
-}
-
-fn kiln_dev_enabled() -> bool {
-    std::env::var("KILN_DEV").is_ok_and(|v| !v.is_empty())
 }
 
 // ── Loading helpers ──
@@ -622,18 +600,13 @@ mod tests {
     }
 
     #[test]
-    fn t_warns_once_per_key_independently() {
+    fn t_miss_returns_key_silently() {
         let i18n = make_i18n(&[]);
-        for _ in 0..3 {
-            _ = i18n.t("key_alpha");
-        }
-        for _ in 0..3 {
-            _ = i18n.t("key_beta");
-        }
-        let warned = i18n.inner.warned.lock().unwrap();
-        assert_eq!(warned.len(), 2);
-        assert!(warned.contains(&WarnKey::MissingKey("key_alpha".to_owned())));
-        assert!(warned.contains(&WarnKey::MissingKey("key_beta".to_owned())));
+        assert_eq!(i18n.t("missing_key").as_ref(), "missing_key");
+        assert!(
+            i18n.inner.warned.lock().unwrap().is_empty(),
+            "miss path must not warn — literal fallback is intended"
+        );
     }
 
     // ── t_interp ──
@@ -720,23 +693,5 @@ mod tests {
         let mut args = BTreeMap::new();
         args.insert("unused", "nope");
         assert_eq!(i18n.t_interp("plain", &args), "Just text.");
-    }
-
-    // ── render_miss ──
-
-    #[test]
-    fn render_miss_returns_key_when_dev_off() {
-        // Exercise the miss rendering directly so the test doesn't depend on
-        // the ambient `KILN_DEV` env var (touching process env requires
-        // `unsafe` under Rust 2024, which is forbidden in this crate).
-        assert_eq!(render_miss("missing_key", false).as_ref(), "missing_key");
-    }
-
-    #[test]
-    fn render_miss_returns_marker_when_dev_on() {
-        assert_eq!(
-            render_miss("missing_key", true).as_ref(),
-            "[missing: missing_key]",
-        );
     }
 }
