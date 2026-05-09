@@ -1400,7 +1400,7 @@ checksum = "35e770254dd7802184595b1d30da2a15cb72569e2aca2b177aef8d22eac8a693"
 
 [[package]]
 name = "kiln"
-version = "0.2.0"
+version = "0.3.0-rc.1"
 dependencies = [
  "anyhow",
  "axum",
