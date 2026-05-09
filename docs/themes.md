@@ -450,7 +450,7 @@ Resolves a translatable string for the active language. See [Internationalizatio
 <p>{{ t("page_counter", current=page, total=pages) }}</p>
 ```
 
-When `kwargs` are supplied, Python-style `{name}` placeholders in the string are replaced with the corresponding values. Missing keys emit a warning and render as the key literal (or `[missing: <key>]` under `KILN_DEV`) so the build does not crash.
+When `kwargs` are supplied, Python-style `{name}` placeholders in the string are replaced with the corresponding values. Missing keys silently render as the key itself, so the same `t()` call accepts either a translation key (resolved from i18n tables) or a literal label.
 
 #### `register_script(url, load="defer", module=false)`
 
@@ -546,6 +546,46 @@ lqip_size = 16        # max placeholder dimension in pixels (default: 16)
 lqip_quality = 25     # WebP quality, 1-100 (default: 25)
 ```
 
+## Navigation Menus
+
+Sites declare named menu groups under `[[menu.<group>]]`. Themes pick which groups they render and where; kiln has no opinion about group names, so `main`, `social`, `footer`, or anything else works.
+
+```toml
+[[menu.main]]
+name = "menu_posts"
+url = "/posts/"
+icon = "fas fa-archive"
+weight = 1
+
+[[menu.social]]
+name = "GitHub"
+url = "https://github.com/example"
+icon = "fab fa-github"
+weight = 1
+external = true
+```
+
+| Field      | Type      | Notes                                                                                      |
+| ---------- | --------- | ------------------------------------------------------------------------------------------ |
+| `name`     | `string`  | Required. Resolved via `t()` — accepts an i18n key or a literal label.                     |
+| `url`      | `string`  | Required. Site-relative or absolute URL.                                                   |
+| `icon`     | `string?` | Optional. Free-form CSS class (FontAwesome by convention) for the theme to render.         |
+| `weight`   | `i64`     | Sort order ascending. Default `0`. Negative weights float to the front.                    |
+| `external` | `bool`    | Marks an external link. Themes typically add `target="_blank"` and `rel`. Default `false`. |
+
+Each group is sorted independently by `weight` at config load time. Themes access groups by name, e.g.:
+
+```jinja
+{%- set social = config.menu.social | default([]) %}
+{%- for item in social %}
+<a href="{{ item.url | safe }}" title="{{ t(item.name) }}">
+  <i class="{{ item.icon }}"></i>
+</a>
+{%- endfor %}
+```
+
+Document the group names a theme expects in the theme's README so site authors know which buckets to populate.
+
 ## Internationalization
 
 kiln supports translatable strings via a layered i18n system. Themes ship defaults per language and sites can override any string.
@@ -592,23 +632,6 @@ Nested tables are rejected.
 
 Dates render as plain ISO `YYYY-MM-DD` regardless of the active language. When a template receives a full timestamp, slice it with `{{ page.date[:10] }}`.
 
-### Menu Item Translation
-
-Navigation entries defined under `[[menu.main]]` use the `name` field as an i18n key. Themes render labels with `{{ t(item.name) }}`, so the name resolves through the same layered i18n tables as any other string. A missing key renders the literal value, so sites that don't localize can still use plain labels:
-
-```toml
-# config.toml — treat names as i18n keys
-[[menu.main]]
-name = "menu_posts"
-url = "/posts/"
-
-# i18n/en.toml
-menu_posts = "Posts"
-
-# i18n/zh-Hans.toml
-menu_posts = "文章"
-```
-
 ### Missing-Key Behavior
 
-A missing key emits a warning the first time it is requested and renders as the key literal, so a broken translation is visible in the output without crashing the build. Set the `KILN_DEV` environment variable (to any non-empty value) while developing to render misses as `[missing: <key>]` instead — useful for spotting untranslated strings in preview builds.
+A missing key silently renders as the key itself. The literal-fallback path is intentional, so call sites that may receive either a translation key or a plain label (like the `name` field on menu items, see [Navigation Menus](#navigation-menus)) stay uniform. Genuine typos surface as visibly wrong text in the rendered output.
