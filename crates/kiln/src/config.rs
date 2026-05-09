@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -41,8 +42,10 @@ pub struct Config {
     #[serde(default)]
     pub search: Search,
 
+    /// Named menu groups (e.g., `[[menu.main]]`, `[[menu.social]]`). Themes choose which groups
+    /// to render and where; kiln has no opinion about group names.
     #[serde(default)]
-    pub menu: Menu,
+    pub menu: BTreeMap<String, Vec<MenuItem>>,
 
     #[serde(default)]
     pub author: Author,
@@ -88,13 +91,6 @@ pub struct Search {
     pub binary: Option<String>,
 }
 
-/// Site navigation menus.
-#[derive(Debug, Default, Deserialize, Serialize)]
-pub struct Menu {
-    #[serde(default)]
-    pub main: Vec<MenuItem>,
-}
-
 /// A single navigation menu entry.
 #[derive(Debug, Deserialize, Serialize)]
 pub struct MenuItem {
@@ -125,7 +121,7 @@ impl Default for Config {
             theme: None,
             params: toml::Table::new(),
             search: Search::default(),
-            menu: Menu::default(),
+            menu: BTreeMap::new(),
             author: Author::default(),
             image: ImageConfig::default(),
         }
@@ -159,7 +155,9 @@ impl Config {
             merge_params(&mut config.params, &theme.params)?;
         }
 
-        config.menu.main.sort_by_key(|item| item.weight);
+        for items in config.menu.values_mut() {
+            items.sort_by_key(|item| item.weight);
+        }
 
         Ok(config)
     }
@@ -344,7 +342,7 @@ mod tests {
         assert!(config.params.is_empty());
         assert!(!config.search.enabled);
         assert!(config.search.binary.is_none());
-        assert!(config.menu.main.is_empty());
+        assert!(config.menu.is_empty());
         assert!(config.author.name.is_empty());
         assert!(config.author.email.is_empty());
         assert!(config.author.link.is_empty());
@@ -452,21 +450,22 @@ mod tests {
         "#})
         .unwrap();
 
+        let main = &config.menu["main"];
         // Items in TOML source order (not sorted by weight).
-        assert_eq!(config.menu.main.len(), 3);
-        assert_eq!(config.menu.main[0].name, "Posts");
-        assert_eq!(config.menu.main[0].url, "/posts/");
-        assert_eq!(config.menu.main[0].icon.as_deref(), Some("fas fa-archive"));
-        assert_eq!(config.menu.main[0].weight, 1);
-        assert!(!config.menu.main[0].external);
-        assert_eq!(config.menu.main[1].name, "GitHub");
-        assert_eq!(config.menu.main[1].url, "https://github.com/user");
-        assert_eq!(config.menu.main[1].weight, 10);
-        assert!(config.menu.main[1].external);
-        assert_eq!(config.menu.main[2].name, "About");
-        assert_eq!(config.menu.main[2].url, "/about/");
-        assert_eq!(config.menu.main[2].weight, 5);
-        assert!(config.menu.main[2].icon.is_none());
+        assert_eq!(main.len(), 3);
+        assert_eq!(main[0].name, "Posts");
+        assert_eq!(main[0].url, "/posts/");
+        assert_eq!(main[0].icon.as_deref(), Some("fas fa-archive"));
+        assert_eq!(main[0].weight, 1);
+        assert!(!main[0].external);
+        assert_eq!(main[1].name, "GitHub");
+        assert_eq!(main[1].url, "https://github.com/user");
+        assert_eq!(main[1].weight, 10);
+        assert!(main[1].external);
+        assert_eq!(main[2].name, "About");
+        assert_eq!(main[2].url, "/about/");
+        assert_eq!(main[2].weight, 5);
+        assert!(main[2].icon.is_none());
     }
 
     #[test]
@@ -478,13 +477,37 @@ mod tests {
         "#})
         .unwrap();
 
-        assert_eq!(config.menu.main.len(), 1);
-        let item = &config.menu.main[0];
+        let main = &config.menu["main"];
+        assert_eq!(main.len(), 1);
+        let item = &main[0];
         assert_eq!(item.name, "Home");
         assert_eq!(item.url, "/");
         assert!(item.icon.is_none());
         assert_eq!(item.weight, 0);
         assert!(!item.external);
+    }
+
+    #[test]
+    fn menu_groups_coexist() {
+        let config: Config = toml::from_str(indoc! {r#"
+            [[menu.main]]
+            name = "Posts"
+            url = "/posts/"
+            weight = 1
+
+            [[menu.social]]
+            name = "GitHub"
+            url = "https://github.com/example"
+            icon = "fab fa-github"
+            external = true
+        "#})
+        .unwrap();
+
+        assert_eq!(config.menu["main"].len(), 1);
+        assert_eq!(config.menu["main"][0].name, "Posts");
+        assert_eq!(config.menu["social"].len(), 1);
+        assert_eq!(config.menu["social"][0].name, "GitHub");
+        assert!(config.menu["social"][0].external);
     }
 
     // ── load ──
@@ -549,8 +572,53 @@ mod tests {
         .unwrap();
 
         let config = Config::load(dir.path()).unwrap();
-        let names: Vec<&str> = config.menu.main.iter().map(|m| m.name.as_str()).collect();
+        let names: Vec<&str> = config.menu["main"]
+            .iter()
+            .map(|m| m.name.as_str())
+            .collect();
         assert_eq!(names, ["First", "Middle", "Last"]);
+    }
+
+    #[test]
+    fn menu_sorts_each_group_independently_on_load() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("config.toml"),
+            indoc! {r#"
+                [[menu.main]]
+                name = "B"
+                url = "/b/"
+                weight = 2
+
+                [[menu.main]]
+                name = "A"
+                url = "/a/"
+                weight = 1
+
+                [[menu.social]]
+                name = "Y"
+                url = "/y/"
+                weight = 20
+
+                [[menu.social]]
+                name = "X"
+                url = "/x/"
+                weight = 10
+            "#},
+        )
+        .unwrap();
+
+        let config = Config::load(dir.path()).unwrap();
+        let main: Vec<&str> = config.menu["main"]
+            .iter()
+            .map(|m| m.name.as_str())
+            .collect();
+        let social: Vec<&str> = config.menu["social"]
+            .iter()
+            .map(|m| m.name.as_str())
+            .collect();
+        assert_eq!(main, ["A", "B"]);
+        assert_eq!(social, ["X", "Y"]);
     }
 
     // ── load (theme) ──

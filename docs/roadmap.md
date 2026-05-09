@@ -47,8 +47,8 @@ The project's shape is deliberate:
 ### Theming
 
 - Layered MiniJinja templates: site files transparently override theme files.
+- Named `[[menu.<group>]]` blocks with per-group `weight` sorting — themes pick which groups to render.
 - Deep parameter merging for nested theme config tables.
-- Configurable navigation menu via `[[menu.main]]` with weight sorting and external link support.
 
 The default theme [**IgnIt**](https://github.com/hakula139/IgnIt) ships with Tailwind CSS v4 and a polished feature set:
 
