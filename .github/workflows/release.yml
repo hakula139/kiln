@@ -32,12 +32,17 @@ jobs:
     permissions:
       contents: write
     strategy:
+      fail-fast: false
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
           - target: aarch64-apple-darwin
             os: macos-latest
+          - target: x86_64-apple-darwin
+            os: macos-13
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -50,6 +55,18 @@ jobs:
       - name: Install libdav1d (macOS)
         if: runner.os == 'macOS'
         run: brew install dav1d nasm
+
+      - name: Install libdav1d (Windows)
+        # vcpkg ships dav1d; pkgconfiglite lets `system-deps` read its .pc files.
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install --no-progress pkgconfiglite
+          vcpkg install dav1d:x64-windows-static-md
+          $vcpkgInstalled = "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows-static-md"
+          "PKG_CONFIG_PATH=$vcpkgInstalled\lib\pkgconfig" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "VCPKGRS_TRIPLET=x64-windows-static-md" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -65,7 +82,7 @@ jobs:
           bin: kiln
           target: ${{ matrix.target }}
           tar: unix
-          zip: none
+          zip: windows
           checksum: sha256
           locked: true
           token: ${{ secrets.GITHUB_TOKEN }}

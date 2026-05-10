@@ -38,6 +38,8 @@ Any prose that should land in the changelog must come from a commit message: use
 
    - `kiln-x86_64-unknown-linux-gnu.tar.gz` (+ `.sha256`)
    - `kiln-aarch64-apple-darwin.tar.gz` (+ `.sha256`)
+   - `kiln-x86_64-apple-darwin.tar.gz` (+ `.sha256`)
+   - `kiln-x86_64-pc-windows-msvc.zip` (+ `.sha256`)
 
 ## Installing `git-cliff`
 
@@ -60,4 +62,11 @@ Or trigger `workflow_dispatch` from the Actions tab against the existing tag.
 
 ## Targets
 
-Currently `x86_64-unknown-linux-gnu` (CI consumers) and `aarch64-apple-darwin` (macOS dev). Add new targets by extending the matrix in `release.yml`.
+Four platforms ship per release:
+
+- `x86_64-unknown-linux-gnu` (Linux CI consumers, `ubuntu-latest`)
+- `aarch64-apple-darwin` (Apple Silicon dev, `macos-latest`)
+- `x86_64-apple-darwin` (Intel macOS, `macos-13` so `brew` resolves an x86_64 dav1d)
+- `x86_64-pc-windows-msvc` (Windows, `windows-latest`; dav1d sourced from vcpkg + pkgconfiglite)
+
+Add new targets by extending the matrix in `release.yml`. `libdav1d` must be reachable via `pkg-config` on the host, since the `image` crate's `avif-native` feature pulls in `dav1d-sys`.
