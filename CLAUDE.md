@@ -177,6 +177,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 Follows global CLAUDE.md commit / branch / PR conventions, plus:
 
 - **Scope**: the most specific area changed — module (e.g., `config`, `render`, `directive`), doc target (e.g., `CLAUDE`, `roadmap`), or crate name only for cross-module changes.
+- **`ci(release)` is special**: `cliff.toml` routes `ci(release)` commits to the changelog's `Added` section, while bare `ci:` is skipped. Use `ci(release)` for user-facing release-pipeline changes (new target platforms, archive layout, asset naming) that should appear in release notes. Use plain `ci:` for everything else (concurrency gates, runner pinning, internal job restructuring). Squash merge takes the **PR title**, not branch commits, so the PR title must carry the `(release)` scope for it to land in the changelog.
 - **PRs**: assign to `hakula139`. Label `enhancement` for `feat`, `bug` for `fix`. Do not request review from the PR author (GitHub rejects it).
 
 ### Testing
