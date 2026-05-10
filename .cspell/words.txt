@@ -3,6 +3,7 @@ apos
 bfcache
 btrfs
 cachix
+choco
 clippy
 cmark
 deserialises
@@ -28,6 +29,8 @@ libdav
 libiconv
 libwebp
 lqip
+msvc
+msys
 nasm
 nixfmt
 nixos
@@ -60,6 +63,7 @@ tracing
 tungstenite
 twikoo
 unparseable
+VCPKGRS
 walkdir
 webp
 writeln
