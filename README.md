@@ -78,10 +78,6 @@ sudo mv kiln /usr/local/bin/
 curl -fsSL https://github.com/hakula139/kiln/releases/latest/download/kiln-aarch64-apple-darwin.tar.gz | tar -xz
 sudo mv kiln /usr/local/bin/
 
-# macOS x86_64 (Intel)
-curl -fsSL https://github.com/hakula139/kiln/releases/latest/download/kiln-x86_64-apple-darwin.tar.gz | tar -xz
-sudo mv kiln /usr/local/bin/
-
 # Windows x86_64 (Git Bash / MSYS / WSL)
 curl -fsSLO https://github.com/hakula139/kiln/releases/latest/download/kiln-x86_64-pc-windows-msvc.zip
 unzip kiln-x86_64-pc-windows-msvc.zip
