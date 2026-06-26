@@ -7,6 +7,7 @@
   pkg-config,
   nasm,
   dav1d,
+  tzdata,
 }:
 
 let
@@ -49,6 +50,13 @@ rustPlatform.buildRustPackage {
     nasm
   ];
   buildInputs = [ dav1d ];
+
+  # jiff reads IANA zones from TZDIR; nixpkgs 26.05 dropped the ambient tzdata
+  # the timezone tests relied on, so wire it in explicitly for the check phase.
+  nativeCheckInputs = [ tzdata ];
+  preCheck = ''
+    export TZDIR=${tzdata}/share/zoneinfo
+  '';
 
   meta = {
     description = "Custom static site generator powering hakula.xyz";
