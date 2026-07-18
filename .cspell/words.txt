@@ -62,6 +62,8 @@ tmpl
 tracing
 tungstenite
 twikoo
+tzdata
+TZDIR
 unparseable
 VCPKGRS
 walkdir

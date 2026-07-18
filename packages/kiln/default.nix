@@ -7,6 +7,7 @@
   pkg-config,
   nasm,
   dav1d,
+  tzdata,
 }:
 
 let
@@ -49,6 +50,13 @@ rustPlatform.buildRustPackage {
     nasm
   ];
   buildInputs = [ dav1d ];
+
+  # Nixpkgs 26.05 no longer provides tzdata in the build sandbox, so Jiff needs an
+  # explicit zoneinfo database for the time zone tests.
+  nativeCheckInputs = [ tzdata ];
+  preCheck = ''
+    export TZDIR=${tzdata}/share/zoneinfo
+  '';
 
   meta = {
     description = "Custom static site generator powering hakula.xyz";
