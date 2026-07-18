@@ -51,8 +51,8 @@ rustPlatform.buildRustPackage {
   ];
   buildInputs = [ dav1d ];
 
-  # jiff reads IANA zones from TZDIR; nixpkgs 26.05 dropped the ambient tzdata
-  # the timezone tests relied on, so wire it in explicitly for the check phase.
+  # Nixpkgs 26.05 no longer provides tzdata in the build sandbox, so Jiff needs an
+  # explicit zoneinfo database for the time zone tests.
   nativeCheckInputs = [ tzdata ];
   preCheck = ''
     export TZDIR=${tzdata}/share/zoneinfo
