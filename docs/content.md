@@ -121,6 +121,7 @@ content/posts/avg/impressions/
 
 The CSS is **plain CSS** — not processed by Tailwind or any other tool. To scope styles to the page, use the `:::` directive system to create a wrapper `<div>` with a class:
 
+<!-- dprint-ignore -->
 ```markdown
 ::: {.rating-table}
 | Score | Title |

@@ -58,6 +58,7 @@ stdenv
 strftime
 swatinem
 syntect
+taplo
 tera
 tmpl
 tracing

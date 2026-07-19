@@ -139,6 +139,22 @@
               pass_filenames = true;
             };
 
+            dprint-write = {
+              enable = true;
+              name = "dprint";
+              entry = nodeHook "dprint-write" "dprint fmt";
+              files = "\\.md$";
+              pass_filenames = true;
+            };
+
+            taplo-write = {
+              enable = true;
+              name = "taplo";
+              entry = nodeHook "taplo-write" "taplo format";
+              files = "\\.toml$";
+              pass_filenames = true;
+            };
+
             markdownlint = {
               enable = true;
               name = "markdownlint-cli2";

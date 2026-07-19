@@ -214,7 +214,7 @@ nix build '.#kiln'                     # build kiln from source
 
 ### Pre-commit hooks
 
-Hygiene (`check-added-large-files`, `check-yaml`, `end-of-file-fixer`, `trim-trailing-whitespace`), Nix (`nixfmt`, `statix`, `deadnix`), and `rustfmt`. Clippy stays in CI — the bare hook process can't see `libdav1d`.
+The hooks cover file hygiene, Nix, Rust, JSON, Markdown, TOML, and spelling. Clippy stays in CI because the bare hook process cannot see `libdav1d`.
 
 ### Adding native dependencies
 
