@@ -47,6 +47,7 @@ println
 pulldown
 raii
 rfind
+rsplit
 rustc
 serde
 slugification

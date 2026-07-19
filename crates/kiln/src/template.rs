@@ -8,13 +8,16 @@ use minijinja::path_loader;
 use minijinja::value::{Kwargs, Value, merge_maps};
 use serde::Serialize;
 
-use self::functions::{tpl_now, tpl_parse_csv, tpl_read_file, tpl_register_script, tpl_t};
+use self::functions::{
+    tpl_asset_url, tpl_now, tpl_parse_csv, tpl_read_file, tpl_register_script, tpl_t,
+};
 use self::vars::{
     ArchivePageVars, ErrorPageVars, HomePageVars, OverviewPageVars, PostTemplateVars,
 };
 use crate::config::Config;
 use crate::i18n::I18n;
 use crate::render::assets::AssetsHandle;
+use crate::static_assets::StaticAssetManifest;
 
 #[derive(Debug)]
 pub struct TemplateEngine {
@@ -31,6 +34,21 @@ impl TemplateEngine {
     ///
     /// Errors if neither directory is provided, or if `theme_dir` is set but does not exist.
     pub fn new(site_dir: Option<&Path>, theme_dir: Option<&Path>, i18n: &I18n) -> Result<Self> {
+        Self::new_with_assets(site_dir, theme_dir, i18n, &StaticAssetManifest::default())
+    }
+
+    /// Creates a template engine backed by a static asset manifest.
+    ///
+    /// # Errors
+    ///
+    /// Errors if neither template directory is provided, or if `theme_dir` is set but does not
+    /// exist.
+    pub fn new_with_assets(
+        site_dir: Option<&Path>,
+        theme_dir: Option<&Path>,
+        i18n: &I18n,
+        static_assets: &StaticAssetManifest,
+    ) -> Result<Self> {
         if let Some(d) = theme_dir {
             ensure!(
                 d.is_dir(),
@@ -65,6 +83,12 @@ impl TemplateEngine {
         env.add_function("now", tpl_now);
         env.add_function("read_file", tpl_read_file);
         env.add_function("parse_csv", tpl_parse_csv);
+
+        let asset_manifest = static_assets.clone();
+        env.add_function("asset_url", move |url: &str| {
+            tpl_asset_url(&asset_manifest, url)
+        });
+
         env.add_function(
             "register_script",
             |state: &minijinja::State, url: &str, kwargs: Kwargs| {
@@ -1246,6 +1270,26 @@ mod tests {
             .render_str(r#"{{ t("greeting", name=none) }}"#, ())
             .unwrap();
         assert_eq!(result, "Hi !");
+    }
+
+    // ── tpl_asset_url ──
+
+    #[test]
+    fn asset_url_returns_manifest_url() {
+        let static_dir = tempfile::tempdir().unwrap();
+        test_fs::write(static_dir.path().join("app.js"), "abc").unwrap();
+        let manifest = StaticAssetManifest::build(static_dir.path()).unwrap();
+        let templates = tempfile::tempdir().unwrap();
+        let engine =
+            TemplateEngine::new_with_assets(Some(templates.path()), None, &test_i18n(), &manifest)
+                .unwrap();
+
+        let result = engine
+            .env
+            .render_str(r#"{{ asset_url("/app.js") }}"#, ())
+            .unwrap();
+
+        assert_eq!(result, "/app.ba7816bf8f01.js");
     }
 
     // ── tpl_register_script ──

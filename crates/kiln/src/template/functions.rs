@@ -4,6 +4,7 @@ use minijinja::value::Kwargs;
 
 use crate::i18n::I18n;
 use crate::render::assets::{AssetsHandle, LoadStrategy, ScriptTag};
+use crate::static_assets::StaticAssetManifest;
 
 // ── Date / Time ──
 
@@ -114,6 +115,15 @@ pub(super) fn tpl_t(
         .map(|(name, value)| (*name, value.as_str()))
         .collect();
     Ok(i18n.t_interp(key, &args))
+}
+
+// ── Static Assets ──
+
+pub(super) fn tpl_asset_url(
+    manifest: &StaticAssetManifest,
+    url: &str,
+) -> std::result::Result<String, minijinja::Error> {
+    manifest.asset_url(url)
 }
 
 // ── Asset Registration ──

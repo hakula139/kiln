@@ -25,6 +25,7 @@ use crate::render::lqip::ImageResolver;
 use crate::render::pipeline::render_page;
 use crate::search;
 use crate::section::{self, Section, collect_sections};
+use crate::static_assets::StaticAssetManifest;
 use crate::taxonomy::build_taxonomies;
 use crate::template::TemplateEngine;
 use crate::template::vars::PostTemplateVars;
@@ -97,25 +98,10 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
     let i18n = I18n::load(root, theme_dir.as_deref(), &config.language)
         .context("failed to load i18n strings")?;
 
-    let template_engine =
-        TemplateEngine::new(Some(&site_templates), theme_templates.as_deref(), &i18n)
-            .context("failed to initialize template engine")?;
-
-    let image_resolver = ImageResolver::new(&root.join("static"), config.image.clone());
-
-    let ctx = BuildContext {
-        config,
-        i18n,
-        time_zone,
-        syntax_set,
-        template_engine,
-        image_resolver,
-    };
-
     let content = discover_content(root)?;
     let output_dir = match output_dir_override {
         Some(path) => path.to_owned(),
-        None => ctx.config.resolved_output_dir(root)?,
+        None => config.resolved_output_dir(root)?,
     };
 
     clean_output_dir(&output_dir)?;
@@ -124,6 +110,32 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
         copy_static(&td.join("static"), &output_dir)?;
     }
     copy_static(&root.join("static"), &output_dir)?;
+
+    let mut minify_stats = if minify {
+        eprintln!("Minifying...");
+        Some(minify::minify_static_assets(&output_dir).context("minification failed")?)
+    } else {
+        None
+    };
+
+    let static_assets =
+        StaticAssetManifest::build(&output_dir).context("failed to fingerprint static assets")?;
+    let template_engine = TemplateEngine::new_with_assets(
+        Some(&site_templates),
+        theme_templates.as_deref(),
+        &i18n,
+        &static_assets,
+    )
+    .context("failed to initialize template engine")?;
+    let image_resolver = ImageResolver::new(&root.join("static"), config.image.clone());
+    let ctx = BuildContext {
+        config,
+        i18n,
+        time_zone,
+        syntax_set,
+        template_engine,
+        image_resolver,
+    };
 
     let sections = collect_sections(&content.pages, &content.content_dir);
     let taxonomy_set = build_taxonomies(&content.pages, Some(&content.content_dir));
@@ -154,12 +166,11 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
     sitemap::build_sitemap_and_robots(&ctx, &artifacts.listed_pages, &output_dir)?;
     error::build_404(&ctx, &output_dir)?;
 
-    let minify_stats = if minify {
-        eprintln!("Minifying...");
-        Some(minify::minify_output_dir(&output_dir).context("minification failed")?)
-    } else {
-        None
-    };
+    if let Some(stats) = &mut minify_stats {
+        *stats +=
+            minify::minify_output_dir_excluding(&output_dir, static_assets.fingerprinted_paths())
+                .context("minification failed")?;
+    }
 
     if ctx.config.search.enabled {
         eprintln!("Running Pagefind...");
@@ -280,6 +291,7 @@ mod tests {
     use std::fs;
 
     use indoc::indoc;
+    use sha2::{Digest, Sha256};
 
     use super::*;
 
@@ -663,6 +675,78 @@ mod tests {
             fs::read_to_string(output_dir.join("shared.css")).unwrap(),
             "from-site",
             "site static file should override theme"
+        );
+    }
+
+    #[test]
+    fn build_fingerprints_merged_static_assets_after_minification() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("config.toml"), r#"theme = "my-theme""#).unwrap();
+        setup_theme(root.path(), "my-theme");
+
+        let theme_dir = root.path().join("themes/my-theme");
+        fs::write(
+            theme_dir.join("templates/base.html"),
+            indoc! {r#"
+                <!DOCTYPE html>
+                <html>
+                <head>
+                  <link rel="stylesheet" href="{{ asset_url('/style.css') | safe }}">
+                  <script src="{{ asset_url('/app.js') | safe }}"></script>
+                </head>
+                <body>{% block body %}{% endblock %}</body>
+                </html>
+            "#},
+        )
+        .unwrap();
+        fs::create_dir_all(theme_dir.join("static")).unwrap();
+        fs::write(
+            theme_dir.join("static/style.css"),
+            ".theme { color: blue; }\n",
+        )
+        .unwrap();
+        fs::write(
+            theme_dir.join("static/app.js"),
+            "const value = 1 + 2; console.log(value);\n",
+        )
+        .unwrap();
+
+        let site_static = root.path().join("static");
+        fs::create_dir_all(&site_static).unwrap();
+        fs::write(
+            site_static.join("style.css"),
+            ".site { color: #ff0000; margin: 0px; }\n",
+        )
+        .unwrap();
+
+        build(
+            root.path(),
+            BuildOptions {
+                minify: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let output_dir = root.path().join("public");
+        let html = fs::read_to_string(output_dir.join("index.html")).unwrap();
+        for name in ["style.css", "app.js"] {
+            let bytes = fs::read(output_dir.join(name)).unwrap();
+            let digest = format!("{:x}", Sha256::digest(&bytes));
+            let (stem, extension) = name.split_once('.').unwrap();
+            let fingerprinted = format!("{stem}.{}.{extension}", &digest[..12]);
+
+            assert!(output_dir.join(&fingerprinted).is_file());
+            assert!(
+                html.contains(&format!(r"/{fingerprinted}")),
+                "html should reference {fingerprinted}, got:\n{html}"
+            );
+        }
+        assert!(
+            fs::read_to_string(output_dir.join("style.css"))
+                .unwrap()
+                .contains(".site"),
+            "the site override should supply the fingerprinted stylesheet"
         );
     }
 
