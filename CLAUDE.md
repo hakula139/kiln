@@ -34,7 +34,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 
 ### Crate Structure (`crates/kiln/src/`)
 
-```text
+````text
 .
 ├── attrs.rs            # Pandoc-style `{#id .class key=value}` attribute parser, shared across renderers
 ├── build.rs            # BuildContext, build orchestration, per-page rendering, static / asset copying
@@ -89,6 +89,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 ├── section.rs          # Section struct, collect_sections() from page kinds, _index.md title loading
 ├── serve.rs            # Dev server with file watching, WebSocket live reload, script injection
 ├── sitemap.rs          # Sitemap XML + robots.txt generation
+├── static_assets.rs    # Merged static asset manifest + content-hashed CSS / JS publication
 ├── taxonomy.rs         # TaxonomyKind, Taxonomy, Term, TaxonomySet, build_taxonomies()
 ├── template.rs         # MiniJinja layered template engine, directive / archive / overview / error rendering
 ├── template/           # Template submodules
@@ -96,7 +97,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 │   └── vars.rs         # Template variables structs (PostTemplateVars, PageSummary, etc.)
 ├── test_utils.rs       # Shared test infrastructure (templates, helpers, Page factory)
 └── text.rs             # Shared format-agnostic text utilities (slugify, titlecase)
-```
+````
 
 ## Coding Conventions
 
