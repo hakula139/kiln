@@ -16,9 +16,9 @@ runs:
     - name: Install Nix
       uses: cachix/install-nix-action@v31
       with:
-        install_options: ${{ runner.os == 'Linux' && '--no-daemon' || '' }}
-        # `sandbox-fallback` silently retries a failed sandbox setup without one,
-        # which lets a derivation that reaches outside it pass CI.
+        # A single-user install cannot create the kernel namespaces the sandbox
+        # needs, and `sandbox-fallback` would otherwise hide that by retrying a
+        # failed sandbox setup without one.
         extra_nix_config: |
           sandbox = true
           sandbox-fallback = false
