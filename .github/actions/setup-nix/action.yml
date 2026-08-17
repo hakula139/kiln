@@ -17,6 +17,12 @@ runs:
       uses: cachix/install-nix-action@v31
       with:
         install_options: ${{ runner.os == 'Linux' && '--no-daemon' || '' }}
+        # Nix's `sandbox-fallback` default silently retries a failed sandbox
+        # setup without one, leaking the runner's /usr into `nix build` and
+        # hiding derivations that depend on it until a stricter host builds them.
+        extra_nix_config: |
+          sandbox = true
+          sandbox-fallback = false
 
     - name: Setup Cachix
       if: ${{ inputs.cachix_name }}
