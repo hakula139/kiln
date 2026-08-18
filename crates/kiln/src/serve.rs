@@ -184,8 +184,19 @@ fn setup_watcher(
     config: &Config,
     event_tx: mpsc::UnboundedSender<()>,
 ) -> Result<notify::RecommendedWatcher> {
-    let mut watcher =
-        notify::recommended_watcher(move |res: notify::Result<notify::Event>| match res {
+    setup_watcher_with(root, config, event_tx, notify::Config::default())
+}
+
+/// Backend-agnostic core of [`setup_watcher`]. Tests drive a [`notify::PollWatcher`],
+/// which needs no platform event daemon and so works under a build sandbox.
+fn setup_watcher_with<W: Watcher>(
+    root: &Path,
+    config: &Config,
+    event_tx: mpsc::UnboundedSender<()>,
+    watcher_config: notify::Config,
+) -> Result<W> {
+    let mut watcher = W::new(
+        move |res: notify::Result<notify::Event>| match res {
             Ok(event)
                 if matches!(
                     event.kind,
@@ -198,8 +209,10 @@ fn setup_watcher(
             }
             Ok(_) => {}
             Err(e) => tracing::warn!("file watcher error: {e}"),
-        })
-        .context("failed to initialize file watcher")?;
+        },
+        watcher_config,
+    )
+    .context("failed to initialize file watcher")?;
 
     for entry in watch_paths(root, config) {
         let mode = if entry.recursive {
@@ -710,8 +723,13 @@ mod tests {
         let config = Config::default();
         let (tx, mut rx) = mpsc::unbounded_channel();
 
-        // Watcher must stay alive while we wait for events.
-        let _watcher = setup_watcher(root.path(), &config, tx).unwrap();
+        let _watcher: notify::PollWatcher = setup_watcher_with(
+            root.path(),
+            &config,
+            tx,
+            notify::Config::default().with_poll_interval(Duration::from_millis(50)),
+        )
+        .unwrap();
 
         // Modify a file in a watched directory.
         fs::write(content.join("test.md"), "hello").unwrap();
