@@ -17,6 +17,7 @@ pub mod search;
 pub mod section;
 pub mod serve;
 pub mod sitemap;
+pub mod static_assets;
 pub mod taxonomy;
 pub mod template;
 pub mod text;

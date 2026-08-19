@@ -25,6 +25,7 @@ kiln is purpose-built for hakula.xyz: strong CJK-friendly authoring, explicit re
 ### Site Generation
 
 - Pretty URLs, static file copying, co-located content assets, per-page CSS bundling
+- Content-hashed CSS / JS URLs through the template asset manifest
 - Home pages, section pages, standalone pages, taxonomy indexes, and paginated term pages
 - Pinned posts on the home page via `weight` frontmatter
 - Page-scoped asset registry — themes load KaTeX / Mermaid / search only on pages that need them
@@ -121,15 +122,30 @@ kiln init-theme my-theme                                  # Scaffold a new theme
 kiln convert --source /path/to/hugo --dest /path/to/kiln  # Convert a Hugo site
 ```
 
+### Static Asset URLs
+
+Use `asset_url()` in templates when referencing a file from the merged theme and site `static/` trees:
+
+```jinja
+<link rel="stylesheet" href="{{ asset_url('/css/style.css') | safe }}">
+<script src="{{ asset_url('/js/app.js') | safe }}"></script>
+```
+
+kiln copies CSS and JS to names containing the first 12 hexadecimal characters of their SHA-256 digest, such as `/css/style.a1b2c3d4e5f6.css`. Other static files keep their original URLs. A missing path fails the build.
+
+The original CSS / JS files remain in the output because relative imports and existing hard-coded references may still depend on them. Templates using `asset_url()` receive the fingerprinted URL.
+
+The digest covers one file. Bundle self-contained entry assets before passing them to kiln because relative CSS imports and JavaScript module imports continue to use their original URLs.
+
 ### Minification
 
-Passing `--minify` to `kiln build` runs a Rust-native pass over the output directory and rewrites each HTML / CSS / JS file in place:
+Passing `--minify` to `kiln build` minifies shared CSS / JS before their digests are computed, then processes generated HTML and page-bundle assets:
 
 - HTML via [`minify-html`](https://crates.io/crates/minify-html)
 - CSS via [`lightningcss`](https://crates.io/crates/lightningcss)
 - JS via [`oxc_minifier`](https://crates.io/crates/oxc_minifier)
 
-Files matching `*.min.css` or `*.min.js` are skipped so that pre-minified vendor bundles (e.g., Pagefind's UI JS) pass through untouched. Unusable inputs log a warning and keep the original file, so `--minify` never blocks a build.
+Files matching `*.min.css` or `*.min.js` are skipped so pre-minified vendor bundles such as Pagefind's UI JS pass through untouched. Unusable inputs log a warning and keep the original file, so `--minify` never blocks a build.
 
 ### Search
 

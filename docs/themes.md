@@ -134,6 +134,7 @@ github = ""
 twitter = ""
 ```
 
+<!-- dprint-ignore -->
 ```toml
 # config.toml (site)
 theme = "IgnIt"
@@ -452,12 +453,25 @@ Resolves a translatable string for the active language. See [Internationalizatio
 
 When `kwargs` are supplied, Python-style `{name}` placeholders in the string are replaced with the corresponding values. Missing keys silently render as the key itself, so the same `t()` call accepts either a translation key (resolved from i18n tables) or a literal label.
 
+#### `asset_url(path)`
+
+Resolves a root-relative path from the merged theme and site `static/` trees. CSS and JS receive a filename containing the first 12 hexadecimal characters of their SHA-256 digest. Other static files keep their original URL. The build fails when the path is missing or contains a query, fragment, or traversal component.
+
+```jinja
+<link rel="stylesheet" href="{{ asset_url('/css/style.css') | safe }}">
+<script src="{{ asset_url('/js/app.js') | safe }}"></script>
+```
+
+When `kiln build --minify` is used, shared CSS and JS are minified before kiln computes the digest. The fingerprint therefore identifies the bytes published under that URL.
+
+The digest covers the referenced file rather than its dependency graph. Bundle self-contained entry assets before passing them to kiln because relative CSS imports and JavaScript module imports keep their original URLs.
+
 #### `register_script(url, load="defer", module=false)`
 
 Registers a `<script>` tag for the current page. Only callable from directive templates — the renderer surfaces an error when called from a page-level template. Returns the empty string so the call can stand alone:
 
 ```jinja
-{{ register_script("/js/score-table.js") }}
+{{ register_script(asset_url("/js/score-table.js")) }}
 ```
 
 The script appears once on the page no matter how many times the directive renders. Re-registering the same `(url, load, module)` triple is a no-op. Registering the same URL with different attributes is a build-time error, so a page never loads two conflicting tags for the same source. `load` accepts `"defer"` (default), `"async"`, or `"sync"`. Pass `module=true` for ES modules.
@@ -506,6 +520,7 @@ User-supplied attributes (`id`, custom classes, manual `width` / `height`) land 
 
 The placeholder is meant to be rendered on a `::before` pseudo-element so the foreground bitmap stays unblurred. A vanilla-CSS minimum:
 
+<!-- dprint-ignore -->
 ```css
 .lqip {
   display: inline-block;
@@ -540,6 +555,7 @@ Auto-wrapping only covers `<img>` tags rendered from markdown. For featured imag
 
 Tune the placeholder size and quality via `[image]` in `config.toml`:
 
+<!-- dprint-ignore -->
 ```toml
 [image]
 lqip_size = 16        # max placeholder dimension in pixels (default: 16)

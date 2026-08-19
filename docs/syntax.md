@@ -336,6 +336,7 @@ The closing fence must have at least as many colons as the opening fence it clos
 
 Fenced code blocks inside directives work normally — the parser is aware of code fences and will not interpret `:::` inside a code block as a directive boundary:
 
+<!-- dprint-ignore -->
 ````markdown
 ::: callout
 Here is an example:
@@ -407,6 +408,7 @@ A directive renders as a plain `<div>` wrapper in two cases:
 
 **Untyped (no name)** — Pandoc fenced div convention, useful for applying CSS classes to content blocks without semantic meaning:
 
+<!-- dprint-ignore -->
 ```markdown
 ::: {.compact-table}
 | A   | B   |

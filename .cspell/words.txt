@@ -47,6 +47,7 @@ println
 pulldown
 raii
 rfind
+rsplit
 rustc
 serde
 slugification
@@ -57,6 +58,7 @@ stdenv
 strftime
 swatinem
 syntect
+taplo
 tera
 tmpl
 tracing

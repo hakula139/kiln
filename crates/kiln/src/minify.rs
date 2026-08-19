@@ -1,13 +1,15 @@
-//! Post-build asset minification for HTML, CSS, and JS files.
+//! Output minification for HTML, CSS, and JS files.
 //!
 //! Parse failures are logged as warnings and leave the original file untouched, so `--minify`
 //! never aborts builds on unusual input.
 
+use std::collections::BTreeSet;
 use std::fmt;
 use std::fs;
-use std::path::Path;
+use std::ops::AddAssign;
+use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use lightningcss::stylesheet::{MinifyOptions, ParserOptions, PrinterOptions, StyleSheet};
 use minify_html::Cfg;
 use oxc_allocator::Allocator;
@@ -16,6 +18,8 @@ use oxc_minifier::{CompressOptions, Minifier, MinifierOptions};
 use oxc_parser::Parser;
 use oxc_span::SourceType;
 use walkdir::WalkDir;
+
+use crate::static_assets::is_fingerprinted_copy;
 
 /// Totals from a minification pass, suitable for printing as a build summary.
 #[derive(Debug, Default)]
@@ -30,6 +34,15 @@ pub struct MinifyStats {
     pub bytes_out: u64,
 }
 
+impl AddAssign for MinifyStats {
+    fn add_assign(&mut self, rhs: Self) {
+        self.files_processed += rhs.files_processed;
+        self.files_shrunk += rhs.files_shrunk;
+        self.bytes_in += rhs.bytes_in;
+        self.bytes_out += rhs.bytes_out;
+    }
+}
+
 /// Which minifier to use for a given file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AssetKind {
@@ -40,16 +53,43 @@ enum AssetKind {
 
 /// Minifies every HTML, CSS, and JS file under `output_dir` in place.
 ///
-/// Pre-minified files (`*.min.css`, `*.min.js`) are skipped so that vendor bundles (e.g.,
-/// Pagefind's UI JS) pass through untouched.
-///
-/// Minifier parse failures are logged at warn level and leave the original file intact. Only
-/// filesystem errors (read, write, walk) abort the pass.
+/// Pre-minified files (`*.min.css`, `*.min.js`) are skipped. Use [`crate::BuildOptions::minify`]
+/// when building a site because this function rejects output trees that already contain
+/// fingerprinted assets.
 ///
 /// # Errors
 ///
-/// Returns an error if walking the directory or reading / writing a file fails.
+/// Returns an error if the output contains fingerprinted assets or if walking, reading, or writing
+/// the directory fails.
 pub fn minify_output_dir(output_dir: &Path) -> Result<MinifyStats> {
+    for entry in WalkDir::new(output_dir).follow_links(false) {
+        let entry = entry.with_context(|| format!("failed to walk {}", output_dir.display()))?;
+        if entry.file_type().is_file() && is_fingerprinted_copy(entry.path())? {
+            bail!(
+                "cannot minify {} after static asset fingerprinting; use BuildOptions::minify",
+                output_dir.display()
+            );
+        }
+    }
+    minify_output_dir_filtered(output_dir, &BTreeSet::new(), true)
+}
+
+pub(crate) fn minify_static_assets(output_dir: &Path) -> Result<MinifyStats> {
+    minify_output_dir_filtered(output_dir, &BTreeSet::new(), false)
+}
+
+pub(crate) fn minify_output_dir_excluding(
+    output_dir: &Path,
+    excluded: &BTreeSet<PathBuf>,
+) -> Result<MinifyStats> {
+    minify_output_dir_filtered(output_dir, excluded, true)
+}
+
+fn minify_output_dir_filtered(
+    output_dir: &Path,
+    excluded: &BTreeSet<PathBuf>,
+    include_html: bool,
+) -> Result<MinifyStats> {
     let mut stats = MinifyStats::default();
 
     for entry in WalkDir::new(output_dir).follow_links(false) {
@@ -58,9 +98,22 @@ pub fn minify_output_dir(output_dir: &Path) -> Result<MinifyStats> {
             continue;
         }
         let path = entry.path();
+        let relative = path.strip_prefix(output_dir).with_context(|| {
+            format!(
+                "output file {} is not under {}",
+                path.display(),
+                output_dir.display()
+            )
+        })?;
+        if excluded.contains(relative) {
+            continue;
+        }
         let Some(kind) = classify(path) else {
             continue;
         };
+        if kind == AssetKind::Html && !include_html {
+            continue;
+        }
 
         minify_file(path, kind, &mut stats)
             .with_context(|| format!("failed to process {}", path.display()))?;
@@ -298,6 +351,25 @@ mod tests {
     }
 
     #[test]
+    fn minify_output_dir_rejects_fingerprinted_assets_before_writing() {
+        let dir = tempfile::tempdir().unwrap();
+        let original = ".foo { color: #ff0000; margin: 0px; }\n";
+        fs::write(dir.path().join("style.css"), original).unwrap();
+        fs::write(dir.path().join("style.687df11063b7.css"), original).unwrap();
+
+        let err = minify_output_dir(dir.path()).unwrap_err().to_string();
+
+        assert!(
+            err.contains("cannot minify") && err.contains("use BuildOptions::minify"),
+            "got: {err}"
+        );
+        assert_eq!(
+            fs::read_to_string(dir.path().join("style.css")).unwrap(),
+            original
+        );
+    }
+
+    #[test]
     fn minify_output_dir_empty_directory_returns_zero_stats() {
         let dir = tempfile::tempdir().unwrap();
         let stats = minify_output_dir(dir.path()).unwrap();
@@ -305,6 +377,42 @@ mod tests {
         assert_eq!(stats.files_shrunk, 0);
         assert_eq!(stats.bytes_in, 0);
         assert_eq!(stats.bytes_out, 0);
+    }
+
+    #[test]
+    fn minify_static_assets_skips_html() {
+        let dir = tempfile::tempdir().unwrap();
+        let html = "<html>  <body>  text  </body>  </html>";
+        let css = ".foo { color: #ff0000; margin: 0px; }\n";
+        fs::write(dir.path().join("index.html"), html).unwrap();
+        fs::write(dir.path().join("style.css"), css).unwrap();
+
+        let stats = minify_static_assets(dir.path()).unwrap();
+
+        assert_eq!(stats.files_processed, 1);
+        assert_eq!(
+            fs::read_to_string(dir.path().join("index.html")).unwrap(),
+            html
+        );
+        assert!(fs::read(dir.path().join("style.css")).unwrap().len() < css.len());
+    }
+
+    #[test]
+    fn minify_output_dir_excluding_skips_selected_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let original = ".foo { color: #ff0000; margin: 0px; }\n";
+        fs::write(dir.path().join("keep.css"), original).unwrap();
+        fs::write(dir.path().join("minify.css"), original).unwrap();
+        let excluded = BTreeSet::from([PathBuf::from("keep.css")]);
+
+        let stats = minify_output_dir_excluding(dir.path(), &excluded).unwrap();
+
+        assert_eq!(stats.files_processed, 1);
+        assert_eq!(
+            fs::read_to_string(dir.path().join("keep.css")).unwrap(),
+            original
+        );
+        assert!(fs::read(dir.path().join("minify.css")).unwrap().len() < original.len());
     }
 
     // ── classify ──
