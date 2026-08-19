@@ -51,8 +51,11 @@ rustPlatform.buildRustPackage {
   ];
   buildInputs = [ dav1d ];
 
-  # Nixpkgs 26.05 no longer provides tzdata in the build sandbox, so Jiff needs an
-  # explicit zoneinfo database for the time zone tests.
+  # The dev server tests bind 127.0.0.1, which the darwin sandbox denies by default.
+  __darwinAllowLocalNetworking = true;
+
+  # The build sandbox exposes no system zoneinfo, so jiff needs an explicit TZDIR
+  # to resolve IANA zone names in the time zone tests.
   nativeCheckInputs = [ tzdata ];
   preCheck = ''
     export TZDIR=${tzdata}/share/zoneinfo

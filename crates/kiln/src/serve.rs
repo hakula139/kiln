@@ -135,7 +135,8 @@ async fn serve_until(
 
     let (watch_tx, watch_rx) = mpsc::unbounded_channel();
     // Watcher must stay alive for the duration of the server; dropping it stops watching.
-    let _watcher = setup_watcher(root, &config, watch_tx)?;
+    let _watcher: notify::RecommendedWatcher =
+        setup_watcher(root, &config, watch_tx, notify::Config::default())?;
 
     let rebuild_root = root.to_owned();
     let rebuild_tx = reload_tx.clone();
@@ -179,13 +180,17 @@ struct WatchEntry {
 }
 
 /// Initializes the file watcher on source directories and config.
-fn setup_watcher(
+///
+/// Generic over the backend so tests can drive a [`notify::PollWatcher`], which needs no
+/// platform event daemon and so works under a build sandbox.
+fn setup_watcher<W: Watcher>(
     root: &Path,
     config: &Config,
     event_tx: mpsc::UnboundedSender<()>,
-) -> Result<notify::RecommendedWatcher> {
-    let mut watcher =
-        notify::recommended_watcher(move |res: notify::Result<notify::Event>| match res {
+    watcher_config: notify::Config,
+) -> Result<W> {
+    let mut watcher = W::new(
+        move |res: notify::Result<notify::Event>| match res {
             Ok(event)
                 if matches!(
                     event.kind,
@@ -198,8 +203,10 @@ fn setup_watcher(
             }
             Ok(_) => {}
             Err(e) => tracing::warn!("file watcher error: {e}"),
-        })
-        .context("failed to initialize file watcher")?;
+        },
+        watcher_config,
+    )
+    .context("failed to initialize file watcher")?;
 
     for entry in watch_paths(root, config) {
         let mode = if entry.recursive {
@@ -636,50 +643,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn serve_until_ws_sends_reload_on_file_change() {
-        use tokio_stream::StreamExt;
-
-        let root = tempfile::tempdir().unwrap();
-        setup_site(root.path());
-
-        let (addr, shutdown_tx) = spawn_server(root.path()).await;
-        wait_for_server(addr).await;
-
-        let url = format!("ws://{addr}{LIVE_RELOAD_PATH}");
-        let (mut ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
-
-        // Touch a watched file to trigger a rebuild → reload.
-        fs::write(
-            root.path()
-                .join("content")
-                .join("posts")
-                .join("hello")
-                .join("index.md"),
-            indoc! {r#"
-                +++
-                title = "Hello"
-                +++
-                Updated
-            "#},
-        )
-        .unwrap();
-
-        let msg = tokio::time::timeout(Duration::from_secs(10), ws.next())
-            .await
-            .expect("should receive message within timeout")
-            .expect("stream should produce a message")
-            .expect("message should not error");
-
-        assert_eq!(
-            msg.into_text().unwrap(),
-            "reload",
-            "should receive reload message after rebuild"
-        );
-
-        _ = shutdown_tx.send(());
-    }
-
-    #[tokio::test]
     async fn serve_until_ws_exits_on_client_disconnect() {
         let root = tempfile::tempdir().unwrap();
         setup_site(root.path());
@@ -710,8 +673,13 @@ mod tests {
         let config = Config::default();
         let (tx, mut rx) = mpsc::unbounded_channel();
 
-        // Watcher must stay alive while we wait for events.
-        let _watcher = setup_watcher(root.path(), &config, tx).unwrap();
+        let _watcher: notify::PollWatcher = setup_watcher(
+            root.path(),
+            &config,
+            tx,
+            notify::Config::default().with_poll_interval(Duration::from_millis(50)),
+        )
+        .unwrap();
 
         // Modify a file in a watched directory.
         fs::write(content.join("test.md"), "hello").unwrap();
@@ -1140,6 +1108,43 @@ mod tests {
             response.status(),
             StatusCode::BAD_REQUEST,
             "plain HTTP to WS endpoint should be rejected"
+        );
+    }
+
+    #[tokio::test]
+    async fn build_router_ws_relays_reload() {
+        use tokio_stream::StreamExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (reload_tx, _) = broadcast::channel::<()>(16);
+        let app = build_router(dir.path(), reload_tx.clone());
+        tokio::spawn(async move { _ = axum::serve(listener, app).await });
+
+        let url = format!("ws://{addr}{LIVE_RELOAD_PATH}");
+        let (mut ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+
+        // `ws_relay` subscribes after the upgrade completes; a signal published before
+        // that lands nowhere.
+        for _ in 0..100 {
+            if reload_tx.receiver_count() > 0 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        reload_tx.send(()).expect("client should be subscribed");
+
+        let msg = tokio::time::timeout(Duration::from_secs(5), ws.next())
+            .await
+            .expect("should receive message within timeout")
+            .expect("stream should produce a message")
+            .expect("message should not error");
+
+        assert_eq!(
+            msg.into_text().unwrap(),
+            "reload",
+            "should relay the reload signal to the client"
         );
     }
 
