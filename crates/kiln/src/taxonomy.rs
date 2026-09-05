@@ -1,5 +1,7 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
+
+use anyhow::{Result, bail};
 
 use crate::content::frontmatter;
 use crate::content::page::Page;
@@ -25,15 +27,22 @@ pub struct TaxonomySet {
     pub tag_pages: HashMap<String, Vec<usize>>,
 }
 
+/// Pages carrying one taxonomy slug, keyed by case-folded term with the first-seen spelling as
+/// display name. More than one key means distinct terms slugified to the same value.
+type SlugGroup = BTreeMap<String, (String, Vec<usize>)>;
+
 /// Builds the taxonomy set from the given page collection.
 ///
 /// Groups pages by tag, deduplicates terms by slug, and sorts by page count descending (then
 /// name ascending). Page indices are in input order (newest first). When `content_dir` is
 /// provided, looks for `tags/<slug>/_index.md` to override the display name.
-#[must_use]
-pub fn build_taxonomies(pages: &[Page], content_dir: Option<&Path>) -> TaxonomySet {
-    // Collect slug → (display_name, Vec<page_index>).
-    let mut grouped: HashMap<String, (String, Vec<usize>)> = HashMap::new();
+///
+/// # Errors
+///
+/// Returns an error when two tags that differ beyond case slugify to the same value, since one
+/// archive URL cannot serve both.
+pub fn build_taxonomies(pages: &[Page], content_dir: Option<&Path>) -> Result<TaxonomySet> {
+    let mut grouped: HashMap<String, SlugGroup> = HashMap::new();
 
     for (idx, page) in pages.iter().enumerate() {
         collect_terms(&page.frontmatter.tags, idx, &mut grouped);
@@ -42,7 +51,8 @@ pub fn build_taxonomies(pages: &[Page], content_dir: Option<&Path>) -> TaxonomyS
     let mut tag_pages = HashMap::with_capacity(grouped.len());
     let mut tags: Vec<Term> = Vec::with_capacity(grouped.len());
 
-    for (slug, (name, indices)) in grouped {
+    for (slug, terms) in grouped {
+        let (name, indices) = sole_term(&slug, terms)?;
         let display_name = content_dir
             .and_then(|dir| load_term_title(dir, &slug))
             .unwrap_or(name);
@@ -57,7 +67,25 @@ pub fn build_taxonomies(pages: &[Page], content_dir: Option<&Path>) -> TaxonomyS
 
     tags.sort_by(|a, b| b.page_count.cmp(&a.page_count).then(a.name.cmp(&b.name)));
 
-    TaxonomySet { tags, tag_pages }
+    Ok(TaxonomySet { tags, tag_pages })
+}
+
+/// Unwraps the single term behind a tag slug, reporting a collision when several terms share it.
+fn sole_term(slug: &str, terms: SlugGroup) -> Result<(String, Vec<usize>)> {
+    let mut terms = terms.into_values();
+    let (name, indices) = terms
+        .next()
+        .expect("a slug group is only created together with its first term");
+
+    if let Some((other, other_indices)) = terms.next() {
+        bail!(
+            "tag slug collision on \"{slug}\": \"{name}\" ({} pages) and \"{other}\" ({} pages)",
+            indices.len(),
+            other_indices.len(),
+        );
+    }
+
+    Ok((name, indices))
 }
 
 /// Loads the display title from `<content_dir>/tags/<slug>/_index.md`.
@@ -75,19 +103,16 @@ fn load_term_title(content_dir: &Path, slug: &str) -> Option<String> {
 }
 
 /// Collects terms from a frontmatter field into the grouped map.
-fn collect_terms(
-    values: &[String],
-    page_idx: usize,
-    grouped: &mut HashMap<String, (String, Vec<usize>)>,
-) {
+fn collect_terms(values: &[String], page_idx: usize, grouped: &mut HashMap<String, SlugGroup>) {
     for value in values {
         let trimmed = value.trim();
         if trimmed.is_empty() {
             continue;
         }
-        let slug = slugify(trimmed);
         grouped
-            .entry(slug)
+            .entry(slugify(trimmed))
+            .or_default()
+            .entry(trimmed.to_lowercase())
             .and_modify(|(_, indices)| indices.push(page_idx))
             .or_insert_with(|| (trimmed.to_owned(), vec![page_idx]));
     }
@@ -110,7 +135,7 @@ mod tests {
 
     #[test]
     fn build_taxonomies_empty() {
-        let set = build_taxonomies(&[], None);
+        let set = build_taxonomies(&[], None).unwrap();
         assert!(set.tags.is_empty());
         assert!(set.tag_pages.is_empty());
     }
@@ -118,7 +143,7 @@ mod tests {
     #[test]
     fn build_taxonomies_single_tag() {
         let pages = [make_page("Post 1", &["rust"])];
-        let set = build_taxonomies(&pages, None);
+        let set = build_taxonomies(&pages, None).unwrap();
 
         assert_eq!(set.tags.len(), 1);
         assert_eq!(set.tags[0].name, "rust");
@@ -133,7 +158,7 @@ mod tests {
             make_page("Post 2", &["rust"]),
             make_page("Post 3", &["web"]),
         ];
-        let set = build_taxonomies(&pages, None);
+        let set = build_taxonomies(&pages, None).unwrap();
 
         assert_eq!(set.tags.len(), 2);
         // Both have 2 pages, so sorted alphabetically.
@@ -149,7 +174,7 @@ mod tests {
             make_page("Post 1", &["Rust"]),
             make_page("Post 2", &["rust"]),
         ];
-        let set = build_taxonomies(&pages, None);
+        let set = build_taxonomies(&pages, None).unwrap();
 
         assert_eq!(set.tags.len(), 1, "should deduplicate by slug");
         assert_eq!(
@@ -160,13 +185,26 @@ mod tests {
     }
 
     #[test]
+    fn build_taxonomies_preserved_punctuation_stays_distinct() {
+        let pages = [
+            make_page("Post 1", &["Alpha"]),
+            make_page("Post 2", &["Alpha++"]),
+        ];
+        let set = build_taxonomies(&pages, None).unwrap();
+
+        assert_eq!(set.tags.len(), 2, "`+` must not be folded away");
+        assert_eq!(set.tags[0].slug, "alpha");
+        assert_eq!(set.tags[1].slug, "alpha++");
+    }
+
+    #[test]
     fn build_taxonomies_sorted_by_count_then_name() {
         let pages = [
             make_page("Post 1", &["zebra"]),
             make_page("Post 2", &["common", "alpha"]),
             make_page("Post 3", &["common"]),
         ];
-        let set = build_taxonomies(&pages, None);
+        let set = build_taxonomies(&pages, None).unwrap();
 
         // Primary: count descending.
         assert_eq!(set.tags[0].name, "common");
@@ -184,7 +222,7 @@ mod tests {
             make_page("Newest", &["rust"]),
             make_page("Oldest", &["rust"]),
         ];
-        let set = build_taxonomies(&pages, None);
+        let set = build_taxonomies(&pages, None).unwrap();
 
         let indices = &set.tag_pages["rust"];
         assert_eq!(
@@ -197,10 +235,28 @@ mod tests {
     #[test]
     fn build_taxonomies_empty_tags_ignored() {
         let pages = [make_page("Post 1", &["", "  ", "rust"])];
-        let set = build_taxonomies(&pages, None);
+        let set = build_taxonomies(&pages, None).unwrap();
 
         assert_eq!(set.tags.len(), 1);
         assert_eq!(set.tags[0].name, "rust");
+    }
+
+    #[test]
+    fn build_taxonomies_colliding_terms_returns_error() {
+        let pages = [
+            make_page("Post 1", &["Alpha Beta"]),
+            make_page("Post 2", &["Alpha & Beta"]),
+            make_page("Post 3", &["Alpha Beta"]),
+            make_page("Post 4", &["Alpha & Beta"]),
+            make_page("Post 5", &["Alpha & Beta"]),
+        ];
+        let err = build_taxonomies(&pages, None).unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            r#"tag slug collision on "alpha-beta": "Alpha & Beta" (3 pages) and "Alpha Beta" (2 pages)"#,
+            "should name the slug, both terms, and each term's total page count"
+        );
     }
 
     // ── load_term_title ──
@@ -223,7 +279,7 @@ mod tests {
         .unwrap();
 
         let pages = [make_page("Post 1", &["ml"])];
-        let set = build_taxonomies(&pages, Some(&content_dir));
+        let set = build_taxonomies(&pages, Some(&content_dir)).unwrap();
 
         assert_eq!(
             set.tags[0].name, "Machine Learning",
@@ -239,7 +295,7 @@ mod tests {
         std::fs::create_dir_all(&content_dir).unwrap();
 
         let pages = [make_page("Post 1", &["rust"])];
-        let set = build_taxonomies(&pages, Some(&content_dir));
+        let set = build_taxonomies(&pages, Some(&content_dir)).unwrap();
 
         assert_eq!(
             set.tags[0].name, "rust",
@@ -264,7 +320,7 @@ mod tests {
         .unwrap();
 
         let pages = [make_page("Post 1", &["rust"])];
-        let set = build_taxonomies(&pages, Some(&content_dir));
+        let set = build_taxonomies(&pages, Some(&content_dir)).unwrap();
 
         assert_eq!(
             set.tags[0].name, "rust",
