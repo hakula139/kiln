@@ -1,9 +1,19 @@
-/// Converts text into a URL-safe slug. Unicode-aware lowercasing preserves CJK and accented
-/// characters. Collapses consecutive `-` and strips leading / trailing `-`.
+/// Non-alphanumeric characters kept literally, because they carry meaning in technology names
+/// (`C++`, `.NET`) and stay safe unescaped in a URL path. `#` cannot join them since it delimits
+/// a URL fragment.
+const PRESERVED_CHARS: [char; 4] = ['+', '.', '_', '~'];
+
+/// Converts text into a URL-safe slug.
+///
+/// Alphanumerics are lowercased, Unicode-aware, so CJK and accented characters survive.
+/// [`PRESERVED_CHARS`] are kept as-is. Every other character becomes a single `-`, collapsing runs
+/// and stripping leading / trailing `-`. Returns an empty string when no alphanumeric character
+/// survives the pass.
 #[must_use]
 pub fn slugify(text: &str) -> String {
     let mut result = String::with_capacity(text.len());
     let mut prev_dash = true; // strip leading dashes
+    let mut has_alphanumeric = false;
 
     for ch in text.chars() {
         if ch.is_alphanumeric() {
@@ -11,12 +21,19 @@ pub fn slugify(text: &str) -> String {
                 result.push(lower);
             }
             prev_dash = false;
+            has_alphanumeric = true;
+        } else if PRESERVED_CHARS.contains(&ch) {
+            result.push(ch);
+            prev_dash = false;
         } else if !prev_dash {
             result.push('-');
             prev_dash = true;
         }
     }
 
+    if !has_alphanumeric {
+        return String::new();
+    }
     if result.ends_with('-') {
         result.pop();
     }
@@ -65,7 +82,21 @@ mod tests {
 
     #[test]
     fn slugify_mixed() {
-        assert_eq!(slugify("1.1 Foobar - 测试文本"), "1-1-foobar-测试文本");
+        assert_eq!(slugify("1.1 Foobar - 测试文本"), "1.1-foobar-测试文本");
+    }
+
+    #[test]
+    fn slugify_preserves_url_safe_punctuation() {
+        assert_eq!(slugify("C++"), "c++");
+        assert_eq!(slugify(".NET"), ".net");
+        assert_eq!(slugify("C/C++"), "c-c++");
+        assert_eq!(slugify("C"), "c", "should stay distinct from C++");
+    }
+
+    #[test]
+    fn slugify_separates_on_unpreserved_punctuation() {
+        assert_eq!(slugify("CS:APP"), "cs-app");
+        assert_eq!(slugify("Rock & Roll"), "rock-roll");
     }
 
     #[test]

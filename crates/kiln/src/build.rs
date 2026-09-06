@@ -138,7 +138,7 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
     };
 
     let sections = collect_sections(&content.pages, &content.content_dir);
-    let taxonomy_set = build_taxonomies(&content.pages, Some(&content.content_dir));
+    let taxonomy_set = build_taxonomies(&content.pages, Some(&content.content_dir))?;
 
     let artifacts = build_listing_artifacts(
         &content.pages,

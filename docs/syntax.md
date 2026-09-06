@@ -43,6 +43,8 @@ All fields are optional. Defaults:
 
 Draft pages (`draft = true`) and pages whose filename starts with `_` are excluded from the build.
 
+Each tag gets one archive page, addressed by its [slug](#headings). Spellings that differ only in case (`Rust` and `rust`) merge there, keeping the first one seen as the display name. When two tags differ beyond case yet slugify alike (`Rock & Roll` and `Rock Roll`), one URL cannot serve both, so the build fails with a `tag slug collision` error naming the slug, both tags, and their page counts.
+
 A post with any `weight` set is pinned on the home page, sorted before unpinned posts and ordered by `weight` ascending (lower floats higher, matching Hugo's `weight` semantics). Archive, tag, and section listings ignore `weight` and stay strictly date-sorted, so a pinned post still appears at its natural date position in those listings.
 
 `date` / `updated` are absolute instants. When kiln exposes a page date to templates, it renders that instant in the site's configured `timezone` from `config.toml` (UTC if `timezone` is unset):
@@ -94,7 +96,7 @@ Headings automatically receive `id` attributes generated from their text, suitab
 <!-- renders as: <h2 id="getting-started">Getting Started</h2> -->
 ```
 
-The slugification algorithm is CJK-aware: Chinese / Japanese / Korean characters are preserved in IDs rather than being stripped. Duplicate IDs are disambiguated with numeric suffixes (`-1`, `-2`, ...).
+The slugification algorithm is CJK-aware: Chinese / Japanese / Korean characters are preserved in IDs rather than being stripped. Alphanumerics are lowercased, `+`, `.`, `_`, and `~` survive as-is (so `C++` becomes `c++`), and every other character collapses into a single `-`. Duplicate IDs are disambiguated with numeric suffixes (`-1`, `-2`, ...).
 
 Explicit heading IDs override the auto-generated one:
 

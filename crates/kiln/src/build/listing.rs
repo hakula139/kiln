@@ -478,7 +478,7 @@ mod tests {
         page.source_path = PathBuf::from("/elsewhere/stray.md");
         let pages = vec![page];
         let sections: Vec<Section> = Vec::new();
-        let taxonomy_set = build_taxonomies(&pages, None);
+        let taxonomy_set = build_taxonomies(&pages, None).unwrap();
 
         let result = build_listing_artifacts(
             &pages,

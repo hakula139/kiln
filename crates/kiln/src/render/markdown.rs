@@ -519,7 +519,7 @@ mod tests {
             "should contain KaTeX HTML in heading, html:\n{}",
             out.html
         );
-        assert_eq!(out.headings[0].id, "sum-sum-i-1-n");
+        assert_eq!(out.headings[0].id, "sum-sum_-i-1-n");
         assert_eq!(out.headings[0].title, r"Sum \sum_{i=1}^n");
     }
 
