@@ -194,7 +194,7 @@ fn fingerprinted_path(path: &Path, bytes: &[u8]) -> Result<PathBuf> {
 }
 
 fn content_fingerprint(bytes: &[u8]) -> String {
-    let digest = format!("{:x}", Sha256::digest(bytes));
+    let digest = hex::encode(Sha256::digest(bytes));
     digest[..FINGERPRINT_LENGTH].to_owned()
 }
 

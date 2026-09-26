@@ -432,7 +432,7 @@ mod tests {
     fn highlight_code_emits_highlight_class() {
         let spec = CodeBlockSpec {
             lang: Some("txt".into()),
-            highlight: vec![2..=2],
+            highlight: std::iter::once(2..=2).collect(),
             ..CodeBlockSpec::default()
         };
         let html = highlight_with_spec("line 1\nline 2\nline 3\n", &spec);
@@ -454,7 +454,7 @@ mod tests {
     fn highlight_code_highlight_range() {
         let spec = CodeBlockSpec {
             lang: Some("txt".into()),
-            highlight: vec![1..=2],
+            highlight: std::iter::once(1..=2).collect(),
             ..CodeBlockSpec::default()
         };
         let html = highlight_with_spec("a\nb\nc\n", &spec);
