@@ -32,7 +32,7 @@ pub(super) fn tpl_read_file(
         })?;
 
     // `DirectiveContext.source_dir: Option<String>` is the only producer of this value, so when
-    // present it's always a string, so there's no need to re-check the dynamic type.
+    // present it is always a string.
     let source_dir = source_dir.as_str().unwrap_or_default();
 
     let rel = Path::new(filename);

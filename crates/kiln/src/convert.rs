@@ -45,8 +45,6 @@ pub fn convert(source: &Path, dest: &Path) -> Result<()> {
 
         let file_name = rel_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
-        // Handle _index.md files: convert category / tag term indexes,
-        // redirect category indexes to section indexes, skip others.
         if file_name == "_index.md" {
             if let Some(dest_path) = index_dest_path(rel_path, &content_dest)
                 && !dest_path.exists()
@@ -61,7 +59,6 @@ pub fn convert(source: &Path, dest: &Path) -> Result<()> {
 
         let dest_path = content_dest.join(rel_path);
 
-        // Never overwrite existing files.
         if dest_path.exists() {
             continue;
         }
@@ -181,7 +178,6 @@ mod tests {
         let dest = dir.path().join("dest");
         let content_source = source.join("content");
 
-        // Create page bundle.
         let bundle = content_source.join("posts/my-post");
         fs::create_dir_all(&bundle).unwrap();
         fs::write(
@@ -196,7 +192,6 @@ mod tests {
         .unwrap();
         fs::write(bundle.join("image.webp"), "fake-image").unwrap();
 
-        // Create standalone file.
         fs::create_dir_all(content_source.join("pages")).unwrap();
         fs::write(
             content_source.join("pages/about.md"),
@@ -225,7 +220,6 @@ mod tests {
 
         convert(&source, &dest).unwrap();
 
-        // Verify converted markdown.
         let post = fs::read_to_string(dest.join("content/posts/my-post/index.md")).unwrap();
         assert_eq!(
             post,
@@ -237,14 +231,12 @@ mod tests {
             "#}
         );
 
-        // Verify asset copied.
         assert!(dest.join("content/posts/my-post/image.webp").exists());
         assert_eq!(
             fs::read_to_string(dest.join("static/images/logo.webp")).unwrap(),
             "site-image"
         );
 
-        // Verify standalone.
         let about = fs::read_to_string(dest.join("content/pages/about.md")).unwrap();
         assert_eq!(
             about,
@@ -256,7 +248,6 @@ mod tests {
             "#}
         );
 
-        // Verify section file skipped.
         assert!(!dest.join("content/posts/_index.md").exists());
     }
 
@@ -320,7 +311,6 @@ mod tests {
 
         convert(&source, &dest).unwrap();
 
-        // Category index redirected to section index.
         let section = fs::read_to_string(dest.join("content/posts/anime/_index.md")).unwrap();
         assert_eq!(
             section,
@@ -332,7 +322,6 @@ mod tests {
         );
         assert!(!dest.join("content/categories/anime/_index.md").exists());
 
-        // Tag term converted in place.
         let tag = fs::read_to_string(dest.join("content/tags/rust/_index.md")).unwrap();
         assert_eq!(
             tag,
@@ -343,10 +332,8 @@ mod tests {
             "#}
         );
 
-        // Section _index.md still skipped.
         assert!(!dest.join("content/posts/_index.md").exists());
 
-        // Unknown kind _index.md skipped.
         assert!(!dest.join("content/other/slug/_index.md").exists());
     }
 
@@ -357,7 +344,6 @@ mod tests {
         let dest = dir.path().join("dest");
         let content_source = source.join("content");
 
-        // Source markdown + asset.
         let post_dir = content_source.join("posts/hello");
         fs::create_dir_all(&post_dir).unwrap();
         fs::write(
@@ -380,7 +366,6 @@ mod tests {
 
         convert(&source, &dest).unwrap();
 
-        // Neither markdown nor asset should be overwritten.
         assert_eq!(
             fs::read_to_string(dest.join("content/posts/hello/index.md")).unwrap(),
             "existing markdown",

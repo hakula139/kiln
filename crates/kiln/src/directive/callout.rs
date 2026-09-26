@@ -270,7 +270,6 @@ mod tests {
             parse_named_args(&named(&[("type", "tip")])),
             (CalloutKind::Tip, None, true)
         );
-        // Case-insensitive.
         assert_eq!(
             parse_named_args(&named(&[("type", "TIP")])),
             (CalloutKind::Tip, None, true)
@@ -303,7 +302,6 @@ mod tests {
             parse_named_args(&named(&[("open", "true")])),
             (CalloutKind::Note, None, true)
         );
-        // Case-insensitive.
         assert_eq!(
             parse_named_args(&named(&[("open", "FALSE")])),
             (CalloutKind::Note, None, false)

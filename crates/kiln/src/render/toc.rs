@@ -52,7 +52,6 @@ pub fn render_toc_html(entries: &[TocEntry]) -> String {
             }
         }
 
-        // Emit entry.
         writeln_indented!(
             &mut html,
             depth * 2,
@@ -62,7 +61,6 @@ pub fn render_toc_html(entries: &[TocEntry]) -> String {
         );
     }
 
-    // Close all remaining levels.
     while depth > 0 {
         writeln_indented!(&mut html, depth * 2, "</li>");
         writeln_indented!(&mut html, depth * 2 - 1, "</ul>");
@@ -190,7 +188,6 @@ mod tests {
 
     #[test]
     fn deeper_heading_first() {
-        // H3 then H2: deeper heading before the minimum level.
         let entries = vec![
             TocEntry {
                 level: HeadingLevel::H3,
@@ -272,7 +269,6 @@ mod tests {
 
     #[test]
     fn h3_first_normalizes_to_top_level() {
-        // When content starts at H3, normalization makes it depth 1.
         let entries = vec![TocEntry {
             level: HeadingLevel::H3,
             id: "only".into(),

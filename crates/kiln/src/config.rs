@@ -104,7 +104,6 @@ pub struct MenuItem {
     #[serde(default)]
     pub weight: i64,
 
-    /// Whether this link points to an external site.
     #[serde(default)]
     pub external: bool,
 }
@@ -217,7 +216,6 @@ impl Config {
     }
 }
 
-/// Kiln version from `Cargo.toml`, checked at compile time.
 const KILN_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 impl ThemeMeta {
@@ -250,11 +248,9 @@ fn merge_params(site: &mut toml::Table, theme_defaults: &toml::Table) -> Result<
     for (key, theme_val) in theme_defaults {
         if let Some(site_val) = site.get_mut(key) {
             match (site_val, theme_val) {
-                // Both are tables → recursive merge.
                 (toml::Value::Table(st), toml::Value::Table(tt)) => {
                     merge_params(st, tt)?;
                 }
-                // Type mismatch: reject.
                 (s, t) if s.type_str() != t.type_str() => {
                     bail!(
                         "param `{key}` has type `{}` in site config but `{}` in theme",
@@ -423,11 +419,8 @@ mod tests {
         );
     }
 
-    /// Verifies TOML field parsing for menu items.
-    ///
-    /// Items appear in TOML source order here because this test uses
-    /// `toml::from_str` directly, bypassing `Config::load()` which sorts
-    /// by weight. See `menu_sorts_by_weight_on_load` for the sorting test.
+    /// Items stay in TOML source order because `toml::from_str` bypasses the weight sort in
+    /// `Config::load()`, which `menu_sorts_by_weight_on_load` covers.
     #[test]
     fn menu_from_toml_parses_fields() {
         let config: Config = toml::from_str(indoc! {r#"
@@ -451,7 +444,6 @@ mod tests {
         .unwrap();
 
         let main = &config.menu["main"];
-        // Items in TOML source order (not sorted by weight).
         assert_eq!(main.len(), 3);
         assert_eq!(main[0].name, "Posts");
         assert_eq!(main[0].url, "/posts/");

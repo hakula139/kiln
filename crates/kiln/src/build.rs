@@ -192,7 +192,6 @@ fn report_build_summary(page_count: usize, minify_stats: Option<&MinifyStats>) {
 
 // ── Single-page rendering ──
 
-/// Renders a single page and writes it to the output directory.
 fn build_page(
     ctx: &BuildContext,
     page: &Page,

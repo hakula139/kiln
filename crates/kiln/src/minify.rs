@@ -152,7 +152,6 @@ fn minify_file(path: &Path, kind: AssetKind, stats: &mut MinifyStats) -> Result<
     stats.files_processed += 1;
     stats.bytes_in += bytes_in;
 
-    // Only replace when the minifier actually shrank the file.
     match output {
         Some(bytes) if (bytes.len() as u64) < bytes_in => {
             fs::write(path, &bytes)
@@ -322,11 +321,9 @@ mod tests {
         );
         assert!(stats.bytes_out < stats.bytes_in);
 
-        // Non-targeted files untouched.
         assert_eq!(fs::read(root.join("image.png")).unwrap(), png);
         assert_eq!(fs::read(root.join("vendor.min.css")).unwrap(), already_min);
 
-        // Each targeted file on disk is smaller than its original.
         assert!(fs::read(root.join("page.html")).unwrap().len() < html.len());
         assert!(fs::read(root.join("style.css")).unwrap().len() < css.len());
         assert!(fs::read(root.join("sub").join("app.js")).unwrap().len() < js.len());
@@ -347,7 +344,6 @@ mod tests {
         assert_eq!(stats.files_processed, 2);
         assert_eq!(stats.files_shrunk, 1, "only CSS should shrink");
 
-        // Broken JS kept intact.
         assert_eq!(fs::read(root.join("broken.js")).unwrap(), broken_js);
     }
 
@@ -511,8 +507,7 @@ mod tests {
     #[test]
     fn minify_css_returns_none_on_parse_error() {
         let path = PathBuf::from("broken.css");
-        // `@@@` is lexically invalid, and lightningcss reports an unexpected-
-        // end-of-input error rather than recovering.
+        // `@@@` is lexically invalid, and lightningcss fails with an unexpected-end-of-input error.
         assert_eq!(minify_css_bytes(b"@@@", &path), None);
     }
 

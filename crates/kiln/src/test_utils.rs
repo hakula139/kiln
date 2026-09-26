@@ -192,7 +192,6 @@ static TEST_TEMPLATE_DIR: LazyLock<TempDir> = LazyLock::new(|| {
     dir
 });
 
-/// Returns the path to the test template directory.
 pub fn template_dir() -> PathBuf {
     TEST_TEMPLATE_DIR.path().to_owned()
 }
@@ -220,7 +219,6 @@ pub fn test_i18n() -> I18n {
     I18n::load(Path::new("/nonexistent-site"), Some(dir.path()), "en").unwrap()
 }
 
-/// Creates a `Config` with all defaults.
 pub fn test_config() -> Config {
     Config::default()
 }

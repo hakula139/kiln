@@ -114,7 +114,6 @@ mod tests {
 
     #[test]
     fn replace_icons_skips_fenced_code() {
-        // Backtick fences.
         let input = indoc! {"
             ```
             :(fas fa-link):
@@ -123,7 +122,6 @@ mod tests {
         let output = replace_icons(input);
         assert!(output.contains(":(fas fa-link):"), "output:\n{output}");
 
-        // Tilde fences.
         let input = indoc! {"
             ~~~
             :(fas fa-link):

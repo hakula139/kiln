@@ -22,11 +22,10 @@ pub struct I18n {
 
 #[derive(Debug)]
 struct Inner {
-    /// Merged strings for the active language.
     strings: HashMap<String, String>,
     /// Active BCP 47 language tag.
     language: String,
-    /// Warnings we've already emitted, to keep the log from spamming.
+    /// Warnings already emitted, so each one is logged once.
     warned: Mutex<HashSet<WarnKey>>,
 }
 
@@ -123,9 +122,8 @@ impl I18n {
 
     /// Looks up a string by key and interpolates Python-style `{name}` placeholders from `args`.
     ///
-    /// `{{` renders as a literal `{`, `}}` renders as a literal `}`. Missing
-    /// placeholders substitute an empty string and emit a warning. An
-    /// unclosed `{` emits a warning and renders the partial literal as-is.
+    /// `{{` and `}}` render as literal braces. Missing placeholders substitute an empty string and
+    /// emit a warning. An unclosed `{` emits a warning and renders the partial literal as-is.
     #[must_use]
     pub fn t_interp(&self, key: &str, args: &BTreeMap<&str, &str>) -> String {
         let template = self.t(key);
@@ -137,9 +135,8 @@ impl I18n {
         if !warned.insert(warning.clone()) {
             return;
         }
-        // Drop the guard before calling into `tracing`: the subscriber may
-        // run arbitrary code, and holding the lock across it risks a
-        // re-entrant deadlock and needlessly extends the critical section.
+        // Drop the guard before calling into `tracing`, since the subscriber may run arbitrary code
+        // and holding the lock across it risks a re-entrant deadlock.
         drop(warned);
         match warning {
             WarnKey::MissingPlaceholder { key, name } => {
@@ -244,7 +241,6 @@ fn interpolate(
                     out.push('{');
                     continue;
                 }
-                // Collect placeholder name up to the next `}`.
                 let mut name = String::new();
                 let mut closed = false;
                 for (_, c) in chars.by_ref() {
@@ -464,10 +460,8 @@ mod tests {
 
     #[test]
     fn load_theme_en_file_with_different_case_is_still_recognized() {
-        // On a case-sensitive filesystem `En.toml` and `en.toml` are
-        // distinct files, while on case-insensitive filesystems they collide.
-        // In both cases `En.toml` should count as the English fallback
-        // and not trip the "missing en.toml" bail.
+        // `En.toml` and `en.toml` are distinct files on a case-sensitive filesystem and collide on a
+        // case-insensitive one. Either way `En.toml` must count as the English fallback.
         let site = tempfile::tempdir().unwrap();
         let theme = tempfile::tempdir().unwrap();
         write_file(
@@ -477,10 +471,8 @@ mod tests {
             "#},
         );
 
-        // Loading with `language == "en"` tries to open `en.toml`. On a
-        // case-insensitive FS that resolves to `En.toml`. On a
-        // case-sensitive FS neither file is read, but the presence of
-        // `En.toml` must not trigger the "missing en.toml fallback" bail.
+        // On a case-insensitive FS, opening `en.toml` reads `En.toml`. On a case-sensitive FS
+        // neither file is read, so only the fallback presence check sees `En.toml`.
         let result = I18n::load(site.path(), Some(theme.path()), "en");
         assert!(result.is_ok(), "got error: {:?}", result.err());
     }

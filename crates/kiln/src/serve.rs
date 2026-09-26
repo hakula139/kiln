@@ -36,7 +36,6 @@ pub fn localhost_url(port: u16) -> String {
 /// WebSocket endpoint path, prefixed to avoid conflicts with site content.
 const LIVE_RELOAD_PATH: &str = "/__kiln_live_reload";
 
-/// Debounce duration for file watcher events.
 const DEBOUNCE: Duration = Duration::from_millis(100);
 
 /// JavaScript snippet injected before `</body>` in HTML responses.
@@ -246,7 +245,7 @@ fn watch_paths(root: &Path, config: &Config) -> Vec<WatchEntry> {
         }
     }
 
-    // Watch the active theme directory. Restart required if the theme changes in config.toml.
+    // Changing the theme in config.toml requires a restart.
     if let Some(theme_dir) = config.theme_dir(root)
         && theme_dir.is_dir()
     {
@@ -481,7 +480,6 @@ fn inject_script(html: &str) -> String {
     }
 }
 
-/// Waits for Ctrl+C to signal graceful shutdown.
 async fn shutdown_signal() {
     tokio::signal::ctrl_c()
         .await
@@ -575,7 +573,6 @@ mod tests {
     async fn serve_until_no_inject_for_non_html() {
         let root = tempfile::tempdir().unwrap();
         setup_site(root.path());
-        // Add a static file that the build will copy.
         fs::create_dir_all(root.path().join("static")).unwrap();
         fs::write(
             root.path().join("static").join("style.css"),
@@ -681,10 +678,8 @@ mod tests {
         )
         .unwrap();
 
-        // Modify a file in a watched directory.
         fs::write(content.join("test.md"), "hello").unwrap();
 
-        // The watcher should detect the change and fire the callback.
         let result = tokio::time::timeout(Duration::from_secs(5), rx.recv()).await;
         assert!(
             result.is_ok(),
@@ -775,10 +770,8 @@ mod tests {
             reload_tx,
         ));
 
-        // Trigger a rebuild event.
         event_tx.send(()).unwrap();
 
-        // Should receive a reload signal after successful rebuild.
         let result = tokio::time::timeout(Duration::from_secs(5), reload_rx.recv()).await;
         assert!(
             result.is_ok(),
@@ -809,7 +802,6 @@ mod tests {
             reload_tx,
         ));
 
-        // Trigger a rebuild event — rebuild will fail.
         event_tx.send(()).unwrap();
 
         // Allow time for debounce + rebuild attempt.
@@ -837,10 +829,8 @@ mod tests {
             reload_tx,
         ));
 
-        // Drop the sender to signal shutdown.
         drop(event_tx);
 
-        // The loop should exit promptly.
         let result = tokio::time::timeout(Duration::from_secs(2), handle).await;
         assert!(
             result.is_ok(),

@@ -113,7 +113,6 @@ fn count_leading_colons(line: &str) -> Option<usize> {
 fn parse_directive_head(text: &str) -> DirectiveHead {
     let text = text.trim();
 
-    // Split off directive name (if not starting with '{').
     let (name, rest) = if text.starts_with('{') {
         ("", text)
     } else {
@@ -121,7 +120,6 @@ fn parse_directive_head(text: &str) -> DirectiveHead {
         (&text[..pos], text[pos..].trim_start())
     };
 
-    // Parse {#id .class key=value "positional"} if present.
     // Use `rfind` instead of `strip_suffix` so trailing content after the
     // closing brace (e.g. HTML comments like `<!-- cspell:disable-line -->`)
     // does not silently discard all attributes.
@@ -648,7 +646,6 @@ mod tests {
 
     #[test]
     fn parse_directives_directives_inside_code_fences_ignored() {
-        // Backtick fences.
         let input = indoc! {"
             ```
             ::: callout
@@ -658,7 +655,6 @@ mod tests {
         "};
         assert!(parse_directives(input).is_empty());
 
-        // Tilde fences.
         let input = indoc! {"
             ~~~
             ::: callout
@@ -713,7 +709,6 @@ mod tests {
 
     #[test]
     fn parse_directives_over_indented_code_fence_not_recognized() {
-        // Opening fence.
         let input = indoc! {"
                 ```
             ::: callout
@@ -726,7 +721,6 @@ mod tests {
             "over-indented opening fence should not suppress directives"
         );
 
-        // Closing fence.
         let input = indoc! {"
             ```
             ::: callout

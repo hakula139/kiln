@@ -57,7 +57,6 @@ impl TemplateEngine {
             );
         }
 
-        // Site dir is optional and silently ignored if missing.
         let site_dir = site_dir.filter(|d| d.is_dir());
 
         ensure!(
@@ -286,7 +285,6 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let theme_dir = dir.path().join("theme");
         test_fs::create_dir(&theme_dir).unwrap();
-        // A missing site_dir should not error.
         let result = TemplateEngine::new(
             Some(Path::new("/nonexistent")),
             Some(&theme_dir),
@@ -1044,7 +1042,6 @@ mod tests {
         )
         .unwrap();
 
-        // Create a CSV file in a fake source dir.
         let source = tempfile::tempdir().unwrap();
         test_fs::write(source.path().join("scores.csv"), "A,B\n1,2").unwrap();
 
@@ -1667,8 +1664,6 @@ mod tests {
 
     #[test]
     fn render_post_renders_t_through_real_template() {
-        // End-to-end: `t()` resolves strings through a real post template
-        // wired up against a site-level i18n file.
         let dir = tempfile::tempdir().unwrap();
         test_fs::create_dir_all(dir.path().join("i18n")).unwrap();
         test_fs::write(

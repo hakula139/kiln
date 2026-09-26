@@ -54,7 +54,6 @@ pub fn render_page(
         &assets,
     )?;
 
-    // Pre-process: extract image attrs, optionally replace shortcodes.
     let mut preprocessed = processed;
     if options.emojis {
         preprocessed = replace_emojis(&preprocessed);
@@ -107,7 +106,6 @@ fn render_directives(
     let top_level = top_level_blocks(&all_blocks);
     let mut result = content.to_owned();
 
-    // Replace right-to-left so earlier ranges remain valid.
     for block in top_level.into_iter().rev() {
         let inner = render_directives(
             &block.body,

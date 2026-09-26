@@ -251,7 +251,6 @@ pub(crate) fn build_listing_buckets(
     buckets
 }
 
-/// Builds a `ListedPage` from a content page.
 fn build_listed_page(
     page: &Page,
     content_dir: &Path,
@@ -337,7 +336,6 @@ pub(crate) fn group_by_year(pages: Vec<ListedPage>) -> Vec<PageGroup> {
     groups
 }
 
-/// Collects the template-facing page summaries from listed pages.
 #[must_use]
 pub(crate) fn collect_page_summaries<I>(listed_pages: I) -> Vec<PageSummary>
 where
@@ -351,7 +349,6 @@ where
 
 // ── Page metadata helpers ──
 
-/// Builds a `LinkedTerm` for the page's section, if any.
 #[must_use]
 pub(crate) fn page_section(
     page: &Page,

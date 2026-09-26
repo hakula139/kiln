@@ -32,7 +32,6 @@ pub struct Page {
     pub assets: Vec<PathBuf>,
 }
 
-/// Summary separator used in markdown content.
 const SUMMARY_SEPARATOR: &str = "<!--more-->";
 
 impl Page {
@@ -48,7 +47,6 @@ impl Page {
         let mut page = Self::from_content(&content, path)
             .with_context(|| format!("failed to parse {}", path.display()))?;
 
-        // Discover co-located assets for page bundles.
         if is_page_bundle(path)
             && let Some(dir) = path.parent()
         {
@@ -70,7 +68,6 @@ impl Page {
         let (frontmatter, body) = frontmatter::parse(content)
             .with_context(|| format!("invalid frontmatter in {}", path.display()))?;
 
-        // Explicit frontmatter slug takes priority over the filename-derived slug.
         let slug = frontmatter
             .slug
             .clone()
@@ -116,8 +113,6 @@ impl Page {
                 )
             })?;
 
-        // Page bundles (index.md) keep their directory structure.
-        // Standalone files get pretty URLs: slug.md → slug/index.html.
         let stem = relative.file_stem().and_then(|s| s.to_str()).unwrap_or("");
         if stem == "index" {
             Ok(relative.with_extension("html"))
@@ -242,7 +237,6 @@ fn strip_markdown(full_text: &str, summary_end: usize) -> String {
         }
     }
 
-    // Collapse whitespace runs within each line and trim.
     plain
         .lines()
         .map(|line| line.split_whitespace().join(" "))
