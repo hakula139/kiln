@@ -101,7 +101,7 @@ nix profile install github:hakula139/kiln  # install to user profile
 
 The flake offers the `hakula` Cachix cache for prebuilt kiln packages. Nix prompts for trust interactively. For noninteractive use, pass `--accept-flake-config` after verifying the cache key, or configure the cache in Nix. Projects that import kiln as an input need to configure the cache in their own top-level flake or Nix installation.
 
-Or as a flake input from another project (e.g., a site repo):
+To use kiln in another flake, add this input:
 
 ```nix
 inputs.kiln.url = "github:hakula139/kiln";
