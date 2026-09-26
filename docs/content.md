@@ -102,7 +102,7 @@ This resolves to `/posts/note/my-post/cover.webp` in templates and listing pages
 
 ### Per-Page CSS
 
-A page bundle may include a `style.css` file at any depth. kiln auto-detects it and injects a `<link>` tag in the page's `<head>`, after the main stylesheet.
+A page bundle may include a `style.css` file at any depth. kiln auto-detects it and exposes its URL to templates as [`page_css`](themes.md#post-templates-posthtml), which themes such as IgnIt link from the page's `<head>` after the main stylesheet.
 
 ```text
 content/posts/avg/impressions/
