@@ -283,34 +283,36 @@ mod tests {
 
     #[test]
     fn resolve_lqip_preserves_aspect_ratio_and_averages_pixels() {
-        let dir = tempdir().unwrap();
-        let path = dir.path().join("checker.png");
-        let img = image::RgbaImage::from_fn(64, 32, |x, _| {
-            let value = if x % 2 == 0 { 0 } else { 255 };
-            image::Rgba([value, value, value, 255])
-        });
-        img.save_with_format(&path, image::ImageFormat::Png)
-            .unwrap();
+        for (width, height, expected) in [(64, 32, (16, 8)), (32, 64, (8, 16))] {
+            let dir = tempdir().unwrap();
+            let path = dir.path().join("checker.png");
+            let img = image::RgbaImage::from_fn(width, height, |x, _| {
+                let value = if x % 2 == 0 { 0 } else { 255 };
+                image::Rgba([value, value, value, 255])
+            });
+            img.save_with_format(&path, image::ImageFormat::Png)
+                .unwrap();
 
-        let resolver = ImageResolver::new(dir.path(), ImageConfig::default());
-        let meta = resolver.resolve("/checker.png", None).unwrap();
-        let encoded = meta
-            .lqip_uri
-            .as_deref()
-            .unwrap()
-            .strip_prefix("data:image/webp;base64,")
-            .unwrap();
-        let bytes = BASE64_STANDARD.decode(encoded).unwrap();
-        let placeholder = image::load_from_memory_with_format(&bytes, image::ImageFormat::WebP)
-            .unwrap()
-            .to_rgb8();
+            let resolver = ImageResolver::new(dir.path(), ImageConfig::default());
+            let meta = resolver.resolve("/checker.png", None).unwrap();
+            let encoded = meta
+                .lqip_uri
+                .as_deref()
+                .unwrap()
+                .strip_prefix("data:image/webp;base64,")
+                .unwrap();
+            let bytes = BASE64_STANDARD.decode(encoded).unwrap();
+            let placeholder = image::load_from_memory_with_format(&bytes, image::ImageFormat::WebP)
+                .unwrap()
+                .to_rgb8();
 
-        assert_eq!(placeholder.dimensions(), (16, 8));
-        let value = placeholder.get_pixel(8, 4)[0];
-        assert!(
-            (96..=160).contains(&value),
-            "expected an averaged pixel, got {value}"
-        );
+            assert_eq!(placeholder.dimensions(), expected);
+            let value = placeholder.get_pixel(expected.0 / 2, expected.1 / 2)[0];
+            assert!(
+                (96..=160).contains(&value),
+                "expected an averaged pixel, got {value}"
+            );
+        }
     }
 
     #[test]
