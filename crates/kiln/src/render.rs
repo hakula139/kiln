@@ -1,6 +1,7 @@
 pub mod assets;
 pub(crate) mod code_block;
 pub mod emoji;
+pub(crate) mod footnote;
 pub mod highlight;
 pub mod icon;
 pub mod image;
@@ -8,12 +9,18 @@ pub mod image_attrs;
 pub mod lqip;
 pub mod markdown;
 pub mod mermaid;
+mod page_ids;
 pub mod pipeline;
 mod table;
 pub mod toc;
 
+use std::ops::Range;
+
 use anyhow::{Context, Result};
+use pulldown_cmark::Event;
 use serde::Deserialize;
+
+type Spanned = (Event<'static>, Range<usize>);
 
 /// Feature flags and settings for the render pipeline.
 #[derive(Debug, Clone, Default, Deserialize)]

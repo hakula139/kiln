@@ -49,6 +49,7 @@ oxc_span = "0.151"
 pulldown-cmark = "0.13"
 regex = "1"
 reqwest = { version = "0.13", default-features = false }
+scraper = { version = "0.27", default-features = false }
 semver = "1"
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
@@ -78,6 +79,7 @@ tracing-subscriber = { version = "0.3", default-features = false, features = [
   "ansi",
 ] }
 two-face = "0.5"
+unicase = "2"
 unicode-width = "0.2"
 walkdir = "2"
 webp = "0.3"

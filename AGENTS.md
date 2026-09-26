@@ -76,6 +76,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 │   ├── assets.rs       # PageAssets registry: scripts + auto-detected Feature flags (Math, Mermaid)
 │   ├── code_block.rs   # Fence info-string parsing → CodeBlockSpec (lang, title, highlights, collapse / expand)
 │   ├── emoji.rs        # GitHub-style :shortcode: → Unicode emoji replacement
+│   ├── footnote.rs     # Footnote relocation into an end-of-document list with per-reference backlinks
 │   ├── highlight.rs    # syntect + two-face CSS-class highlighting with line numbers, header (lang or title)
 │   ├── icon.rs         # :(class): → <i> FontAwesome icon shortcode replacement
 │   ├── image.rs        # Block (<figure>) and inline (<img>) image rendering, lazy loading, <span class="lqip"> wrapper emission
@@ -83,6 +84,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 │   ├── lqip.rs         # ImageResolver: on-disk dimension reads + base64 WebP placeholder encoding (consumed via the .lqip wrapper)
 │   ├── markdown.rs     # pulldown-cmark, GFM, CJK heading IDs, KaTeX, block / inline images
 │   ├── mermaid.rs      # `<pre class="mermaid">` emit for `` ```mermaid `` fences (with data-source mirror)
+│   ├── page_ids.rs     # Shared page-wide ID allocation for headings and footnotes
 │   ├── pipeline.rs     # Full pipeline: directives → pre-processors → markdown → ToC
 │   ├── table.rs        # `nowrap` class on cells of short table columns
 │   └── toc.rs          # TocEntry struct, nested <nav> table of contents generation

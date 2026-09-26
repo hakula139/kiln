@@ -12,6 +12,7 @@ dtolnay
 ellipsed
 envrc
 feff
+fnref
 hakula
 idat
 ihdr
@@ -57,6 +58,8 @@ slugified
 slugify
 statix
 stdenv
+strasse
+straße
 strftime
 substituters
 swatinem
