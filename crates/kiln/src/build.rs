@@ -732,7 +732,7 @@ mod tests {
         let html = fs::read_to_string(output_dir.join("index.html")).unwrap();
         for name in ["style.css", "app.js"] {
             let bytes = fs::read(output_dir.join(name)).unwrap();
-            let digest = format!("{:x}", Sha256::digest(&bytes));
+            let digest = hex::encode(Sha256::digest(&bytes));
             let (stem, extension) = name.split_once('.').unwrap();
             let fingerprinted = format!("{stem}.{}.{extension}", &digest[..12]);
 

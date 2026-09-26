@@ -211,13 +211,14 @@ fn minify_js_bytes(input: &[u8], path: &Path) -> Option<Vec<u8>> {
     let source_type = SourceType::from_path(path).unwrap_or_else(|_| SourceType::mjs());
     let allocator = Allocator::default();
     let parsed = Parser::new(&allocator, source, source_type).parse();
-    if let Some(first) = parsed.errors.first() {
+    if let Some(first) = parsed.diagnostics.first() {
         tracing::warn!("skipping {} (JS parse failed): {first}", path.display());
         return None;
     }
     let mut program = parsed.program;
     let options = MinifierOptions {
         mangle: None,
+        mangle_properties: None,
         compress: Some(CompressOptions::smallest()),
     };
     let min_ret = Minifier::new(options).minify(&allocator, &mut program);
