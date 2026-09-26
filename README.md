@@ -99,6 +99,8 @@ nix run github:hakula139/kiln -- build     # one-shot
 nix profile install github:hakula139/kiln  # install to user profile
 ```
 
+The flake offers the `hakula` Cachix cache for prebuilt kiln packages. Nix asks you to trust its public key before using the cache. Projects that import kiln as an input need to configure the cache in their own top-level flake or Nix installation.
+
 Or as a flake input from another project (e.g., a site repo):
 
 ```nix
