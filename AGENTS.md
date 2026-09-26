@@ -84,7 +84,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 │   ├── markdown.rs     # pulldown-cmark, GFM, CJK heading IDs, KaTeX, block / inline images
 │   ├── mermaid.rs      # `<pre class="mermaid">` emit for `` ```mermaid `` fences (with data-source mirror)
 │   ├── pipeline.rs     # Full pipeline: directives → pre-processors → markdown → ToC
-│   ├── table.rs        # TableNowrap: per-column display width → `nowrap` class on short-column cells
+│   ├── table.rs        # `nowrap` class on cells of short table columns
 │   └── toc.rs          # TocEntry struct, nested <nav> table of contents generation
 ├── search.rs           # Pagefind search indexing (external binary invocation)
 ├── section.rs          # Section struct, collect_sections() from page kinds, _index.md title loading
