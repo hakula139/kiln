@@ -13,6 +13,11 @@
 {
   description = "kiln — custom static site generator (dev environment)";
 
+  nixConfig = {
+    extra-substituters = [ "https://hakula.cachix.org" ];
+    extra-trusted-public-keys = [ "hakula.cachix.org-1:7zwB3fhMfReHdOjh6DmnaLXgqbPDBcojvN9F+osZw0k=" ];
+  };
+
   # ----------------------------------------------------------------------------
   # Inputs
   # ----------------------------------------------------------------------------
