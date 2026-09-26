@@ -4,8 +4,8 @@ use std::sync::{Arc, Mutex};
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
-use image::ImageReader;
 use image::imageops::FilterType;
+use image::{DynamicImage, ImageReader};
 use serde::{Deserialize, Serialize};
 
 /// Image-pipeline configuration loaded from the `[image]` section of `config.toml`.
@@ -135,10 +135,26 @@ impl ImageResolver {
 fn encode_lqip(path: &Path, size: u32, quality: u8) -> Option<String> {
     let img = ImageReader::open(path).ok()?.decode().ok()?;
 
-    // `Triangle` is the cheapest filter that doesn't alias at this size;
-    // `Lanczos3` over-sharpens the blur we want.
-    let resized = img.resize(size, size, FilterType::Triangle);
-    let rgba = resized.to_rgba8();
+    // `thumbnail` sums 8-bit pixels in u32, so large sampling blocks can overflow.
+    let (long, short) = if img.width() >= img.height() {
+        (img.width(), img.height())
+    } else {
+        (img.height(), img.width())
+    };
+    let max_samples = (u64::from(long.div_ceil(size.max(1))) + 1).saturating_mul(u64::from(short));
+    let resized = if matches!(
+        &img,
+        DynamicImage::ImageLuma8(_)
+            | DynamicImage::ImageLumaA8(_)
+            | DynamicImage::ImageRgb8(_)
+            | DynamicImage::ImageRgba8(_)
+    ) && max_samples <= u64::from(u32::MAX / (u32::from(u8::MAX) + 1))
+    {
+        img.thumbnail(size, size)
+    } else {
+        img.resize(size, size, FilterType::Triangle)
+    };
+    let rgba = resized.into_rgba8();
 
     let webp_bytes = webp::Encoder::from_rgba(rgba.as_raw(), rgba.width(), rgba.height())
         .encode(f32::from(quality))
@@ -263,6 +279,75 @@ mod tests {
             uri.len() > "data:image/webp;base64,".len(),
             "expected non-empty payload, got: {uri}"
         );
+    }
+
+    #[test]
+    fn resolve_lqip_preserves_aspect_ratio_and_averages_pixels() {
+        for (width, height, expected) in [(64, 32, (16, 8)), (32, 64, (8, 16))] {
+            let dir = tempdir().unwrap();
+            let path = dir.path().join("checker.png");
+            let img = image::RgbaImage::from_fn(width, height, |x, _| {
+                let value = if x % 2 == 0 { 0 } else { 255 };
+                image::Rgba([value, value, value, 255])
+            });
+            img.save_with_format(&path, image::ImageFormat::Png)
+                .unwrap();
+
+            let resolver = ImageResolver::new(dir.path(), ImageConfig::default());
+            let meta = resolver.resolve("/checker.png", None).unwrap();
+            let encoded = meta
+                .lqip_uri
+                .as_deref()
+                .unwrap()
+                .strip_prefix("data:image/webp;base64,")
+                .unwrap();
+            let bytes = BASE64_STANDARD.decode(encoded).unwrap();
+            let placeholder = image::load_from_memory_with_format(&bytes, image::ImageFormat::WebP)
+                .unwrap()
+                .to_rgb8();
+
+            assert_eq!(placeholder.dimensions(), expected);
+            let value = placeholder.get_pixel(expected.0 / 2, expected.1 / 2)[0];
+            assert!(
+                (96..=160).contains(&value),
+                "expected an averaged pixel, got {value}"
+            );
+        }
+    }
+
+    #[test]
+    fn resolve_lqip_preserves_large_16_bit_values() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("bright.png");
+        let img = image::ImageBuffer::<image::Luma<u16>, Vec<u16>>::from_pixel(
+            257,
+            257,
+            image::Luma([u16::MAX]),
+        );
+        img.save_with_format(&path, image::ImageFormat::Png)
+            .unwrap();
+
+        let resolver = ImageResolver::new(
+            dir.path(),
+            ImageConfig {
+                lqip_size: 1,
+                ..ImageConfig::default()
+            },
+        );
+        let meta = resolver.resolve("/bright.png", None).unwrap();
+        let encoded = meta
+            .lqip_uri
+            .as_deref()
+            .unwrap()
+            .strip_prefix("data:image/webp;base64,")
+            .unwrap();
+        let bytes = BASE64_STANDARD.decode(encoded).unwrap();
+        let placeholder = image::load_from_memory_with_format(&bytes, image::ImageFormat::WebP)
+            .unwrap()
+            .to_rgb8();
+
+        assert_eq!(placeholder.dimensions(), (1, 1));
+        assert!(placeholder.get_pixel(0, 0)[0] > 240);
     }
 
     #[test]

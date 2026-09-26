@@ -29,6 +29,7 @@ libdav
 libiconv
 libwebp
 lqip
+luma
 msvc
 msys
 nasm
