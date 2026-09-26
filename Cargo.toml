@@ -78,6 +78,7 @@ tracing-subscriber = { version = "0.3", default-features = false, features = [
   "ansi",
 ] }
 two-face = "0.5"
+unicode-width = "0.2"
 walkdir = "2"
 webp = "0.3"
 

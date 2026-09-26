@@ -11,6 +11,7 @@ use super::image::{render_block_image, render_inline_image};
 use super::image_attrs::ImageAttrs;
 use super::lqip::ImageResolver;
 use super::mermaid::render_mermaid;
+use super::table::TableNowrap;
 use super::toc::TocEntry;
 use crate::html::escape;
 use crate::text::slugify;
@@ -24,6 +25,14 @@ pub struct MarkdownOutput {
     pub headings: Vec<TocEntry>,
 }
 
+/// Site-level settings applied while rendering markdown.
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct MarkdownSettings {
+    pub code_max_lines: Option<usize>,
+    /// In terminal columns.
+    pub table_nowrap_width: Option<usize>,
+}
+
 /// Renders markdown content to HTML with GFM extensions, math support, syntax highlighting,
 /// and image enhancement. Auto-detected features (math, mermaid) are inserted into `features`.
 #[must_use]
@@ -33,7 +42,7 @@ pub(crate) fn render_markdown(
     image_attrs: &HashMap<usize, ImageAttrs>,
     image_resolver: &ImageResolver,
     base_dir: Option<&Path>,
-    code_max_lines: Option<usize>,
+    settings: MarkdownSettings,
     features: &mut BTreeSet<Feature>,
 ) -> MarkdownOutput {
     let options = markdown_options();
@@ -52,6 +61,7 @@ pub(crate) fn render_markdown(
     let mut is_mermaid_block = false;
     let mut para_buf: Vec<(Event<'_>, std::ops::Range<usize>)> = Vec::new();
     let mut in_para = false;
+    let mut table_nowrap = settings.table_nowrap_width.map(TableNowrap::new);
 
     for (event, range) in parser {
         match event {
@@ -71,9 +81,9 @@ pub(crate) fn render_markdown(
             Event::Start(Tag::CodeBlock(kind)) => {
                 in_code_block = true;
                 code_spec = match kind {
-                    CodeBlockKind::Fenced(lang) => parse_fence_info(&lang, code_max_lines),
+                    CodeBlockKind::Fenced(lang) => parse_fence_info(&lang, settings.code_max_lines),
                     CodeBlockKind::Indented => CodeBlockSpec {
-                        max_lines: code_max_lines,
+                        max_lines: settings.code_max_lines,
                         ..CodeBlockSpec::default()
                     },
                 };
@@ -130,8 +140,11 @@ pub(crate) fn render_markdown(
                 para_buf.push((event, range));
             }
 
-            // ── Everything else (math, etc.) ──
+            // ── Everything else (tables, math, etc.) ──
             other => {
+                if let Some(nowrap) = &mut table_nowrap {
+                    nowrap.observe(&other, &mut output_events);
+                }
                 output_events.push(transform_math(other, features));
             }
         }
@@ -389,7 +402,7 @@ mod tests {
             &HashMap::new(),
             &EMPTY_RESOLVER,
             None,
-            None,
+            MarkdownSettings::default(),
             &mut features,
         )
     }
@@ -407,7 +420,7 @@ mod tests {
             &attrs,
             resolver,
             Some(base_dir),
-            None,
+            MarkdownSettings::default(),
             &mut features,
         )
     }

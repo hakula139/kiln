@@ -1602,6 +1602,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "two-face",
+ "unicode-width",
  "walkdir",
  "webp",
 ]

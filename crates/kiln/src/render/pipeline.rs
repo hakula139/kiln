@@ -10,7 +10,7 @@ use super::emoji::replace_emojis;
 use super::icon::replace_icons;
 use super::image_attrs::extract_image_attrs;
 use super::lqip::ImageResolver;
-use super::markdown::{MarkdownOutput, render_markdown};
+use super::markdown::{MarkdownOutput, MarkdownSettings, render_markdown};
 use super::toc::render_toc_html;
 use crate::config::Config;
 use crate::directive::callout::render_callout;
@@ -134,7 +134,10 @@ impl PageRenderer<'_> {
             &image_attrs,
             self.image_resolver,
             self.source_dir,
-            code_max_lines,
+            MarkdownSettings {
+                code_max_lines,
+                table_nowrap_width: self.options.table_nowrap_width,
+            },
             &mut self.assets.lock().features,
         )
     }
@@ -341,6 +344,46 @@ mod tests {
         assert!(
             page.content_html.contains("<code>:smile:</code>"),
             "inline code should keep the shortcode, html:\n{}",
+            page.content_html
+        );
+    }
+
+    #[test]
+    fn render_page_table_nowrap_reaches_directive_bodies() {
+        let options = RenderOptions {
+            table_nowrap_width: Some(8),
+            ..RenderOptions::default()
+        };
+        let input = indoc! {"
+            | Top |
+            | --- |
+            | a |
+
+            ::: {.compact-table}
+            | Nested |
+            | ------ |
+            | b |
+            :::
+        "};
+        let page = render_page(
+            input,
+            &SYNTAX_SET,
+            &test_engine(),
+            &test_config(),
+            &options,
+            None,
+            &EMPTY_RESOLVER,
+        )
+        .unwrap();
+        assert!(
+            page.content_html.contains(r#"<th class="nowrap">Top</th>"#),
+            "top-level table should get nowrap cells, html:\n{}",
+            page.content_html
+        );
+        assert!(
+            page.content_html
+                .contains(r#"<th class="nowrap">Nested</th>"#),
+            "directive-body table should get nowrap cells, html:\n{}",
             page.content_html
         );
     }
