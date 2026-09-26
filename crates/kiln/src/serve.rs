@@ -356,8 +356,8 @@ fn build_router(output_dir: &Path, reload_tx: broadcast::Sender<()>) -> Router {
 
 /// WebSocket upgrade handler for live reload.
 ///
-/// Forwards rebuild notifications from the broadcast channel as `"reload"` text messages. The
-/// connection lives outside Chrome's HTTP/1.1 pool, so it never competes with page / asset requests.
+/// Forwards rebuild notifications from the broadcast channel as `"reload"` text messages. Its
+/// connection sits outside Chrome's HTTP/1.1 pool and never competes with page / asset requests.
 async fn ws_handler(
     ws: WebSocketUpgrade,
     State(tx): State<broadcast::Sender<()>>,

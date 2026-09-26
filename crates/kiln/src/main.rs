@@ -80,9 +80,8 @@ fn main() -> Result<()> {
             base_url,
         } => {
             let root = root.canonicalize()?;
-            // An empty `KILN_BASE_URL` env var (e.g., from a workflow input
-            // left unset) should fall through to config.toml, not blank out
-            // every URL.
+            // An empty `KILN_BASE_URL` env var (e.g., from a workflow input left unset) should fall
+            // through to config.toml, not blank out every URL.
             let base_url = base_url.filter(|s| !s.is_empty());
             kiln::build(
                 &root,

@@ -265,9 +265,8 @@ pub(crate) fn split_delimited_frontmatter<'a>(
 
 /// Finds the byte offset of the closing delimiter within the frontmatter region.
 ///
-/// This is a text-level search, so it cannot distinguish a real closing delimiter from one on its
-/// own line inside a multi-line string literal. Hugo and other delimiter-based parsers share this
-/// limitation.
+/// This text-level search cannot tell a real closing delimiter from one on its own line inside a
+/// multi-line string literal. Hugo and other delimiter-based parsers share this limitation.
 fn find_closing_delimiter(s: &str, delimiter: &str, newline_delimiter: &str) -> Option<usize> {
     // Check the very start (empty frontmatter).
     if let Some(after) = s.strip_prefix(delimiter)

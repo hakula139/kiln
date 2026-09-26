@@ -120,9 +120,8 @@ fn parse_directive_head(text: &str) -> DirectiveHead {
         (&text[..pos], text[pos..].trim_start())
     };
 
-    // Use `rfind` instead of `strip_suffix` so trailing content after the
-    // closing brace (e.g. HTML comments like `<!-- cspell:disable-line -->`)
-    // does not silently discard all attributes.
+    // Use `rfind` instead of `strip_suffix` so trailing content after the closing brace (e.g. HTML
+    // comments like `<!-- cspell:disable-line -->`) does not silently discard all attributes.
     if rest.starts_with('{')
         && let Some(close) = rest.rfind('}')
     {

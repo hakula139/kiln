@@ -179,8 +179,8 @@ pub(crate) struct ListingBucket {
 }
 
 impl ListingBucket {
-    /// URL path with leading slash, no trailing slash (e.g., `/posts`, `/posts/note`, `/tags/rust`).
-    /// Sections live under `/posts/` to match the existing site URL contract.
+    /// URL path with a leading slash and no trailing slash (e.g., `/posts`, `/posts/note`,
+    /// `/tags/rust`). Sections live under `/posts/` to match the existing site URL contract.
     #[must_use]
     pub(crate) fn base_path(&self) -> String {
         match self.kind {

@@ -199,8 +199,7 @@ fn derive_slug(path: &Path) -> Option<String> {
 
 /// Extracts summary text before `<!--more-->`, stripped to plain text.
 ///
-/// Parses the full body so reference link definitions after the separator are available for
-/// resolution.
+/// Parses the full body so reference link definitions after the separator still resolve.
 fn extract_summary(body: &str) -> Option<String> {
     let separator_offset = body.find(SUMMARY_SEPARATOR)?;
     let raw = body[..separator_offset].trim();

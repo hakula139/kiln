@@ -9,8 +9,7 @@ use walkdir::WalkDir;
 
 /// Converts a Hugo site root to kiln format.
 ///
-/// Converts `source/content` into `dest/content`. If `source/static` exists, copies it to
-/// `dest/static`.
+/// Converts `source/content` into `dest/content` and copies any `source/static` to `dest/static`.
 ///
 /// Hugo category index files (`categories/<slug>/_index.md`) are converted to kiln section indexes
 /// at `posts/<slug>/_index.md`. Tag index files (`tags/<slug>/_index.md`) are converted in place.
@@ -21,8 +20,7 @@ use walkdir::WalkDir;
 ///
 /// # Errors
 ///
-/// Returns an error if `source/content` is missing or any file cannot be read, converted, or
-/// written.
+/// Returns an error if `source/content` is missing or any file fails to read, convert, or write.
 pub fn convert(source: &Path, dest: &Path) -> Result<()> {
     let content_source = source.join("content");
     let content_dest = dest.join("content");

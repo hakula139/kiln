@@ -40,8 +40,7 @@ enum WarnKey {
 }
 
 impl I18n {
-    /// Loads and merges i18n tables from `<theme>/i18n/{en,<language>}.toml` and
-    /// `<site_root>/i18n/<language>.toml`.
+    /// Loads and merges `<theme>/i18n/{en,<language>}.toml` and `<site_root>/i18n/<language>.toml`.
     ///
     /// Precedence: site override → theme active-language → theme English. If the theme has no
     /// `i18n/` directory, site-only i18n is allowed.
@@ -222,9 +221,8 @@ enum InterpolateWarning<'a> {
 
 /// Interpolates `{name}` placeholders from `args` into `template`.
 ///
-/// `{{` / `}}` escape to literal braces. Missing placeholders substitute
-/// empty string and report via `warn`. Unclosed `{` reports via `warn` and
-/// renders the remaining text as-is.
+/// `{{` / `}}` escape to literal braces. Missing placeholders substitute empty string and report
+/// via `warn`. Unclosed `{` reports via `warn` and renders the remaining text as-is.
 fn interpolate(
     template: &str,
     args: &BTreeMap<&str, &str>,
@@ -263,9 +261,8 @@ fn interpolate(
                 }
             }
             '}' => {
-                // `}}` is the escape for a literal `}`, and a stray `}`
-                // renders literally too. Either way we emit one `}`,
-                // consuming the second brace only when present.
+                // `}}` is the escape for a literal `}`, and a stray `}` renders literally too.
+                // Either way we emit one `}`, consuming the second brace only when present.
                 if let Some(&(_, '}')) = chars.peek() {
                     chars.next();
                 }
@@ -295,9 +292,8 @@ mod tests {
 
     #[test]
     fn load_language_en_loads_en_toml_as_sole_source() {
-        // When `language == "en"`, the resolver deliberately skips the
-        // second `{language}.toml` open attempt (that file would be
-        // identical to the `en.toml` already merged).
+        // When `language == "en"`, the resolver deliberately skips the second `{language}.toml`
+        // open attempt (that file would be identical to the `en.toml` already merged).
         let site = tempfile::tempdir().unwrap();
         let theme = tempfile::tempdir().unwrap();
         write_file(
@@ -460,8 +456,8 @@ mod tests {
 
     #[test]
     fn load_theme_en_file_with_different_case_is_still_recognized() {
-        // `En.toml` and `en.toml` are distinct files on a case-sensitive filesystem and collide on a
-        // case-insensitive one. Either way `En.toml` must count as the English fallback.
+        // `En.toml` and `en.toml` are distinct files on a case-sensitive filesystem and collide on
+        // a case-insensitive one. Either way `En.toml` must count as the English fallback.
         let site = tempfile::tempdir().unwrap();
         let theme = tempfile::tempdir().unwrap();
         write_file(

@@ -203,8 +203,7 @@ impl Config {
     ///
     /// # Errors
     ///
-    /// Returns an error if `timezone` is set but is not a valid IANA time zone name recognized by
-    /// `jiff`.
+    /// Returns an error if `timezone` is set but is not an IANA time zone name `jiff` recognizes.
     pub fn time_zone(&self) -> Result<Option<TimeZone>> {
         self.timezone
             .as_deref()

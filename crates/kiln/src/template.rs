@@ -41,8 +41,7 @@ impl TemplateEngine {
     ///
     /// # Errors
     ///
-    /// Errors if neither template directory is provided, or if `theme_dir` is set but does not
-    /// exist.
+    /// Errors if neither template directory is provided, or if `theme_dir` is set but missing.
     pub fn new_with_assets(
         site_dir: Option<&Path>,
         theme_dir: Option<&Path>,

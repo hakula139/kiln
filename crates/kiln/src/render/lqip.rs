@@ -402,6 +402,7 @@ mod tests {
         let meta = r.resolve("partial.png", Some(&bundle)).unwrap();
         assert_eq!(meta.width, 4);
         assert_eq!(meta.height, 2);
+        // `image` crate refuses the file because IDAT is missing.
         assert!(meta.lqip_uri.is_none());
     }
 
