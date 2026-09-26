@@ -17,7 +17,7 @@ use crate::html::{escape, writeln_indented};
 /// - `title`: when `None`, the kind's display name is used.
 /// - `open`: maps to the HTML `open` attribute on `<details>`.
 /// - `id` / `classes`: optional Pandoc attributes rendered on the outer element.
-/// - `body_html` must be pre-rendered — the caller handles markdown recursion.
+/// - `body_html` must be pre-rendered, since the caller handles markdown recursion.
 #[must_use]
 pub fn render_callout(
     kind: CalloutKind,

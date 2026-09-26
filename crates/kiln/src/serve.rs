@@ -33,7 +33,7 @@ pub fn localhost_url(port: u16) -> String {
     format!("http://localhost:{port}")
 }
 
-/// WebSocket endpoint path — prefixed to avoid conflicts with site content.
+/// WebSocket endpoint path, prefixed to avoid conflicts with site content.
 const LIVE_RELOAD_PATH: &str = "/__kiln_live_reload";
 
 /// Debounce duration for file watcher events.
@@ -128,13 +128,13 @@ async fn serve_until(
     .context("initial build failed")?;
 
     let config = Config::load(root).context("failed to load config")?;
-    // output_dir is captured once; if config.toml changes it, the server must be restarted.
+    // output_dir is captured once. If config.toml changes it, the server must be restarted.
     let output_dir = root.join(&config.output_dir);
 
     let (reload_tx, _) = broadcast::channel::<()>(16);
 
     let (watch_tx, watch_rx) = mpsc::unbounded_channel();
-    // Watcher must stay alive for the duration of the server; dropping it stops watching.
+    // Watcher must stay alive for the duration of the server, since dropping it stops watching.
     let _watcher: notify::RecommendedWatcher =
         setup_watcher(root, &config, watch_tx, notify::Config::default())?;
 
@@ -1125,7 +1125,7 @@ mod tests {
         let url = format!("ws://{addr}{LIVE_RELOAD_PATH}");
         let (mut ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
 
-        // `ws_relay` subscribes after the upgrade completes; a signal published before
+        // `ws_relay` subscribes after the upgrade completes, so a signal published before
         // that lands nowhere.
         for _ in 0..100 {
             if reload_tx.receiver_count() > 0 {

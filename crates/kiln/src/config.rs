@@ -43,7 +43,7 @@ pub struct Config {
     pub search: Search,
 
     /// Named menu groups (e.g., `[[menu.main]]`, `[[menu.social]]`). Themes choose which groups
-    /// to render and where; kiln has no opinion about group names.
+    /// to render and where. kiln has no opinion about group names.
     #[serde(default)]
     pub menu: BTreeMap<String, Vec<MenuItem>>,
 
@@ -254,7 +254,7 @@ fn merge_params(site: &mut toml::Table, theme_defaults: &toml::Table) -> Result<
                 (toml::Value::Table(st), toml::Value::Table(tt)) => {
                     merge_params(st, tt)?;
                 }
-                // Type mismatch — reject.
+                // Type mismatch: reject.
                 (s, t) if s.type_str() != t.type_str() => {
                     bail!(
                         "param `{key}` has type `{}` in site config but `{}` in theme",
@@ -262,7 +262,7 @@ fn merge_params(site: &mut toml::Table, theme_defaults: &toml::Table) -> Result<
                         t.type_str(),
                     );
                 }
-                // Same scalar type — site wins silently.
+                // Same scalar type: site wins silently.
                 _ => {}
             }
         } else {

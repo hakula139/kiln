@@ -27,7 +27,7 @@ impl PageAssets {
     /// Registers a script for the current page.
     ///
     /// Re-registering the exact same [`ScriptTag`] (same `url`, `load`, and `module`) is a no-op.
-    /// Linear search is fine here — a page registers at most a handful of scripts.
+    /// Linear search is fine here because a page registers at most a handful of scripts.
     ///
     /// # Errors
     ///
@@ -63,7 +63,7 @@ impl PageAssets {
 /// Mutable handle to a [`PageAssets`] that templates can update via `register_script(...)`. Cheap
 /// to clone (internally `Arc<Mutex<_>>`).
 ///
-/// The mutex satisfies `MiniJinja`'s `Object: Send + Sync` requirement; the build pipeline is
+/// The mutex satisfies `MiniJinja`'s `Object: Send + Sync` requirement. The build pipeline is
 /// single-threaded so it never contends.
 #[derive(Debug, Default, Clone)]
 pub struct AssetsHandle {
@@ -93,7 +93,7 @@ impl Object for AssetsHandle {}
 
 /// A `<script>` tag declaration.
 ///
-/// Equality compares all fields — re-registering the same URL with different `load` or `module`
+/// Equality compares all fields, so re-registering the same URL with different `load` or `module`
 /// is a conflict, not a duplicate.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ScriptTag {
@@ -103,7 +103,7 @@ pub struct ScriptTag {
 }
 
 impl ScriptTag {
-    /// Builds a deferred, non-module script tag — the common case.
+    /// Builds a deferred, non-module script tag (the common case).
     #[must_use]
     pub fn deferred(url: impl Into<String>) -> Self {
         Self {

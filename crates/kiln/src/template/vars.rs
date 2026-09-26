@@ -7,7 +7,7 @@ use crate::render::assets::PageAssets;
 
 /// Template variables for rendering a post page.
 ///
-/// `date` is pre-formatted; HTML fields (`content`, `toc`) use `| safe` in templates to avoid
+/// `date` is pre-formatted. HTML fields (`content`, `toc`) use `| safe` in templates to avoid
 /// double-escaping. All other string fields are auto-escaped by `MiniJinja`.
 #[derive(Debug, Serialize)]
 pub struct PostTemplateVars<'a> {
@@ -40,7 +40,7 @@ pub struct PageSummary {
     pub url: String,
     pub date: Option<String>,
     /// True when the page has `weight` set in frontmatter. Themes use it to render a pinned-post
-    /// visual treatment; the canonical sort already puts pinned posts at the top.
+    /// visual treatment, since the canonical sort already puts pinned posts at the top.
     pub pinned: bool,
     pub description: String,
     pub featured_image: Option<FeaturedImage>,

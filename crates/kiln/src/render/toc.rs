@@ -33,17 +33,15 @@ pub fn render_toc_html(entries: &[TocEntry]) -> String {
         let target = entry.level as u8 - min_level + 1;
 
         if target <= depth {
-            // Close deeper levels.
             while depth > target {
                 writeln_indented!(&mut html, depth * 2, "</li>");
                 writeln_indented!(&mut html, depth * 2 - 1, "</ul>");
                 depth -= 1;
             }
-            // Close sibling at target depth.
             writeln_indented!(&mut html, depth * 2, "</li>");
         }
 
-        // Open new levels. When skipping heading levels (e.g., H2 → H4),
+        // When skipping heading levels (e.g., H2 → H4),
         // emit wrapper <li> elements at intermediate depths so that nested
         // <ul> elements always appear inside a <li> (required by HTML spec).
         while depth < target {
@@ -156,7 +154,7 @@ mod tests {
 
     #[test]
     fn skipped_levels() {
-        // H2 then H4 — intermediate <ul> levels get wrapper <li> elements.
+        // H2 then H4: intermediate <ul> levels get wrapper <li> elements.
         let entries = vec![
             TocEntry {
                 level: HeadingLevel::H2,
@@ -192,7 +190,7 @@ mod tests {
 
     #[test]
     fn deeper_heading_first() {
-        // H3 then H2 — deeper heading before the minimum level.
+        // H3 then H2: deeper heading before the minimum level.
         let entries = vec![
             TocEntry {
                 level: HeadingLevel::H3,

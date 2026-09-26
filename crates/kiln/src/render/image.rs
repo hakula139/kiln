@@ -63,7 +63,7 @@ fn render_img(
         .and_then(|a| a.lqip_uri.as_deref())
         .filter(|s| !s.is_empty())
     {
-        // Base64 uses safe chars (`A-Za-z0-9+/=`); no escape needed in `"..."` or `url('...')`.
+        // Base64 uses safe chars (`A-Za-z0-9+/=`), so `"..."` and `url('...')` need no escape.
         Some(uri) => format!(r#"<span class="lqip" style="--lqip-uri:url('{uri}')">{img}</span>"#),
         None => img,
     }
@@ -106,7 +106,7 @@ fn push_img_tag(
 }
 
 /// Picks the `width` / `height` to emit. Manual `{width=...}` / `{height=...}`
-/// always win; when only one is set, the other is scaled from the resolver's
+/// always win. When only one is set, the other is scaled from the resolver's
 /// auto aspect so the rendered box matches the source shape.
 fn final_dimensions(attrs: &ImageAttrs) -> (Option<String>, Option<String>) {
     match (

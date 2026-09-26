@@ -31,7 +31,7 @@ struct Inner {
 }
 
 /// Deduplication key for warnings emitted by [`I18n::t_interp`]. Each unique variant is logged
-/// once per `I18n` instance. `t()` misses are not warnings — see [`I18n::t`].
+/// once per `I18n` instance. `t()` misses are not warnings. See [`I18n::t`].
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum WarnKey {
     /// Placeholder `{name}` missing from `t_interp` args for `key`.
@@ -52,7 +52,7 @@ impl I18n {
     /// Returns an error if a theme i18n directory has locale files but no `en.toml`, or if any
     /// loaded file is not a flat table of string values.
     pub fn load(site_root: &Path, theme_dir: Option<&Path>, language: &str) -> Result<Self> {
-        // Paths below interpolate `language` into filenames — guard against traversal or
+        // Paths below interpolate `language` into filenames, so guard against traversal or
         // oddly-shaped tags before anything touches the FS.
         if !language
             .chars()
@@ -268,7 +268,7 @@ fn interpolate(
             }
             '}' => {
                 // `}}` is the escape for a literal `}`, and a stray `}`
-                // renders literally too — either way we emit one `}`,
+                // renders literally too. Either way we emit one `}`,
                 // consuming the second brace only when present.
                 if let Some(&(_, '}')) = chars.peek() {
                     chars.next();
@@ -453,7 +453,7 @@ mod tests {
 
     #[test]
     fn load_with_no_files_returns_empty_i18n() {
-        // No theme i18n dir and no site i18n dir — loader must succeed and
+        // With no theme or site i18n dir, the loader must succeed and
         // every `t()` call must miss (and render the key literal).
         let site = tempfile::tempdir().unwrap();
         let theme = tempfile::tempdir().unwrap();
@@ -465,7 +465,7 @@ mod tests {
     #[test]
     fn load_theme_en_file_with_different_case_is_still_recognized() {
         // On a case-sensitive filesystem `En.toml` and `en.toml` are
-        // distinct files; on case-insensitive filesystems they collide.
+        // distinct files, while on case-insensitive filesystems they collide.
         // In both cases `En.toml` should count as the English fallback
         // and not trip the "missing en.toml" bail.
         let site = tempfile::tempdir().unwrap();
@@ -477,9 +477,9 @@ mod tests {
             "#},
         );
 
-        // Loading with `language == "en"` tries to open `en.toml`; on a
-        // case-insensitive FS that resolves to `En.toml`, on a
-        // case-sensitive FS neither file is read but the presence of
+        // Loading with `language == "en"` tries to open `en.toml`. On a
+        // case-insensitive FS that resolves to `En.toml`. On a
+        // case-sensitive FS neither file is read, but the presence of
         // `En.toml` must not trigger the "missing en.toml fallback" bail.
         let result = I18n::load(site.path(), Some(theme.path()), "en");
         assert!(result.is_ok(), "got error: {:?}", result.err());

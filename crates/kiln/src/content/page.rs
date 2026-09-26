@@ -22,7 +22,7 @@ pub enum PageKind {
 pub struct Page {
     pub frontmatter: Frontmatter,
     pub raw_content: String,
-    /// Set by content discovery based on position in the content directory; defaults to
+    /// Set by content discovery based on position in the content directory. Defaults to
     /// `PageKind::Page` when created via `from_content`.
     pub kind: PageKind,
     pub slug: String,

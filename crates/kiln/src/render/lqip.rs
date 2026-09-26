@@ -17,7 +17,7 @@ pub struct ImageConfig {
     #[serde(default = "default_lqip_size")]
     pub lqip_size: u32,
 
-    /// WebP encoder quality (1–100; lower = smaller / blurrier).
+    /// WebP encoder quality (1–100, lower = smaller / blurrier).
     #[serde(default = "default_lqip_quality")]
     pub lqip_quality: u8,
 }
@@ -58,7 +58,7 @@ pub struct ImageResolver {
 
 impl ImageResolver {
     /// Constructs a resolver. `static_root` anchors `src` strings that begin with `/` (i.e.,
-    /// site-absolute references); page-bundle-relative paths resolve through the `base_dir`
+    /// site-absolute references). Page-bundle-relative paths resolve through the `base_dir`
     /// argument to [`Self::resolve`].
     #[must_use]
     pub fn new(static_root: &Path, config: ImageConfig) -> Self {
@@ -72,7 +72,7 @@ impl ImageResolver {
     /// Resolves a `src` string to image metadata, or returns `None` when the path can't be located
     /// or the format isn't recognised.
     ///
-    /// `base_dir` is the page-bundle anchor for relative paths; pass `None` for contexts without a
+    /// `base_dir` is the page-bundle anchor for relative paths. Pass `None` for contexts without a
     /// bundle (e.g., feed generation).
     ///
     /// # Panics
@@ -394,7 +394,7 @@ mod tests {
             0x00, 0x00, 0x00, 0x02, // height = 2
             0x08, 0x06, 0x00, 0x00, 0x00, // bit depth, color type, etc.
         ];
-        // CRC over chunk type + data; placeholder zeros — `imagesize` ignores it.
+        // Placeholder zeros stand in for the CRC over chunk type + data, which `imagesize` ignores.
         bytes.extend_from_slice(&[0, 0, 0, 0]);
         fs::write(bundle.join("partial.png"), &bytes).unwrap();
 

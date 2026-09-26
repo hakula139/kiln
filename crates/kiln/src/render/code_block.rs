@@ -76,7 +76,7 @@ fn parse_code_block_attrs(
         None
     };
 
-    // Explicit collapse / expand wins over the site default; the renderer reads `max_lines`
+    // Explicit collapse / expand wins over the site default, so the renderer reads `max_lines`
     // directly without re-checking `collapse`.
     let max_lines = if collapse.is_some() {
         None
@@ -206,7 +206,7 @@ mod tests {
 
     #[test]
     fn parse_fence_info_collapse_keyword_inside_quoted_value_ignored() {
-        // Bare-word extraction must respect quoting; otherwise `collapse` inside the title leaks.
+        // Bare-word extraction must respect quoting so `collapse` inside the title does not leak.
         let spec = parse_fence_info(r#"rust {title="please collapse this"}"#, Some(40));
         assert_eq!(spec.title.as_deref(), Some("please collapse this"));
         assert!(spec.collapse.is_none());

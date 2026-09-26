@@ -192,7 +192,7 @@ fn minify_css_bytes(input: &[u8], path: &Path) -> Option<Vec<u8>> {
         })
         .ok()?;
     // lightningcss's `minify` and `to_css` don't fail in practice with
-    // default options; silently keep the original if they ever do.
+    // default options, so silently keep the original if they ever do.
     stylesheet.minify(MinifyOptions::default()).ok()?;
     let result = stylesheet
         .to_css(PrinterOptions {
@@ -206,7 +206,7 @@ fn minify_css_bytes(input: &[u8], path: &Path) -> Option<Vec<u8>> {
 fn minify_js_bytes(input: &[u8], path: &Path) -> Option<Vec<u8>> {
     let source = decode_utf8(input, path, "JS")?;
 
-    // Parse as module by default — modules are a near-superset of scripts
+    // Parse as module by default since modules are a near-superset of scripts
     // and modern theme JS routinely uses `import` / `export`.
     let source_type = SourceType::from_path(path).unwrap_or_else(|_| SourceType::mjs());
     let allocator = Allocator::default();
@@ -304,7 +304,7 @@ mod tests {
             const x = 1 + 2;
             console.log(x);
         "};
-        let png = b"\x89PNG\r\n\x1a\n"; // binary — should be ignored
+        let png = b"\x89PNG\r\n\x1a\n"; // binary, should be ignored
         let already_min = b"a{color:red}"; // should be left alone
 
         fs::create_dir_all(root.join("sub")).unwrap();
@@ -503,7 +503,7 @@ mod tests {
     #[test]
     fn minify_css_returns_none_on_invalid_utf8() {
         let path = PathBuf::from("broken.css");
-        // `0xff 0xfe 0xfd` is not a valid UTF-8 sequence; hits the early
+        // `0xff 0xfe 0xfd` is not a valid UTF-8 sequence and hits the early
         // UTF-8 guard before lightningcss ever sees the bytes.
         assert_eq!(minify_css_bytes(&[0xff, 0xfe, 0xfd], &path), None);
     }
@@ -511,7 +511,7 @@ mod tests {
     #[test]
     fn minify_css_returns_none_on_parse_error() {
         let path = PathBuf::from("broken.css");
-        // `@@@` is lexically invalid — lightningcss reports an unexpected-
+        // `@@@` is lexically invalid, and lightningcss reports an unexpected-
         // end-of-input error rather than recovering.
         assert_eq!(minify_css_bytes(b"@@@", &path), None);
     }

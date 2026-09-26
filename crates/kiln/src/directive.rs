@@ -42,7 +42,7 @@ impl fmt::Display for CalloutKind {
     }
 }
 
-/// Parsed directive type — either a callout or an unrecognized name preserved for extension.
+/// Parsed directive type: either a callout or an unrecognized name preserved for extension.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DirectiveKind {
     Callout {
@@ -50,7 +50,7 @@ pub enum DirectiveKind {
         title: Option<String>,
         open: bool,
     },
-    /// Unrecognized type — rendered as a `<div>` or passed through as-is.
+    /// Unrecognized type, rendered as a `<div>` or passed through as-is.
     Unknown {
         name: String,
         positional_args: Vec<String>,
@@ -79,7 +79,7 @@ impl DirectiveKind {
 
 /// Serializable context passed to directive templates.
 ///
-/// `body_html` is pre-rendered markdown; `body_raw` is the unprocessed source for templates
+/// `body_html` is pre-rendered markdown, and `body_raw` is the unprocessed source for templates
 /// that parse structured content (e.g., CSV).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct DirectiveContext {
@@ -153,7 +153,7 @@ pub(crate) fn parse_directive_args(input: &str) -> DirectiveArgs {
         let next_eq = rest.find('=');
 
         // Named arg: key=value or key="quoted value".
-        // Require a non-empty key; treat `=value` as a bare word.
+        // Require a non-empty key, treating `=value` as a bare word.
         if let Some(eq) = next_eq.filter(|&p| p > 0 && p < next_ws) {
             let key = &rest[..eq];
             let after_eq = &rest[eq + 1..];
@@ -195,7 +195,7 @@ pub struct DirectiveBlock {
     /// Extra CSS classes from Pandoc `.class` tokens (excluding the directive name).
     pub classes: Vec<String>,
     /// Body text between the opening and closing fences. For nested directives, the outer block's
-    /// body contains inner fences verbatim; callers process recursively (inner-first).
+    /// body contains inner fences verbatim, and callers process recursively (inner-first).
     pub body: String,
     /// Byte range in the original content (opening fence through closing fence).
     pub range: Range<usize>,

@@ -57,7 +57,7 @@ impl TemplateEngine {
             );
         }
 
-        // Site dir is optional — silently ignored if missing.
+        // Site dir is optional and silently ignored if missing.
         let site_dir = site_dir.filter(|d| d.is_dir());
 
         ensure!(
@@ -220,7 +220,7 @@ impl TemplateEngine {
 
     /// Returns `true` if a template with the given name exists.
     ///
-    /// A broken template (e.g., syntax error) counts as existing — the caller's render call will
+    /// A broken template (e.g., syntax error) counts as existing, so the caller's render call will
     /// surface the parse error rather than silently skipping the output.
     pub fn has_template(&self, name: &str) -> bool {
         match self.env.get_template(name) {
@@ -268,10 +268,10 @@ mod tests {
         test_fs::create_dir_all(&site_dir).unwrap();
         test_fs::create_dir_all(&theme_dir).unwrap();
 
-        // Same template in both — site should win.
+        // Same template in both, so site should win.
         test_fs::write(site_dir.join("page.html"), "from site").unwrap();
         test_fs::write(theme_dir.join("page.html"), "from theme").unwrap();
-        // Template only in theme — should fall through.
+        // Template only in theme, so it should fall through.
         test_fs::write(theme_dir.join("base.html"), "theme base").unwrap();
 
         let engine = TemplateEngine::new(Some(&site_dir), Some(&theme_dir), &test_i18n()).unwrap();
@@ -286,7 +286,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let theme_dir = dir.path().join("theme");
         test_fs::create_dir(&theme_dir).unwrap();
-        // site_dir doesn't exist — should not error.
+        // A missing site_dir should not error.
         let result = TemplateEngine::new(
             Some(Path::new("/nonexistent")),
             Some(&theme_dir),
@@ -926,7 +926,7 @@ mod tests {
         test_fs::write(dir.path().join("secret.html"), "LEAKED").unwrap();
 
         let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
-        // `render_directive` builds "directives/../secret.html" — safe_join rejects "..".
+        // `render_directive` builds "directives/../secret.html", which safe_join rejects.
         let result =
             engine.render_directive("../secret", (), &AssetsHandle::default(), &test_config());
         assert!(result.is_none(), "path traversal should not find template");
@@ -1424,7 +1424,7 @@ mod tests {
 
     #[test]
     fn register_script_returns_error_when_assets_has_wrong_type() {
-        // Unreachable through `render_directive`; pins the contract for any
+        // Unreachable through `render_directive`. This pins the contract for any
         // future path that populates `__assets`.
         let dir = tempfile::tempdir().unwrap();
         let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();

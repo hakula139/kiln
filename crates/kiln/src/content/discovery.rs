@@ -196,7 +196,7 @@ mod tests {
                 Body
             "#},
         );
-        // CLAUDE.md has no frontmatter — should be silently skipped.
+        // CLAUDE.md has no frontmatter, so it should be silently skipped.
         write_test_file(
             root.path(),
             "content/posts/hello/CLAUDE.md",

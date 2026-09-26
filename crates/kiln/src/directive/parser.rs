@@ -57,7 +57,7 @@ pub fn parse_directives(content: &str) -> Vec<DirectiveBlock> {
             let after_colons = line[colon_count..].trim();
 
             if after_colons.is_empty() {
-                // Closing fence — only matches the topmost stack entry if its
+                // A closing fence only matches the topmost stack entry if its
                 // opening colon count ≤ the closing count. This prevents a
                 // closing fence from "reaching through" unclosed inner blocks.
                 if stack
@@ -100,7 +100,7 @@ pub fn parse_directives(content: &str) -> Vec<DirectiveBlock> {
 
 /// Returns the number of leading `:` characters if there are at least 3.
 ///
-/// Only matches column-0 directives — indented lines are intentionally ignored
+/// Only matches column-0 directives. Indented lines are intentionally ignored
 /// since directives are top-level constructs.
 fn count_leading_colons(line: &str) -> Option<usize> {
     let count = line.bytes().take_while(|&b| b == b':').count();
@@ -139,7 +139,7 @@ fn parse_directive_head(text: &str) -> DirectiveHead {
         };
     }
 
-    // Name only — text after the name without braces is ignored.
+    // Name only: text after the name without braces is ignored.
     DirectiveHead {
         name: name.to_string(),
         positional_args: Vec::new(),

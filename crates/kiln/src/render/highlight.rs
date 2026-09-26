@@ -60,7 +60,7 @@ pub(crate) fn highlight_code(syntax_set: &SyntaxSet, code: &str, spec: &CodeBloc
 
     // ── Header ──
     //
-    // Title (when present) replaces the language pill so the header shows one label; `data-lang`
+    // Title (when present) replaces the language pill so the header shows one label. `data-lang`
     // on the wrapper still drives syntax CSS.
 
     writeln_indented!(&mut html, 1, r#"<div class="code-header">"#);
@@ -203,7 +203,7 @@ fn find_syntax<'a>(syntax_set: &'a SyntaxSet, lang: &str) -> (&'a SyntaxReferenc
 
 /// Returns a canonical HTML-safe label from a syntect syntax name.
 ///
-/// Lowercases and replaces spaces with hyphens; "Plain Text" maps to the web-standard `plaintext`.
+/// Lowercases and replaces spaces with hyphens. "Plain Text" maps to the web-standard `plaintext`.
 fn canonical_lang(syntax_name: &str) -> String {
     if syntax_name == "Plain Text" {
         return "plaintext".into();
@@ -213,7 +213,7 @@ fn canonical_lang(syntax_name: &str) -> String {
 
 /// Derives a human-readable display label from the author's fence token.
 ///
-/// Author-driven so the label tracks the input — syntect's internal name is often verbose
+/// Author-driven so the label tracks the input. syntect's internal name is often verbose
 /// (`"Bourne Again Shell (bash)"`) and inconsistently cased. Per-block overrides go through the
 /// `title="..."` fence attribute instead.
 fn display_label(lang: &str) -> String {
@@ -243,7 +243,7 @@ fn display_label(lang: &str) -> String {
         "gql" | "graphql" => "GraphQL",
         "sass" => "Sass",
 
-        // ALL-CAPS acronyms; output is just the input uppercased.
+        // ALL-CAPS acronyms, where output is just the input uppercased.
         "asm" | "css" | "csv" | "html" | "http" | "ini" | "json" | "php" | "scss" | "sql"
         | "toml" | "tsv" | "wasm" | "xml" | "yaml" | "yml" => return lower.to_uppercase(),
 
@@ -582,7 +582,7 @@ mod tests {
 
     #[test]
     fn highlight_code_display_label_independent_of_syntect_name() {
-        // syntect names bash as "Bourne Again Shell (bash)"; display_label sidesteps that.
+        // syntect names bash as "Bourne Again Shell (bash)", which display_label sidesteps.
         let html = highlight("bash", "echo hi\n");
         assert!(
             html.contains(r#"<span class="code-lang">Shell</span>"#),
@@ -668,7 +668,7 @@ mod tests {
 
     #[test]
     fn display_label_shell_family_canonicalized() {
-        // Different shell flavors share the syntect grammar; the label collapses to "Shell".
+        // Different shell flavors share the syntect grammar, so the label collapses to "Shell".
         for shell in ["bash", "fish", "sh", "zsh"] {
             assert_eq!(display_label(shell), "Shell", "for input {shell:?}");
         }

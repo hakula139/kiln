@@ -62,7 +62,7 @@ pub(crate) fn scan_code_span(line: &str, start: usize) -> (usize, &str) {
         }
     }
 
-    // Unclosed — treat opening backticks as literal.
+    // Unclosed: treat opening backticks as literal.
     (start + open_count, &line[start..start + open_count])
 }
 

@@ -443,7 +443,7 @@ mod tests {
             date = 2024-06-15T10:30:00
             +++
         "};
-        // Local datetimes come through as TOML maps; jiff rejects the missing offset.
+        // Local datetimes come through as TOML maps, and jiff rejects the missing offset.
         let err = parse(input).unwrap_err().to_string();
         assert!(
             err.contains("UTC offset"),

@@ -163,9 +163,9 @@ mod tests {
         );
         // Escaped backslash.
         assert_eq!(kvs(r#"title="path\\to""#), vec![pair("title", r"path\to")]);
-        // Unrecognized escape alone — no escapes detected, takes borrowed path.
+        // Unrecognized escape alone: no escapes detected, takes borrowed path.
         assert_eq!(kvs(r#"title="foo\nbar""#), vec![pair("title", r"foo\nbar")]);
-        // Mixed recognized and unknown escapes — unknown sequences preserved as-is.
+        // Mixed recognized and unknown escapes: unknown sequences preserved as-is.
         assert_eq!(kvs(r#"title="a\"b\nc""#), vec![pair("title", r#"a"b\nc"#)]);
     }
 

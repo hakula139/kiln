@@ -139,7 +139,7 @@ pub(crate) enum BucketKind {
 }
 
 impl BucketKind {
-    /// Plural form — used as the `kind` template variable and in URL roots.
+    /// Plural form, used as the `kind` template variable and in URL roots.
     #[must_use]
     pub(crate) fn plural(self) -> &'static str {
         match self {
@@ -149,7 +149,7 @@ impl BucketKind {
         }
     }
 
-    /// Singular form — used as the `singular` template variable.
+    /// Singular form, used as the `singular` template variable.
     #[must_use]
     pub(crate) fn singular(self) -> &'static str {
         match self {
@@ -305,7 +305,7 @@ pub(crate) fn sort_by_date_desc(pages: &mut [ListedPage]) {
 
 /// Sorts pinned posts first (by `weight` ascending), then by date descending.
 ///
-/// Any `weight` value marks a post as pinned; lower values sort higher.
+/// Any `weight` value marks a post as pinned, and lower values sort higher.
 pub(crate) fn sort_pinned_first(pages: &mut [ListedPage]) {
     pages.sort_by_key(|page| {
         (
@@ -435,7 +435,7 @@ mod tests {
     use crate::content::frontmatter::ImageCredit;
     use crate::render::lqip::ImageConfig;
 
-    // Stub resolver for tests with no local images — `resolve` returns `None`.
+    // Stub resolver for tests with no local images: `resolve` returns `None`.
     static EMPTY_RESOLVER: LazyLock<ImageResolver> =
         LazyLock::new(|| ImageResolver::new(Path::new(""), ImageConfig::default()));
 
