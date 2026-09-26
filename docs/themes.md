@@ -55,7 +55,7 @@ All fields are optional. kiln uses the following:
 
 | Field              | Description                                         |
 | ------------------ | --------------------------------------------------- |
-| `min_kiln_version` | Minimum kiln version (semver); build fails if unmet |
+| `min_kiln_version` | Minimum kiln version (semver). Build fails if unmet |
 | `[params]`         | Default parameters that sites can override          |
 
 The theme name is inferred from the directory name (e.g., `themes/IgnIt/` → `"IgnIt"`).
@@ -151,7 +151,7 @@ Merge rules:
 
 - **Scalars**: site value wins.
 - **Arrays**: site value wins (arrays are replaced entirely, not concatenated).
-- **Tables**: merged recursively — site keys override matching theme keys, theme-only keys are preserved.
+- **Tables**: merged recursively. Site keys override matching theme keys, and theme-only keys are preserved.
 - **Missing keys**: theme defaults fill in any keys not present in the site config.
 
 ## Creating a Theme
@@ -278,7 +278,7 @@ Uses the same variables as `post.html` (see above). The `page.html` template is 
 | `pagination`  | object        | Pagination metadata (same structure as archive pages below)            |
 | `config`      | object        | Site configuration                                                     |
 
-Only posts appear on the home page; standalone pages are excluded. The number of posts per page is configurable via `params.home.paginate` or `params.paginate` (default: 10). If `home.html` is not present, no home page is generated.
+Only posts appear on the home page, and standalone pages are excluded. The number of posts per page is configurable via `params.home.paginate` or `params.paginate` (default: 10). If `home.html` is not present, no home page is generated.
 
 #### Archive page templates (`archive.html`)
 
@@ -298,7 +298,7 @@ Archive pages are generated for:
 - **Section archives** (`/posts/<slug>/`): `kind="sections"`, `singular="section"`. Title from `content/posts/<section>/_index.md` or titlecased slug.
 - **Tag archives** (`/tags/<slug>/`): `kind="tags"`, `singular="tag"`. Title from frontmatter or `content/tags/<slug>/_index.md`.
 
-Posts per page: `params.section.paginate` or `params.paginate` (default: 10) for posts / sections; `params.paginate` (default: 10) for tags. If `archive.html` is not present, no archive pages are generated.
+Posts per page: `params.section.paginate` or `params.paginate` (default: 10) for posts / sections, and `params.paginate` (default: 10) for tags. If `archive.html` is not present, no archive pages are generated.
 
 #### Overview page templates (`overview.html`)
 
@@ -394,19 +394,19 @@ The number of items per page is configurable via `paginate` in `[params]` (defau
 
 #### Directive templates (`directives/<name>.html`)
 
-| Variable          | Type                | Description                                |
-| ----------------- | ------------------- | ------------------------------------------ |
-| `name`            | string              | Directive name                             |
-| `positional_args` | list of strings     | Parsed positional arguments                |
-| `named_args`      | map (string→string) | Parsed named arguments (`key=value`)       |
-| `id`              | string or `none`    | Pandoc `#id` attribute                     |
-| `classes`         | list of strings     | Pandoc `.class` attributes                 |
-| `body_html`       | string              | Rendered HTML body of the directive block  |
-| `body_raw`        | string              | Raw markdown source of the directive body  |
-| `source_dir`      | string or `none`    | Page source directory (for `read_file`)    |
-| `config`          | object              | Site `Config` (`base_url`, `params`, etc.) |
+| Variable          | Type                  | Description                                |
+| ----------------- | --------------------- | ------------------------------------------ |
+| `name`            | string                | Directive name                             |
+| `positional_args` | list of strings       | Parsed positional arguments                |
+| `named_args`      | map (string → string) | Parsed named arguments (`key=value`)       |
+| `id`              | string or `none`      | Pandoc `#id` attribute                     |
+| `classes`         | list of strings       | Pandoc `.class` attributes                 |
+| `body_html`       | string                | Rendered HTML body of the directive block  |
+| `body_raw`        | string                | Raw markdown source of the directive body  |
+| `source_dir`      | string or `none`      | Page source directory (for `read_file`)    |
+| `config`          | object                | Site `Config` (`base_url`, `params`, etc.) |
 
-Don't reuse the names in the table above (e.g., `config`, `body_html`) or any `__`-prefixed key as directive arguments — the engine's binding shadows them, so your value never reaches the template.
+Don't reuse the names in the table above (e.g., `config`, `body_html`) or any `__`-prefixed key as directive arguments. The engine's binding shadows them, so your value never reaches the template.
 
 ### Template Functions
 
@@ -464,11 +464,11 @@ Resolves a root-relative path from the merged theme and site `static/` trees. CS
 
 When `kiln build --minify` is used, shared CSS and JS are minified before kiln computes the digest. The fingerprint therefore identifies the bytes published under that URL.
 
-The digest covers the referenced file rather than its dependency graph. Bundle self-contained entry assets before passing them to kiln because relative CSS imports and JavaScript module imports keep their original URLs.
+The digest covers only the referenced file. Bundle self-contained entry assets before passing them to kiln because relative CSS imports and JavaScript module imports keep their original URLs.
 
 #### `register_script(url, load="defer", module=false)`
 
-Registers a `<script>` tag for the current page. Only callable from directive templates — the renderer surfaces an error when called from a page-level template. Returns the empty string so the call can stand alone:
+Registers a `<script>` tag for the current page. Only callable from directive templates, since the renderer surfaces an error when called from a page-level template. Returns the empty string so the call can stand alone:
 
 ```jinja
 {{ register_script(asset_url("/js/score-table.js")) }}
@@ -476,7 +476,7 @@ Registers a `<script>` tag for the current page. Only callable from directive te
 
 The script appears once on the page no matter how many times the directive renders. Re-registering the same `(url, load, module)` triple is a no-op. Registering the same URL with different attributes is a build-time error, so a page never loads two conflicting tags for the same source. `load` accepts `"defer"` (default), `"async"`, or `"sync"`. Pass `module=true` for ES modules.
 
-Themes consume the registered scripts via the page's `assets.scripts` list — see [Post templates](#post-templates-posthtml).
+Themes consume the registered scripts via the page's `assets.scripts` list. See [Post templates](#post-templates-posthtml).
 
 ## Image Rendering
 
@@ -503,7 +503,7 @@ For block images (a paragraph containing only one image), the wrapper sits insid
 </figure>
 ```
 
-When no placeholder is available (remote URLs, unresolvable paths, undecodable formats like SVG), the wrapper is omitted and the bare `<img>` ships as-is — themes should never assume the wrapper is present.
+When no placeholder is available (remote URLs, unresolvable paths, undecodable formats like SVG), the wrapper is omitted and the bare `<img>` ships as-is, so themes should never assume the wrapper is present.
 
 ### Stable contract
 
@@ -583,7 +583,7 @@ external = true
 
 | Field      | Type      | Notes                                                                                      |
 | ---------- | --------- | ------------------------------------------------------------------------------------------ |
-| `name`     | `string`  | Required. Resolved via `t()` — accepts an i18n key or a literal label.                     |
+| `name`     | `string`  | Required. Resolved via `t()`, so it accepts an i18n key or a literal label.                |
 | `url`      | `string`  | Required. Site-relative or absolute URL.                                                   |
 | `icon`     | `string?` | Optional. Free-form CSS class (FontAwesome by convention) for the theme to render.         |
 | `weight`   | `i64`     | Sort order ascending. Default `0`. Negative weights float to the front.                    |

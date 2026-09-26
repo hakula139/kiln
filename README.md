@@ -28,15 +28,15 @@ kiln is purpose-built for hakula.xyz: strong CJK-friendly authoring, explicit re
 - Content-hashed CSS / JS URLs through the template asset manifest
 - Home pages, section pages, standalone pages, taxonomy indexes, and paginated term pages
 - Pinned posts on the home page via `weight` frontmatter
-- Page-scoped asset registry — themes load KaTeX / Mermaid / search only on pages that need them
+- Page-scoped asset registry, so themes load KaTeX / Mermaid / search only on pages that need them
 - Configurable site time zone for rendered dates
-- Build-time image pipeline — every `<img>` gets natural `width`/`height` plus a base64 WebP LQIP backdrop, so the browser reserves the exact box and paints a low-frequency placeholder while the source decodes
+- Build-time image pipeline: every `<img>` gets natural `width` / `height` plus a base64 WebP LQIP backdrop, so the browser reserves the exact box and paints a low-frequency placeholder while the source decodes
 - RSS feeds, sitemap, custom 404 page
 - Full-text search via [Pagefind](https://pagefind.app)
 
 ### Internationalization
 
-- Translatable theme strings with layered TOML overrides — themes ship defaults, sites customize freely
+- Translatable theme strings with layered TOML overrides: themes ship defaults, and sites override any string
 - Localized templates and navigation menus, with graceful fallback to English when a translation is missing
 
 ### Theming
