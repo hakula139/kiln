@@ -95,7 +95,6 @@ mod tests {
 
         let sections = collect_sections(&pages, &content_dir);
         assert_eq!(sections.len(), 2);
-        // Sorted alphabetically by slug.
         assert_eq!(sections[0].slug, "essay");
         assert_eq!(sections[0].title, "Essay");
         assert_eq!(sections[0].page_count, 1);

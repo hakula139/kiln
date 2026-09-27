@@ -248,7 +248,6 @@ pub(crate) fn split_delimited_frontmatter<'a>(
         .or_else(|| rest.strip_prefix("\r\n"))
         .ok_or_else(|| anyhow::anyhow!("opening `{delimiter}` must be on its own line"))?;
 
-    // Find the closing delimiter on its own line.
     let newline_delimiter = format!("\n{delimiter}");
     let closing = find_closing_delimiter(rest, delimiter, &newline_delimiter)
         .ok_or_else(|| anyhow::anyhow!("missing closing `{delimiter}` delimiter"))?;
@@ -256,7 +255,6 @@ pub(crate) fn split_delimited_frontmatter<'a>(
     let frontmatter = &rest[..closing];
     let after_delim = &rest[closing + delimiter.len()..];
 
-    // Skip the newline after the closing delimiter.
     let body = after_delim
         .strip_prefix('\n')
         .or_else(|| after_delim.strip_prefix("\r\n"))
@@ -267,9 +265,8 @@ pub(crate) fn split_delimited_frontmatter<'a>(
 
 /// Finds the byte offset of the closing delimiter within the frontmatter region.
 ///
-/// NOTE: This is a text-level search. It cannot distinguish a real closing delimiter
-/// from one appearing on its own line inside a multi-line string literal.
-/// This is a known limitation shared with Hugo and other delimiter-based parsers.
+/// This text-level search cannot tell a real closing delimiter from one on its own line inside a
+/// multi-line string literal. Hugo and other delimiter-based parsers share this limitation.
 fn find_closing_delimiter(s: &str, delimiter: &str, newline_delimiter: &str) -> Option<usize> {
     // Check the very start (empty frontmatter).
     if let Some(after) = s.strip_prefix(delimiter)
@@ -278,7 +275,6 @@ fn find_closing_delimiter(s: &str, delimiter: &str, newline_delimiter: &str) -> 
         return Some(0);
     }
 
-    // Search for `\n{delimiter}` on its own line.
     let mut search_from = 0;
     while let Some(pos) = s[search_from..].find(newline_delimiter) {
         let abs = search_from + pos + 1; // skip the `\n`
@@ -443,7 +439,7 @@ mod tests {
             date = 2024-06-15T10:30:00
             +++
         "};
-        // Local datetimes come through as TOML maps; jiff rejects the missing offset.
+        // Local datetimes come through as TOML maps, and jiff rejects the missing offset.
         let err = parse(input).unwrap_err().to_string();
         assert!(
             err.contains("UTC offset"),
@@ -520,7 +516,6 @@ mod tests {
 
     #[test]
     fn split_frontmatter_closing_delimiter_inside_value_ignored() {
-        // `+++` appears mid-line in a value, should not be treated as closing delimiter.
         let input = indoc! {r#"
             +++
             foo = "+++ not a delimiter"
@@ -539,7 +534,6 @@ mod tests {
 
     #[test]
     fn split_frontmatter_closing_delimiter_must_end_line() {
-        // `+++not_end` should not be treated as a closing delimiter.
         let input = indoc! {r#"
             +++
             title = "test"

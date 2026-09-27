@@ -32,7 +32,7 @@ pub(super) fn tpl_read_file(
         })?;
 
     // `DirectiveContext.source_dir: Option<String>` is the only producer of this value, so when
-    // present it's always a string — no need to re-check the dynamic type.
+    // present it is always a string.
     let source_dir = source_dir.as_str().unwrap_or_default();
 
     let rel = Path::new(filename);
@@ -57,7 +57,7 @@ pub(super) fn tpl_read_file(
     })
 }
 
-/// Parses CSV text into a list of rows; each row is a list of field strings.
+/// Parses CSV text into a list of rows, each a list of field strings.
 pub(super) fn tpl_parse_csv(text: &str) -> std::result::Result<minijinja::Value, minijinja::Error> {
     let mut reader = csv::ReaderBuilder::new()
         .has_headers(false)
@@ -132,8 +132,8 @@ pub(super) fn tpl_asset_url(
 /// empty string so the call can be used as a statement.
 ///
 /// Accepts `load="defer"` (default), `"async"`, or `"sync"`, and `module=true` for
-/// `type="module"`. Re-registering the same `(url, load, module)` is a no-op; re-registering the
-/// same URL with different attributes is an error.
+/// `type="module"`. Re-registering the same `(url, load, module)` is a no-op, while
+/// re-registering the same URL with different attributes is an error.
 pub(super) fn tpl_register_script(
     state: &minijinja::State,
     url: &str,

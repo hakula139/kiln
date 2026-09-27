@@ -57,8 +57,8 @@ pub fn discover_content(root: &Path) -> Result<ContentSet> {
         }
     }
 
-    // Sort by date descending (newest first), undated pages last.
-    // Tiebreak by source path for deterministic output across platforms.
+    // Undated pages sort last because `None < Some`. The source-path tiebreak keeps output
+    // deterministic across platforms.
     pages.sort_by(|a, b| {
         b.frontmatter
             .date
@@ -196,7 +196,7 @@ mod tests {
                 Body
             "#},
         );
-        // CLAUDE.md has no frontmatter — should be silently skipped.
+        // CLAUDE.md has no frontmatter, so it should be silently skipped.
         write_test_file(
             root.path(),
             "content/posts/hello/CLAUDE.md",

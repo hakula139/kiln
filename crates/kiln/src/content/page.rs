@@ -22,7 +22,7 @@ pub enum PageKind {
 pub struct Page {
     pub frontmatter: Frontmatter,
     pub raw_content: String,
-    /// Set by content discovery based on position in the content directory; defaults to
+    /// Set by content discovery based on position in the content directory. Defaults to
     /// `PageKind::Page` when created via `from_content`.
     pub kind: PageKind,
     pub slug: String,
@@ -32,7 +32,6 @@ pub struct Page {
     pub assets: Vec<PathBuf>,
 }
 
-/// Summary separator used in markdown content.
 const SUMMARY_SEPARATOR: &str = "<!--more-->";
 
 impl Page {
@@ -48,7 +47,6 @@ impl Page {
         let mut page = Self::from_content(&content, path)
             .with_context(|| format!("failed to parse {}", path.display()))?;
 
-        // Discover co-located assets for page bundles.
         if is_page_bundle(path)
             && let Some(dir) = path.parent()
         {
@@ -70,7 +68,6 @@ impl Page {
         let (frontmatter, body) = frontmatter::parse(content)
             .with_context(|| format!("invalid frontmatter in {}", path.display()))?;
 
-        // Explicit frontmatter slug takes priority over the filename-derived slug.
         let slug = frontmatter
             .slug
             .clone()
@@ -116,8 +113,6 @@ impl Page {
                 )
             })?;
 
-        // Page bundles (index.md) keep their directory structure.
-        // Standalone files get pretty URLs: slug.md → slug/index.html.
         let stem = relative.file_stem().and_then(|s| s.to_str()).unwrap_or("");
         if stem == "index" {
             Ok(relative.with_extension("html"))
@@ -204,8 +199,7 @@ fn derive_slug(path: &Path) -> Option<String> {
 
 /// Extracts summary text before `<!--more-->`, stripped to plain text.
 ///
-/// Parses the full body so reference link definitions after the separator are available for
-/// resolution.
+/// Parses the full body so reference link definitions after the separator still resolve.
 fn extract_summary(body: &str) -> Option<String> {
     let separator_offset = body.find(SUMMARY_SEPARATOR)?;
     let raw = body[..separator_offset].trim();
@@ -242,7 +236,6 @@ fn strip_markdown(full_text: &str, summary_end: usize) -> String {
         }
     }
 
-    // Collapse whitespace runs within each line and trim.
     plain
         .lines()
         .map(|line| line.split_whitespace().join(" "))

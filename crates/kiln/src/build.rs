@@ -192,7 +192,6 @@ fn report_build_summary(page_count: usize, minify_stats: Option<&MinifyStats>) {
 
 // ── Single-page rendering ──
 
-/// Renders a single page and writes it to the output directory.
 fn build_page(
     ctx: &BuildContext,
     page: &Page,
@@ -275,8 +274,7 @@ fn build_page(
     Ok(())
 }
 
-/// Finds a `style.css` file in the page bundle's assets and returns its resolved URL path (e.g.,
-/// `/posts/my-post/style.css`).
+/// Returns the URL path of the page bundle's `style.css` asset (e.g., `/posts/my-post/style.css`).
 fn find_page_css(assets: &[PathBuf], bundle_dir: Option<&Path>, page_url: &str) -> Option<String> {
     let dir = bundle_dir?;
     let css = assets

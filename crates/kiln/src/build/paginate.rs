@@ -104,7 +104,6 @@ mod tests {
 
     #[test]
     fn paginate_config_skips_non_positive_values() {
-        // `0` is rejected so it falls through to the next path or the default.
         let params: toml::value::Table = toml::from_str(indoc! {r"
                 paginate = 0
 

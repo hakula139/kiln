@@ -54,7 +54,6 @@ pub fn render_page(
         &assets,
     )?;
 
-    // Pre-process: extract image attrs, optionally replace shortcodes.
     let mut preprocessed = processed;
     if options.emojis {
         preprocessed = replace_emojis(&preprocessed);
@@ -89,7 +88,7 @@ pub fn render_page(
 ///
 /// Replacement is right-to-left so byte offsets stay valid. Each directive
 /// body is rendered as an isolated markdown document (headings do not appear
-/// in the page-level `ToC`; footnotes do not cross directive boundaries).
+/// in the page-level `ToC`, and footnotes do not cross directive boundaries).
 fn render_directives(
     content: &str,
     syntax_set: &SyntaxSet,
@@ -107,7 +106,6 @@ fn render_directives(
     let top_level = top_level_blocks(&all_blocks);
     let mut result = content.to_owned();
 
-    // Replace right-to-left so earlier ranges remain valid.
     for block in top_level.into_iter().rev() {
         let inner = render_directives(
             &block.body,
@@ -222,7 +220,7 @@ mod tests {
 
     static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(two_face::syntax::extra_newlines);
 
-    // Empty static-root resolver — `resolve` returns `None` for any path these tests reference.
+    // Empty static-root resolver: `resolve` returns `None` for any path these tests reference.
     static EMPTY_RESOLVER: LazyLock<ImageResolver> =
         LazyLock::new(|| ImageResolver::new(Path::new(""), ImageConfig::default()));
 

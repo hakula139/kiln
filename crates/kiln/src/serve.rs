@@ -33,10 +33,9 @@ pub fn localhost_url(port: u16) -> String {
     format!("http://localhost:{port}")
 }
 
-/// WebSocket endpoint path — prefixed to avoid conflicts with site content.
+/// WebSocket endpoint path, prefixed to avoid conflicts with site content.
 const LIVE_RELOAD_PATH: &str = "/__kiln_live_reload";
 
-/// Debounce duration for file watcher events.
 const DEBOUNCE: Duration = Duration::from_millis(100);
 
 /// JavaScript snippet injected before `</body>` in HTML responses.
@@ -128,13 +127,13 @@ async fn serve_until(
     .context("initial build failed")?;
 
     let config = Config::load(root).context("failed to load config")?;
-    // output_dir is captured once; if config.toml changes it, the server must be restarted.
+    // output_dir is captured once. If config.toml changes it, the server must be restarted.
     let output_dir = root.join(&config.output_dir);
 
     let (reload_tx, _) = broadcast::channel::<()>(16);
 
     let (watch_tx, watch_rx) = mpsc::unbounded_channel();
-    // Watcher must stay alive for the duration of the server; dropping it stops watching.
+    // Watcher must stay alive for the duration of the server, since dropping it stops watching.
     let _watcher: notify::RecommendedWatcher =
         setup_watcher(root, &config, watch_tx, notify::Config::default())?;
 
@@ -246,7 +245,7 @@ fn watch_paths(root: &Path, config: &Config) -> Vec<WatchEntry> {
         }
     }
 
-    // Watch the active theme directory. Restart required if the theme changes in config.toml.
+    // Changing the theme in config.toml requires a restart.
     if let Some(theme_dir) = config.theme_dir(root)
         && theme_dir.is_dir()
     {
@@ -357,8 +356,8 @@ fn build_router(output_dir: &Path, reload_tx: broadcast::Sender<()>) -> Router {
 
 /// WebSocket upgrade handler for live reload.
 ///
-/// Forwards rebuild notifications from the broadcast channel as `"reload"` text messages. The
-/// connection lives outside Chrome's HTTP/1.1 pool, so it never competes with page / asset requests.
+/// Forwards rebuild notifications from the broadcast channel as `"reload"` text messages. Its
+/// connection sits outside Chrome's HTTP/1.1 pool and never competes with page / asset requests.
 async fn ws_handler(
     ws: WebSocketUpgrade,
     State(tx): State<broadcast::Sender<()>>,
@@ -481,7 +480,6 @@ fn inject_script(html: &str) -> String {
     }
 }
 
-/// Waits for Ctrl+C to signal graceful shutdown.
 async fn shutdown_signal() {
     tokio::signal::ctrl_c()
         .await
@@ -575,7 +573,6 @@ mod tests {
     async fn serve_until_no_inject_for_non_html() {
         let root = tempfile::tempdir().unwrap();
         setup_site(root.path());
-        // Add a static file that the build will copy.
         fs::create_dir_all(root.path().join("static")).unwrap();
         fs::write(
             root.path().join("static").join("style.css"),
@@ -681,10 +678,8 @@ mod tests {
         )
         .unwrap();
 
-        // Modify a file in a watched directory.
         fs::write(content.join("test.md"), "hello").unwrap();
 
-        // The watcher should detect the change and fire the callback.
         let result = tokio::time::timeout(Duration::from_secs(5), rx.recv()).await;
         assert!(
             result.is_ok(),
@@ -775,10 +770,8 @@ mod tests {
             reload_tx,
         ));
 
-        // Trigger a rebuild event.
         event_tx.send(()).unwrap();
 
-        // Should receive a reload signal after successful rebuild.
         let result = tokio::time::timeout(Duration::from_secs(5), reload_rx.recv()).await;
         assert!(
             result.is_ok(),
@@ -809,7 +802,6 @@ mod tests {
             reload_tx,
         ));
 
-        // Trigger a rebuild event — rebuild will fail.
         event_tx.send(()).unwrap();
 
         // Allow time for debounce + rebuild attempt.
@@ -837,10 +829,8 @@ mod tests {
             reload_tx,
         ));
 
-        // Drop the sender to signal shutdown.
         drop(event_tx);
 
-        // The loop should exit promptly.
         let result = tokio::time::timeout(Duration::from_secs(2), handle).await;
         assert!(
             result.is_ok(),
@@ -1125,7 +1115,7 @@ mod tests {
         let url = format!("ws://{addr}{LIVE_RELOAD_PATH}");
         let (mut ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
 
-        // `ws_relay` subscribes after the upgrade completes; a signal published before
+        // `ws_relay` subscribes after the upgrade completes, so a signal published before
         // that lands nowhere.
         for _ in 0..100 {
             if reload_tx.receiver_count() > 0 {

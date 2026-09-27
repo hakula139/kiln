@@ -117,7 +117,7 @@ fn convert_line(line: &str, out: &mut String) {
         _ => {}
     }
 
-    // Self-closing shortcodes may appear inline — replace in-place.
+    // Self-closing shortcodes may appear inline, so replace in place.
     out.push_str(
         &SHORTCODE_OPEN_RE.replace_all(line, |caps: &regex::Captures| {
             let sc = parse_shortcode_args(&caps[2]);

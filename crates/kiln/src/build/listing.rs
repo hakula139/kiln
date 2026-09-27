@@ -139,7 +139,7 @@ pub(crate) enum BucketKind {
 }
 
 impl BucketKind {
-    /// Plural form — used as the `kind` template variable and in URL roots.
+    /// Plural form, used as the `kind` template variable and in URL roots.
     #[must_use]
     pub(crate) fn plural(self) -> &'static str {
         match self {
@@ -149,7 +149,7 @@ impl BucketKind {
         }
     }
 
-    /// Singular form — used as the `singular` template variable.
+    /// Singular form, used as the `singular` template variable.
     #[must_use]
     pub(crate) fn singular(self) -> &'static str {
         match self {
@@ -179,8 +179,8 @@ pub(crate) struct ListingBucket {
 }
 
 impl ListingBucket {
-    /// URL path with leading slash, no trailing slash (e.g., `/posts`, `/posts/note`, `/tags/rust`).
-    /// Sections live under `/posts/` to match the existing site URL contract.
+    /// URL path with a leading slash and no trailing slash (e.g., `/posts`, `/posts/note`,
+    /// `/tags/rust`). Sections live under `/posts/` to match the existing site URL contract.
     #[must_use]
     pub(crate) fn base_path(&self) -> String {
         match self.kind {
@@ -251,7 +251,6 @@ pub(crate) fn build_listing_buckets(
     buckets
 }
 
-/// Builds a `ListedPage` from a content page.
 fn build_listed_page(
     page: &Page,
     content_dir: &Path,
@@ -305,7 +304,7 @@ pub(crate) fn sort_by_date_desc(pages: &mut [ListedPage]) {
 
 /// Sorts pinned posts first (by `weight` ascending), then by date descending.
 ///
-/// Any `weight` value marks a post as pinned; lower values sort higher.
+/// Any `weight` value marks a post as pinned, and lower values sort higher.
 pub(crate) fn sort_pinned_first(pages: &mut [ListedPage]) {
     pages.sort_by_key(|page| {
         (
@@ -337,7 +336,6 @@ pub(crate) fn group_by_year(pages: Vec<ListedPage>) -> Vec<PageGroup> {
     groups
 }
 
-/// Collects the template-facing page summaries from listed pages.
 #[must_use]
 pub(crate) fn collect_page_summaries<I>(listed_pages: I) -> Vec<PageSummary>
 where
@@ -351,7 +349,6 @@ where
 
 // ── Page metadata helpers ──
 
-/// Builds a `LinkedTerm` for the page's section, if any.
 #[must_use]
 pub(crate) fn page_section(
     page: &Page,
@@ -435,7 +432,7 @@ mod tests {
     use crate::content::frontmatter::ImageCredit;
     use crate::render::lqip::ImageConfig;
 
-    // Stub resolver for tests with no local images — `resolve` returns `None`.
+    // Stub resolver for tests with no local images: `resolve` returns `None`.
     static EMPTY_RESOLVER: LazyLock<ImageResolver> =
         LazyLock::new(|| ImageResolver::new(Path::new(""), ImageConfig::default()));
 

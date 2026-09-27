@@ -61,7 +61,7 @@ The block accepts four token kinds, in any order:
 
 | Token       | Meaning                                                          |
 | ----------- | ---------------------------------------------------------------- |
-| `#id`       | HTML `id`. First wins if duplicates appear; later `#id`s ignored |
+| `#id`       | HTML `id`. First wins if duplicates appear, later `#id`s ignored |
 | `.class`    | CSS class. Multiple `.class` tokens accumulate                   |
 | `key=value` | Key-value pair. Value can be quoted (`key="..."`) or bare        |
 | `bare_word` | Standalone word. Interpretation depends on the consumer          |
@@ -96,7 +96,7 @@ Headings automatically receive `id` attributes generated from their text, suitab
 <!-- renders as: <h2 id="getting-started">Getting Started</h2> -->
 ```
 
-The slugification algorithm is CJK-aware: Chinese / Japanese / Korean characters are preserved in IDs rather than being stripped. Alphanumerics are lowercased, `+`, `.`, `_`, and `~` survive as-is (so `C++` becomes `c++`), and every other character collapses into a single `-`. Duplicate IDs are disambiguated with numeric suffixes (`-1`, `-2`, ...).
+The slugification algorithm is CJK-aware and preserves Chinese / Japanese / Korean characters in IDs. Alphanumerics are lowercased, `+`, `.`, `_`, and `~` survive as-is (so `C++` becomes `c++`), and every other character collapses into a single `-`. Duplicate IDs are disambiguated with numeric suffixes (`-1`, `-2`, ...).
 
 Explicit heading IDs override the auto-generated one:
 
@@ -106,7 +106,7 @@ Explicit heading IDs override the auto-generated one:
 <!-- renders as: <h2 id="custom-id">My Section</h2> -->
 ```
 
-Headings are also collected into a structured table of contents, exposed to post templates as the `toc` variable — see [Post templates](themes.md#post-templates-posthtml).
+Headings are also collected into a structured table of contents, exposed to post templates as the `toc` variable. See [Post templates](themes.md#post-templates-posthtml).
 
 ### Images
 
@@ -163,7 +163,7 @@ fn main() {
 
 Features:
 
-- CSS-class-based highlighting (no inline styles; requires a syntect theme stylesheet).
+- CSS-class-based highlighting without inline styles, which requires a syntect theme stylesheet.
 - Line numbers are included automatically.
 - Language labels are canonicalized from syntax definitions (e.g., `rs` maps to `rust`).
 - Unrecognized languages fall back to plain text. Known non-code DSLs (e.g., `mermaid`) are silently treated as plain text.
@@ -228,7 +228,7 @@ $$
 $$
 ```
 
-Math expressions render as KaTeX-compatible markup (`<span class="math math-inline">` / `<span class="math math-display">`). Themes load the [KaTeX](https://katex.org) CSS and JS for client-side rendering by gating on `"math" in assets.features` — see [Theming](themes.md#template-variables) for the page-scoped asset registry.
+Math expressions render as KaTeX-compatible markup (`<span class="math math-inline">` / `<span class="math math-display">`). Themes load the [KaTeX](https://katex.org) CSS and JS for client-side rendering by gating on `"math" in assets.features`. See [Theming](themes.md#template-variables) for the page-scoped asset registry.
 
 ### Footnotes
 
@@ -336,7 +336,7 @@ The closing fence must have at least as many colons as the opening fence it clos
 
 #### Code Blocks Inside Directives
 
-Fenced code blocks inside directives work normally — the parser is aware of code fences and will not interpret `:::` inside a code block as a directive boundary:
+Fenced code blocks inside directives work normally. The parser is aware of code fences and will not interpret `:::` inside a code block as a directive boundary:
 
 <!-- dprint-ignore -->
 ````markdown
@@ -408,7 +408,7 @@ The body of a callout is standard Markdown. It is rendered to HTML before being 
 
 A directive renders as a plain `<div>` wrapper in two cases:
 
-**Untyped (no name)** — Pandoc fenced div convention, useful for applying CSS classes to content blocks without semantic meaning:
+**Untyped (no name)**: the Pandoc fenced div convention, useful for applying CSS classes to content blocks without semantic meaning:
 
 <!-- dprint-ignore -->
 ```markdown
@@ -427,7 +427,7 @@ A directive renders as a plain `<div>` wrapper in two cases:
 </div>
 ```
 
-**Unknown name** — when no `templates/directives/<name>.html` template exists, the directive name becomes a CSS class on the wrapper:
+**Unknown name**: when no `templates/directives/<name>.html` template exists, the directive name becomes a CSS class on the wrapper:
 
 ```markdown
 ::: custom-type

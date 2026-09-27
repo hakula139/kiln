@@ -43,7 +43,7 @@ pub struct Config {
     pub search: Search,
 
     /// Named menu groups (e.g., `[[menu.main]]`, `[[menu.social]]`). Themes choose which groups
-    /// to render and where; kiln has no opinion about group names.
+    /// to render and where. kiln has no opinion about group names.
     #[serde(default)]
     pub menu: BTreeMap<String, Vec<MenuItem>>,
 
@@ -104,7 +104,6 @@ pub struct MenuItem {
     #[serde(default)]
     pub weight: i64,
 
-    /// Whether this link points to an external site.
     #[serde(default)]
     pub external: bool,
 }
@@ -204,8 +203,7 @@ impl Config {
     ///
     /// # Errors
     ///
-    /// Returns an error if `timezone` is set but is not a valid IANA time zone name recognized by
-    /// `jiff`.
+    /// Returns an error if `timezone` is set but is not an IANA time zone name `jiff` recognizes.
     pub fn time_zone(&self) -> Result<Option<TimeZone>> {
         self.timezone
             .as_deref()
@@ -217,7 +215,6 @@ impl Config {
     }
 }
 
-/// Kiln version from `Cargo.toml`, checked at compile time.
 const KILN_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 impl ThemeMeta {
@@ -250,11 +247,9 @@ fn merge_params(site: &mut toml::Table, theme_defaults: &toml::Table) -> Result<
     for (key, theme_val) in theme_defaults {
         if let Some(site_val) = site.get_mut(key) {
             match (site_val, theme_val) {
-                // Both are tables → recursive merge.
                 (toml::Value::Table(st), toml::Value::Table(tt)) => {
                     merge_params(st, tt)?;
                 }
-                // Type mismatch — reject.
                 (s, t) if s.type_str() != t.type_str() => {
                     bail!(
                         "param `{key}` has type `{}` in site config but `{}` in theme",
@@ -262,7 +257,7 @@ fn merge_params(site: &mut toml::Table, theme_defaults: &toml::Table) -> Result<
                         t.type_str(),
                     );
                 }
-                // Same scalar type — site wins silently.
+                // Same scalar type: site wins silently.
                 _ => {}
             }
         } else {
@@ -423,11 +418,8 @@ mod tests {
         );
     }
 
-    /// Verifies TOML field parsing for menu items.
-    ///
-    /// Items appear in TOML source order here because this test uses
-    /// `toml::from_str` directly, bypassing `Config::load()` which sorts
-    /// by weight. See `menu_sorts_by_weight_on_load` for the sorting test.
+    /// Items stay in TOML source order because `toml::from_str` bypasses the weight sort in
+    /// `Config::load()`, which `menu_sorts_by_weight_on_load` covers.
     #[test]
     fn menu_from_toml_parses_fields() {
         let config: Config = toml::from_str(indoc! {r#"
@@ -451,7 +443,6 @@ mod tests {
         .unwrap();
 
         let main = &config.menu["main"];
-        // Items in TOML source order (not sorted by weight).
         assert_eq!(main.len(), 3);
         assert_eq!(main[0].name, "Posts");
         assert_eq!(main[0].url, "/posts/");

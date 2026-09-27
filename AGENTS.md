@@ -1,4 +1,4 @@
-# CLAUDE.md — kiln
+# AGENTS.md: kiln
 
 ## Project Overview
 
@@ -25,7 +25,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 .
 ├── config.toml   # Site configuration (TOML)
 ├── content/      # Markdown content (posts, standalone pages)
-├── crates/kiln/  # SSG engine — library (lib.rs) + CLI binary (main.rs)
+├── crates/kiln/  # SSG engine: library (lib.rs) + CLI binary (main.rs)
 ├── public/       # Build output (configurable via output_dir)
 ├── static/       # Static files copied to output root (favicons, images)
 ├── templates/    # MiniJinja templates (site overrides theme)
@@ -47,7 +47,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 │   ├── overview.rs     # Bucket overview index pages (/sections/, /tags/)
 │   ├── paginate.rs     # Generic write_paginated, paginate_config
 │   ├── sitemap.rs      # sitemap.xml + robots.txt generation
-│   └── url.rs          # page_url, resolve_relative_url — build-time URL resolution helpers
+│   └── url.rs          # page_url, resolve_relative_url: build-time URL resolution helpers
 ├── config.rs           # TOML site configuration loading, theme resolution, param merging
 ├── content.rs          # Module declarations for content/ submodules
 ├── content/            # Content model submodules
@@ -109,7 +109,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 
 ### Discarding Results
 
-- Use `_ = expr` (no `let`) to discard a result — typically infallible `write!` / `writeln!` against a `String`.
+- Use `_ = expr` (no `let`) to discard a result, typically an infallible `write!` / `writeln!` against a `String`.
 
 ### Lint Suppression
 
@@ -121,7 +121,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 
 - Comment the **why**, not the **what**. Comments earn their place by explaining intent, trade-offs, invariants, or constraints the code can't convey on its own. Skip comments that restate the code or narrate the change.
 - Keep `//` comments to one line per thought. Multi-line only when the rationale genuinely needs it.
-- Doc comments (`///`) state the **contract**, not **mechanics**. One-line doc is the default; multi-line only when the contract genuinely warrants it.
+- Doc comments (`///`) state the **contract**, not **mechanics**. One-line doc is the default. Go multi-line only when the contract genuinely warrants it.
 - Wrap comments at **100 columns** (matching `rustfmt` max_width).
 - Write `//` comments as prose. Promote to `///` if list structure is genuinely useful.
 
@@ -135,7 +135,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 - One blank line between top-level items (functions, structs, enums, impls, constants). Exception: runs of closely-related one-line `const` / `static` declarations sharing a theme may sit together without blanks.
 - One blank line before and after section dividers (`// ── Name ──`). This applies inside `#[cfg(test)]` modules too. The first divider takes a blank line after the `use super::*;` block.
 - Inside function bodies, use blank lines to separate logical phases (e.g., setup → validation → execution → result).
-- Group a single-line computation with its immediate validation guard (early-return `if`) — no blank between them. Multi-line `let` bindings (async chains, builder patterns) keep the blank before their guard.
+- Group a single-line computation with its immediate validation guard (early-return `if`), leaving no blank line between them. Multi-line `let` bindings (async chains, builder patterns) keep the blank before their guard.
 
 ### Module Organization
 
@@ -159,7 +159,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 ### String Literals
 
 - Prefer raw strings (`r"..."`) when the string contains characters that would need escaping. Always use the minimum delimiter level needed (`r"..."` → `r#"..."#` → `r##"..."##`).
-- Use `indoc!` / `formatdoc!` for multiline string content so the literal can be indented with surrounding code. Inline at the call site when the string is used once; use a named constant only when it is shared or very large. Avoid `\n` escapes and `\x20` workarounds for multiline content.
+- Use `indoc!` / `formatdoc!` for multiline string content so the literal can be indented with surrounding code. Inline at the call site when the string is used once. Use a named constant only when it is shared or very large. Avoid `\n` escapes and `\x20` workarounds for multiline content.
 - Ellipsis: always `...` (three ASCII dots), never `…` (U+2026). Applies everywhere: prose, comments, doc comments, and strings.
 
 ### Enum String Mappings
@@ -177,7 +177,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 
 Follows global CLAUDE.md commit / branch / PR conventions, plus:
 
-- **Scope**: the most specific area changed — module (e.g., `config`, `render`, `directive`), doc target (e.g., `CLAUDE`, `roadmap`), or crate name only for cross-module changes.
+- **Scope**: the most specific area changed, such as a module (e.g., `config`, `render`, `directive`), doc target (e.g., `CLAUDE`, `roadmap`), or crate name only for cross-module changes.
 - **`ci(release)` is special**: `cliff.toml` routes `ci(release)` commits to the changelog's `Added` section, while bare `ci:` is skipped. Use `ci(release)` for user-facing release-pipeline changes (new target platforms, archive layout, asset naming) that should appear in release notes. Use plain `ci:` for everything else (concurrency gates, runner pinning, internal job restructuring). Squash merge takes the **PR title**, not branch commits, so the PR title must carry the `(release)` scope for it to land in the changelog.
 - **PRs**: assign to `hakula139`. Label `enhancement` for `feat`, `bug` for `fix`. Do not request review from the PR author (GitHub rejects it).
 
@@ -196,13 +196,13 @@ Follows global CLAUDE.md commit / branch / PR conventions, plus:
 
 - Keep `README.md` user-facing. It should describe value, supported features, and usage, not internal progress tracking.
 - Keep `docs/roadmap.md` as the canonical in-repo roadmap / status summary. Update it when shipped capability areas or planned priorities change.
-- Crate structure diagrams must match the actual filesystem. When adding, removing, or renaming modules, update the tree in this file. Entries are sorted alphabetically; directories sort alongside their parent `.rs` file.
-- Markdown prose is **not hard-wrapped** — paragraphs are single long lines and flow with the reader's viewport. Match the surrounding style; do not introduce 80-column line breaks inside paragraphs.
+- Crate structure diagrams must match the actual filesystem. When adding, removing, or renaming modules, update the tree in this file. Entries are sorted alphabetically, and directories sort alongside their parent `.rs` file.
+- Markdown prose is **not hard-wrapped**. Paragraphs are single long lines that flow with the reader's viewport, so do not introduce 80-column line breaks inside them.
 - After substantive changes, sweep docs for stale claims: `README.md` feature lists, `docs/roadmap.md` status sections, and this file's crate tree.
 
 ## Nix Development
 
-`flake.nix` pins the Rust toolchain, `libdav1d` (AVIF), `pagefind`, and `git-cliff` for the dev shell. It also exposes `packages.{default,kiln,pagefind}` so site repos can consume kiln as a flake input (`inputs.kiln.url = "github:hakula139/kiln";`) — `kiln` is source-built (dav1d wired in by Nix), `pagefind` is a vendored prebuilt under `packages/pagefind/`.
+`flake.nix` pins the Rust toolchain, `libdav1d` (AVIF), `pagefind`, and `git-cliff` for the dev shell. It also exposes `packages.{default,kiln,pagefind}` so site repos can consume kiln as a flake input (`inputs.kiln.url = "github:hakula139/kiln";`). `kiln` is source-built with dav1d wired in by Nix, and `pagefind` is a vendored prebuilt under `packages/pagefind/`.
 
 ```bash
 nix develop                            # interactive shell (for hacking on kiln)
@@ -239,7 +239,7 @@ After verification passes, run a dual review using both a reviewer subagent and 
 - Correctness and edge cases
 - Adherence to project conventions (this file)
 - Conciseness — prefer the simplest idiomatic solution
-- DRY — flag duplicate logic across modules; look for extraction opportunities
+- DRY — flag duplicate logic across modules and look for extraction opportunities
 - Cross-file consistency — parallel types should use the same structure, naming, ordering, and derive traits
 - Comment hygiene — verbose multi-line docs that should be one-liners, missing WHY comments where non-obvious
 - Visibility — `pub(crate)` where `pub(super)` or private suffices

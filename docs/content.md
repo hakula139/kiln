@@ -55,7 +55,7 @@ Without `_index.md`, the section title is derived from the directory name (title
 Pages are excluded from the build when:
 
 - `draft = true` in frontmatter
-- The filename starts with `_` (including `_index.md` — these are listing metadata files, not pages)
+- The filename starts with `_`, which includes the `_index.md` listing metadata files
 - The file has no TOML frontmatter (`+++` delimiters)
 
 ## Page Bundles
@@ -102,7 +102,7 @@ This resolves to `/posts/note/my-post/cover.webp` in templates and listing pages
 
 ### Per-Page CSS
 
-A page bundle may include a `style.css` file at any depth. kiln auto-detects it and injects a `<link>` tag in the page's `<head>`, after the main stylesheet.
+A page bundle may include a `style.css` file at any depth. kiln auto-detects it and exposes its URL to templates as [`page_css`](themes.md#post-templates-posthtml), which themes such as IgnIt link from the page's `<head>` after the main stylesheet.
 
 ```text
 content/posts/avg/impressions/
@@ -119,7 +119,7 @@ content/posts/avg/impressions/
     └── style.css     ← also detected (nested)
 ```
 
-The CSS is **plain CSS** — not processed by Tailwind or any other tool. To scope styles to the page, use the `:::` directive system to create a wrapper `<div>` with a class:
+kiln copies the file as-is without running Tailwind or any other processor. To scope styles to the page, use the `:::` directive system to create a wrapper `<div>` with a class:
 
 <!-- dprint-ignore -->
 ```markdown

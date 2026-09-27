@@ -114,7 +114,6 @@ mod tests {
         assert!(theme_dir.join("i18n").join("en.toml").exists());
         assert!(theme_dir.join("i18n").join("zh-Hans.toml").exists());
 
-        // Templates should be valid (non-empty).
         let base = fs::read_to_string(theme_dir.join("templates").join("base.html")).unwrap();
         assert!(
             base.contains("{% block body %}"),

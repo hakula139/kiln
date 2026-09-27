@@ -8,7 +8,6 @@ use crate::sitemap::{self, SitemapEntry};
 use super::BuildContext;
 use super::listing::ListedPage;
 
-/// Generates `sitemap.xml` and `robots.txt` in the output directory.
 pub(crate) fn build_sitemap_and_robots(
     ctx: &BuildContext,
     listed_pages: &[ListedPage],

@@ -42,7 +42,7 @@ impl fmt::Display for CalloutKind {
     }
 }
 
-/// Parsed directive type — either a callout or an unrecognized name preserved for extension.
+/// Parsed directive type: either a callout or an unrecognized name preserved for extension.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DirectiveKind {
     Callout {
@@ -50,7 +50,7 @@ pub enum DirectiveKind {
         title: Option<String>,
         open: bool,
     },
-    /// Unrecognized type — rendered as a `<div>` or passed through as-is.
+    /// Unrecognized type, rendered as a `<div>` or passed through as-is.
     Unknown {
         name: String,
         positional_args: Vec<String>,
@@ -79,7 +79,7 @@ impl DirectiveKind {
 
 /// Serializable context passed to directive templates.
 ///
-/// `body_html` is pre-rendered markdown; `body_raw` is the unprocessed source for templates
+/// `body_html` is pre-rendered markdown, and `body_raw` is the unprocessed source for templates
 /// that parse structured content (e.g., CSV).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct DirectiveContext {
@@ -115,7 +115,6 @@ pub(crate) fn parse_directive_args(input: &str) -> DirectiveArgs {
     let mut rest = input.trim();
 
     while !rest.is_empty() {
-        // #id (bare token only).
         if let Some(after) = rest.strip_prefix('#') {
             let end = after.find(char::is_whitespace).unwrap_or(after.len());
             if result.id.is_none() && end > 0 {
@@ -125,7 +124,6 @@ pub(crate) fn parse_directive_args(input: &str) -> DirectiveArgs {
             continue;
         }
 
-        // .class (bare token only).
         if let Some(after) = rest.strip_prefix('.') {
             let end = after.find(char::is_whitespace).unwrap_or(after.len());
             if end > 0 {
@@ -135,7 +133,6 @@ pub(crate) fn parse_directive_args(input: &str) -> DirectiveArgs {
             continue;
         }
 
-        // Quoted string → positional arg.
         if let Some(after_quote) = rest.strip_prefix('"') {
             let (end, has_escapes) = scan_quoted_value(after_quote);
             let raw = &after_quote[..end];
@@ -152,8 +149,7 @@ pub(crate) fn parse_directive_args(input: &str) -> DirectiveArgs {
         let next_ws = rest.find(char::is_whitespace).unwrap_or(rest.len());
         let next_eq = rest.find('=');
 
-        // Named arg: key=value or key="quoted value".
-        // Require a non-empty key; treat `=value` as a bare word.
+        // An empty key makes `=value` fall through as a bare word.
         if let Some(eq) = next_eq.filter(|&p| p > 0 && p < next_ws) {
             let key = &rest[..eq];
             let after_eq = &rest[eq + 1..];
@@ -178,7 +174,6 @@ pub(crate) fn parse_directive_args(input: &str) -> DirectiveArgs {
             continue;
         }
 
-        // Bare word → positional arg.
         result.positional.push(rest[..next_ws].to_string());
         rest = rest[next_ws..].trim_start();
     }
@@ -195,7 +190,7 @@ pub struct DirectiveBlock {
     /// Extra CSS classes from Pandoc `.class` tokens (excluding the directive name).
     pub classes: Vec<String>,
     /// Body text between the opening and closing fences. For nested directives, the outer block's
-    /// body contains inner fences verbatim; callers process recursively (inner-first).
+    /// body contains inner fences verbatim, and callers process recursively (inner-first).
     pub body: String,
     /// Byte range in the original content (opening fence through closing fence).
     pub range: Range<usize>,
@@ -214,10 +209,8 @@ mod tests {
         for kind in CalloutKind::iter() {
             let s: &str = kind.as_ref();
 
-            // Round-trip through FromStr.
             assert_eq!(s.parse::<CalloutKind>().unwrap(), kind);
 
-            // Case-insensitive.
             assert_eq!(s.to_uppercase().parse::<CalloutKind>().unwrap(), kind);
 
             // Display is titlecase of as_ref.

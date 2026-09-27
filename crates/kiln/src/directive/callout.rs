@@ -17,7 +17,7 @@ use crate::html::{escape, writeln_indented};
 /// - `title`: when `None`, the kind's display name is used.
 /// - `open`: maps to the HTML `open` attribute on `<details>`.
 /// - `id` / `classes`: optional Pandoc attributes rendered on the outer element.
-/// - `body_html` must be pre-rendered — the caller handles markdown recursion.
+/// - `body_html` must be pre-rendered, since the caller handles markdown recursion.
 #[must_use]
 pub fn render_callout(
     kind: CalloutKind,
@@ -270,7 +270,6 @@ mod tests {
             parse_named_args(&named(&[("type", "tip")])),
             (CalloutKind::Tip, None, true)
         );
-        // Case-insensitive.
         assert_eq!(
             parse_named_args(&named(&[("type", "TIP")])),
             (CalloutKind::Tip, None, true)
@@ -303,7 +302,6 @@ mod tests {
             parse_named_args(&named(&[("open", "true")])),
             (CalloutKind::Note, None, true)
         );
-        // Case-insensitive.
         assert_eq!(
             parse_named_args(&named(&[("open", "FALSE")])),
             (CalloutKind::Note, None, false)

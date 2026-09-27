@@ -57,7 +57,7 @@ pub fn parse_directives(content: &str) -> Vec<DirectiveBlock> {
             let after_colons = line[colon_count..].trim();
 
             if after_colons.is_empty() {
-                // Closing fence — only matches the topmost stack entry if its
+                // A closing fence only matches the topmost stack entry if its
                 // opening colon count ≤ the closing count. This prevents a
                 // closing fence from "reaching through" unclosed inner blocks.
                 if stack
@@ -100,7 +100,7 @@ pub fn parse_directives(content: &str) -> Vec<DirectiveBlock> {
 
 /// Returns the number of leading `:` characters if there are at least 3.
 ///
-/// Only matches column-0 directives — indented lines are intentionally ignored
+/// Only matches column-0 directives. Indented lines are intentionally ignored
 /// since directives are top-level constructs.
 fn count_leading_colons(line: &str) -> Option<usize> {
     let count = line.bytes().take_while(|&b| b == b':').count();
@@ -113,7 +113,6 @@ fn count_leading_colons(line: &str) -> Option<usize> {
 fn parse_directive_head(text: &str) -> DirectiveHead {
     let text = text.trim();
 
-    // Split off directive name (if not starting with '{').
     let (name, rest) = if text.starts_with('{') {
         ("", text)
     } else {
@@ -121,10 +120,8 @@ fn parse_directive_head(text: &str) -> DirectiveHead {
         (&text[..pos], text[pos..].trim_start())
     };
 
-    // Parse {#id .class key=value "positional"} if present.
-    // Use `rfind` instead of `strip_suffix` so trailing content after the
-    // closing brace (e.g. HTML comments like `<!-- cspell:disable-line -->`)
-    // does not silently discard all attributes.
+    // Use `rfind` instead of `strip_suffix` so trailing content after the closing brace (e.g. HTML
+    // comments like `<!-- cspell:disable-line -->`) does not silently discard all attributes.
     if rest.starts_with('{')
         && let Some(close) = rest.rfind('}')
     {
@@ -139,7 +136,7 @@ fn parse_directive_head(text: &str) -> DirectiveHead {
         };
     }
 
-    // Name only — text after the name without braces is ignored.
+    // Name only: text after the name without braces is ignored.
     DirectiveHead {
         name: name.to_string(),
         positional_args: Vec::new(),
@@ -648,7 +645,6 @@ mod tests {
 
     #[test]
     fn parse_directives_directives_inside_code_fences_ignored() {
-        // Backtick fences.
         let input = indoc! {"
             ```
             ::: callout
@@ -658,7 +654,6 @@ mod tests {
         "};
         assert!(parse_directives(input).is_empty());
 
-        // Tilde fences.
         let input = indoc! {"
             ~~~
             ::: callout
@@ -713,7 +708,6 @@ mod tests {
 
     #[test]
     fn parse_directives_over_indented_code_fence_not_recognized() {
-        // Opening fence.
         let input = indoc! {"
                 ```
             ::: callout
@@ -726,7 +720,6 @@ mod tests {
             "over-indented opening fence should not suppress directives"
         );
 
-        // Closing fence.
         let input = indoc! {"
             ```
             ::: callout

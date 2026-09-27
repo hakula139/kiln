@@ -16,7 +16,6 @@ pub struct Channel {
     pub last_build_date: Option<String>,
 }
 
-/// Default number of items per feed.
 pub const DEFAULT_FEED_LIMIT: usize = 20;
 
 /// Generates an RSS 2.0 XML feed from a channel description and page entries.

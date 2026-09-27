@@ -86,9 +86,7 @@ fn try_extract_image(
 }
 
 fn find_image_end(bytes: &[u8], start: usize) -> Option<usize> {
-    // Skip `![`, find matching `]`.
     let i = find_matching_close(bytes, start + 2, b'[', b']')?;
-    // Expect `(` immediately after `]`.
     if i >= bytes.len() || bytes[i] != b'(' {
         return None;
     }
@@ -376,7 +374,6 @@ mod tests {
 
     #[test]
     fn extract_skips_fenced_code() {
-        // Backtick fences.
         let input = indoc! {"
             ```
             ![alt](img.png){width=500}
@@ -386,7 +383,6 @@ mod tests {
         assert_eq!(output, input);
         assert!(attrs.is_empty());
 
-        // Tilde fences.
         let input = indoc! {"
             ~~~
             ![alt](img.png){width=500}

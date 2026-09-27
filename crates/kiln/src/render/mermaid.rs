@@ -64,7 +64,7 @@ mod tests {
                 A --> B((8))
         "};
         let html = render_mermaid(source);
-        // Indentation and newlines are preserved verbatim — mermaid is
+        // Indentation and newlines are preserved verbatim because mermaid is
         // whitespace-sensitive in some dialects (flowchart subgraphs).
         let inner = indoc! {"
             graph TB

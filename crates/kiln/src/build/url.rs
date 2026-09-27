@@ -18,10 +18,9 @@ pub(crate) fn page_url(base_url: &str, output_path: &Path) -> String {
 
 /// Resolves a relative path against a page's output URL.
 ///
-/// Absolute paths (starting with `/`) and external URLs (containing `://`)
-/// are returned as-is. Relative paths are resolved against the page's
-/// directory URL (must end with `/`) so that co-located assets like
-/// `assets/cover.webp` become `/posts/section/slug/assets/cover.webp`.
+/// Absolute paths (starting with `/`) and external URLs (containing `://`) are returned as-is.
+/// Relative paths are resolved against the page's directory URL (must end with `/`) so that
+/// co-located assets like `assets/cover.webp` become `/posts/section/slug/assets/cover.webp`.
 #[must_use]
 pub(crate) fn resolve_relative_url(src: &str, page_url: &str) -> String {
     if src.starts_with('/') || src.contains("://") {

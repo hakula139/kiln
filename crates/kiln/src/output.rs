@@ -242,7 +242,7 @@ mod tests {
         );
     }
 
-    // macOS APFS rejects non-UTF-8 filenames; Linux ext4/btrfs accept them.
+    // macOS APFS rejects non-UTF-8 filenames, while Linux ext4 and btrfs accept them.
     // CI runs on ubuntu-latest, so coverage of the `to_str() == None` branch lands there.
     #[cfg(target_os = "linux")]
     #[test]
@@ -255,7 +255,7 @@ mod tests {
         let dest = dir.path().join("public");
         fs::create_dir_all(&src).unwrap();
         fs::create_dir_all(&dest).unwrap();
-        // Lone continuation bytes — invalid UTF-8.
+        // Lone continuation bytes are invalid UTF-8.
         let bad_name = OsStr::from_bytes(&[0xff, 0xfe]);
         fs::write(src.join(bad_name), "binary").unwrap();
 

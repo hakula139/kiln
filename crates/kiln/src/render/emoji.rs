@@ -13,7 +13,7 @@ static EMOJI_RE: LazyLock<Regex> =
 
 /// Replaces `:shortcode:` emoji shortcodes with Unicode emoji characters.
 ///
-/// Only shortcodes recognized by GitHub's emoji set are replaced; unknown
+/// Only shortcodes recognized by GitHub's emoji set are replaced, and unknown
 /// shortcodes pass through unchanged. Skips replacements inside fenced code
 /// blocks (` ``` ` / `~~~`) and inline code spans (`` ` ``).
 #[must_use]

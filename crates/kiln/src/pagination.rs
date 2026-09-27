@@ -21,7 +21,6 @@ impl<'a, T> Paginator<'a, T> {
         Self { items, per_page }
     }
 
-    /// Returns the total number of pages.
     #[must_use]
     pub fn total_pages(&self) -> usize {
         self.items.len().div_ceil(self.per_page)
@@ -86,7 +85,6 @@ pub struct PaginationItem {
 }
 
 impl PaginationVars {
-    /// Creates pagination variables for the given page number.
     #[must_use]
     pub fn new(base_path: &str, current_page: usize, total_pages: usize) -> Self {
         let base_url = base_path.trim_end_matches('/').to_owned();
@@ -198,22 +196,18 @@ mod tests {
 
     #[test]
     fn pagination_vars_boundaries() {
-        // First page: no prev, has next.
         let first = PaginationVars::new("/t", 1, 3);
         assert!(first.prev_url.is_none());
         assert_eq!(first.next_url.as_deref(), Some("/t/page/2/"));
 
-        // Middle page: has both.
         let mid = PaginationVars::new("/t", 2, 3);
         assert_eq!(mid.prev_url.as_deref(), Some("/t/"));
         assert_eq!(mid.next_url.as_deref(), Some("/t/page/3/"));
 
-        // Last page: has prev, no next.
         let last = PaginationVars::new("/t", 3, 3);
         assert_eq!(last.prev_url.as_deref(), Some("/t/page/2/"));
         assert!(last.next_url.is_none());
 
-        // Single page: neither.
         let single = PaginationVars::new("/t", 1, 1);
         assert!(single.prev_url.is_none());
         assert!(single.next_url.is_none());
