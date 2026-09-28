@@ -250,8 +250,6 @@ Here is a claim[^1] that needs a source.
 | a    |   b    |     c |
 ```
 
-Set `[params].table_nowrap_width` to give every cell in a short column `class="nowrap"`. The threshold applies to the widest cell, measured in terminal columns (CJK and emoji count as 2). Text, inline code, and math source count. Link targets and image alt text do not. Marking is disabled when neither the site nor theme sets a threshold. `0` marks only zero-width columns. Themes control wrapping through CSS.
-
 #### Strikethrough
 
 ```markdown
