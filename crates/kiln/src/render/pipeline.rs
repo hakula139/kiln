@@ -1,16 +1,19 @@
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::path::Path;
 
 use anyhow::Result;
+use pulldown_cmark::{Event, Tag, TagEnd};
 use syntect::parsing::SyntaxSet;
 
 use super::RenderOptions;
 use super::assets::{AssetsHandle, PageAssets};
 use super::emoji::replace_emojis;
 use super::icon::replace_icons;
-use super::image_attrs::extract_image_attrs;
+use super::image_attrs::{ImageAttrs, extract_image_attrs};
 use super::lqip::ImageResolver;
-use super::markdown::{MarkdownOutput, MarkdownSettings, render_markdown};
+use super::markdown::{MarkdownDocument, MarkdownOutput, MarkdownSettings, render_markdown};
+use super::page_ids::PageIds;
 use super::toc::render_toc_html;
 use crate::config::Config;
 use crate::directive::callout::render_callout;
@@ -44,6 +47,10 @@ pub fn render_page(
     source_dir: Option<&Path>,
     image_resolver: &ImageResolver,
 ) -> Result<RenderedPage> {
+    let mut placeholder_prefix = "<!--kiln-directive-".to_owned();
+    while raw_content.contains(&placeholder_prefix) {
+        placeholder_prefix.push('-');
+    }
     let renderer = PageRenderer {
         syntax_set,
         engine,
@@ -52,13 +59,17 @@ pub fn render_page(
         source_dir,
         image_resolver,
         assets: AssetsHandle::default(),
+        placeholder_prefix: &placeholder_prefix,
     };
-    let (processed, fragments) = renderer.render_directives(raw_content)?;
-    let md_output = renderer.render_markdown(&processed, options.code_max_lines);
+    let mut document = renderer.prepare_document(raw_content, &mut 0);
+    let mut ids = PageIds::default();
+    document.reserve_authored_ids(&mut ids, &placeholder_prefix);
+    document.allocate_heading_ids(&mut ids, &placeholder_prefix);
+    let md_output = renderer.render_document(document, &mut ids)?;
     let toc_html = render_toc_html(&md_output.headings);
 
     Ok(RenderedPage {
-        content_html: restore_directives(md_output.html, &fragments),
+        content_html: md_output.html,
         toc_html,
         assets: renderer.assets.snapshot(),
     })
@@ -73,30 +84,126 @@ struct PageRenderer<'a> {
     source_dir: Option<&'a Path>,
     image_resolver: &'a ImageResolver,
     assets: AssetsHandle,
+    placeholder_prefix: &'a str,
+}
+
+struct PreparedDocument {
+    scope: usize,
+    markdown: MarkdownDocument,
+    image_attrs: HashMap<usize, ImageAttrs>,
+    directives: Vec<(DirectiveBlock, PreparedDocument)>,
+}
+
+impl PreparedDocument {
+    fn reserve_authored_ids(&self, ids: &mut PageIds, prefix: &str) {
+        let mut raw_html = String::new();
+        let mut image_depth = 0;
+        for (event, range) in self.markdown.footnotes.events() {
+            match event {
+                Event::Start(Tag::Image { .. }) => {
+                    if image_depth == 0
+                        && let Some(id) = self
+                            .image_attrs
+                            .get(&range.start)
+                            .and_then(|attrs| attrs.id.as_deref())
+                    {
+                        ids.reserve(id);
+                    }
+                    image_depth += 1;
+                }
+                Event::End(TagEnd::Image) => image_depth -= 1,
+                Event::Html(html) | Event::InlineHtml(html) if image_depth == 0 => {
+                    if let Some(index) = placeholder_index(html, prefix) {
+                        let (block, document) = &self.directives[index];
+                        if let Some(id) = &block.id {
+                            ids.reserve(id);
+                        }
+                        document.reserve_authored_ids(ids, prefix);
+                    } else {
+                        raw_html.push_str(html);
+                    }
+                }
+                _ => {}
+            }
+        }
+        ids.reserve_html(&raw_html);
+    }
+
+    fn allocate_heading_ids(&mut self, ids: &mut PageIds, prefix: &str) {
+        let mut headings = self.markdown.headings.iter_mut();
+        for (event, _) in self.markdown.footnotes.events() {
+            match event {
+                Event::End(TagEnd::Heading(_)) => {
+                    if let Some(heading) = headings.next() {
+                        heading.id = ids.allocate(&heading.id);
+                    }
+                }
+                Event::Html(html) => {
+                    if let Some(index) = placeholder_index(html, prefix) {
+                        self.directives[index].1.allocate_heading_ids(ids, prefix);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
 }
 
 impl PageRenderer<'_> {
-    /// Recursively renders directive blocks, replacing each with a placeholder line and returning
-    /// the rendered HTML fragments for [`restore_directives`].
-    ///
-    /// The placeholder keeps rendered HTML out of the surrounding markdown, which would otherwise
-    /// reparse it and could break a code block containing a blank line followed by indented code.
-    /// Replacement is right-to-left so byte offsets stay valid. Each directive body is rendered as
-    /// an isolated markdown document, so its headings stay out of the page-level `ToC` and its
-    /// footnotes stay within the directive.
-    fn render_directives(&self, content: &str) -> Result<(String, Vec<String>)> {
+    fn prepare_document(&self, content: &str, next_scope: &mut usize) -> PreparedDocument {
+        let scope = *next_scope;
+        *next_scope += 1;
         let all_blocks = parse_directives(content);
         let top_level = top_level_blocks(&all_blocks);
-        let mut result = content.to_owned();
-        let mut fragments = Vec::with_capacity(top_level.len());
+        let mut processed = content.to_owned();
+        let directives = top_level
+            .iter()
+            .map(|block| {
+                (
+                    (*block).clone(),
+                    self.prepare_document(&block.body, next_scope),
+                )
+            })
+            .collect();
+        for (index, block) in top_level.into_iter().enumerate().rev() {
+            // A standalone comment keeps rendered directive HTML out of the surrounding parser.
+            let placeholder = format!(
+                "\n{}",
+                directive_placeholder(self.placeholder_prefix, index)
+            );
+            processed.replace_range(block.range.clone(), &placeholder);
+        }
+        let mut content = Cow::Borrowed(processed.as_str());
+        if self.options.emojis {
+            content = Cow::Owned(replace_emojis(&content));
+        }
+        if self.options.fontawesome {
+            content = Cow::Owned(replace_icons(&content));
+        }
+        let (cleaned, image_attrs) = extract_image_attrs(&content);
+        PreparedDocument {
+            scope,
+            markdown: MarkdownDocument::parse(&cleaned),
+            image_attrs,
+            directives,
+        }
+    }
 
-        for block in top_level.into_iter().rev() {
-            let (inner, inner_fragments) = self.render_directives(&block.body)?;
-            let md_output = self.render_markdown(&inner, None);
-            let body_html = restore_directives(md_output.html, &inner_fragments);
+    fn render_document(
+        &self,
+        mut document: PreparedDocument,
+        ids: &mut PageIds,
+    ) -> Result<MarkdownOutput> {
+        document
+            .markdown
+            .footnotes
+            .allocate_ids(ids, document.scope);
+        let mut fragments = Vec::with_capacity(document.directives.len());
+        for (block, inner) in document.directives {
+            let body = self.render_document(inner, ids)?;
             let mut html = render_directive_block(
-                block,
-                &body_html,
+                &block,
+                &body.html,
                 self.engine,
                 self.config,
                 self.source_dir,
@@ -105,57 +212,49 @@ impl PageRenderer<'_> {
             if !html.ends_with('\n') {
                 html.push('\n');
             }
-
-            // The directive parser only matches column-0 fences, so the placeholder always starts
-            // a line and parses as a standalone HTML comment block.
-            let padded = format!("\n{}", directive_placeholder(fragments.len()));
             fragments.push(html);
-            result.replace_range(block.range.clone(), &padded);
         }
-
-        Ok((result, fragments))
-    }
-
-    /// Applies the enabled shortcode replacements and image attribute blocks, then renders the
-    /// markdown.
-    fn render_markdown(&self, content: &str, code_max_lines: Option<usize>) -> MarkdownOutput {
-        let mut content = Cow::Borrowed(content);
-        if self.options.emojis {
-            content = Cow::Owned(replace_emojis(&content));
-        }
-        if self.options.fontawesome {
-            content = Cow::Owned(replace_icons(&content));
-        }
-        let (cleaned, image_attrs) = extract_image_attrs(&content);
-
-        render_markdown(
-            &cleaned,
+        let mut output = render_markdown(
+            document.markdown,
             self.syntax_set,
-            &image_attrs,
+            &document.image_attrs,
             self.image_resolver,
             self.source_dir,
             MarkdownSettings {
-                code_max_lines,
+                code_max_lines: if document.scope == 0 {
+                    self.options.code_max_lines
+                } else {
+                    None
+                },
                 table_nowrap_width: self.options.table_nowrap_width,
             },
             &mut self.assets.lock().features,
-        )
+        );
+        output.html = restore_directives(output.html, self.placeholder_prefix, &fragments);
+        Ok(output)
     }
 }
 
-/// Substitutes the fragments returned by [`PageRenderer::render_directives`] back into the
+fn placeholder_index(html: &str, prefix: &str) -> Option<usize> {
+    html.strip_prefix(prefix)?
+        .strip_suffix("-->\n")?
+        .parse()
+        .ok()
+}
+
+/// Substitutes the fragments returned by [`PageRenderer::prepare_document`] back into the
 /// rendered HTML.
-fn restore_directives(mut html: String, fragments: &[String]) -> String {
+fn restore_directives(mut html: String, prefix: &str, fragments: &[String]) -> String {
     for (index, fragment) in fragments.iter().enumerate() {
-        html = html.replacen(&directive_placeholder(index), fragment, 1);
+        html = html.replacen(&directive_placeholder(prefix, index), fragment, 1);
     }
     html
 }
 
 /// Returns the placeholder line for the `index`-th directive fragment. Fragments are
 /// newline-terminated, so each one replaces a whole line and keeps its own lines in the output.
-fn directive_placeholder(index: usize) -> String {
-    format!("<!--kiln-directive-{index}-->\n")
+fn directive_placeholder(prefix: &str, index: usize) -> String {
+    format!("{prefix}{index}-->\n")
 }
 
 /// Filters to only top-level directive blocks (those not nested inside another).
@@ -388,10 +487,160 @@ mod tests {
         );
     }
 
-    // ── render_directives ──
+    #[test]
+    fn render_page_heading_ids_follow_document_order_across_scopes() {
+        let page = render(indoc! {"
+            ## Shared
+
+            ::: callout {type=note}
+            ## Shared
+
+            ::: callout {type=tip}
+            ## Shared
+            :::
+            :::
+
+            ## Shared
+
+            ::: callout {type=note}
+            ## Shared {#shared}
+            :::
+
+            ## Shared
+        "});
+        let mut previous = 0;
+        for id in [
+            "shared", "shared-1", "shared-2", "shared-3", "shared-4", "shared-5",
+        ] {
+            let position = page.content_html.find(&format!(r#"id="{id}""#)).unwrap();
+            assert!(position >= previous, "{id}: {}", page.content_html);
+            previous = position;
+        }
+        for id in ["shared", "shared-3", "shared-5"] {
+            assert!(page.toc_html.contains(&format!(r##"href="#{id}""##)));
+        }
+        assert!(!page.toc_html.contains(r##"href="#shared-1""##));
+    }
 
     #[test]
-    fn render_directives_sequential() {
+    fn render_page_footnote_ids_are_scoped_and_avoid_authored_ids() {
+        let page = render(indoc! {"
+            ## Heading {#fn-a}
+
+            Text[^a].
+
+            [^a]: Outer.
+
+            ::: callout {#fnref-a-1 type=note}
+            Inner[^a].
+
+            [^a]: Inner note.
+
+            ::: callout {type=tip}
+            Nested[^a].
+
+            [^a]: Nested note.
+            :::
+            :::
+        "});
+        for id in [
+            "fn-a-1",
+            "fn-1-a",
+            "fn-2-a",
+            "fnref-a-1-1",
+            "fnref-1-a-1",
+            "fnref-2-a-1",
+        ] {
+            assert_eq!(
+                page.content_html.matches(&format!(r#"id="{id}""#)).count(),
+                1,
+                "{id}: {}",
+                page.content_html
+            );
+            assert!(page.content_html.contains(&format!(r##"href="#{id}""##)));
+        }
+        assert!(page.toc_html.contains(r##"href="#fn-a""##));
+    }
+
+    #[test]
+    fn render_page_reserves_visible_authored_ids() {
+        let page = render(indoc! {r#"
+            ![<script>](script.png)
+
+            <div id=shared></div>
+
+            ## Shared
+
+            Inline <span ID='fn&#45;a'></span> reference[^a].
+
+            [^a]: Note.
+
+            [^unused]:
+                ![Hidden](hidden.png){#visible}
+
+                <span id="unused"></span>
+
+            ## Visible
+
+            ![<span id="visible">Alt</span>](image.png){#image}
+
+            ## Image
+
+            ## Unused
+
+            ## Code
+
+            `<span id="code"></span>`
+
+            ```html
+            <span id="code"></span>
+            ```
+
+            ::: callout
+            <span id="fn-1-a"></span>
+
+            Scoped[^a].
+
+            [^a]: Inner.
+            :::
+        "#});
+        for id in ["shared-1", "visible", "image-1", "unused", "code"] {
+            assert!(
+                page.content_html.contains(&format!(r#"<h2 id="{id}">"#)),
+                "{id}: {}",
+                page.content_html
+            );
+            assert!(page.toc_html.contains(&format!(r##"href="#{id}""##)));
+        }
+        for id in ["fn-a-1", "fn-1-a-1"] {
+            assert!(page.content_html.contains(&format!(r#"<li id="{id}">"#)));
+            assert!(page.content_html.contains(&format!(r##"href="#{id}""##)));
+        }
+    }
+
+    #[test]
+    fn render_page_preserves_authored_placeholder_comments() {
+        let page = render(indoc! {"
+            <!--kiln-directive-99-->
+
+            <!--kiln-directive-0-->
+
+            ::: callout {type=note}
+            ## Inside
+            :::
+
+            ## Inside
+        "});
+        assert!(page.content_html.contains("<!--kiln-directive-99-->"));
+        assert!(page.content_html.contains("<!--kiln-directive-0-->"));
+        assert_eq!(page.content_html.matches("<details").count(), 1);
+        assert!(page.toc_html.contains(r##"href="#inside-1""##));
+    }
+
+    // ── render_page: directives ──
+
+    #[test]
+    fn render_page_directives_sequential() {
         let page = render(indoc! {"
             ::: callout
             First.
@@ -421,7 +670,7 @@ mod tests {
     }
 
     #[test]
-    fn render_directives_with_image_attrs() {
+    fn render_page_directives_with_image_attrs() {
         let page = render(indoc! {"
             ::: callout
             ![A photo](img.png){width=240}
@@ -440,7 +689,7 @@ mod tests {
     }
 
     #[test]
-    fn render_directives_nested() {
+    fn render_page_directives_nested() {
         let page = render(indoc! {"
             :::: callout {type=warning}
             Outer text.
@@ -473,7 +722,7 @@ mod tests {
     }
 
     #[test]
-    fn render_directives_body_html_survives_outer_render() {
+    fn render_page_directives_body_html_survives_outer_render() {
         let page = render(indoc! {"
             ::: callout
             ```text
@@ -492,94 +741,6 @@ mod tests {
             page.content_html.contains("    indented"),
             "code line should keep its indentation, html:\n{}",
             page.content_html
-        );
-    }
-
-    // ── top_level_blocks ──
-
-    #[test]
-    fn top_level_blocks_filters_nested() {
-        let input = indoc! {"
-            :::: outer
-            ::: inner
-            Body
-            :::
-            ::::
-        "};
-        let all = parse_directives(input);
-        assert_eq!(all.len(), 2, "parser should find both blocks");
-
-        let top = top_level_blocks(&all);
-        assert_eq!(top.len(), 1, "only outer block is top-level");
-        assert_eq!(top[0].range.start, 0);
-    }
-
-    // ── render_directive_block ──
-
-    #[test]
-    fn render_directive_callout() {
-        let page = render(indoc! {"
-            ::: callout
-            Hello **world**.
-            :::
-        "});
-        assert!(
-            page.content_html.contains(r#"class="callout note""#),
-            "should have callout wrapper, html:\n{}",
-            page.content_html
-        );
-        assert!(
-            page.content_html.contains("<strong>world</strong>"),
-            "body markdown should be rendered, html:\n{}",
-            page.content_html
-        );
-    }
-
-    #[test]
-    fn render_directive_with_id_and_classes() {
-        let page = render(indoc! {"
-            ::: callout {#my-note .highlight type=tip}
-            Body text.
-            :::
-        "});
-        assert!(
-            page.content_html.contains(r#"id="my-note""#),
-            "id should be propagated, html:\n{}",
-            page.content_html
-        );
-        assert!(
-            page.content_html
-                .contains(r#"class="callout tip highlight""#),
-            "classes should be propagated, html:\n{}",
-            page.content_html
-        );
-    }
-
-    #[test]
-    fn render_directive_with_code_and_math() {
-        let page = render(indoc! {"
-            ::: callout
-            Inline $x^2$ math.
-
-            ```rust
-            fn main() {}
-            ```
-            :::
-        "});
-        assert!(
-            page.content_html.contains("math-inline"),
-            "math should be rendered, html:\n{}",
-            page.content_html
-        );
-        assert!(
-            page.content_html.contains(r#"class="highlight""#),
-            "code should be highlighted, html:\n{}",
-            page.content_html
-        );
-        assert!(
-            page.assets.features.contains(&Feature::Math),
-            "math inside a directive body should bubble up to page assets, features: {:?}",
-            page.assets.features,
         );
     }
 
@@ -817,6 +978,93 @@ mod tests {
             page.content_html.contains("<table>"),
             "table should be rendered inside div, html:\n{}",
             page.content_html
+        );
+    }
+    // ── top_level_blocks ──
+
+    #[test]
+    fn top_level_blocks_filters_nested() {
+        let input = indoc! {"
+            :::: outer
+            ::: inner
+            Body
+            :::
+            ::::
+        "};
+        let all = parse_directives(input);
+        assert_eq!(all.len(), 2, "parser should find both blocks");
+
+        let top = top_level_blocks(&all);
+        assert_eq!(top.len(), 1, "only outer block is top-level");
+        assert_eq!(top[0].range.start, 0);
+    }
+
+    // ── render_directive_block ──
+
+    #[test]
+    fn render_directive_callout() {
+        let page = render(indoc! {"
+            ::: callout
+            Hello **world**.
+            :::
+        "});
+        assert!(
+            page.content_html.contains(r#"class="callout note""#),
+            "should have callout wrapper, html:\n{}",
+            page.content_html
+        );
+        assert!(
+            page.content_html.contains("<strong>world</strong>"),
+            "body markdown should be rendered, html:\n{}",
+            page.content_html
+        );
+    }
+
+    #[test]
+    fn render_directive_with_id_and_classes() {
+        let page = render(indoc! {"
+            ::: callout {#my-note .highlight type=tip}
+            Body text.
+            :::
+        "});
+        assert!(
+            page.content_html.contains(r#"id="my-note""#),
+            "id should be propagated, html:\n{}",
+            page.content_html
+        );
+        assert!(
+            page.content_html
+                .contains(r#"class="callout tip highlight""#),
+            "classes should be propagated, html:\n{}",
+            page.content_html
+        );
+    }
+
+    #[test]
+    fn render_directive_with_code_and_math() {
+        let page = render(indoc! {"
+            ::: callout
+            Inline $x^2$ math.
+
+            ```rust
+            fn main() {}
+            ```
+            :::
+        "});
+        assert!(
+            page.content_html.contains("math-inline"),
+            "math should be rendered, html:\n{}",
+            page.content_html
+        );
+        assert!(
+            page.content_html.contains(r#"class="highlight""#),
+            "code should be highlighted, html:\n{}",
+            page.content_html
+        );
+        assert!(
+            page.assets.features.contains(&Feature::Math),
+            "math inside a directive body should bubble up to page assets, features: {:?}",
+            page.assets.features,
         );
     }
 }

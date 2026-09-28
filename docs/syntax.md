@@ -106,6 +106,8 @@ Explicit heading IDs override the auto-generated one:
 <!-- renders as: <h2 id="custom-id">My Section</h2> -->
 ```
 
+Heading IDs are unique across the page body and nested directives. Repeated IDs receive numeric suffixes in rendered document order (`name`, `name-1`, `name-2`). Authored HTML, image, and directive IDs are reserved.
+
 Headings are also collected into a structured table of contents, exposed to post templates as the `toc` variable. See [Post templates](themes.md#post-templates-posthtml).
 
 ### Images
@@ -237,6 +239,10 @@ Here is a claim[^1] that needs a source.
 
 [^1]: The source for the claim.
 ```
+
+Definitions can go anywhere within the page body or a directive body. Each body is a separate footnote scope, so references and definitions must share that scope. Labels match using Unicode case folding, and the first definition of a label is used. Unreferenced definitions are omitted.
+
+Notes render at the end of their scope, numbered by first reference in the body. References within reachable notes follow those in the body. Each reference links to its note, and each note links back to every rendered reference. Repeated references have numbered return links.
 
 ### GFM Extensions
 

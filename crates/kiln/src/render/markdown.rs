@@ -1,11 +1,13 @@
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 
 use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use syntect::parsing::SyntaxSet;
 
+use super::Spanned;
 use super::assets::Feature;
 use super::code_block::{CodeBlockSpec, parse_fence_info};
+use super::footnote::Footnotes;
 use super::highlight::highlight_code;
 use super::image::{render_block_image, render_inline_image};
 use super::image_attrs::ImageAttrs;
@@ -15,6 +17,26 @@ use super::table::TableNowrap;
 use super::toc::TocEntry;
 use crate::html::escape;
 use crate::text::slugify;
+
+pub(super) struct MarkdownDocument {
+    pub(super) footnotes: Footnotes,
+    pub(super) headings: Vec<TocEntry>,
+}
+
+impl MarkdownDocument {
+    pub(super) fn parse(content: &str) -> Self {
+        let events = Parser::new_ext(content, markdown_options())
+            .into_offset_iter()
+            .map(|(event, range)| (event.into_static(), range))
+            .collect();
+        let footnotes = Footnotes::collect(events);
+        let headings = collect_headings(footnotes.events());
+        Self {
+            footnotes,
+            headings,
+        }
+    }
+}
 
 /// The result of rendering markdown content.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -36,8 +58,8 @@ pub(crate) struct MarkdownSettings {
 /// Renders markdown content to HTML with GFM extensions, math support, syntax highlighting,
 /// and image enhancement. Auto-detected features (math, mermaid) are inserted into `features`.
 #[must_use]
-pub(crate) fn render_markdown(
-    content: &str,
+pub(super) fn render_markdown(
+    document: MarkdownDocument,
     syntax_set: &SyntaxSet,
     image_attrs: &HashMap<usize, ImageAttrs>,
     image_resolver: &ImageResolver,
@@ -45,120 +67,171 @@ pub(crate) fn render_markdown(
     settings: MarkdownSettings,
     features: &mut BTreeSet<Feature>,
 ) -> MarkdownOutput {
-    let options = markdown_options();
+    let MarkdownDocument {
+        footnotes,
+        headings,
+    } = document;
+    let mut renderer = MarkdownRenderer {
+        syntax_set,
+        image_attrs,
+        image_resolver,
+        base_dir,
+        settings,
+        features,
+        headings: &headings,
+        heading_index: 0,
+    };
+    let html = footnotes.render(|events, level| renderer.render_blocks(events, level));
+    MarkdownOutput { html, headings }
+}
 
-    // Pass 1: collect heading metadata (text, level, IDs).
-    let headings = collect_headings(content, options);
+struct MarkdownRenderer<'a> {
+    syntax_set: &'a SyntaxSet,
+    image_attrs: &'a HashMap<usize, ImageAttrs>,
+    image_resolver: &'a ImageResolver,
+    base_dir: Option<&'a Path>,
+    settings: MarkdownSettings,
+    features: &'a mut BTreeSet<Feature>,
+    headings: &'a [TocEntry],
+    heading_index: usize,
+}
 
-    // Pass 2: transform events through a manual loop for N:1 buffering.
-    let parser = Parser::new_ext(content, options).into_offset_iter();
-    let mut output_events: Vec<Event<'_>> = Vec::new();
-
-    let mut heading_index: usize = 0;
-    let mut in_code_block = false;
-    let mut code_spec = CodeBlockSpec::default();
-    let mut code_buf = String::new();
-    let mut is_mermaid_block = false;
-    let mut para_buf: Vec<(Event<'_>, std::ops::Range<usize>)> = Vec::new();
-    let mut in_para = false;
-    let mut table_nowrap = settings.table_nowrap_width.map(TableNowrap::new);
-
-    for (event, range) in parser {
-        match event {
-            // ── Headings ──
-            Event::Start(Tag::Heading { .. }) => {
-                let entry = &headings[heading_index];
-                heading_index += 1;
-                output_events.push(Event::Html(
-                    format!(r#"<{} id="{}">"#, entry.level, escape(&entry.id)).into(),
-                ));
+impl MarkdownRenderer<'_> {
+    fn render_blocks(&mut self, events: Vec<Spanned>, level: u8) -> String {
+        let mut html = String::new();
+        let mut block = Vec::new();
+        let mut depth = 0;
+        for event in events {
+            match &event.0 {
+                Event::Start(_) => depth += 1,
+                Event::End(_) => depth -= 1,
+                _ => {}
             }
-            Event::End(TagEnd::Heading(level)) => {
-                output_events.push(Event::Html(format!("</{level}>\n").into()));
-            }
-
-            // ── Code blocks: buffer content, emit on End ──
-            Event::Start(Tag::CodeBlock(kind)) => {
-                in_code_block = true;
-                code_spec = match kind {
-                    CodeBlockKind::Fenced(lang) => parse_fence_info(&lang, settings.code_max_lines),
-                    CodeBlockKind::Indented => CodeBlockSpec {
-                        max_lines: settings.code_max_lines,
-                        ..CodeBlockSpec::default()
-                    },
-                };
-                is_mermaid_block = code_spec
-                    .lang
-                    .as_deref()
-                    .is_some_and(|l| l.eq_ignore_ascii_case("mermaid"));
-                if is_mermaid_block {
-                    features.insert(Feature::Mermaid);
+            block.push(event);
+            if depth == 0 {
+                let rendered = self.render_events(std::mem::take(&mut block));
+                if !rendered.is_empty() {
+                    crate::html::indent(&mut html, level);
                 }
-                code_buf.clear();
-            }
-            Event::End(TagEnd::CodeBlock) => {
-                in_code_block = false;
-                let html = if is_mermaid_block {
-                    render_mermaid(&code_buf)
-                } else {
-                    highlight_code(syntax_set, &code_buf, &code_spec)
-                };
-                output_events.push(Event::Html(html.into()));
-                code_buf.clear();
-                is_mermaid_block = false;
-            }
-            Event::Text(ref t) if in_code_block => {
-                code_buf.push_str(t);
-            }
-
-            // ── Paragraphs: buffer to detect sole-image blocks ──
-            Event::Start(Tag::Paragraph) => {
-                in_para = true;
-                para_buf.clear();
-            }
-            Event::End(TagEnd::Paragraph) => {
-                in_para = false;
-                if let Some(html) =
-                    try_render_block_image(&para_buf, image_attrs, image_resolver, base_dir)
-                {
-                    output_events.push(Event::Html(html.into()));
-                } else {
-                    output_events.push(Event::Html("<p>".into()));
-                    flush_paragraph(
-                        &para_buf,
-                        image_attrs,
-                        image_resolver,
-                        base_dir,
-                        &mut output_events,
-                        features,
-                    );
-                    output_events.push(Event::Html("</p>\n".into()));
-                }
-                para_buf.clear();
-            }
-            _ if in_para => {
-                para_buf.push((event, range));
-            }
-
-            // ── Everything else (tables, math, etc.) ──
-            other => {
-                if let Some(nowrap) = &mut table_nowrap {
-                    nowrap.observe(&other, &mut output_events);
-                }
-                output_events.push(transform_math(other, features));
+                html.push_str(&rendered);
             }
         }
+        html
     }
 
-    let mut html = String::new();
-    pulldown_cmark::html::push_html(&mut html, output_events.into_iter());
+    fn render_events(&mut self, events: Vec<Spanned>) -> String {
+        let mut output_events: Vec<Event<'_>> = Vec::new();
 
-    MarkdownOutput { html, headings }
+        let mut in_code_block = false;
+        let mut code_spec = CodeBlockSpec::default();
+        let mut code_buf = String::new();
+        let mut is_mermaid_block = false;
+        let mut para_buf: Vec<Spanned> = Vec::new();
+        let mut in_para = false;
+        let mut table_nowrap = self.settings.table_nowrap_width.map(TableNowrap::new);
+
+        for (event, range) in events {
+            match event {
+                // ── Headings ──
+                Event::Start(Tag::Heading { .. }) => {
+                    let entry = &self.headings[self.heading_index];
+                    self.heading_index += 1;
+                    output_events.push(Event::Html(
+                        format!(r#"<{} id="{}">"#, entry.level, escape(&entry.id)).into(),
+                    ));
+                }
+                Event::End(TagEnd::Heading(level)) => {
+                    output_events.push(Event::Html(format!("</{level}>\n").into()));
+                }
+
+                // ── Code blocks: buffer content, emit on End ──
+                Event::Start(Tag::CodeBlock(kind)) => {
+                    in_code_block = true;
+                    code_spec = match kind {
+                        CodeBlockKind::Fenced(lang) => {
+                            parse_fence_info(&lang, self.settings.code_max_lines)
+                        }
+                        CodeBlockKind::Indented => CodeBlockSpec {
+                            max_lines: self.settings.code_max_lines,
+                            ..CodeBlockSpec::default()
+                        },
+                    };
+                    is_mermaid_block = code_spec
+                        .lang
+                        .as_deref()
+                        .is_some_and(|l| l.eq_ignore_ascii_case("mermaid"));
+                    if is_mermaid_block {
+                        self.features.insert(Feature::Mermaid);
+                    }
+                    code_buf.clear();
+                }
+                Event::End(TagEnd::CodeBlock) => {
+                    in_code_block = false;
+                    let html = if is_mermaid_block {
+                        render_mermaid(&code_buf)
+                    } else {
+                        highlight_code(self.syntax_set, &code_buf, &code_spec)
+                    };
+                    output_events.push(Event::Html(html.into()));
+                    code_buf.clear();
+                    is_mermaid_block = false;
+                }
+                Event::Text(ref t) if in_code_block => {
+                    code_buf.push_str(t);
+                }
+
+                // ── Paragraphs: buffer to detect sole-image blocks ──
+                Event::Start(Tag::Paragraph) => {
+                    in_para = true;
+                    para_buf.clear();
+                }
+                Event::End(TagEnd::Paragraph) => {
+                    in_para = false;
+                    if let Some(html) = try_render_block_image(
+                        &para_buf,
+                        self.image_attrs,
+                        self.image_resolver,
+                        self.base_dir,
+                    ) {
+                        output_events.push(Event::Html(html.into()));
+                    } else {
+                        output_events.push(Event::Html("<p>".into()));
+                        flush_paragraph(
+                            &para_buf,
+                            self.image_attrs,
+                            self.image_resolver,
+                            self.base_dir,
+                            &mut output_events,
+                            self.features,
+                        );
+                        output_events.push(Event::Html("</p>\n".into()));
+                    }
+                    para_buf.clear();
+                }
+                _ if in_para => {
+                    para_buf.push((event, range));
+                }
+
+                // ── Everything else (tables, math, etc.) ──
+                other => {
+                    if let Some(nowrap) = &mut table_nowrap {
+                        nowrap.observe(&other, &mut output_events);
+                    }
+                    output_events.push(transform_math(other, self.features));
+                }
+            }
+        }
+
+        let mut html = String::new();
+        pulldown_cmark::html::push_html(&mut html, output_events.into_iter());
+
+        html
+    }
 }
 
 /// Checks if a paragraph's buffered events represent a sole image (block image promotion).
 fn try_render_block_image(
-    events: &[(Event<'_>, std::ops::Range<usize>)],
+    events: &[Spanned],
     image_attrs: &HashMap<usize, ImageAttrs>,
     image_resolver: &ImageResolver,
     base_dir: Option<&Path>,
@@ -202,12 +275,12 @@ fn try_render_block_image(
 
 /// Flushes buffered paragraph events, replacing inline image sequences with `render_inline_image`
 /// output while passing other events through.
-fn flush_paragraph<'a>(
-    events: &[(Event<'a>, std::ops::Range<usize>)],
+fn flush_paragraph(
+    events: &[Spanned],
     image_attrs: &HashMap<usize, ImageAttrs>,
     image_resolver: &ImageResolver,
     base_dir: Option<&Path>,
-    output: &mut Vec<Event<'a>>,
+    output: &mut Vec<Event<'static>>,
     features: &mut BTreeSet<Feature>,
 ) {
     let mut i = 0;
@@ -267,7 +340,7 @@ fn enrich_image_attrs(
 }
 
 /// Extracts plain text from image inner events for use as alt text.
-fn extract_alt_text(events: &[(Event<'_>, std::ops::Range<usize>)]) -> String {
+fn extract_alt_text(events: &[Spanned]) -> String {
     let mut alt = String::new();
     for (ev, _) in events {
         push_plain_text(&mut alt, ev);
@@ -284,24 +357,22 @@ fn markdown_options() -> Options {
         | Options::ENABLE_MATH
 }
 
-/// Scans the markdown for headings, collecting their level, plain text, and unique slugified IDs.
-fn collect_headings(content: &str, options: Options) -> Vec<TocEntry> {
-    let parser = Parser::new_ext(content, options);
+/// Collects heading metadata with authored or slugified candidate IDs.
+fn collect_headings<'a>(events: impl Iterator<Item = &'a Spanned>) -> Vec<TocEntry> {
     let mut headings = Vec::new();
-    let mut used_ids = HashSet::new();
 
     let mut level = HeadingLevel::H1;
     let mut explicit_id: Option<String> = None;
     let mut text = String::new();
     let mut in_heading = false;
 
-    for event in parser {
+    for (event, _) in events {
         match event {
             Event::Start(Tag::Heading {
                 level: l, id: eid, ..
             }) => {
-                level = l;
-                explicit_id = eid.map(|s| s.to_string());
+                level = *l;
+                explicit_id = eid.as_deref().map(str::to_owned);
                 text.clear();
                 in_heading = true;
             }
@@ -313,14 +384,13 @@ fn collect_headings(content: &str, options: Options) -> Vec<TocEntry> {
                 } else {
                     raw_id
                 };
-                let id = deduplicate_id(&mut used_ids, &raw_id);
                 headings.push(TocEntry {
                     level,
-                    id,
+                    id: raw_id,
                     title: std::mem::take(&mut text),
                 });
             }
-            _ if in_heading => push_plain_text(&mut text, &event),
+            _ if in_heading => push_plain_text(&mut text, event),
             _ => {}
         }
     }
@@ -362,22 +432,6 @@ fn transform_math<'a>(event: Event<'a>, features: &mut BTreeSet<Feature>) -> Eve
     }
 }
 
-/// Appends a numeric suffix to make `id` unique. First use is unchanged, then `-1`, `-2`, etc.
-/// Handles collisions between suffixed and natural IDs.
-fn deduplicate_id(used: &mut HashSet<String>, id: &str) -> String {
-    if used.insert(id.to_owned()) {
-        return id.to_owned();
-    }
-    let mut n = 1;
-    loop {
-        let candidate = format!("{id}-{n}");
-        n += 1;
-        if used.insert(candidate.clone()) {
-            return candidate;
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::sync::LazyLock;
@@ -394,10 +448,21 @@ mod tests {
         ImageResolver::new(Path::new(""), crate::render::lqip::ImageConfig::default())
     });
 
+    fn prepare(content: &str) -> MarkdownDocument {
+        let mut document = MarkdownDocument::parse(content);
+        let mut ids = super::super::page_ids::PageIds::default();
+        for heading in &mut document.headings {
+            heading.id = ids.allocate(&heading.id);
+        }
+        document.footnotes.allocate_ids(&mut ids, 0);
+        document
+    }
+
     fn render(content: &str) -> MarkdownOutput {
         let mut features = BTreeSet::new();
+        let document = prepare(content);
         render_markdown(
-            content,
+            document,
             &SYNTAX_SET,
             &HashMap::new(),
             &EMPTY_RESOLVER,
@@ -414,8 +479,9 @@ mod tests {
     ) -> MarkdownOutput {
         let (cleaned, attrs) = crate::render::image_attrs::extract_image_attrs(content);
         let mut features = BTreeSet::new();
+        let document = prepare(&cleaned);
         render_markdown(
-            &cleaned,
+            document,
             &SYNTAX_SET,
             &attrs,
             resolver,
@@ -429,38 +495,6 @@ mod tests {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         let img = image::RgbaImage::from_pixel(8, 4, image::Rgba([200, 100, 50, 255]));
         img.save_with_format(path, image::ImageFormat::Png).unwrap();
-    }
-
-    // ── deduplicate_id ──
-
-    #[test]
-    fn deduplicate_id_first_use_unchanged() {
-        let mut used = HashSet::new();
-        assert_eq!(deduplicate_id(&mut used, "foo"), "foo");
-    }
-
-    #[test]
-    fn deduplicate_id_second_use_gets_suffix_1() {
-        let mut used = HashSet::new();
-        deduplicate_id(&mut used, "foo");
-        assert_eq!(deduplicate_id(&mut used, "foo"), "foo-1");
-    }
-
-    #[test]
-    fn deduplicate_id_third_use_gets_suffix_2() {
-        let mut used = HashSet::new();
-        deduplicate_id(&mut used, "foo");
-        deduplicate_id(&mut used, "foo");
-        assert_eq!(deduplicate_id(&mut used, "foo"), "foo-2");
-    }
-
-    #[test]
-    fn deduplicate_id_avoids_collision() {
-        let mut used = HashSet::new();
-        assert_eq!(deduplicate_id(&mut used, "foo"), "foo");
-        assert_eq!(deduplicate_id(&mut used, "foo-1"), "foo-1");
-        assert_eq!(deduplicate_id(&mut used, "foo"), "foo-2");
-        assert_eq!(deduplicate_id(&mut used, "foo-2"), "foo-2-1");
     }
 
     // ── render_markdown: basic ──
@@ -665,67 +699,102 @@ mod tests {
     // ── render_markdown: footnotes ──
 
     #[test]
-    fn render_footnotes() {
+    fn render_footnotes_relocated_after_body() {
         let md = indoc! {"
+            ## Before
+
             Text[^1].
 
-            [^1]: Footnote content.
+            [^1]:
+                ## Note heading
+
+                Footnote content.
+
+            ## After
+
+            Closing paragraph.
         "};
         let out = render(md);
+        let closing = out.html.find("Closing paragraph.").unwrap();
+        let section = out
+            .html
+            .find(r#"<section class="footnotes""#)
+            .expect("footnote section emitted");
         assert!(
-            out.html.contains(r##"<a href="#1">"##),
-            "should link to footnote definition, html:\n{}",
+            closing < section,
+            "definition should move after the body, html:\n{}",
             out.html
         );
         assert!(
             out.html
-                .contains(r#"<div class="footnote-definition" id="1">"#),
-            "should have footnote definition with matching id, html:\n{}",
+                .contains(r##"<a href="#fn-1" role="doc-noteref">1</a>"##),
+            "html:\n{}",
             out.html
         );
+        let ids: Vec<_> = out.headings.iter().map(|h| h.id.as_str()).collect();
+        assert_eq!(ids, ["before", "after", "note-heading"]);
+    }
+
+    #[test]
+    fn render_footnotes_inline_markup_in_reference_paragraph() {
+        let md = indoc! {"
+            Math $x$[^1] and ![icon](a.png)[^1].
+
+            [^1]: Note.
+        "};
+        let out = render(md);
+        assert!(out.html.contains(r#"src="a.png""#));
         assert!(
-            out.html.contains("Footnote content."),
-            "should include footnote body, html:\n{}",
+            out.html.contains(r#"<span class="math math-inline">"#)
+                && out.html.contains(r#"id="fnref-1-2""#),
+            "html:\n{}",
             out.html
         );
     }
 
     #[test]
-    fn render_footnotes_multi_reference() {
-        let md = indoc! {"
-            First[^1] and second[^1].
+    fn render_footnotes_preserves_images_math_and_code_in_notes() {
+        let out = render(indoc! {r"
+            Body[^a].
 
-            [^1]: Shared footnote.
-        "};
-        let out = render(md);
-        let count = out.html.matches(r##"<a href="#1">"##).count();
+            [^a]:
+                Math $x$ and ![inline](inline.png).
+
+                ```text
+                first
+                  second
+                ```
+
+                ![block](block.png)
+        "});
+        assert!(out.html.contains(r#"class="math math-inline""#));
+        assert!(out.html.contains(r#"src="inline.png""#));
+        assert!(out.html.contains(r#"src="block.png""#));
+        assert!(out.html.contains("<figure"));
+        let plain = render(indoc! {"
+            ```text
+            first
+              second
+            ```
+        "});
+        assert!(out.html.contains(plain.html.trim()), "{}", out.html);
         assert!(
-            count == 2,
-            "exactly two references should link to the same footnote (found {count}), html:\n{}",
             out.html
+                .contains("</figure>\n      <p><a class=\"footnote-backref\"")
         );
     }
 
     #[test]
-    fn render_footnotes_multi_paragraph() {
-        let md = indoc! {"
-            Text[^1].
+    fn render_footnote_syntax_interrupts_image_parsing() {
+        let out = render(indoc! {"
+            ![Alt[^a]](image.png)
 
-            [^1]: First paragraph.
-
-                Second paragraph.
-        "};
-        let out = render(md);
-        assert!(
-            out.html.contains("First paragraph."),
-            "should include first paragraph, html:\n{}",
-            out.html
-        );
-        assert!(
-            out.html.contains("Second paragraph."),
-            "should include second paragraph, html:\n{}",
-            out.html
-        );
+            [^a]: Visible.
+        "});
+        assert!(out.html.starts_with("<p>![Alt<sup"));
+        assert!(out.html.contains(r#"id="fnref-a-1""#));
+        assert!(out.html.contains(r##"href="#fnref-a-1""##));
+        assert!(!out.html.contains("<img"));
     }
 
     // ── render_markdown: math ──
