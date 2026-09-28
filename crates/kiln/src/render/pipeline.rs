@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::path::Path;
 
 use anyhow::Result;
@@ -9,7 +10,7 @@ use super::emoji::replace_emojis;
 use super::icon::replace_icons;
 use super::image_attrs::extract_image_attrs;
 use super::lqip::ImageResolver;
-use super::markdown::render_markdown;
+use super::markdown::{MarkdownOutput, render_markdown};
 use super::toc::render_toc_html;
 use crate::config::Config;
 use crate::directive::callout::render_callout;
@@ -43,103 +44,115 @@ pub fn render_page(
     source_dir: Option<&Path>,
     image_resolver: &ImageResolver,
 ) -> Result<RenderedPage> {
-    let assets = AssetsHandle::default();
-    let processed = render_directives(
-        raw_content,
+    let renderer = PageRenderer {
         syntax_set,
         engine,
         config,
+        options,
         source_dir,
         image_resolver,
-        &assets,
-    )?;
-
-    let mut preprocessed = processed;
-    if options.emojis {
-        preprocessed = replace_emojis(&preprocessed);
-    }
-    if options.fontawesome {
-        preprocessed = replace_icons(&preprocessed);
-    }
-    let (cleaned, image_attrs) = extract_image_attrs(&preprocessed);
-
-    let md_output = {
-        let mut guard = assets.lock();
-        render_markdown(
-            &cleaned,
-            syntax_set,
-            &image_attrs,
-            image_resolver,
-            source_dir,
-            options.code_max_lines,
-            &mut guard.features,
-        )
+        assets: AssetsHandle::default(),
     };
+    let (processed, fragments) = renderer.render_directives(raw_content)?;
+    let md_output = renderer.render_markdown(&processed, options.code_max_lines);
     let toc_html = render_toc_html(&md_output.headings);
 
     Ok(RenderedPage {
-        content_html: md_output.html,
+        content_html: restore_directives(md_output.html, &fragments),
         toc_html,
-        assets: assets.snapshot(),
+        assets: renderer.assets.snapshot(),
     })
 }
 
-/// Recursively processes directive blocks, replacing them with rendered HTML.
-///
-/// Replacement is right-to-left so byte offsets stay valid. Each directive
-/// body is rendered as an isolated markdown document (headings do not appear
-/// in the page-level `ToC`, and footnotes do not cross directive boundaries).
-fn render_directives(
-    content: &str,
-    syntax_set: &SyntaxSet,
-    engine: &TemplateEngine,
-    config: &Config,
-    source_dir: Option<&Path>,
-    image_resolver: &ImageResolver,
-    assets: &AssetsHandle,
-) -> Result<String> {
-    let all_blocks = parse_directives(content);
-    if all_blocks.is_empty() {
-        return Ok(content.to_owned());
+/// Inputs shared by the page body and every directive body rendered for one page.
+struct PageRenderer<'a> {
+    syntax_set: &'a SyntaxSet,
+    engine: &'a TemplateEngine,
+    config: &'a Config,
+    options: &'a RenderOptions,
+    source_dir: Option<&'a Path>,
+    image_resolver: &'a ImageResolver,
+    assets: AssetsHandle,
+}
+
+impl PageRenderer<'_> {
+    /// Recursively renders directive blocks, replacing each with a placeholder line and returning
+    /// the rendered HTML fragments for [`restore_directives`].
+    ///
+    /// The placeholder keeps rendered HTML out of the surrounding markdown, which would otherwise
+    /// reparse it and could break a code block containing a blank line followed by indented code.
+    /// Replacement is right-to-left so byte offsets stay valid. Each directive body is rendered as
+    /// an isolated markdown document, so its headings stay out of the page-level `ToC` and its
+    /// footnotes stay within the directive.
+    fn render_directives(&self, content: &str) -> Result<(String, Vec<String>)> {
+        let all_blocks = parse_directives(content);
+        let top_level = top_level_blocks(&all_blocks);
+        let mut result = content.to_owned();
+        let mut fragments = Vec::with_capacity(top_level.len());
+
+        for block in top_level.into_iter().rev() {
+            let (inner, inner_fragments) = self.render_directives(&block.body)?;
+            let md_output = self.render_markdown(&inner, None);
+            let body_html = restore_directives(md_output.html, &inner_fragments);
+            let mut html = render_directive_block(
+                block,
+                &body_html,
+                self.engine,
+                self.config,
+                self.source_dir,
+                &self.assets,
+            )?;
+            if !html.ends_with('\n') {
+                html.push('\n');
+            }
+
+            // The directive parser only matches column-0 fences, so the placeholder always starts
+            // a line and parses as a standalone HTML comment block.
+            let padded = format!("\n{}", directive_placeholder(fragments.len()));
+            fragments.push(html);
+            result.replace_range(block.range.clone(), &padded);
+        }
+
+        Ok((result, fragments))
     }
 
-    let top_level = top_level_blocks(&all_blocks);
-    let mut result = content.to_owned();
+    /// Applies the enabled shortcode replacements and image attribute blocks, then renders the
+    /// markdown.
+    fn render_markdown(&self, content: &str, code_max_lines: Option<usize>) -> MarkdownOutput {
+        let mut content = Cow::Borrowed(content);
+        if self.options.emojis {
+            content = Cow::Owned(replace_emojis(&content));
+        }
+        if self.options.fontawesome {
+            content = Cow::Owned(replace_icons(&content));
+        }
+        let (cleaned, image_attrs) = extract_image_attrs(&content);
 
-    for block in top_level.into_iter().rev() {
-        let inner = render_directives(
-            &block.body,
-            syntax_set,
-            engine,
-            config,
-            source_dir,
-            image_resolver,
-            assets,
-        )?;
-        let (cleaned, image_attrs) = extract_image_attrs(&inner);
-        let md_output = {
-            let mut guard = assets.lock();
-            render_markdown(
-                &cleaned,
-                syntax_set,
-                &image_attrs,
-                image_resolver,
-                source_dir,
-                None,
-                &mut guard.features,
-            )
-        };
-        let html =
-            render_directive_block(block, &md_output.html, engine, config, source_dir, assets)?;
-
-        // Blank-line padding: <details> / <div> are CommonMark type 6 HTML
-        // blocks which cannot interrupt paragraphs. Safe because the directive
-        // parser only matches column-0 fences (never indented contexts).
-        let padded = format!("\n{html}\n");
-        result.replace_range(block.range.clone(), &padded);
+        render_markdown(
+            &cleaned,
+            self.syntax_set,
+            &image_attrs,
+            self.image_resolver,
+            self.source_dir,
+            code_max_lines,
+            &mut self.assets.lock().features,
+        )
     }
+}
 
-    Ok(result)
+/// Substitutes the fragments returned by [`PageRenderer::render_directives`] back into the
+/// rendered HTML.
+fn restore_directives(mut html: String, fragments: &[String]) -> String {
+    for (index, fragment) in fragments.iter().enumerate() {
+        html = html.replacen(&directive_placeholder(index), fragment, 1);
+    }
+    html
+}
+
+/// Returns the placeholder line for the `index`-th directive fragment. Fragments are
+/// newline-terminated, so each one replaces a whole line and keeps its own lines in the output.
+fn directive_placeholder(index: usize) -> String {
+    format!("<!--kiln-directive-{index}-->\n")
 }
 
 /// Filters to only top-level directive blocks (those not nested inside another).
@@ -292,6 +305,46 @@ mod tests {
         );
     }
 
+    #[test]
+    fn render_page_replaces_shortcodes_in_directive_bodies() {
+        let options = RenderOptions {
+            emojis: true,
+            fontawesome: true,
+            ..RenderOptions::default()
+        };
+        let page = render_page(
+            indoc! {"
+                ::: callout
+                Hello :smile: and :(fas fa-link):
+
+                `:smile:`
+                :::
+            "},
+            &SYNTAX_SET,
+            &test_engine(),
+            &test_config(),
+            &options,
+            None,
+            &EMPTY_RESOLVER,
+        )
+        .unwrap();
+        assert!(
+            page.content_html.contains("Hello \u{1f604} and"),
+            "emoji should be replaced, html:\n{}",
+            page.content_html
+        );
+        assert!(
+            page.content_html.contains(r#"class="fas fa-link""#),
+            "icon should be replaced, html:\n{}",
+            page.content_html
+        );
+        assert!(
+            page.content_html.contains("<code>:smile:</code>"),
+            "inline code should keep the shortcode, html:\n{}",
+            page.content_html
+        );
+    }
+
     // ── render_directives ──
 
     #[test]
@@ -372,6 +425,29 @@ mod tests {
         assert!(
             page.content_html.contains("<p>Inner text.</p>"),
             "inner body rendered, html:\n{}",
+            page.content_html
+        );
+    }
+
+    #[test]
+    fn render_directives_body_html_survives_outer_render() {
+        let page = render(indoc! {"
+            ::: callout
+            ```text
+            first
+
+                indented
+            ```
+            :::
+        "});
+        assert!(
+            !page.content_html.contains("<pre><code>"),
+            "rendered body must not be reparsed as markdown, html:\n{}",
+            page.content_html
+        );
+        assert!(
+            page.content_html.contains("    indented"),
+            "code line should keep its indentation, html:\n{}",
             page.content_html
         );
     }
@@ -572,6 +648,26 @@ mod tests {
             "body should be markdown-rendered, html:\n{}",
             page.content_html
         );
+    }
+
+    #[test]
+    fn render_directive_template_output_keeps_own_line() {
+        let dir = tempfile::tempdir().unwrap();
+        let directives = dir.path().join("directives");
+        fs::create_dir_all(&directives).unwrap();
+        fs::write(directives.join("widget.html"), "<widget></widget>\n").unwrap();
+
+        let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
+        let page = render_with(
+            indoc! {"
+                ::: widget
+                Body
+                :::
+                After.
+            "},
+            &engine,
+        );
+        assert_eq!(page.content_html, "<widget></widget>\n<p>After.</p>\n");
     }
 
     #[test]

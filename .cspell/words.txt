@@ -47,6 +47,7 @@ pname
 println
 pulldown
 raii
+replacen
 rfind
 rsplit
 rustc
