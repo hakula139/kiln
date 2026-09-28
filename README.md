@@ -6,51 +6,28 @@
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/hakula139/kiln)
 ![WakaTime coding time for kiln](https://wakatime.com/badge/user/f4a35a1f-0e29-4093-a647-e66aad164737/project/f00a4cb5-df90-47ef-82e5-ebc9432a2b05.svg)
 
-A custom static site generator (SSG) written in Rust, replacing a [Hugo](https://gohugo.io) + [LoveIt](https://github.com/dillonzq/LoveIt) stack for [hakula.xyz](https://hakula.xyz).
-
-## Overview
-
-kiln is purpose-built for hakula.xyz: strong CJK-friendly authoring, explicit rendering behavior, and a theme system that stays understandable. Instead of chasing broad SSG feature parity, it focuses on a smaller publishing workflow that is easier to reason about and extend.
+A static site generator written in Rust for [hakula.xyz](https://hakula.xyz), with CJK-friendly Markdown authoring and customizable themes.
 
 ## Highlights
 
 ### Authoring
 
-- TOML frontmatter, GitHub Flavored Markdown, KaTeX math
-- CJK-friendly heading IDs and table of contents generation
-- `:::` directives with theme-template rendering
-- Directive template helpers (`read_file`, `parse_csv`)
-- Mermaid diagrams via `` ```mermaid `` fences
-- Syntax highlighting for 200+ languages, image attributes, emoji and Font Awesome icon shortcodes
+- GitHub Flavored Markdown with TOML frontmatter and CJK-friendly headings
+- KaTeX math, Mermaid diagrams, and syntax highlighting for 200+ languages
+- Custom `:::` directives rendered through theme templates
 
-### Site Generation
+### Publishing
 
-- Pretty URLs, static file copying, co-located content assets, per-page CSS bundling
-- Content-hashed CSS / JS URLs through the template asset manifest
-- Home pages, section pages, standalone pages, taxonomy indexes, and paginated term pages
-- Pinned posts on the home page via `weight` frontmatter
-- Page-scoped asset registry, so themes load KaTeX / Mermaid / search only on pages that need them
-- Configurable site time zone for rendered dates
-- Build-time image pipeline: every `<img>` gets natural `width` / `height` plus a base64 WebP LQIP backdrop, so the browser reserves the exact box and paints a low-frequency placeholder while the source decodes
-- RSS feeds, sitemap, custom 404 page
-- Full-text search via [Pagefind](https://pagefind.app)
+- Page bundles, section and tag archives, and pagination
+- Full-text search via [Pagefind](https://pagefind.app), RSS feeds, and sitemaps
+- Automatic image dimensions and blurred loading placeholders
+- Asset fingerprinting and optional HTML / CSS / JS minification
 
-### Internationalization
+### Theming & Development
 
-- Translatable theme strings with layered TOML overrides: themes ship defaults, and sites override any string
-- Localized templates and navigation menus, with graceful fallback to English when a translation is missing
-
-### Theming
-
-- MiniJinja templates with layered site overrides and theme parameter merging
-- Ships with [IgnIt](https://github.com/hakula139/IgnIt): Tailwind CSS v4, glassmorphism panels with optional cursor-tracking glow, dark mode, responsive layout, search modal, back-to-top, mobile menu animations, print styles, keyboard accessibility
-
-### Tooling
-
-- Dev server with live reload (`kiln serve`)
-- Hugo-to-kiln content migration (`kiln convert`)
-- Theme scaffolding (`kiln init-theme`)
-- Optional HTML / CSS / JS minification (`kiln build --minify`)
+- MiniJinja templates with site overrides and translatable theme strings
+- [IgnIt](https://github.com/hakula139/IgnIt) theme with responsive layouts and dark mode
+- Live-reloading dev server, theme scaffolding, and Hugo content migration
 
 ## Documentation
 
@@ -60,10 +37,6 @@ kiln is purpose-built for hakula.xyz: strong CJK-friendly authoring, explicit re
 | [Content Guide](docs/content.md) | Page bundles, co-located assets, per-page CSS       |
 | [Syntax Guide](docs/syntax.md)   | Markdown extensions, frontmatter fields, directives |
 | [Theming](docs/themes.md)        | Themes, templates, navigation menus, and i18n       |
-
-## Current Focus
-
-Ongoing engine and theme polish driven by real publishing needs. See the [roadmap](docs/roadmap.md) for details.
 
 ## Installation
 

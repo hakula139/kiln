@@ -9,6 +9,7 @@ pub mod lqip;
 pub mod markdown;
 pub mod mermaid;
 pub mod pipeline;
+mod table;
 pub mod toc;
 
 use anyhow::{Context, Result};
@@ -21,6 +22,7 @@ pub struct RenderOptions {
     pub code_max_lines: Option<usize>,
     pub emojis: bool,
     pub fontawesome: bool,
+    pub table_nowrap_width: Option<usize>,
 }
 
 impl RenderOptions {
@@ -51,6 +53,7 @@ mod tests {
         assert!(!options.emojis);
         assert!(!options.fontawesome);
         assert!(options.code_max_lines.is_none());
+        assert!(options.table_nowrap_width.is_none());
     }
 
     #[test]
@@ -59,12 +62,14 @@ mod tests {
             code_max_lines = 40
             emojis = true
             fontawesome = true
+            table_nowrap_width = 30
         "})
         .unwrap();
         let options = RenderOptions::from_params(&params).unwrap();
         assert_eq!(options.code_max_lines, Some(40));
         assert!(options.emojis);
         assert!(options.fontawesome);
+        assert_eq!(options.table_nowrap_width, Some(30));
     }
 
     #[test]

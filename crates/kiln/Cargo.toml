@@ -48,6 +48,7 @@ tower-http = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 two-face = { workspace = true }
+unicode-width = { workspace = true }
 walkdir = { workspace = true }
 webp = { workspace = true }
 
