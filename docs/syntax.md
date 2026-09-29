@@ -53,6 +53,8 @@ A post with any `weight` set is pinned on the home page, sorted before unpinned 
 timezone = "Asia/Shanghai"
 ```
 
+Post templates receive `date`, `updated`, and linked `tags`. Set `updated` in frontmatter for an explicit last update time. To derive it from the latest commit to the content file when frontmatter omits it, set `enable_git_info = true` in `config.toml`. Git history must be available through the site root, including full history in CI. When history is missing or shallow, the Git fallback is omitted.
+
 ## Pandoc-Style Attributes
 
 A `{...}` attribute block is the shared syntax kiln uses to attach metadata to images, fenced code blocks, and directives. The same parser handles all three. They differ in which keys they recognize and how bare words are interpreted.

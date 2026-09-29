@@ -42,6 +42,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 │   ├── archive.rs      # Paginated year-grouped archive pages (/posts/, /posts/<section>/, /tags/<slug>/)
 │   ├── error.rs        # 404 error page generation
 │   ├── feed.rs         # RSS feed orchestration (main + per-section + per-term feeds)
+│   ├── git.rs          # Optional content-file commit timestamps for post templates
 │   ├── home.rs         # Paginated home page generation
 │   ├── listing.rs      # ListedPage model, single-pass ListingArtifacts construction, sorting / grouping helpers
 │   ├── overview.rs     # Bucket overview index pages (/sections/, /tags/)

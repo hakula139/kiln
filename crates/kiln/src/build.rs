@@ -1,6 +1,7 @@
 mod archive;
 mod error;
 mod feed;
+mod git;
 mod home;
 mod listing;
 mod overview;
@@ -30,8 +31,9 @@ use crate::taxonomy::build_taxonomies;
 use crate::template::TemplateEngine;
 use crate::template::vars::PostTemplateVars;
 
+use self::git::{GitInfo, updated_timestamp};
 use self::listing::{
-    build_listing_artifacts, build_listing_buckets, format_page_date, page_section,
+    build_listing_artifacts, build_listing_buckets, format_page_date, linked_tags, page_section,
     resolve_featured_image,
 };
 use self::url::{page_url, resolve_relative_url};
@@ -44,6 +46,7 @@ struct BuildContext {
     syntax_set: SyntaxSet,
     template_engine: TemplateEngine,
     image_resolver: ImageResolver,
+    git_info: Option<GitInfo>,
 }
 
 /// Options controlling a single `build()` invocation.
@@ -128,6 +131,7 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
     )
     .context("failed to initialize template engine")?;
     let image_resolver = ImageResolver::new(&root.join("static"), config.image.clone());
+    let git_info = GitInfo::new(root, config.enable_git_info);
     let ctx = BuildContext {
         config,
         i18n,
@@ -135,6 +139,7 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
         syntax_set,
         template_engine,
         image_resolver,
+        git_info,
     };
 
     let sections = collect_sections(&content.pages, &content.content_dir);
@@ -237,6 +242,13 @@ fn build_page(
             .frontmatter
             .date
             .map(|date| format_page_date(date, ctx.time_zone.as_ref())),
+        updated: updated_timestamp(
+            page.frontmatter.updated,
+            &page.source_path,
+            ctx.git_info.as_ref(),
+        )
+        .map(|date| format_page_date(date, ctx.time_zone.as_ref())),
+        tags: linked_tags(&page.frontmatter.tags, &ctx.config.base_url),
         section: page_section(page, &ctx.config.base_url, sections),
         assets: rendered.assets,
         content: &rendered.content_html,
@@ -825,6 +837,52 @@ mod tests {
             !html.contains("2026-03-13T09:36:00Z"),
             "should not leave the date in UTC, html:\n{html}"
         );
+    }
+
+    #[test]
+    fn build_exposes_updated_and_linked_tags_without_git() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(
+            root.path().join("config.toml"),
+            indoc! {r#"
+                base_url = "https://example.com"
+                timezone = "Asia/Shanghai"
+            "#},
+        )
+        .unwrap();
+        copy_templates(&root.path().join("templates"));
+        fs::write(
+            root.path().join("templates/post.html"),
+            indoc! {r#"
+                {% if updated %}<time datetime="{{ updated }}">{{ updated[:10] }}</time>{% endif %}
+                {% for tag in tags %}<a href="{{ tag.url | safe }}">{{ tag.name }}</a>{% endfor %}
+            "#},
+        )
+        .unwrap();
+        write_page(
+            root.path(),
+            "posts/note/hello",
+            indoc! {r#"
+                +++
+                title = "Hello"
+                updated = "2026-03-13T22:36:00Z"
+                tags = ["C++", "<script>"]
+                +++
+                Body
+            "#},
+        );
+
+        build(root.path(), BuildOptions::default()).unwrap();
+
+        let html =
+            fs::read_to_string(root.path().join("public/posts/note/hello/index.html")).unwrap();
+        assert!(html.contains(r#"<time datetime="2026-03-14T06:36:00+08:00">2026-03-14</time>"#));
+        assert!(
+            html.contains(r#"<a href="https://example.com/tags/c++/">C++</a>"#),
+            "html:\n{html}"
+        );
+        assert!(html.contains("&lt;script&gt;</a>"));
+        assert!(!html.contains("<script>"));
     }
 
     // ── build: page CSS ──

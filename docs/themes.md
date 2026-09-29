@@ -232,21 +232,23 @@ Whenever a template variable includes a page `date`, kiln renders it as an ISO 8
 
 #### Post templates (`post.html`)
 
-| Variable          | Type             | Description                             |
-| ----------------- | ---------------- | --------------------------------------- |
-| `title`           | string           | Post title from frontmatter             |
-| `description`     | string           | Post description                        |
-| `url`             | string           | Canonical URL of the post               |
-| `featured_image`  | object or `none` | Featured image (see below)              |
-| `page_css`        | string or `none` | URL to co-located `style.css` (if any)  |
-| `date`            | string or `none` | Publication date (ISO 8601)             |
-| `section`         | object or `none` | Section the post belongs to (see below) |
-| `assets`          | object           | Page-scoped asset registry (see below)  |
-| `content`         | string           | Rendered HTML content                   |
-| `toc`             | string           | Rendered table of contents HTML         |
-| `config`          | object           | Site configuration                      |
-| `config.base_url` | string           | Site base URL                           |
-| `config.title`    | string           | Site title                              |
+| Variable          | Type             | Description                                                      |
+| ----------------- | ---------------- | ---------------------------------------------------------------- |
+| `title`           | string           | Post title from frontmatter                                      |
+| `description`     | string           | Post description                                                 |
+| `url`             | string           | Canonical URL of the post                                        |
+| `featured_image`  | object or `none` | Featured image (see below)                                       |
+| `page_css`        | string or `none` | URL to co-located `style.css` (if any)                           |
+| `date`            | string or `none` | Publication date (ISO 8601)                                      |
+| `updated`         | string or `none` | Last update (ISO 8601; see [frontmatter](syntax.md#frontmatter)) |
+| `tags`            | list of objects  | Tags with `name` and `url` fields                                |
+| `section`         | object or `none` | Section the post belongs to (see below)                          |
+| `assets`          | object           | Page-scoped asset registry (see below)                           |
+| `content`         | string           | Rendered HTML content                                            |
+| `toc`             | string           | Rendered table of contents HTML                                  |
+| `config`          | object           | Site configuration                                               |
+| `config.base_url` | string           | Site base URL                                                    |
+| `config.title`    | string           | Site title                                                       |
 
 `assets` is populated by the renderer as it walks the page (and any nested directive bodies):
 

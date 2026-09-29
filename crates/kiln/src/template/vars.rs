@@ -17,6 +17,8 @@ pub struct PostTemplateVars<'a> {
     pub featured_image: Option<FeaturedImage>,
     pub page_css: Option<String>,
     pub date: Option<String>,
+    pub updated: Option<String>,
+    pub tags: Vec<LinkedTerm>,
     pub section: Option<LinkedTerm>,
     /// Auto-detected runtime dependencies (math, mermaid, registered scripts). Themes iterate
     /// `assets.features` and `assets.scripts` to load the right CSS / JS.
