@@ -27,6 +27,9 @@ pub struct Config {
     #[serde(default)]
     pub timezone: Option<String>,
 
+    #[serde(default)]
+    pub enable_git_info: bool,
+
     #[serde(default = "default_output_dir")]
     pub output_dir: String,
 
@@ -116,6 +119,7 @@ impl Default for Config {
             description: String::new(),
             language: default_language(),
             timezone: None,
+            enable_git_info: false,
             output_dir: default_output_dir(),
             theme: None,
             params: toml::Table::new(),
@@ -332,6 +336,7 @@ mod tests {
         assert!(config.description.is_empty());
         assert_eq!(config.language, "en");
         assert!(config.timezone.is_none());
+        assert!(!config.enable_git_info);
         assert_eq!(config.output_dir, "public");
         assert!(config.theme.is_none());
         assert!(config.params.is_empty());
@@ -363,6 +368,7 @@ mod tests {
             description = "Test Description"
             language = "zh-CN"
             timezone = "Asia/Shanghai"
+            enable_git_info = true
             output_dir = "dist"
             theme = "IgnIt"
 
@@ -380,6 +386,7 @@ mod tests {
         assert_eq!(config.description, "Test Description");
         assert_eq!(config.language, "zh-CN");
         assert_eq!(config.timezone.as_deref(), Some("Asia/Shanghai"));
+        assert!(config.enable_git_info);
         assert_eq!(config.output_dir, "dist");
         assert_eq!(config.theme.as_deref(), Some("IgnIt"));
         assert_eq!(

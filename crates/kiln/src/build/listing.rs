@@ -395,7 +395,7 @@ pub(crate) fn resolve_featured_image(
 }
 
 /// Converts raw tag strings into `LinkedTerm`s with pre-computed URLs.
-fn linked_tags(tags: &[String], base_url: &str) -> Vec<LinkedTerm> {
+pub(crate) fn linked_tags(tags: &[String], base_url: &str) -> Vec<LinkedTerm> {
     tags.iter()
         .map(|tag| LinkedTerm {
             name: tag.clone(),

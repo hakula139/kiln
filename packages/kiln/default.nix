@@ -7,6 +7,7 @@
   pkg-config,
   nasm,
   dav1d,
+  git,
   tzdata,
 }:
 
@@ -56,7 +57,10 @@ rustPlatform.buildRustPackage {
 
   # The build sandbox exposes no system zoneinfo, so jiff needs an explicit TZDIR
   # to resolve IANA zone names in the time zone tests.
-  nativeCheckInputs = [ tzdata ];
+  nativeCheckInputs = [
+    git
+    tzdata
+  ];
   preCheck = ''
     export TZDIR=${tzdata}/share/zoneinfo
   '';

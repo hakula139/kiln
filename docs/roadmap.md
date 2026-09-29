@@ -25,7 +25,7 @@ The project's shape is deliberate:
 - Build-time image pipeline: every local image gets natural `width` / `height` plus a base64 WebP placeholder for instant first paint.
 - Home, section, standalone, and paginated taxonomy / term pages.
 - Pinned posts on the home page via a `weight` frontmatter field, keeping hero pieces above the fold without affecting archive, tag, or RSS order.
-- Time-zone-aware dates rendered in your site's local time.
+- Time-zone-aware publication and last update dates, with optional Git-derived updates.
 - RSS 2.0 feeds for the whole site, each section, and each taxonomy term.
 - Sitemap, `robots.txt`, and an optional template-driven 404 page.
 - Full-text search via [Pagefind](https://pagefind.app), wired in at build time.
