@@ -41,19 +41,25 @@ All fields are optional. Defaults:
 | `weight`         | none                  |
 | `featured_image` | none (table)          |
 
-Draft pages (`draft = true`) and pages whose filename starts with `_` are excluded from the build.
-
-Each tag gets one archive page, addressed by its [slug](#headings). Spellings that differ only in case (`Rust` and `rust`) merge there, keeping the first one seen as the display name. When two tags differ beyond case yet slugify alike (`Rock & Roll` and `Rock Roll`), one URL cannot serve both, so the build fails with a `tag slug collision` error naming the slug, both tags, and their page counts.
-
-A post with any `weight` set is pinned on the home page, sorted before unpinned posts and ordered by `weight` ascending (lower floats higher, matching Hugo's `weight` semantics). Archive, tag, and section listings ignore `weight` and stay strictly date-sorted, so a pinned post still appears at its natural date position in those listings.
-
-`date` / `updated` are absolute instants. When kiln exposes a page date to templates, it renders that instant in the site's configured `timezone` from `config.toml` (UTC if `timezone` is unset):
+`date` and `updated` are absolute instants. Post templates receive them as ISO 8601 strings in the site's configured time zone, or UTC when `timezone` is unset:
 
 ```toml
 timezone = "Asia/Shanghai"
 ```
 
-Post templates receive `date`, `updated`, and linked `tags`. Set `updated` in frontmatter for an explicit last update time. To derive it from the latest commit to the content file when frontmatter omits it, set `enable_git_info = true` in `config.toml`. Git history must be available through the site root, including full history in CI. When history is missing or shallow, the Git fallback is omitted.
+An explicit `updated` value takes priority. To derive it from the latest commit to the content file when frontmatter omits it, enable Git information:
+
+```toml
+enable_git_info = true
+```
+
+The Git fallback requires the `git` executable on `PATH` and full repository history, including in CI. When they are unavailable or the checkout is shallow, `updated` has no Git-derived value.
+
+Each tag gets one archive page, addressed by its [slug](#headings). Spellings that differ only in case (`Rust` and `rust`) merge there, keeping the first one seen as the display name. When two tags differ beyond case yet slugify alike (`Rock & Roll` and `Rock Roll`), one URL cannot serve both, so the build fails with a `tag slug collision` error naming the slug, both tags, and their page counts.
+
+Draft pages (`draft = true`) and pages whose filename starts with `_` are excluded from the build.
+
+A post with any `weight` set is pinned on the home page, sorted before unpinned posts and ordered by `weight` ascending (lower floats higher, matching Hugo's `weight` semantics). Archive, tag, and section listings ignore `weight` and stay strictly date-sorted, so a pinned post still appears at its natural date position in those listings.
 
 ## Pandoc-Style Attributes
 

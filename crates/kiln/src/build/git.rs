@@ -9,6 +9,7 @@ pub(super) struct GitInfo {
 }
 
 impl GitInfo {
+    /// Returns `None` when disabled or Git history is unavailable or shallow.
     pub(super) fn new(root: &Path, enabled: bool) -> Option<Self> {
         if !enabled {
             return None;
@@ -118,6 +119,50 @@ mod tests {
         dir
     }
 
+    // ── GitInfo::new ──
+
+    #[test]
+    fn git_info_new_resolves_nested_site_files() {
+        let dir = repo();
+        let site = dir.path().join("site");
+        fs::create_dir(&site).unwrap();
+        let source = site.join("post.md");
+        fs::write(&source, "post").unwrap();
+        git(dir.path(), &["add", "site/post.md"]);
+        commit(dir.path(), "2024-01-01T00:00:00+00:00");
+
+        let info = GitInfo::new(&site, true).unwrap();
+        assert_eq!(
+            info.last_modified(&source),
+            Some("2024-01-01T00:00:00Z".parse().unwrap())
+        );
+        assert!(GitInfo::new(&site, false).is_none());
+    }
+
+    #[test]
+    fn git_info_new_omits_missing_and_shallow_history() {
+        let dir = repo();
+        let source = dir.path().join("post.md");
+        fs::write(&source, "post").unwrap();
+        git(dir.path(), &["add", "post.md"]);
+        commit(dir.path(), "2024-01-01T00:00:00+00:00");
+
+        assert!(GitInfo::new(&dir.path().join("missing"), true).is_none());
+        assert!(GitInfo::new(tempfile::tempdir().unwrap().path(), true).is_none());
+
+        let shallow = tempfile::tempdir().unwrap();
+        let url = format!("file://{}", dir.path().display());
+        let output = Command::new("git")
+            .args(["clone", "-q", "--depth=1", &url])
+            .arg(shallow.path().join("copy"))
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        assert!(GitInfo::new(&shallow.path().join("copy"), true).is_none());
+    }
+
+    // ── updated_timestamp ──
+
     #[test]
     fn updated_timestamp_uses_last_commit_and_prefers_frontmatter() {
         let dir = repo();
@@ -129,6 +174,7 @@ mod tests {
 
         git(dir.path(), &["mv", "before.md", "after.md"]);
         commit(dir.path(), "2024-02-01T00:00:00+00:00");
+
         let info = GitInfo::new(dir.path(), true).unwrap();
         assert_eq!(
             updated_timestamp(None, &current, Some(&info)),
@@ -139,36 +185,10 @@ mod tests {
             updated_timestamp(Some(explicit), &current, Some(&info)),
             Some(explicit)
         );
-        assert!(GitInfo::new(dir.path(), false).is_none());
 
-        let nested = dir.path().join("site");
-        fs::create_dir(&nested).unwrap();
-        assert!(GitInfo::new(&nested, true).is_some());
-    }
-
-    #[test]
-    fn git_info_omits_missing_and_shallow_history() {
-        let dir = repo();
-        let source = dir.path().join("post.md");
-        fs::write(&source, "post").unwrap();
-        git(dir.path(), &["add", "post.md"]);
-        commit(dir.path(), "2024-01-01T00:00:00+00:00");
-
-        let info = GitInfo::new(dir.path(), true).unwrap();
         let untracked = dir.path().join("draft.md");
         fs::write(&untracked, "draft").unwrap();
         assert_eq!(updated_timestamp(None, &untracked, Some(&info)), None);
-        assert!(GitInfo::new(&dir.path().join("missing"), true).is_none());
-
-        let shallow = tempfile::tempdir().unwrap();
-        let url = format!("file://{}", dir.path().display());
-        let output = Command::new("git")
-            .args(["clone", "-q", "--depth=1", &url])
-            .arg(shallow.path().join("copy"))
-            .output()
-            .unwrap();
-        assert!(output.status.success());
-        assert!(GitInfo::new(&shallow.path().join("copy"), true).is_none());
     }
 
     #[test]

@@ -7,7 +7,7 @@ use crate::render::assets::PageAssets;
 
 /// Template variables for rendering a post page.
 ///
-/// `date` is pre-formatted. HTML fields (`content`, `toc`) use `| safe` in templates to avoid
+/// `date` and `updated` are pre-formatted. HTML fields (`content`, `toc`) use `| safe` to avoid
 /// double-escaping. All other string fields are auto-escaped by `MiniJinja`.
 #[derive(Debug, Serialize)]
 pub struct PostTemplateVars<'a> {
@@ -28,7 +28,7 @@ pub struct PostTemplateVars<'a> {
     pub config: &'a Config,
 }
 
-/// A named item with a URL, used for tags and sections in page summaries.
+/// A named item with a URL, used for tags and sections in post and listing templates.
 #[derive(Debug, Clone, Serialize)]
 pub struct LinkedTerm {
     pub name: String,
