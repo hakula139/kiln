@@ -388,7 +388,7 @@ Each callout renders as a collapsible `<details>` element:
 ```html
 <details class="callout note" open>
   <summary class="callout-title">Note</summary>
-  <div class="callout-body">...</div>
+  <div class="callout-body"><div class="callout-body-inner">...</div></div>
 </details>
 ```
 
