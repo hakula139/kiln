@@ -41,13 +41,13 @@ All fields are optional. Defaults:
 | `weight`         | none                  |
 | `featured_image` | none (table)          |
 
-`date` and `updated` are absolute instants. Post templates receive them as ISO 8601 strings in the site's configured time zone, or UTC when `timezone` is unset:
+`date` and `updated` are absolute instants. Post templates receive them as ISO 8601 strings in the time zone set in the site's `config.toml`, or UTC when `timezone` is unset:
 
 ```toml
 timezone = "Asia/Shanghai"
 ```
 
-An explicit `updated` value takes priority. To derive it from the latest commit to the content file when frontmatter omits it, enable Git information:
+An explicit `updated` value takes priority. To derive it from the latest commit to the content file when frontmatter omits it, enable Git information in the site's `config.toml`:
 
 ```toml
 enable_git_info = true
