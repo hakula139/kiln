@@ -10,7 +10,7 @@ use crate::html::{escape, writeln_indented};
 /// ```html
 /// <details class="callout note" open>
 ///   <summary class="callout-title">Title</summary>
-///   <div class="callout-body">...</div>
+///   <div class="callout-body"><div class="callout-body-inner">...</div></div>
 /// </details>
 /// ```
 ///
@@ -55,7 +55,7 @@ pub fn render_callout(
     writeln_indented!(
         &mut html,
         1,
-        r#"<div class="callout-body">{body_html}</div>"#
+        r#"<div class="callout-body"><div class="callout-body-inner">{body_html}</div></div>"#
     );
     writeln_indented!(&mut html, 0, "</details>");
     html
@@ -98,7 +98,7 @@ mod tests {
             indoc! {r#"
                 <details class="callout info" open>
                   <summary class="callout-title">Info</summary>
-                  <div class="callout-body"></div>
+                  <div class="callout-body"><div class="callout-body-inner"></div></div>
                 </details>
             "#}
         );
@@ -126,15 +126,16 @@ mod tests {
             true,
             None,
             &[],
-            "<p>Hello</p>\n",
+            "<p>Hello</p>\n<p>World</p>\n",
         );
         assert_eq!(
             html,
             indoc! {r#"
                 <details class="callout note" open>
                   <summary class="callout-title">Read This</summary>
-                  <div class="callout-body"><p>Hello</p>
-                </div>
+                  <div class="callout-body"><div class="callout-body-inner"><p>Hello</p>
+                <p>World</p>
+                </div></div>
                 </details>
             "#}
         );
@@ -155,8 +156,8 @@ mod tests {
             indoc! {r#"
                 <details class="callout tip">
                   <summary class="callout-title">Hint</summary>
-                  <div class="callout-body"><p>Hidden content</p>
-                </div>
+                  <div class="callout-body"><div class="callout-body-inner"><p>Hidden content</p>
+                </div></div>
                 </details>
             "#}
         );
