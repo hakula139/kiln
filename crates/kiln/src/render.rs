@@ -2,6 +2,7 @@ pub mod assets;
 pub(crate) mod code_block;
 pub mod emoji;
 pub(crate) mod footnote;
+mod heading;
 pub mod highlight;
 pub mod icon;
 pub mod image;
@@ -29,6 +30,8 @@ pub struct RenderOptions {
     pub code_max_lines: Option<usize>,
     pub emojis: bool,
     pub fontawesome: bool,
+    #[serde(skip)]
+    pub heading_numbering: bool,
     pub table_nowrap_width: Option<usize>,
 }
 

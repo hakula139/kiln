@@ -204,7 +204,8 @@ fn build_page(
     output_dir: &Path,
     sections: &[Section],
 ) -> Result<()> {
-    let options = RenderOptions::from_params(&ctx.config.params)?;
+    let mut options = RenderOptions::from_params(&ctx.config.params)?;
+    options.heading_numbering = page.frontmatter.heading_numbering;
 
     let rendered = render_page(
         &page.raw_content,
@@ -300,7 +301,7 @@ fn find_page_css(assets: &[PathBuf], bundle_dir: Option<&Path>, page_url: &str) 
 mod tests {
     use std::fs;
 
-    use indoc::indoc;
+    use indoc::{formatdoc, indoc};
     use sha2::{Digest, Sha256};
 
     use super::*;
@@ -417,6 +418,58 @@ mod tests {
             html.contains("<p>This is a test <strong>post</strong>.</p>"),
             "should have rendered content, html:\n{html}"
         );
+    }
+
+    #[test]
+    fn build_heading_numbering_is_per_page() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(
+            root.path().join("config.toml"),
+            indoc! {r#"
+                base_url = "https://example.com"
+                title = "Test Site"
+
+                [params]
+                heading_numbering = true
+            "#},
+        )
+        .unwrap();
+        copy_templates(&root.path().join("templates"));
+        for (slug, setting) in [
+            ("numbered", "heading_numbering = true"),
+            ("another", "heading_numbering = true"),
+            ("default", ""),
+            ("disabled", "heading_numbering = false"),
+        ] {
+            write_page(
+                root.path(),
+                &format!("posts/{slug}"),
+                &formatdoc! {r#"
+                    +++
+                    title = "Post"
+                    {setting}
+                    +++
+                    ## Section
+                "#},
+            );
+        }
+        build(root.path(), BuildOptions::default()).unwrap();
+        for slug in ["numbered", "another", "default", "disabled"] {
+            let html =
+                fs::read_to_string(root.path().join(format!("public/posts/{slug}/index.html")))
+                    .unwrap();
+            if matches!(slug, "numbered" | "another") {
+                assert!(html.contains(
+                    r#"<h2 id="section"><span class="heading-number">1</span> Section</h2>"#
+                ));
+                assert!(html.contains(
+                    r##"href="#section"><span class="heading-number">1</span> Section</a>"##
+                ));
+            } else {
+                assert!(html.contains(r#"<h2 id="section">Section</h2>"#));
+                assert!(!html.contains("heading-number"));
+            }
+        }
     }
 
     #[test]

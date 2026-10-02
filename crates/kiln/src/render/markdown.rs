@@ -8,6 +8,7 @@ use super::Spanned;
 use super::assets::Feature;
 use super::code_block::{CodeBlockSpec, parse_fence_info};
 use super::footnote::Footnotes;
+use super::heading::render_number;
 use super::highlight::highlight_code;
 use super::image::{render_block_image, render_inline_image};
 use super::image_attrs::ImageAttrs;
@@ -139,6 +140,7 @@ impl MarkdownRenderer<'_> {
                     output_events.push(Event::Html(
                         format!(r#"<{} id="{}">"#, entry.level, escape(&entry.id)).into(),
                     ));
+                    output_events.push(Event::Html(render_number(entry.number.as_deref()).into()));
                 }
                 Event::End(TagEnd::Heading(level)) => {
                     output_events.push(Event::Html(format!("</{level}>\n").into()));
@@ -386,6 +388,7 @@ fn collect_headings<'a>(events: impl Iterator<Item = &'a Spanned>) -> Vec<TocEnt
                 };
                 headings.push(TocEntry {
                     level,
+                    number: None,
                     id: raw_id,
                     title: std::mem::take(&mut text),
                 });

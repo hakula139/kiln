@@ -1,5 +1,6 @@
 use pulldown_cmark::HeadingLevel;
 
+use super::heading::render_number;
 use crate::html::{escape, writeln_indented};
 
 /// A single entry in the table of contents, collected during heading rendering.
@@ -7,6 +8,8 @@ use crate::html::{escape, writeln_indented};
 pub struct TocEntry {
     /// Heading level (H1–H6).
     pub level: HeadingLevel,
+    /// The optional hierarchical number, separate from the authored title.
+    pub number: Option<String>,
     /// The slugified ID attribute for this heading.
     pub id: String,
     /// The plain-text title of the heading.
@@ -54,8 +57,9 @@ pub fn render_toc_html(entries: &[TocEntry]) -> String {
         writeln_indented!(
             &mut html,
             depth * 2,
-            r##"<li><a href="#{}">{}</a>"##,
+            r##"<li><a href="#{}">{}{}</a>"##,
             escape(&entry.id),
+            render_number(entry.number.as_deref()),
             escape(&entry.title),
         );
     }
@@ -88,6 +92,7 @@ mod tests {
     fn single_entry() {
         let entries = vec![TocEntry {
             level: HeadingLevel::H2,
+            number: None,
             id: "hello".into(),
             title: "Hello".into(),
         }];
@@ -109,21 +114,25 @@ mod tests {
         let entries = vec![
             TocEntry {
                 level: HeadingLevel::H2,
+                number: None,
                 id: "intro".into(),
                 title: "Intro".into(),
             },
             TocEntry {
                 level: HeadingLevel::H3,
+                number: None,
                 id: "detail-a".into(),
                 title: "Detail A".into(),
             },
             TocEntry {
                 level: HeadingLevel::H3,
+                number: None,
                 id: "detail-b".into(),
                 title: "Detail B".into(),
             },
             TocEntry {
                 level: HeadingLevel::H2,
+                number: None,
                 id: "conclusion".into(),
                 title: "Conclusion".into(),
             },
@@ -155,11 +164,13 @@ mod tests {
         let entries = vec![
             TocEntry {
                 level: HeadingLevel::H2,
+                number: None,
                 id: "top".into(),
                 title: "Top".into(),
             },
             TocEntry {
                 level: HeadingLevel::H4,
+                number: None,
                 id: "deep".into(),
                 title: "Deep".into(),
             },
@@ -190,11 +201,13 @@ mod tests {
         let entries = vec![
             TocEntry {
                 level: HeadingLevel::H3,
+                number: None,
                 id: "detail".into(),
                 title: "Detail".into(),
             },
             TocEntry {
                 level: HeadingLevel::H2,
+                number: None,
                 id: "overview".into(),
                 title: "Overview".into(),
             },
@@ -224,21 +237,25 @@ mod tests {
         let entries = vec![
             TocEntry {
                 level: HeadingLevel::H2,
+                number: None,
                 id: "a".into(),
                 title: "A".into(),
             },
             TocEntry {
                 level: HeadingLevel::H3,
+                number: None,
                 id: "b".into(),
                 title: "B".into(),
             },
             TocEntry {
                 level: HeadingLevel::H4,
+                number: None,
                 id: "c".into(),
                 title: "C".into(),
             },
             TocEntry {
                 level: HeadingLevel::H2,
+                number: None,
                 id: "d".into(),
                 title: "D".into(),
             },
@@ -270,6 +287,7 @@ mod tests {
     fn h3_first_normalizes_to_top_level() {
         let entries = vec![TocEntry {
             level: HeadingLevel::H3,
+            number: None,
             id: "only".into(),
             title: "Only".into(),
         }];
@@ -291,16 +309,19 @@ mod tests {
         let entries = vec![
             TocEntry {
                 level: HeadingLevel::H2,
+                number: None,
                 id: "a".into(),
                 title: "A".into(),
             },
             TocEntry {
                 level: HeadingLevel::H2,
+                number: None,
                 id: "b".into(),
                 title: "B".into(),
             },
             TocEntry {
                 level: HeadingLevel::H2,
+                number: None,
                 id: "c".into(),
                 title: "C".into(),
             },
@@ -326,6 +347,7 @@ mod tests {
     fn title_with_html_chars() {
         let entries = vec![TocEntry {
             level: HeadingLevel::H2,
+            number: None,
             id: "generics".into(),
             title: "Vec<T> & Friends".into(),
         }];
@@ -340,6 +362,7 @@ mod tests {
     fn id_with_html_chars() {
         let entries = vec![TocEntry {
             level: HeadingLevel::H2,
+            number: None,
             id: "foo&bar".into(),
             title: "Foo".into(),
         }];
