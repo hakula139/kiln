@@ -36,11 +36,6 @@ pub(crate) fn highlight_code(syntax_set: &SyntaxSet, code: &str, spec: &CodeBloc
     // ── Wrapper open ──
 
     let mut wrapper_classes = String::from("code-block");
-    match spec.collapse {
-        Some(true) => wrapper_classes.push_str(" collapsed"),
-        Some(false) => wrapper_classes.push_str(" expanded"),
-        None => {}
-    }
     for cls in &spec.classes {
         wrapper_classes.push(' ');
         wrapper_classes.push_str(&escape(cls));
@@ -52,10 +47,15 @@ pub(crate) fn highlight_code(syntax_set: &SyntaxSet, code: &str, spec: &CodeBloc
         .map(|id| format!(r#" id="{}""#, escape(id)))
         .unwrap_or_default();
 
+    let open_attr = if spec.collapse == Some(true) {
+        ""
+    } else {
+        " open"
+    };
     writeln_indented!(
         &mut html,
         0,
-        r#"<div class="{wrapper_classes}"{id_attr} data-lang="{escaped_lang}">"#
+        r#"<details class="{wrapper_classes}"{id_attr} data-lang="{escaped_lang}"{open_attr}>"#
     );
 
     // ── Header ──
@@ -63,7 +63,7 @@ pub(crate) fn highlight_code(syntax_set: &SyntaxSet, code: &str, spec: &CodeBloc
     // Title (when present) replaces the language pill so the header shows one label. `data-lang`
     // on the wrapper still drives syntax CSS.
 
-    writeln_indented!(&mut html, 1, r#"<div class="code-header">"#);
+    writeln_indented!(&mut html, 1, r#"<summary class="code-header">"#);
     if let Some(title) = &spec.title {
         writeln_indented!(
             &mut html,
@@ -79,8 +79,12 @@ pub(crate) fn highlight_code(syntax_set: &SyntaxSet, code: &str, spec: &CodeBloc
             escape(&display_label)
         );
     }
-    writeln_indented!(&mut html, 2, r#"<button class="copy-btn">Copy</button>"#);
-    writeln_indented!(&mut html, 1, "</div>");
+    writeln_indented!(
+        &mut html,
+        2,
+        r#"<button class="copy-btn" aria-label="Copy code">Copy</button>"#
+    );
+    writeln_indented!(&mut html, 1, "</summary>");
 
     // ── Code body ──
 
@@ -125,7 +129,7 @@ pub(crate) fn highlight_code(syntax_set: &SyntaxSet, code: &str, spec: &CodeBloc
     writeln_indented!(&mut html, 3, "</table>");
     writeln_indented!(&mut html, 2, "</div>");
     writeln_indented!(&mut html, 1, "</div>");
-    writeln_indented!(&mut html, 0, "</div>");
+    writeln_indented!(&mut html, 0, "</details>");
     html
 }
 
@@ -270,7 +274,7 @@ fn capitalize_first(s: &str) -> String {
 mod tests {
     use std::sync::LazyLock;
 
-    use indoc::indoc;
+    use indoc::{formatdoc, indoc};
 
     use super::*;
 
@@ -297,11 +301,11 @@ mod tests {
     fn highlight_code_structure() {
         let html = highlight("rs", "fn main() {}\n");
         assert!(
-            html.starts_with(r#"<div class="code-block" data-lang="rust">"#),
+            html.starts_with(r#"<details class="code-block" data-lang="rust" open>"#),
             "should start with code-block wrapper with data-lang, html:\n{html}"
         );
         assert!(
-            html.contains(r#"<div class="code-header">"#),
+            html.contains(r#"<summary class="code-header">"#),
             "should have code-header, html:\n{html}"
         );
         assert!(
@@ -309,7 +313,7 @@ mod tests {
             "should have display label, html:\n{html}"
         );
         assert!(
-            html.contains(r#"<button class="copy-btn">Copy</button>"#),
+            html.contains(r#"<button class="copy-btn" aria-label="Copy code">Copy</button>"#),
             "should have copy button, html:\n{html}"
         );
         assert!(
@@ -321,7 +325,7 @@ mod tests {
             "should have highlight table, html:\n{html}"
         );
         assert!(
-            html.ends_with("</div>\n"),
+            html.ends_with("</details>\n"),
             "should end with closing tag, html:\n{html}"
         );
     }
@@ -333,7 +337,7 @@ mod tests {
             ..CodeBlockSpec::default()
         };
         let html = highlight_with_spec("fn main() {}\n", &spec);
-        assert!(html.starts_with(r#"<div class="code-block" data-lang="rust">"#));
+        assert!(html.starts_with(r#"<details class="code-block" data-lang="rust" open>"#));
         assert!(!html.contains("code-title"));
         assert!(!html.contains("collapsed"));
         assert!(!html.contains("expanded"));
@@ -370,7 +374,7 @@ mod tests {
         };
         let html = highlight_with_spec("fn main() {}\n", &spec);
         assert!(
-            html.contains(r#"<div class="code-block wide dark" id="my-code""#),
+            html.contains(r#"<details class="code-block wide dark" id="my-code""#),
             "should propagate id and classes, html:\n{html}"
         );
     }
@@ -483,31 +487,45 @@ mod tests {
     // ── highlight_code (collapse / expand) ──
 
     #[test]
-    fn highlight_code_collapse_emits_class() {
-        let spec = CodeBlockSpec {
-            lang: Some("rs".into()),
-            collapse: Some(true),
-            ..CodeBlockSpec::default()
-        };
-        let html = highlight_with_spec("fn main() {}\n", &spec);
-        assert!(
-            html.contains(r#"<div class="code-block collapsed""#),
-            "should have collapsed class, html:\n{html}"
-        );
-    }
-
-    #[test]
-    fn highlight_code_expand_emits_class() {
-        let spec = CodeBlockSpec {
-            lang: Some("rs".into()),
-            collapse: Some(false),
-            ..CodeBlockSpec::default()
-        };
-        let html = highlight_with_spec("fn main() {}\n", &spec);
-        assert!(
-            html.contains(r#"<div class="code-block expanded""#),
-            "should have expanded class, html:\n{html}"
-        );
+    fn highlight_code_disclosure_states() {
+        for (info, expected_wrapper, expected_max_lines) in [
+            (
+                "rust",
+                r#"<details class="code-block" data-lang="rust" open>"#,
+                true,
+            ),
+            (
+                "rust {collapse}",
+                r#"<details class="code-block" data-lang="rust">"#,
+                false,
+            ),
+            (
+                "rust {expand}",
+                r#"<details class="code-block" data-lang="rust" open>"#,
+                false,
+            ),
+        ] {
+            let spec = super::super::code_block::parse_fence_info(info, Some(40));
+            let html = highlight_with_spec("fn main() {}\n", &spec);
+            assert_eq!(
+                html.contains(r#"data-max-lines="40""#),
+                expected_max_lines,
+                "{info}"
+            );
+            assert_eq!(
+                html.lines().take(5).collect::<Vec<_>>().join("\n"),
+                formatdoc! {r#"
+                    {expected_wrapper}
+                      <summary class="code-header">
+                        <span class="code-lang">Rust</span>
+                        <button class="copy-btn" aria-label="Copy code">Copy</button>
+                      </summary>
+                "#}
+                .trim_end(),
+                "{info}"
+            );
+            assert!(html.ends_with("</details>\n"));
+        }
     }
 
     // ── highlight_code (max lines) ──
