@@ -52,6 +52,9 @@ pub struct Frontmatter {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub license: Option<String>,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub heading_numbering: bool,
 }
 
 /// Featured image metadata. `width` / `height` / `lqip_uri` are stamped by
@@ -299,6 +302,83 @@ mod tests {
 
     use super::*;
 
+    // ── deserialize: YAML ──
+
+    #[test]
+    fn deserialize_yaml_basic() {
+        let yaml = indoc! {"
+            title: Hello
+            date: 2024-06-15T12:34:56+08:00
+        "};
+        let fm: Frontmatter = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(fm.title, "Hello");
+        assert_eq!(
+            fm.date.unwrap(),
+            "2024-06-15T04:34:56Z".parse::<Timestamp>().unwrap()
+        );
+    }
+
+    #[test]
+    fn deserialize_yaml_alias_featured_image() {
+        let yaml = indoc! {"
+            featuredImage: /img.webp
+        "};
+        let fm: Frontmatter = serde_yaml::from_str(yaml).unwrap();
+        let fi = fm.featured_image.as_ref().unwrap();
+        assert_eq!(fi.src, "/img.webp");
+        assert!(fi.position.is_none());
+        assert!(fi.credit.is_none());
+    }
+
+    #[test]
+    fn deserialize_yaml_unknown_fields_ignored() {
+        let yaml = indoc! {"
+            title: Test
+            unknownField: dropped
+            code:
+              maxShownLines: 10
+        "};
+        let fm: Frontmatter = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(fm.title, "Test");
+    }
+
+    #[test]
+    fn deserialize_yaml_null_date() {
+        let yaml = indoc! {"
+            date: ~
+        "};
+        let fm: Frontmatter = serde_yaml::from_str(yaml).unwrap();
+        assert!(fm.date.is_none());
+    }
+
+    // ── serialize ──
+
+    #[test]
+    fn serialize_heading_numbering() {
+        for enabled in [true, false] {
+            let frontmatter = Frontmatter {
+                heading_numbering: enabled,
+                ..Default::default()
+            };
+            let serialized = toml::to_string(&frontmatter).unwrap();
+            let table: toml::Table = toml::from_str(&serialized).unwrap();
+            assert_eq!(
+                table.get("heading_numbering"),
+                enabled.then_some(&toml::Value::Boolean(true)),
+            );
+        }
+    }
+
+    #[test]
+    fn serialize_featured_image_skips_unset_auto_fields() {
+        let fi = FeaturedImage {
+            src: "/img.webp".into(),
+            ..Default::default()
+        };
+        let serialized = toml::to_string(&fi).unwrap();
+        assert_eq!(serialized, "src = \"/img.webp\"\n");
+    }
+
     // ── parse ──
 
     #[test]
@@ -326,6 +406,7 @@ mod tests {
             draft = true
             weight = 10
             license = "CC BY-NC-SA 4.0"
+            heading_numbering = true
 
             [featured_image]
             src = "/images/example.webp"
@@ -364,6 +445,7 @@ mod tests {
         assert!(fm.draft);
         assert_eq!(fm.weight, Some(10));
         assert_eq!(fm.license.as_deref(), Some("CC BY-NC-SA 4.0"));
+        assert!(fm.heading_numbering);
         assert_eq!(body, "Content here.\n");
     }
 
@@ -386,18 +468,6 @@ mod tests {
     }
 
     #[test]
-    fn featured_image_skips_unset_auto_fields_when_serialized() {
-        let fi = FeaturedImage {
-            src: "/img.webp".into(),
-            ..Default::default()
-        };
-        let serialized = toml::to_string(&fi).unwrap();
-        assert!(!serialized.contains("width"));
-        assert!(!serialized.contains("height"));
-        assert!(!serialized.contains("lqip_uri"));
-    }
-
-    #[test]
     fn parse_featured_image_flat_string() {
         let input = indoc! {r#"
             +++
@@ -409,6 +479,17 @@ mod tests {
         assert_eq!(fi.src, "/images/cover.webp");
         assert!(fi.position.is_none());
         assert!(fi.credit.is_none());
+    }
+
+    #[test]
+    fn parse_heading_numbering_disabled() {
+        let input = indoc! {"
+            +++
+            heading_numbering = false
+            +++
+        "};
+        let (frontmatter, _) = parse(input).unwrap();
+        assert!(!frontmatter.heading_numbering);
     }
 
     #[test]
@@ -590,54 +671,5 @@ mod tests {
             err.contains("missing closing `+++` delimiter"),
             "should report missing closing delimiter, got: {err}"
         );
-    }
-
-    // ── yaml deserialization ──
-
-    #[test]
-    fn yaml_basic() {
-        let yaml = indoc! {"
-            title: Hello
-            date: 2024-06-15T12:34:56+08:00
-        "};
-        let fm: Frontmatter = serde_yaml::from_str(yaml).unwrap();
-        assert_eq!(fm.title, "Hello");
-        assert_eq!(
-            fm.date.unwrap(),
-            "2024-06-15T04:34:56Z".parse::<Timestamp>().unwrap()
-        );
-    }
-
-    #[test]
-    fn yaml_alias_featured_image() {
-        let yaml = indoc! {"
-            featuredImage: /img.webp
-        "};
-        let fm: Frontmatter = serde_yaml::from_str(yaml).unwrap();
-        let fi = fm.featured_image.as_ref().unwrap();
-        assert_eq!(fi.src, "/img.webp");
-        assert!(fi.position.is_none());
-        assert!(fi.credit.is_none());
-    }
-
-    #[test]
-    fn yaml_null_date() {
-        let yaml = indoc! {"
-            date: ~
-        "};
-        let fm: Frontmatter = serde_yaml::from_str(yaml).unwrap();
-        assert!(fm.date.is_none());
-    }
-
-    #[test]
-    fn yaml_unknown_fields_ignored() {
-        let yaml = indoc! {"
-            title: Test
-            unknownField: dropped
-            code:
-              maxShownLines: 10
-        "};
-        let fm: Frontmatter = serde_yaml::from_str(yaml).unwrap();
-        assert_eq!(fm.title, "Test");
     }
 }

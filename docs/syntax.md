@@ -29,17 +29,18 @@ url = "https://example.com/artworks/123"
 
 All fields are optional. Defaults:
 
-| Field            | Default               |
-| ---------------- | --------------------- |
-| `title`          | `""`                  |
-| `description`    | none                  |
-| `date`           | none                  |
-| `updated`        | none                  |
-| `draft`          | `false`               |
-| `tags`           | `[]`                  |
-| `slug`           | derived from filename |
-| `weight`         | none                  |
-| `featured_image` | none (table)          |
+| Field               | Default               |
+| ------------------- | --------------------- |
+| `title`             | `""`                  |
+| `description`       | none                  |
+| `date`              | none                  |
+| `updated`           | none                  |
+| `draft`             | `false`               |
+| `tags`              | `[]`                  |
+| `slug`              | derived from filename |
+| `weight`            | none                  |
+| `featured_image`    | none (table)          |
+| `heading_numbering` | `false`               |
 
 `date` and `updated` are absolute instants. Post templates receive them as ISO 8601 strings in the time zone set in the site's `config.toml`, or UTC when `timezone` is unset:
 
@@ -117,6 +118,8 @@ Explicit heading IDs override the auto-generated one:
 Heading IDs are unique across the page body and nested directives. Repeated IDs receive numeric suffixes in rendered document order (`name`, `name-1`, `name-2`). Authored HTML, image, and directive IDs are reserved.
 
 Headings are also collected into a structured table of contents, exposed to post templates as the `toc` variable. See [Post templates](themes.md#post-templates-posthtml).
+
+Set `heading_numbering = true` in the article frontmatter to number Markdown headings and table-of-contents links (`1`, `1.1`, `1.1.1`, etc.). Numbering restarts for each page.
 
 ### Images
 

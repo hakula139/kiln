@@ -9,6 +9,7 @@ use syntect::parsing::SyntaxSet;
 use super::RenderOptions;
 use super::assets::{AssetsHandle, PageAssets};
 use super::emoji::replace_emojis;
+use super::heading::HeadingNumbers;
 use super::icon::replace_icons;
 use super::image_attrs::{ImageAttrs, extract_image_attrs};
 use super::lqip::ImageResolver;
@@ -64,7 +65,8 @@ pub fn render_page(
     let mut document = renderer.prepare_document(raw_content, &mut 0);
     let mut ids = PageIds::default();
     document.reserve_authored_ids(&mut ids, &placeholder_prefix);
-    document.allocate_heading_ids(&mut ids, &placeholder_prefix);
+    let mut numbers = options.heading_numbering.then(HeadingNumbers::default);
+    document.allocate_headings(&mut ids, &mut numbers, &placeholder_prefix);
     let md_output = renderer.render_document(document, &mut ids)?;
     let toc_html = render_toc_html(&md_output.headings);
 
@@ -129,18 +131,27 @@ impl PreparedDocument {
         ids.reserve_html(&raw_html);
     }
 
-    fn allocate_heading_ids(&mut self, ids: &mut PageIds, prefix: &str) {
+    fn allocate_headings(
+        &mut self,
+        ids: &mut PageIds,
+        numbers: &mut Option<HeadingNumbers>,
+        prefix: &str,
+    ) {
         let mut headings = self.markdown.headings.iter_mut();
         for (event, _) in self.markdown.footnotes.events() {
             match event {
                 Event::End(TagEnd::Heading(_)) => {
                     if let Some(heading) = headings.next() {
                         heading.id = ids.allocate(&heading.id);
+                        heading.number =
+                            numbers.as_mut().map(|numbers| numbers.next(heading.level));
                     }
                 }
                 Event::Html(html) => {
                     if let Some(index) = placeholder_index(html, prefix) {
-                        self.directives[index].1.allocate_heading_ids(ids, prefix);
+                        self.directives[index]
+                            .1
+                            .allocate_headings(ids, numbers, prefix);
                     }
                 }
                 _ => {}
@@ -370,10 +381,8 @@ mod tests {
             "html:\n{}",
             page.content_html
         );
-        assert!(
-            !page.toc_html.is_empty(),
-            "should generate ToC from heading"
-        );
+        assert!(page.toc_html.contains(r##"href="#hello">Hello</a>"##));
+        assert!(page.assets.features.is_empty());
     }
 
     #[test]
@@ -487,6 +496,59 @@ mod tests {
         );
     }
 
+    // ── render_page: headings and IDs ──
+
+    #[test]
+    fn render_page_heading_numbering_preserves_titles_and_ids() {
+        let input = indoc! {"
+            ## First *title* {#custom}
+            #### Deep
+            ### Sibling
+            ## Last
+        "};
+        let render_numbered = || {
+            render_page(
+                input,
+                &SYNTAX_SET,
+                &test_engine(),
+                &test_config(),
+                &RenderOptions {
+                    heading_numbering: true,
+                    ..RenderOptions::default()
+                },
+                None,
+                &EMPTY_RESOLVER,
+            )
+            .unwrap()
+        };
+        let page = render_numbered();
+        assert!(page.content_html.contains(
+            r#"<h2 id="custom"><span class="heading-number">1</span> First <em>title</em></h2>"#
+        ));
+        for (id, number, title) in [
+            ("custom", "1", "First title"),
+            ("deep", "1.1", "Deep"),
+            ("sibling", "1.2", "Sibling"),
+            ("last", "2", "Last"),
+        ] {
+            assert!(page.toc_html.contains(&format!(
+                r##"href="#{id}"><span class="heading-number">{number}</span> {title}</a>"##
+            )));
+            assert!(page.content_html.contains(&format!(
+                r#"id="{id}"><span class="heading-number">{number}</span> "#
+            )));
+        }
+        assert_eq!(page, render_numbered());
+        let default = render(input);
+        assert!(!default.content_html.contains("heading-number"));
+        assert!(!default.toc_html.contains("heading-number"));
+        assert!(
+            default
+                .content_html
+                .contains(r#"id="custom">First <em>title</em>"#)
+        );
+    }
+
     #[test]
     fn render_page_heading_ids_follow_document_order_across_scopes() {
         let page = render(indoc! {"
@@ -520,6 +582,63 @@ mod tests {
             assert!(page.toc_html.contains(&format!(r##"href="#{id}""##)));
         }
         assert!(!page.toc_html.contains(r##"href="#shared-1""##));
+    }
+
+    #[test]
+    fn render_page_heading_numbering_follows_document_order_across_scopes() {
+        let page = render_page(
+            indoc! {"
+                #### First
+
+                [^a]:
+                    ### Note
+
+                ::: callout {type=note}
+                ##### Inner
+
+                ::: callout {type=tip}
+                #### Sibling
+                :::
+                :::
+
+                ## Last
+
+                Text[^a].
+            "},
+            &SYNTAX_SET,
+            &test_engine(),
+            &test_config(),
+            &RenderOptions {
+                heading_numbering: true,
+                ..RenderOptions::default()
+            },
+            None,
+            &EMPTY_RESOLVER,
+        )
+        .unwrap();
+        let mut previous = 0;
+        for (id, number) in [
+            ("first", "1"),
+            ("inner", "1.1"),
+            ("sibling", "2"),
+            ("last", "3"),
+            ("note", "3.1"),
+        ] {
+            let position = page
+                .content_html
+                .find(&format!(
+                    r#"id="{id}"><span class="heading-number">{number}</span> "#
+                ))
+                .unwrap();
+            assert!(position >= previous, "{}", page.content_html);
+            previous = position;
+        }
+        assert!(!page.toc_html.contains("#inner"));
+        assert!(!page.toc_html.contains("#sibling"));
+        assert!(
+            page.toc_html
+                .contains(r##"href="#note"><span class="heading-number">3.1</span> Note</a>"##)
+        );
     }
 
     #[test]
@@ -616,25 +735,6 @@ mod tests {
             assert!(page.content_html.contains(&format!(r#"<li id="{id}">"#)));
             assert!(page.content_html.contains(&format!(r##"href="#{id}""##)));
         }
-    }
-
-    #[test]
-    fn render_page_preserves_authored_placeholder_comments() {
-        let page = render(indoc! {"
-            <!--kiln-directive-99-->
-
-            <!--kiln-directive-0-->
-
-            ::: callout {type=note}
-            ## Inside
-            :::
-
-            ## Inside
-        "});
-        assert!(page.content_html.contains("<!--kiln-directive-99-->"));
-        assert!(page.content_html.contains("<!--kiln-directive-0-->"));
-        assert_eq!(page.content_html.matches("<details").count(), 1);
-        assert!(page.toc_html.contains(r##"href="#inside-1""##));
     }
 
     // ── render_page: directives ──
@@ -744,6 +844,45 @@ mod tests {
         );
     }
 
+    #[test]
+    fn render_page_directive_template_output_keeps_own_line() {
+        let dir = tempfile::tempdir().unwrap();
+        let directives = dir.path().join("directives");
+        fs::create_dir_all(&directives).unwrap();
+        fs::write(directives.join("widget.html"), "<widget></widget>\n").unwrap();
+
+        let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
+        let page = render_with(
+            indoc! {"
+                ::: widget
+                Body
+                :::
+                After.
+            "},
+            &engine,
+        );
+        assert_eq!(page.content_html, "<widget></widget>\n<p>After.</p>\n");
+    }
+
+    #[test]
+    fn render_page_preserves_authored_placeholder_comments() {
+        let page = render(indoc! {"
+            <!--kiln-directive-99-->
+
+            <!--kiln-directive-0-->
+
+            ::: callout {type=note}
+            ## Inside
+            :::
+
+            ## Inside
+        "});
+        assert!(page.content_html.contains("<!--kiln-directive-99-->"));
+        assert!(page.content_html.contains("<!--kiln-directive-0-->"));
+        assert_eq!(page.content_html.matches("<details").count(), 1);
+        assert!(page.toc_html.contains(r##"href="#inside-1""##));
+    }
+
     // ── render_page: asset auto-detection ──
 
     #[test]
@@ -765,65 +904,111 @@ mod tests {
 
     #[test]
     fn render_page_detects_mermaid_feature_from_fence() {
+        for info in ["mermaid", "Mermaid", "mermaid no_run"] {
+            let input = indoc::formatdoc! {"
+                ```{info}
+                graph TD
+                  A --> B
+                ```
+            "};
+            let page = render(&input);
+            assert!(
+                page.assets.features.contains(&Feature::Mermaid),
+                "fence {info:?} should set Feature::Mermaid, features: {:?}",
+                page.assets.features,
+            );
+        }
+    }
+
+    #[test]
+    fn render_page_directive_with_code_and_math() {
         let page = render(indoc! {"
-            ```mermaid
-            graph TD
-              A --> B
+            ::: callout
+            Inline $x^2$ math.
+
+            ```rust
+            fn main() {}
             ```
+            :::
         "});
         assert!(
-            page.assets.features.contains(&Feature::Mermaid),
-            "```mermaid fence should set Feature::Mermaid, features: {:?}",
+            page.content_html.contains("math-inline"),
+            "math should be rendered, html:\n{}",
+            page.content_html
+        );
+        assert!(
+            page.content_html.contains(r#"class="highlight""#),
+            "code should be highlighted, html:\n{}",
+            page.content_html
+        );
+        assert!(
+            page.assets.features.contains(&Feature::Math),
+            "math inside a directive body should bubble up to page assets, features: {:?}",
             page.assets.features,
         );
     }
 
+    // ── top_level_blocks ──
+
     #[test]
-    fn render_page_detects_mermaid_feature_case_insensitively() {
+    fn top_level_blocks_filters_nested() {
+        let input = indoc! {"
+            :::: outer
+            ::: inner
+            Body
+            :::
+            ::::
+        "};
+        let all = parse_directives(input);
+        assert_eq!(all.len(), 2, "parser should find both blocks");
+
+        let top = top_level_blocks(&all);
+        assert_eq!(top, vec![&all[0]]);
+    }
+
+    // ── render_directive_block ──
+
+    #[test]
+    fn render_directive_block_callout() {
         let page = render(indoc! {"
-            ```Mermaid
-            graph TD
-              A --> B
-            ```
+            ::: callout
+            Hello **world**.
+            :::
         "});
         assert!(
-            page.assets.features.contains(&Feature::Mermaid),
-            "uppercase fence should still set Feature::Mermaid, features: {:?}",
-            page.assets.features,
+            page.content_html.contains(r#"class="callout note""#),
+            "should have callout wrapper, html:\n{}",
+            page.content_html
+        );
+        assert!(
+            page.content_html.contains("<strong>world</strong>"),
+            "body markdown should be rendered, html:\n{}",
+            page.content_html
         );
     }
 
     #[test]
-    fn render_page_detects_mermaid_feature_with_info_string_metadata() {
+    fn render_directive_block_with_id_and_classes() {
         let page = render(indoc! {"
-            ```mermaid no_run
-            graph TD
-              A --> B
-            ```
+            ::: callout {#my-note .highlight type=tip}
+            Body text.
+            :::
         "});
         assert!(
-            page.assets.features.contains(&Feature::Mermaid),
-            "fence with trailing metadata should still set Feature::Mermaid, features: {:?}",
-            page.assets.features,
+            page.content_html.contains(r#"id="my-note""#),
+            "id should be propagated, html:\n{}",
+            page.content_html
+        );
+        assert!(
+            page.content_html
+                .contains(r#"class="callout tip highlight""#),
+            "classes should be propagated, html:\n{}",
+            page.content_html
         );
     }
 
     #[test]
-    fn render_page_no_features_for_plain_content() {
-        let page = render(indoc! {"
-            # Heading
-
-            Just text. No math, no diagrams.
-        "});
-        assert!(
-            page.assets.features.is_empty(),
-            "plain content should detect no features, got: {:?}",
-            page.assets.features,
-        );
-    }
-
-    #[test]
-    fn render_directive_uses_template() {
+    fn render_directive_block_uses_template() {
         let dir = tempfile::tempdir().unwrap();
         let directives = dir.path().join("directives");
         fs::create_dir_all(&directives).unwrap();
@@ -855,27 +1040,7 @@ mod tests {
     }
 
     #[test]
-    fn render_directive_template_output_keeps_own_line() {
-        let dir = tempfile::tempdir().unwrap();
-        let directives = dir.path().join("directives");
-        fs::create_dir_all(&directives).unwrap();
-        fs::write(directives.join("widget.html"), "<widget></widget>\n").unwrap();
-
-        let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
-        let page = render_with(
-            indoc! {"
-                ::: widget
-                Body
-                :::
-                After.
-            "},
-            &engine,
-        );
-        assert_eq!(page.content_html, "<widget></widget>\n<p>After.</p>\n");
-    }
-
-    #[test]
-    fn render_directive_template_accesses_parsed_args() {
+    fn render_directive_block_template_accesses_parsed_args() {
         let dir = tempfile::tempdir().unwrap();
         let directives = dir.path().join("directives");
         fs::create_dir_all(&directives).unwrap();
@@ -907,7 +1072,7 @@ mod tests {
     }
 
     #[test]
-    fn render_directive_template_accesses_source_dir() {
+    fn render_directive_block_template_accesses_source_dir() {
         let dir = tempfile::tempdir().unwrap();
         let directives = dir.path().join("directives");
         fs::create_dir_all(&directives).unwrap();
@@ -942,7 +1107,7 @@ mod tests {
     }
 
     #[test]
-    fn render_directive_fallback_to_div() {
+    fn render_directive_block_fallback_to_div() {
         let page = render(indoc! {"
             ::: custom
             Some body.
@@ -961,7 +1126,7 @@ mod tests {
     }
 
     #[test]
-    fn render_directive_anonymous_div() {
+    fn render_directive_block_anonymous_div() {
         let page = render(indoc! {"
             ::: {.compact-table}
             | A | B |
@@ -978,93 +1143,6 @@ mod tests {
             page.content_html.contains("<table>"),
             "table should be rendered inside div, html:\n{}",
             page.content_html
-        );
-    }
-    // ── top_level_blocks ──
-
-    #[test]
-    fn top_level_blocks_filters_nested() {
-        let input = indoc! {"
-            :::: outer
-            ::: inner
-            Body
-            :::
-            ::::
-        "};
-        let all = parse_directives(input);
-        assert_eq!(all.len(), 2, "parser should find both blocks");
-
-        let top = top_level_blocks(&all);
-        assert_eq!(top.len(), 1, "only outer block is top-level");
-        assert_eq!(top[0].range.start, 0);
-    }
-
-    // ── render_directive_block ──
-
-    #[test]
-    fn render_directive_callout() {
-        let page = render(indoc! {"
-            ::: callout
-            Hello **world**.
-            :::
-        "});
-        assert!(
-            page.content_html.contains(r#"class="callout note""#),
-            "should have callout wrapper, html:\n{}",
-            page.content_html
-        );
-        assert!(
-            page.content_html.contains("<strong>world</strong>"),
-            "body markdown should be rendered, html:\n{}",
-            page.content_html
-        );
-    }
-
-    #[test]
-    fn render_directive_with_id_and_classes() {
-        let page = render(indoc! {"
-            ::: callout {#my-note .highlight type=tip}
-            Body text.
-            :::
-        "});
-        assert!(
-            page.content_html.contains(r#"id="my-note""#),
-            "id should be propagated, html:\n{}",
-            page.content_html
-        );
-        assert!(
-            page.content_html
-                .contains(r#"class="callout tip highlight""#),
-            "classes should be propagated, html:\n{}",
-            page.content_html
-        );
-    }
-
-    #[test]
-    fn render_directive_with_code_and_math() {
-        let page = render(indoc! {"
-            ::: callout
-            Inline $x^2$ math.
-
-            ```rust
-            fn main() {}
-            ```
-            :::
-        "});
-        assert!(
-            page.content_html.contains("math-inline"),
-            "math should be rendered, html:\n{}",
-            page.content_html
-        );
-        assert!(
-            page.content_html.contains(r#"class="highlight""#),
-            "code should be highlighted, html:\n{}",
-            page.content_html
-        );
-        assert!(
-            page.assets.features.contains(&Feature::Math),
-            "math inside a directive body should bubble up to page assets, features: {:?}",
-            page.assets.features,
         );
     }
 }

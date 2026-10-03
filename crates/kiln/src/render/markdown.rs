@@ -8,6 +8,7 @@ use super::Spanned;
 use super::assets::Feature;
 use super::code_block::{CodeBlockSpec, parse_fence_info};
 use super::footnote::Footnotes;
+use super::heading::render_number;
 use super::highlight::highlight_code;
 use super::image::{render_block_image, render_inline_image};
 use super::image_attrs::ImageAttrs;
@@ -139,6 +140,7 @@ impl MarkdownRenderer<'_> {
                     output_events.push(Event::Html(
                         format!(r#"<{} id="{}">"#, entry.level, escape(&entry.id)).into(),
                     ));
+                    output_events.push(Event::Html(render_number(entry.number.as_deref()).into()));
                 }
                 Event::End(TagEnd::Heading(level)) => {
                     output_events.push(Event::Html(format!("</{level}>\n").into()));
@@ -386,6 +388,7 @@ fn collect_headings<'a>(events: impl Iterator<Item = &'a Spanned>) -> Vec<TocEnt
                 };
                 headings.push(TocEntry {
                     level,
+                    number: None,
                     id: raw_id,
                     title: std::mem::take(&mut text),
                 });
@@ -448,16 +451,6 @@ mod tests {
         ImageResolver::new(Path::new(""), crate::render::lqip::ImageConfig::default())
     });
 
-    fn prepare(content: &str) -> MarkdownDocument {
-        let mut document = MarkdownDocument::parse(content);
-        let mut ids = super::super::page_ids::PageIds::default();
-        for heading in &mut document.headings {
-            heading.id = ids.allocate(&heading.id);
-        }
-        document.footnotes.allocate_ids(&mut ids, 0);
-        document
-    }
-
     fn render(content: &str) -> MarkdownOutput {
         let mut features = BTreeSet::new();
         let document = prepare(content);
@@ -491,6 +484,16 @@ mod tests {
         )
     }
 
+    fn prepare(content: &str) -> MarkdownDocument {
+        let mut document = MarkdownDocument::parse(content);
+        let mut ids = super::super::page_ids::PageIds::default();
+        for heading in &mut document.headings {
+            heading.id = ids.allocate(&heading.id);
+        }
+        document.footnotes.allocate_ids(&mut ids, 0);
+        document
+    }
+
     fn write_tiny_png(path: &Path) {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         let img = image::RgbaImage::from_pixel(8, 4, image::Rgba([200, 100, 50, 255]));
@@ -500,7 +503,7 @@ mod tests {
     // ── render_markdown: basic ──
 
     #[test]
-    fn render_paragraph() {
+    fn render_markdown_paragraph() {
         let out = render("Hello, world!");
         assert_eq!(out.html.trim(), "<p>Hello, world!</p>");
         assert!(out.headings.is_empty());
@@ -509,7 +512,7 @@ mod tests {
     // ── render_markdown: headings ──
 
     #[test]
-    fn render_heading_with_id() {
+    fn render_markdown_heading_with_id() {
         let out = render("## Introduction");
         assert!(
             out.html.contains(r#"<h2 id="introduction">"#),
@@ -523,80 +526,7 @@ mod tests {
     }
 
     #[test]
-    fn render_heading_with_explicit_id() {
-        let out = render("## Introduction {#custom-id}");
-        assert!(
-            out.html.contains(r#"id="custom-id""#),
-            "should use explicit ID, html:\n{}",
-            out.html
-        );
-        assert_eq!(out.headings[0].id, "custom-id");
-    }
-
-    #[test]
-    fn render_heading_with_inline_code() {
-        let out = render("## The `foo` function");
-        assert!(
-            out.html.contains("<code>foo</code>"),
-            "should preserve inline formatting, html:\n{}",
-            out.html
-        );
-        assert_eq!(out.headings[0].id, "the-foo-function");
-    }
-
-    #[test]
-    fn render_heading_with_inline_math() {
-        let out = render("## The $x^2$ equation");
-        assert!(
-            out.html
-                .contains(r#"<span class="math math-inline">\(x^2\)</span>"#),
-            "should contain KaTeX HTML in heading, html:\n{}",
-            out.html
-        );
-        assert_eq!(out.headings[0].id, "the-x-2-equation");
-        assert_eq!(out.headings[0].title, "The x^2 equation");
-    }
-
-    #[test]
-    fn render_heading_with_display_math() {
-        let out = render(r"## Sum $$\sum_{i=1}^n$$");
-        assert!(
-            out.html
-                .contains(r#"<span class="math math-display">\[\sum_{i=1}^n\]</span>"#),
-            "should contain KaTeX HTML in heading, html:\n{}",
-            out.html
-        );
-        assert_eq!(out.headings[0].id, "sum-sum_-i-1-n");
-        assert_eq!(out.headings[0].title, r"Sum \sum_{i=1}^n");
-    }
-
-    #[test]
-    fn render_heading_with_link() {
-        let out = render("## See [example](https://example.com)");
-        assert_eq!(out.headings[0].id, "see-example");
-        assert_eq!(out.headings[0].title, "See example");
-        assert!(
-            out.html.contains(r#"href="https://example.com""#),
-            "link should be preserved in HTML, html:\n{}",
-            out.html
-        );
-    }
-
-    #[test]
-    fn render_cjk_heading() {
-        let out = render("## 测试文本");
-        assert_eq!(out.headings[0].id, "测试文本");
-        assert!(out.html.contains(r#"id="测试文本""#), "html:\n{}", out.html);
-    }
-
-    #[test]
-    fn render_empty_heading_gets_fallback_id() {
-        let out = render("##  \n");
-        assert_eq!(out.headings[0].id, "section");
-    }
-
-    #[test]
-    fn render_multiple_headings_toc() {
+    fn render_markdown_multiple_headings_toc() {
         let md = indoc! {"
             ## First
 
@@ -615,24 +545,82 @@ mod tests {
     }
 
     #[test]
-    fn render_duplicate_headings_dedup() {
-        let md = indoc! {"
-            ## Foo
+    fn render_markdown_heading_with_explicit_id() {
+        let out = render("## Introduction {#custom-id}");
+        assert!(
+            out.html.contains(r#"id="custom-id""#),
+            "should use explicit ID, html:\n{}",
+            out.html
+        );
+        assert_eq!(out.headings[0].id, "custom-id");
+    }
 
-            ## Foo
+    #[test]
+    fn render_markdown_heading_with_inline_code() {
+        let out = render("## The `foo` function");
+        assert!(
+            out.html.contains("<code>foo</code>"),
+            "should preserve inline formatting, html:\n{}",
+            out.html
+        );
+        assert_eq!(out.headings[0].id, "the-foo-function");
+    }
 
-            ## Foo
-        "};
-        let out = render(md);
-        assert_eq!(out.headings[0].id, "foo");
-        assert_eq!(out.headings[1].id, "foo-1");
-        assert_eq!(out.headings[2].id, "foo-2");
+    #[test]
+    fn render_markdown_heading_with_inline_math() {
+        let out = render("## The $x^2$ equation");
+        assert!(
+            out.html
+                .contains(r#"<span class="math math-inline">\(x^2\)</span>"#),
+            "should contain KaTeX HTML in heading, html:\n{}",
+            out.html
+        );
+        assert_eq!(out.headings[0].id, "the-x-2-equation");
+        assert_eq!(out.headings[0].title, "The x^2 equation");
+    }
+
+    #[test]
+    fn render_markdown_heading_with_display_math() {
+        let out = render(r"## Sum $$\sum_{i=1}^n$$");
+        assert!(
+            out.html
+                .contains(r#"<span class="math math-display">\[\sum_{i=1}^n\]</span>"#),
+            "should contain KaTeX HTML in heading, html:\n{}",
+            out.html
+        );
+        assert_eq!(out.headings[0].id, "sum-sum_-i-1-n");
+        assert_eq!(out.headings[0].title, r"Sum \sum_{i=1}^n");
+    }
+
+    #[test]
+    fn render_markdown_heading_with_link() {
+        let out = render("## See [example](https://example.com)");
+        assert_eq!(out.headings[0].id, "see-example");
+        assert_eq!(out.headings[0].title, "See example");
+        assert!(
+            out.html.contains(r#"href="https://example.com""#),
+            "link should be preserved in HTML, html:\n{}",
+            out.html
+        );
+    }
+
+    #[test]
+    fn render_markdown_cjk_heading() {
+        let out = render("## 测试文本");
+        assert_eq!(out.headings[0].id, "测试文本");
+        assert!(out.html.contains(r#"id="测试文本""#), "html:\n{}", out.html);
+    }
+
+    #[test]
+    fn render_markdown_empty_heading_gets_fallback_id() {
+        let out = render("##  \n");
+        assert_eq!(out.headings[0].id, "section");
     }
 
     // ── render_markdown: GFM extensions ──
 
     #[test]
-    fn render_gfm_table() {
+    fn render_markdown_gfm_table() {
         let md = indoc! {"
             | Name | City |
             |------|------|
@@ -656,7 +644,7 @@ mod tests {
     }
 
     #[test]
-    fn render_strikethrough() {
+    fn render_markdown_strikethrough() {
         let out = render("~~deleted~~");
         assert!(
             out.html.contains("<del>deleted</del>"),
@@ -666,7 +654,7 @@ mod tests {
     }
 
     #[test]
-    fn render_tasklist() {
+    fn render_markdown_tasklist() {
         let md = indoc! {"
             - [x] Done
             - [ ] Todo
@@ -699,7 +687,7 @@ mod tests {
     // ── render_markdown: footnotes ──
 
     #[test]
-    fn render_footnotes_relocated_after_body() {
+    fn render_markdown_footnotes_relocated_after_body() {
         let md = indoc! {"
             ## Before
 
@@ -736,7 +724,7 @@ mod tests {
     }
 
     #[test]
-    fn render_footnotes_inline_markup_in_reference_paragraph() {
+    fn render_markdown_footnotes_inline_markup_in_reference_paragraph() {
         let md = indoc! {"
             Math $x$[^1] and ![icon](a.png)[^1].
 
@@ -753,7 +741,7 @@ mod tests {
     }
 
     #[test]
-    fn render_footnotes_preserves_images_math_and_code_in_notes() {
+    fn render_markdown_footnotes_preserves_images_math_and_code_in_notes() {
         let out = render(indoc! {r"
             Body[^a].
 
@@ -785,7 +773,7 @@ mod tests {
     }
 
     #[test]
-    fn render_footnote_syntax_interrupts_image_parsing() {
+    fn render_markdown_footnote_syntax_interrupts_image_parsing() {
         let out = render(indoc! {"
             ![Alt[^a]](image.png)
 
@@ -800,7 +788,7 @@ mod tests {
     // ── render_markdown: math ──
 
     #[test]
-    fn render_inline_math() {
+    fn render_markdown_inline_math() {
         let out = render("$x^2$");
         assert!(
             out.html
@@ -811,7 +799,17 @@ mod tests {
     }
 
     #[test]
-    fn render_display_math() {
+    fn render_markdown_inline_math_with_underscores() {
+        let out = render("The matrix $a_{ij}$ is symmetric.");
+        assert!(
+            out.html.contains("a_{ij}"),
+            "underscores in inline math preserved, html:\n{}",
+            out.html
+        );
+    }
+
+    #[test]
+    fn render_markdown_display_math() {
         let out = render("$$E=mc^2$$");
         assert!(
             out.html
@@ -822,27 +820,7 @@ mod tests {
     }
 
     #[test]
-    fn render_math_with_html_chars() {
-        let out = render("$x < y$");
-        assert!(
-            out.html.contains(r"\(x &lt; y\)"),
-            "math content should be HTML-escaped, html:\n{}",
-            out.html
-        );
-    }
-
-    #[test]
-    fn render_inline_math_with_underscores() {
-        let out = render("The matrix $a_{ij}$ is symmetric.");
-        assert!(
-            out.html.contains("a_{ij}"),
-            "underscores in inline math preserved, html:\n{}",
-            out.html
-        );
-    }
-
-    #[test]
-    fn render_display_math_with_underscores() {
+    fn render_markdown_display_math_with_underscores() {
         let out = render("$$a_{ij} + b_{ij}$$");
         assert!(
             out.html.contains("a_{ij} + b_{ij}"),
@@ -856,10 +834,20 @@ mod tests {
         );
     }
 
+    #[test]
+    fn render_markdown_math_with_html_chars() {
+        let out = render("$x < y$");
+        assert!(
+            out.html.contains(r"\(x &lt; y\)"),
+            "math content should be HTML-escaped, html:\n{}",
+            out.html
+        );
+    }
+
     // ── render_markdown: code blocks ──
 
     #[test]
-    fn render_code_block() {
+    fn render_markdown_code_block() {
         let md = indoc! {"
             ```
             fn main() {}
@@ -879,7 +867,23 @@ mod tests {
     }
 
     #[test]
-    fn render_code_block_with_language() {
+    fn render_markdown_indented_code_block() {
+        let md = "    fn main() {}\n";
+        let out = render(md);
+        assert!(
+            out.html.contains(r#"class="highlight""#),
+            "indented code block should have highlight wrapper, html:\n{}",
+            out.html
+        );
+        assert!(
+            out.html.contains(r#"data-lang="plaintext""#),
+            "indented code block should normalize to plaintext, html:\n{}",
+            out.html
+        );
+    }
+
+    #[test]
+    fn render_markdown_code_block_with_language() {
         let md = indoc! {"
             ```rust
             fn main() {}
@@ -904,7 +908,7 @@ mod tests {
     }
 
     #[test]
-    fn render_code_block_info_string_metadata() {
+    fn render_markdown_code_block_info_string_metadata() {
         let md = indoc! {"
             ```rust no_run
             fn main() {}
@@ -929,7 +933,7 @@ mod tests {
     }
 
     #[test]
-    fn render_code_block_mermaid_emits_bare_pre() {
+    fn render_markdown_code_block_mermaid_emits_bare_pre() {
         let md = indoc! {"
             ```mermaid
             graph TD
@@ -959,7 +963,7 @@ mod tests {
     }
 
     #[test]
-    fn render_code_block_mermaid_case_insensitive() {
+    fn render_markdown_code_block_mermaid_case_insensitive() {
         let md = indoc! {"
             ```Mermaid
             graph TD
@@ -973,26 +977,10 @@ mod tests {
         );
     }
 
-    #[test]
-    fn render_indented_code_block() {
-        let md = "    fn main() {}\n";
-        let out = render(md);
-        assert!(
-            out.html.contains(r#"class="highlight""#),
-            "indented code block should have highlight wrapper, html:\n{}",
-            out.html
-        );
-        assert!(
-            out.html.contains(r#"data-lang="plaintext""#),
-            "indented code block should normalize to plaintext, html:\n{}",
-            out.html
-        );
-    }
-
     // ── render_markdown: images ──
 
     #[test]
-    fn render_block_image() {
+    fn render_markdown_block_image() {
         let md = "![A photo](img.png)\n";
         let out = render(md);
         assert!(
@@ -1013,7 +1001,7 @@ mod tests {
     }
 
     #[test]
-    fn render_block_image_with_title() {
+    fn render_markdown_block_image_with_title() {
         let md = "![alt text](img.png \"My Title\")\n";
         let out = render(md);
         assert!(
@@ -1039,7 +1027,7 @@ mod tests {
     }
 
     #[test]
-    fn render_block_image_with_formatted_alt() {
+    fn render_markdown_block_image_with_formatted_alt() {
         let md = "![*bold* alt](img.png)\n";
         let out = render(md);
         assert!(
@@ -1060,7 +1048,7 @@ mod tests {
     }
 
     #[test]
-    fn render_block_image_with_soft_break_in_alt() {
+    fn render_markdown_block_image_with_soft_break_in_alt() {
         let md = indoc! {"
             ![line1
             line2](img.png)
@@ -1084,7 +1072,7 @@ mod tests {
     }
 
     #[test]
-    fn render_inline_image() {
+    fn render_markdown_inline_image() {
         let md = "Text ![icon](icon.png) more text\n";
         let out = render(md);
         assert!(
@@ -1105,7 +1093,7 @@ mod tests {
     }
 
     #[test]
-    fn render_image_with_trailing_text_stays_inline() {
+    fn render_markdown_image_with_trailing_text_stays_inline() {
         let md = "![icon](icon.png) followed by text\n";
         let out = render(md);
         assert!(
@@ -1121,7 +1109,7 @@ mod tests {
     }
 
     #[test]
-    fn render_multiple_images_stay_inline() {
+    fn render_markdown_multiple_images_stay_inline() {
         let md = "![a](a.png) ![b](b.png)\n";
         let out = render(md);
         assert!(
@@ -1141,10 +1129,10 @@ mod tests {
         );
     }
 
-    // ── render_markdown: enrich_image_attrs via ImageResolver ──
+    // ── render_markdown: image resolution ──
 
     #[test]
-    fn resolver_stamps_dimensions_and_lqip_on_block_image() {
+    fn render_markdown_resolver_stamps_dimensions_and_lqip_on_block_image() {
         let dir = tempfile::tempdir().unwrap();
         let bundle = dir.path().join("bundle");
         write_tiny_png(&bundle.join("img.png"));
@@ -1176,7 +1164,7 @@ mod tests {
     }
 
     #[test]
-    fn resolver_merges_with_authored_attrs_on_inline_image() {
+    fn render_markdown_resolver_merges_with_authored_attrs_on_inline_image() {
         let dir = tempfile::tempdir().unwrap();
         let bundle = dir.path().join("bundle");
         write_tiny_png(&bundle.join("img.png"));
@@ -1196,7 +1184,7 @@ mod tests {
     }
 
     #[test]
-    fn resolver_misses_remote_image_emits_no_dims() {
+    fn render_markdown_resolver_miss_emits_remote_image_without_dimensions() {
         let dir = tempfile::tempdir().unwrap();
         let resolver = ImageResolver::new(dir.path(), crate::render::lqip::ImageConfig::default());
         let out = render_with_resolver(

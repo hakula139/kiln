@@ -78,6 +78,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 │   ├── code_block.rs   # Fence info-string parsing → CodeBlockSpec (lang, title, highlights, collapse / expand)
 │   ├── emoji.rs        # GitHub-style :shortcode: → Unicode emoji replacement
 │   ├── footnote.rs     # Footnote relocation into an end-of-document list with per-reference backlinks
+│   ├── heading.rs      # Hierarchical heading numbering and shared number markup
 │   ├── highlight.rs    # syntect + two-face CSS-class highlighting with line numbers, header (lang or title)
 │   ├── icon.rs         # :(class): → <i> FontAwesome icon shortcode replacement
 │   ├── image.rs        # Block (<figure>) and inline (<img>) image rendering, lazy loading, <span class="lqip"> wrapper emission
