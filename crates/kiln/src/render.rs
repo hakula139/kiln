@@ -21,6 +21,8 @@ use anyhow::{Context, Result};
 use pulldown_cmark::Event;
 use serde::Deserialize;
 
+use crate::content::frontmatter::HeadingNumbering;
+
 type Spanned = (Event<'static>, Range<usize>);
 
 /// Feature flags and settings for the render pipeline.
@@ -31,7 +33,7 @@ pub struct RenderOptions {
     pub emojis: bool,
     pub fontawesome: bool,
     #[serde(skip)]
-    pub heading_numbering: bool,
+    pub heading_numbering: Option<HeadingNumbering>,
     pub table_nowrap_width: Option<usize>,
 }
 
@@ -63,7 +65,7 @@ mod tests {
         assert!(options.code_max_lines.is_none());
         assert!(!options.emojis);
         assert!(!options.fontawesome);
-        assert!(!options.heading_numbering);
+        assert!(options.heading_numbering.is_none());
         assert!(options.table_nowrap_width.is_none());
     }
 

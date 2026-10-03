@@ -205,7 +205,9 @@ fn build_page(
     sections: &[Section],
 ) -> Result<()> {
     let mut options = RenderOptions::from_params(&ctx.config.params)?;
-    options.heading_numbering = page.frontmatter.heading_numbering;
+    options
+        .heading_numbering
+        .clone_from(&page.frontmatter.heading_numbering);
 
     let rendered = render_page(
         &page.raw_content,
@@ -395,18 +397,35 @@ mod tests {
                 base_url = "https://example.com"
                 title = "Test Site"
 
-                [params]
-                heading_numbering = true
+                [params.heading_numbering]
+                start = 7
             "#},
         )
         .unwrap();
         copy_templates(&root.path().join("templates"));
-        for (slug, setting) in [
-            ("numbered", "heading_numbering = true"),
-            ("another", "heading_numbering = true"),
-            ("default", ""),
-            ("disabled", "heading_numbering = false"),
-        ] {
+        let pages = [
+            ("numbered", "[heading_numbering]", Some("1")),
+            (
+                "continued",
+                indoc! {"
+                    [heading_numbering]
+                    start = 2
+                "},
+                Some("2"),
+            ),
+            (
+                "child",
+                indoc! {"
+                    [heading_numbering]
+                    start = 2
+                    starts = { detail = 0 }
+                "},
+                Some("2"),
+            ),
+            ("another", "[heading_numbering]", Some("1")),
+            ("default", "", None),
+        ];
+        for (slug, setting, _) in pages {
             write_page(
                 root.path(),
                 &format!("posts/{slug}"),
@@ -416,21 +435,28 @@ mod tests {
                     {setting}
                     +++
                     ## Section
+                    ### Detail
                 "#},
             );
         }
         build(root.path(), BuildOptions::default()).unwrap();
-        for slug in ["numbered", "another", "default", "disabled"] {
+        for (slug, _, number) in pages {
             let html =
                 fs::read_to_string(root.path().join(format!("public/posts/{slug}/index.html")))
                     .unwrap();
-            if matches!(slug, "numbered" | "another") {
-                assert!(html.contains(
-                    r#"<h2 id="section"><span class="heading-number">1</span> Section</h2>"#
-                ));
-                assert!(html.contains(
-                    r##"href="#section"><span class="heading-number">1</span> Section</a>"##
-                ));
+            if let Some(number) = number {
+                let child = usize::from(slug != "child");
+                for (id, number, title, level) in [
+                    ("section", number.to_string(), "Section", 2),
+                    ("detail", format!("{number}.{child}"), "Detail", 3),
+                ] {
+                    assert!(html.contains(&format!(
+                        r#"<h{level} id="{id}"><span class="heading-number">{number}</span> {title}</h{level}>"#
+                    )));
+                    assert!(html.contains(&format!(
+                        r##"href="#{id}"><span class="heading-number">{number}</span> {title}</a>"##
+                    )));
+                }
             } else {
                 assert!(html.contains(r#"<h2 id="section">Section</h2>"#));
                 assert!(!html.contains("heading-number"));

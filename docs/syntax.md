@@ -40,7 +40,7 @@ All fields are optional. Defaults:
 | `slug`              | derived from filename |
 | `weight`            | none                  |
 | `featured_image`    | none (table)          |
-| `heading_numbering` | `false`               |
+| `heading_numbering` | none (table)          |
 
 `date` and `updated` are absolute instants. Post templates receive them as ISO 8601 strings in the time zone set in the site's `config.toml`, or UTC when `timezone` is unset:
 
@@ -119,7 +119,7 @@ Heading IDs are unique across the page body and nested directives. Repeated IDs 
 
 Headings are also collected into a structured table of contents, exposed to post templates as the `toc` variable. See [Post templates](themes.md#post-templates-posthtml).
 
-Set `heading_numbering = true` in the article frontmatter to number Markdown headings and table-of-contents links (`1`, `1.1`, `1.1.1`, etc.). Numbering restarts for each page.
+Add a `[heading_numbering]` table to the article frontmatter to number headings and table-of-contents links. The first heading starts at `1`. Set `start = 2` to continue a previous article. Set `starts = { "overview" = 0 }` to start a particular section at `0`, giving `2.0` under chapter `2`. Keys are heading IDs. Unknown IDs or duplicate outline numbers fail the build.
 
 ### Images
 

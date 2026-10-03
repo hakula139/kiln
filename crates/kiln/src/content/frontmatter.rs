@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use anyhow::Result;
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
@@ -53,8 +55,28 @@ pub struct Frontmatter {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub license: Option<String>,
 
-    #[serde(default, skip_serializing_if = "is_default")]
-    pub heading_numbering: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub heading_numbering: Option<HeadingNumbering>,
+}
+
+/// Per-page outline numbering, enabled by the presence of its frontmatter table.
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[serde(default)]
+pub struct HeadingNumbering {
+    pub start: usize,
+
+    /// Resets the local counter at each allocated heading ID, retaining its parent numbers.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub starts: BTreeMap<String, usize>,
+}
+
+impl Default for HeadingNumbering {
+    fn default() -> Self {
+        Self {
+            start: 1,
+            starts: BTreeMap::new(),
+        }
+    }
 }
 
 /// Featured image metadata. `width` / `height` / `lqip_uri` are stamped by
@@ -298,7 +320,7 @@ fn at_line_boundary(s: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use indoc::indoc;
+    use indoc::{formatdoc, indoc};
 
     use super::*;
 
@@ -355,16 +377,38 @@ mod tests {
 
     #[test]
     fn serialize_heading_numbering() {
-        for enabled in [true, false] {
+        for numbering in [
+            None,
+            Some(HeadingNumbering::default()),
+            Some(HeadingNumbering {
+                start: 0,
+                starts: BTreeMap::from([("overview".into(), 0)]),
+            }),
+        ] {
             let frontmatter = Frontmatter {
-                heading_numbering: enabled,
+                heading_numbering: numbering.clone(),
                 ..Default::default()
             };
             let serialized = toml::to_string(&frontmatter).unwrap();
             let table: toml::Table = toml::from_str(&serialized).unwrap();
+            let expected = numbering.map(|numbering| {
+                let mut table = toml::Table::new();
+                table.insert(
+                    "start".into(),
+                    toml::Value::try_from(numbering.start).unwrap(),
+                );
+                if !numbering.starts.is_empty() {
+                    table.insert(
+                        "starts".into(),
+                        toml::Value::try_from(numbering.starts).unwrap(),
+                    );
+                }
+                toml::Value::Table(table)
+            });
+            assert_eq!(table.get("heading_numbering"), expected.as_ref());
             assert_eq!(
-                table.get("heading_numbering"),
-                enabled.then_some(&toml::Value::Boolean(true)),
+                toml::from_str::<Frontmatter>(&serialized).unwrap(),
+                frontmatter
             );
         }
     }
@@ -406,7 +450,9 @@ mod tests {
             draft = true
             weight = 10
             license = "CC BY-NC-SA 4.0"
-            heading_numbering = true
+            [heading_numbering]
+            start = 2
+            starts = { overview = 0 }
 
             [featured_image]
             src = "/images/example.webp"
@@ -445,7 +491,13 @@ mod tests {
         assert!(fm.draft);
         assert_eq!(fm.weight, Some(10));
         assert_eq!(fm.license.as_deref(), Some("CC BY-NC-SA 4.0"));
-        assert!(fm.heading_numbering);
+        assert_eq!(
+            fm.heading_numbering,
+            Some(HeadingNumbering {
+                start: 2,
+                starts: BTreeMap::from([("overview".into(), 0)]),
+            })
+        );
         assert_eq!(body, "Content here.\n");
     }
 
@@ -482,14 +534,49 @@ mod tests {
     }
 
     #[test]
-    fn parse_heading_numbering_disabled() {
+    fn parse_heading_numbering_defaults() {
         let input = indoc! {"
             +++
-            heading_numbering = false
+            [heading_numbering]
             +++
         "};
         let (frontmatter, _) = parse(input).unwrap();
-        assert!(!frontmatter.heading_numbering);
+        assert_eq!(
+            frontmatter.heading_numbering,
+            Some(HeadingNumbering::default())
+        );
+    }
+
+    #[test]
+    fn parse_invalid_heading_numbering_returns_error() {
+        for value in ["true", "false", "2"] {
+            let input = formatdoc! {"
+                +++
+                heading_numbering = {value}
+                +++
+            "};
+            assert!(parse(&input).is_err(), "{value}");
+        }
+    }
+
+    #[test]
+    fn parse_invalid_heading_numbering_starts_returns_error() {
+        for setting in [
+            "start = -1",
+            "start = 1.5",
+            r#"start = "2""#,
+            "starts = { overview = -1 }",
+            "starts = { overview = 1.5 }",
+            r#"starts = { overview = "0" }"#,
+        ] {
+            let input = formatdoc! {"
+                +++
+                [heading_numbering]
+                {setting}
+                +++
+            "};
+            assert!(parse(&input).is_err(), "{setting}");
+        }
     }
 
     #[test]
