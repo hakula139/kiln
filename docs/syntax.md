@@ -36,11 +36,11 @@ All fields are optional. Defaults:
 | `date`              | none                  |
 | `updated`           | none                  |
 | `draft`             | `false`               |
-| `heading_numbering` | `false`               |
 | `tags`              | `[]`                  |
 | `slug`              | derived from filename |
 | `weight`            | none                  |
 | `featured_image`    | none (table)          |
+| `heading_numbering` | `false`               |
 
 `date` and `updated` are absolute instants. Post templates receive them as ISO 8601 strings in the time zone set in the site's `config.toml`, or UTC when `timezone` is unset:
 

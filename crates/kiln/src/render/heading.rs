@@ -8,6 +8,7 @@ pub(super) struct HeadingNumbers {
 }
 
 impl HeadingNumbers {
+    /// Advances the outline number for `level`, collapsing skipped heading levels.
     pub(super) fn next(&mut self, level: HeadingLevel) -> String {
         let mut number = 1;
         while self

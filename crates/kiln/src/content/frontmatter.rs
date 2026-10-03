@@ -47,14 +47,14 @@ pub struct Frontmatter {
     #[serde(default, skip_serializing_if = "is_default")]
     pub draft: bool,
 
-    #[serde(default, skip_serializing_if = "is_default")]
-    pub heading_numbering: bool,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub weight: Option<i64>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub license: Option<String>,
+
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub heading_numbering: bool,
 }
 
 /// Featured image metadata. `width` / `height` / `lqip_uri` are stamped by
@@ -329,6 +329,7 @@ mod tests {
             draft = true
             weight = 10
             license = "CC BY-NC-SA 4.0"
+            heading_numbering = true
 
             [featured_image]
             src = "/images/example.webp"
@@ -367,26 +368,8 @@ mod tests {
         assert!(fm.draft);
         assert_eq!(fm.weight, Some(10));
         assert_eq!(fm.license.as_deref(), Some("CC BY-NC-SA 4.0"));
+        assert!(fm.heading_numbering);
         assert_eq!(body, "Content here.\n");
-    }
-
-    #[test]
-    fn parse_heading_numbering() {
-        for (setting, expected) in [
-            ("", false),
-            ("heading_numbering = true", true),
-            ("heading_numbering = false", false),
-        ] {
-            let input = indoc::formatdoc! {"
-                +++
-                {setting}
-                +++
-            "};
-            let (frontmatter, _) = parse(&input).unwrap();
-            assert_eq!(frontmatter.heading_numbering, expected);
-            let serialized = toml::to_string(&frontmatter).unwrap();
-            assert_eq!(serialized.contains("heading_numbering = true"), expected);
-        }
     }
 
     #[test]
@@ -431,6 +414,25 @@ mod tests {
         assert_eq!(fi.src, "/images/cover.webp");
         assert!(fi.position.is_none());
         assert!(fi.credit.is_none());
+    }
+
+    #[test]
+    fn parse_heading_numbering() {
+        for (setting, expected) in [
+            ("", false),
+            ("heading_numbering = true", true),
+            ("heading_numbering = false", false),
+        ] {
+            let input = indoc::formatdoc! {"
+                +++
+                {setting}
+                +++
+            "};
+            let (frontmatter, _) = parse(&input).unwrap();
+            assert_eq!(frontmatter.heading_numbering, expected);
+            let serialized = toml::to_string(&frontmatter).unwrap();
+            assert_eq!(serialized.contains("heading_numbering = true"), expected);
+        }
     }
 
     #[test]
