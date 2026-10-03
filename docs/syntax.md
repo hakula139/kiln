@@ -179,23 +179,23 @@ Features:
 - CSS-class-based highlighting without inline styles, which requires a syntect theme stylesheet.
 - Line numbers are included automatically.
 - Language labels are canonicalized from syntax definitions (e.g., `rs` maps to `rust`).
-- Unrecognized languages fall back to plain text. Known non-code DSLs (e.g., `mermaid`) are silently treated as plain text.
+- Unrecognized languages fall back to plain text.
 
 Code blocks are wrapped in a structured HTML container:
 
 ```html
-<div class="code-block" data-lang="rust">
-  <div class="code-header">
+<details class="code-block" data-lang="rust" open>
+  <summary class="code-header">
     <span class="code-lang">Rust</span>
-    <button class="copy-btn" aria-label="Copy code">...</button>
-  </div>
+    <button class="copy-btn" aria-label="Copy code">Copy</button>
+  </summary>
   <div class="code-body">
     <div class="highlight">...</div>
   </div>
-</div>
+</details>
 ```
 
-The `code-header` displays the human-readable language name. When `code_max_lines` is set in the site's `[params]`, the `code-body` div includes a `data-max-lines` attribute for JS-driven collapse / expand.
+The `code-header` summary displays the human-readable language name and toggles the native disclosure. Blocks start open unless `collapse` is set. When `code_max_lines` is set in the site's `[params]`, the `code-body` div includes a `data-max-lines` attribute for themes to limit the visible lines.
 
 #### Fence Attributes
 
@@ -213,7 +213,7 @@ Recognized keys:
 
 | Key                 | Effect                                                                               |
 | ------------------- | ------------------------------------------------------------------------------------ |
-| `#id`               | Sets the `id` attribute on the wrapper `<div class="code-block">`                    |
+| `#id`               | Sets the `id` attribute on the wrapper `<details class="code-block">`                |
 | `.class`            | Appends additional CSS classes to the wrapper                                        |
 | `title="..."`       | Renders a `<span class="code-title">` in place of the language pill                  |
 | `highlight="1,3-5"` | Comma-separated lines / ranges to mark with `class="line hl"` (and `line-number hl`) |
