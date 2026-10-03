@@ -33,13 +33,13 @@ All fields are optional. Defaults:
 | ------------------- | --------------------- |
 | `title`             | `""`                  |
 | `description`       | none                  |
+| `slug`              | derived from filename |
 | `date`              | none                  |
 | `updated`           | none                  |
-| `draft`             | `false`               |
-| `tags`              | `[]`                  |
-| `slug`              | derived from filename |
-| `weight`            | none                  |
 | `featured_image`    | none (table)          |
+| `tags`              | `[]`                  |
+| `draft`             | `false`               |
+| `weight`            | none                  |
 | `heading_numbering` | `false`               |
 
 `date` and `updated` are absolute instants. Post templates receive them as ISO 8601 strings in the time zone set in the site's `config.toml`, or UTC when `timezone` is unset:
@@ -119,7 +119,7 @@ Heading IDs are unique across the page body and nested directives. Repeated IDs 
 
 Headings are also collected into a structured table of contents, exposed to post templates as the `toc` variable. See [Post templates](themes.md#post-templates-posthtml).
 
-Set `heading_numbering = true` in the article frontmatter to number Markdown headings and table-of-contents links (`1`, `1.1`, `1.1.1`, etc.). Numbering restarts for each page.
+Set `heading_numbering = true` in frontmatter to number headings and table-of-contents links, starting at `1`. A heading's `{numbering-start=0}` starts its local level at `0`, giving `2.0` under chapter `2`.
 
 ### Images
 

@@ -38,7 +38,7 @@ pub struct RenderedPage {
 ///
 /// # Errors
 ///
-/// Returns an error if a template-based directive fails to render.
+/// Returns an error if a directive template fails or heading numbering starts are invalid.
 pub fn render_page(
     raw_content: &str,
     syntax_set: &SyntaxSet,
@@ -66,7 +66,7 @@ pub fn render_page(
     let mut ids = PageIds::default();
     document.reserve_authored_ids(&mut ids, &placeholder_prefix);
     let mut numbers = options.heading_numbering.then(HeadingNumbers::default);
-    document.allocate_headings(&mut ids, &mut numbers, &placeholder_prefix);
+    document.allocate_headings(&mut ids, &mut numbers, &placeholder_prefix)?;
     let md_output = renderer.render_document(document, &mut ids)?;
     let toc_html = render_toc_html(&md_output.headings);
 
@@ -136,27 +136,36 @@ impl PreparedDocument {
         ids: &mut PageIds,
         numbers: &mut Option<HeadingNumbers>,
         prefix: &str,
-    ) {
+    ) -> Result<()> {
         let mut headings = self.markdown.headings.iter_mut();
         for (event, _) in self.markdown.footnotes.events() {
             match event {
-                Event::End(TagEnd::Heading(_)) => {
+                Event::Start(Tag::Heading { attrs, .. }) => {
                     if let Some(heading) = headings.next() {
                         heading.id = ids.allocate(&heading.id);
-                        heading.number =
-                            numbers.as_mut().map(|numbers| numbers.next(heading.level));
+                        heading.number = numbers
+                            .as_mut()
+                            .map(|numbers| {
+                                let start = attrs
+                                    .iter()
+                                    .find(|(key, _)| key.as_ref() == "numbering-start")
+                                    .map(|(_, value)| value.as_deref().unwrap_or(""));
+                                numbers.next(heading.level, start, &heading.id)
+                            })
+                            .transpose()?;
                     }
                 }
                 Event::Html(html) => {
                     if let Some(index) = placeholder_index(html, prefix) {
                         self.directives[index]
                             .1
-                            .allocate_headings(ids, numbers, prefix);
+                            .allocate_headings(ids, numbers, prefix)?;
                     }
                 }
                 _ => {}
             }
         }
+        Ok(())
     }
 }
 
@@ -337,7 +346,7 @@ mod tests {
     use std::fs;
     use std::sync::LazyLock;
 
-    use indoc::indoc;
+    use indoc::{formatdoc, indoc};
 
     use super::*;
     use crate::render::assets::Feature;
@@ -365,6 +374,21 @@ mod tests {
             &EMPTY_RESOLVER,
         )
         .unwrap()
+    }
+
+    fn render_numbered(input: &str) -> Result<RenderedPage> {
+        render_page(
+            input,
+            &SYNTAX_SET,
+            &test_engine(),
+            &test_config(),
+            &RenderOptions {
+                heading_numbering: true,
+                ..Default::default()
+            },
+            None,
+            &EMPTY_RESOLVER,
+        )
     }
 
     // ── render_page ──
@@ -499,57 +523,6 @@ mod tests {
     // ── render_page: headings and IDs ──
 
     #[test]
-    fn render_page_heading_numbering_preserves_titles_and_ids() {
-        let input = indoc! {"
-            ## First *title* {#custom}
-            #### Deep
-            ### Sibling
-            ## Last
-        "};
-        let render_numbered = || {
-            render_page(
-                input,
-                &SYNTAX_SET,
-                &test_engine(),
-                &test_config(),
-                &RenderOptions {
-                    heading_numbering: true,
-                    ..RenderOptions::default()
-                },
-                None,
-                &EMPTY_RESOLVER,
-            )
-            .unwrap()
-        };
-        let page = render_numbered();
-        assert!(page.content_html.contains(
-            r#"<h2 id="custom"><span class="heading-number">1</span> First <em>title</em></h2>"#
-        ));
-        for (id, number, title) in [
-            ("custom", "1", "First title"),
-            ("deep", "1.1", "Deep"),
-            ("sibling", "1.2", "Sibling"),
-            ("last", "2", "Last"),
-        ] {
-            assert!(page.toc_html.contains(&format!(
-                r##"href="#{id}"><span class="heading-number">{number}</span> {title}</a>"##
-            )));
-            assert!(page.content_html.contains(&format!(
-                r#"id="{id}"><span class="heading-number">{number}</span> "#
-            )));
-        }
-        assert_eq!(page, render_numbered());
-        let default = render(input);
-        assert!(!default.content_html.contains("heading-number"));
-        assert!(!default.toc_html.contains("heading-number"));
-        assert!(
-            default
-                .content_html
-                .contains(r#"id="custom">First <em>title</em>"#)
-        );
-    }
-
-    #[test]
     fn render_page_heading_ids_follow_document_order_across_scopes() {
         let page = render(indoc! {"
             ## Shared
@@ -582,63 +555,6 @@ mod tests {
             assert!(page.toc_html.contains(&format!(r##"href="#{id}""##)));
         }
         assert!(!page.toc_html.contains(r##"href="#shared-1""##));
-    }
-
-    #[test]
-    fn render_page_heading_numbering_follows_document_order_across_scopes() {
-        let page = render_page(
-            indoc! {"
-                #### First
-
-                [^a]:
-                    ### Note
-
-                ::: callout {type=note}
-                ##### Inner
-
-                ::: callout {type=tip}
-                #### Sibling
-                :::
-                :::
-
-                ## Last
-
-                Text[^a].
-            "},
-            &SYNTAX_SET,
-            &test_engine(),
-            &test_config(),
-            &RenderOptions {
-                heading_numbering: true,
-                ..RenderOptions::default()
-            },
-            None,
-            &EMPTY_RESOLVER,
-        )
-        .unwrap();
-        let mut previous = 0;
-        for (id, number) in [
-            ("first", "1"),
-            ("inner", "1.1"),
-            ("sibling", "2"),
-            ("last", "3"),
-            ("note", "3.1"),
-        ] {
-            let position = page
-                .content_html
-                .find(&format!(
-                    r#"id="{id}"><span class="heading-number">{number}</span> "#
-                ))
-                .unwrap();
-            assert!(position >= previous, "{}", page.content_html);
-            previous = position;
-        }
-        assert!(!page.toc_html.contains("#inner"));
-        assert!(!page.toc_html.contains("#sibling"));
-        assert!(
-            page.toc_html
-                .contains(r##"href="#note"><span class="heading-number">3.1</span> Note</a>"##)
-        );
     }
 
     #[test]
@@ -735,6 +651,219 @@ mod tests {
             assert!(page.content_html.contains(&format!(r#"<li id="{id}">"#)));
             assert!(page.content_html.contains(&format!(r##"href="#{id}""##)));
         }
+    }
+
+    // ── render_page: heading numbering ──
+
+    #[test]
+    fn render_page_heading_numbering_preserves_titles_and_ids() {
+        for (attribute, expected) in [
+            ("", ["1", "1.1", "1.2", "2", "2.1"]),
+            (" numbering-start=2", ["2", "2.1", "2.2", "3", "3.1"]),
+            (" numbering-start=0", ["0", "0.1", "0.2", "1", "1.1"]),
+        ] {
+            let input = formatdoc! {"
+                ## First *title* {{#custom{attribute}}}
+                #### Deep
+                ### Sibling
+                ## Last
+                ### Child
+            "};
+            let page = render_numbered(&input).unwrap();
+            let first = expected[0];
+            assert!(page.content_html.contains(&format!(
+                r#"<h2 id="custom"><span class="heading-number">{first}</span> First <em>title</em></h2>"#
+            )));
+            for ((id, title), number) in [
+                ("custom", "First title"),
+                ("deep", "Deep"),
+                ("sibling", "Sibling"),
+                ("last", "Last"),
+                ("child", "Child"),
+            ]
+            .into_iter()
+            .zip(expected)
+            {
+                assert!(page.toc_html.contains(&format!(
+                    r##"href="#{id}"><span class="heading-number">{number}</span> {title}</a>"##
+                )));
+                assert!(page.content_html.contains(&format!(
+                    r#"id="{id}"><span class="heading-number">{number}</span> "#
+                )));
+            }
+            assert_eq!(page, render_numbered(&input).unwrap());
+        }
+    }
+
+    #[test]
+    fn render_page_heading_numbering_attributes_reset_local_counters() {
+        let page = render_numbered(indoc! {"
+            ## First {#custom numbering-start=2}
+            ### Overview
+            ### Overview {numbering-start=0}
+            ## Last
+            ### Overview {numbering-start=0}
+            ### Sibling
+        "})
+        .unwrap();
+        for (id, number) in [
+            ("custom", "2"),
+            ("overview", "2.1"),
+            ("overview-1", "2.0"),
+            ("last", "3"),
+            ("overview-2", "3.0"),
+            ("sibling", "3.1"),
+        ] {
+            assert!(page.content_html.contains(&format!(
+                r#"id="{id}"><span class="heading-number">{number}</span> "#
+            )));
+            assert!(page.toc_html.contains(&format!(
+                r##"href="#{id}"><span class="heading-number">{number}</span> "##
+            )));
+        }
+    }
+
+    #[test]
+    fn render_page_heading_numbering_follows_document_order_across_scopes() {
+        let page = render_numbered(indoc! {"
+            #### First {numbering-start=2}
+
+            [^a]:
+                ### Note {numbering-start=0}
+
+            ::: callout {type=note}
+            ##### Inner {numbering-start=0}
+
+            ::: callout {type=tip}
+            #### Sibling
+            :::
+            :::
+
+            ## Last
+
+            Text[^a].
+        "})
+        .unwrap();
+        let mut previous = 0;
+        for (id, number) in [
+            ("first", "2"),
+            ("inner", "2.0"),
+            ("sibling", "3"),
+            ("last", "4"),
+            ("note", "4.0"),
+        ] {
+            let position = page
+                .content_html
+                .find(&format!(
+                    r#"id="{id}"><span class="heading-number">{number}</span> "#
+                ))
+                .unwrap();
+            assert!(position >= previous, "{}", page.content_html);
+            previous = position;
+        }
+        assert!(!page.toc_html.contains("#inner"));
+        assert!(!page.toc_html.contains("#sibling"));
+        assert!(
+            page.toc_html
+                .contains(r##"href="#note"><span class="heading-number">4.0</span> Note</a>"##)
+        );
+    }
+
+    #[test]
+    fn render_page_heading_numbering_disabled_ignores_attributes() {
+        let input = indoc! {"
+            ## First {numbering-start=bad}
+            ### Child {numbering-start}
+            ## Last {numbering-start=-1}
+        "};
+        let page = render(input);
+        assert!(page.content_html.contains(r#"<h2 id="first">First</h2>"#));
+        assert!(page.content_html.contains(r#"<h3 id="child">Child</h3>"#));
+        assert!(page.content_html.contains(r#"<h2 id="last">Last</h2>"#));
+        assert!(!page.content_html.contains("numbering-start"));
+        assert!(!page.content_html.contains("heading-number"));
+        for (id, title) in [("first", "First"), ("child", "Child"), ("last", "Last")] {
+            assert!(
+                page.toc_html
+                    .contains(&format!(r##"href="#{id}">{title}</a>"##))
+            );
+        }
+        assert!(!page.toc_html.contains("heading-number"));
+    }
+
+    #[test]
+    fn render_page_heading_numbering_maximum_can_be_reset_or_discarded() {
+        let maximum = usize::MAX;
+        let input = formatdoc! {"
+            ## First {{numbering-start=2}}
+            ### Child {{numbering-start={maximum}}}
+            ## Next
+            ## Maximum {{numbering-start={maximum}}}
+            ## Reset {{numbering-start=0}}
+            ## Last
+        "};
+        let page = render_numbered(&input).unwrap();
+        for (id, number) in [
+            ("first", "2".to_owned()),
+            ("child", format!("2.{maximum}")),
+            ("next", "3".to_owned()),
+            ("maximum", maximum.to_string()),
+            ("reset", "0".to_owned()),
+            ("last", "1".to_owned()),
+        ] {
+            assert!(page.content_html.contains(&format!(
+                r#"id="{id}"><span class="heading-number">{number}</span> "#
+            )));
+        }
+    }
+
+    #[test]
+    fn render_page_invalid_heading_numbering_start_returns_error() {
+        for attribute in [
+            "numbering-start=-1",
+            "numbering-start=1.5",
+            "numbering-start=bad",
+            "numbering-start=18446744073709551616",
+            "numbering-start=",
+            "numbering-start",
+        ] {
+            let input = format!("## Section {{{attribute}}}");
+            let error = render_numbered(&input).unwrap_err();
+            assert!(
+                error
+                    .to_string()
+                    .contains("heading ID section: numbering-start must be a non-negative integer"),
+                "{attribute}: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn render_page_heading_numbering_overflow_returns_error() {
+        let maximum = usize::MAX;
+        let input = formatdoc! {"
+            ## First {{numbering-start={maximum}}}
+            ## Last
+        "};
+        let error = render_numbered(&input).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "heading ID last: heading numbering exceeds the maximum supported integer"
+        );
+    }
+
+    #[test]
+    fn render_page_duplicate_heading_number_returns_error() {
+        let error = render_numbered(indoc! {"
+            ## Section
+            ### First
+            ### Second {numbering-start=1}
+        "})
+        .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "heading numbering produces duplicate number 1.1 at heading ID second"
+        );
     }
 
     // ── render_page: directives ──
@@ -905,7 +1034,7 @@ mod tests {
     #[test]
     fn render_page_detects_mermaid_feature_from_fence() {
         for info in ["mermaid", "Mermaid", "mermaid no_run"] {
-            let input = indoc::formatdoc! {"
+            let input = formatdoc! {"
                 ```{info}
                 graph TD
                   A --> B

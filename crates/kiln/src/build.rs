@@ -305,7 +305,6 @@ mod tests {
     use sha2::{Digest, Sha256};
 
     use super::*;
-
     use crate::test_utils::{PermissionGuard, copy_templates, template_dir, write_test_file};
 
     // ── build ──
@@ -384,58 +383,6 @@ mod tests {
             html.contains("<p>This is a test <strong>post</strong>.</p>"),
             "should have rendered content, html:\n{html}"
         );
-    }
-
-    #[test]
-    fn build_heading_numbering_is_per_page() {
-        let root = tempfile::tempdir().unwrap();
-        fs::write(
-            root.path().join("config.toml"),
-            indoc! {r#"
-                base_url = "https://example.com"
-                title = "Test Site"
-
-                [params]
-                heading_numbering = true
-            "#},
-        )
-        .unwrap();
-        copy_templates(&root.path().join("templates"));
-        for (slug, setting) in [
-            ("numbered", "heading_numbering = true"),
-            ("another", "heading_numbering = true"),
-            ("default", ""),
-            ("disabled", "heading_numbering = false"),
-        ] {
-            write_page(
-                root.path(),
-                &format!("posts/{slug}"),
-                &formatdoc! {r#"
-                    +++
-                    title = "Post"
-                    {setting}
-                    +++
-                    ## Section
-                "#},
-            );
-        }
-        build(root.path(), BuildOptions::default()).unwrap();
-        for slug in ["numbered", "another", "default", "disabled"] {
-            let html =
-                fs::read_to_string(root.path().join(format!("public/posts/{slug}/index.html")))
-                    .unwrap();
-            if matches!(slug, "numbered" | "another") {
-                assert!(html.contains(
-                    r#"<h2 id="section"><span class="heading-number">1</span> Section</h2>"#
-                ));
-                assert!(html.contains(
-                    r##"href="#section"><span class="heading-number">1</span> Section</a>"##
-                ));
-            } else {
-                assert!(html.contains(r#"<h2 id="section">Section</h2>"#));
-                assert!(!html.contains("heading-number"));
-            }
-        }
     }
 
     #[test]
@@ -910,6 +857,97 @@ mod tests {
         );
         assert!(html.contains("&lt;script&gt;</a>"));
         assert!(!html.contains("<script>"));
+    }
+
+    #[test]
+    fn build_heading_numbering_is_per_page() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(
+            root.path().join("config.toml"),
+            indoc! {r#"
+                base_url = "https://example.com"
+                title = "Test Site"
+
+                [params]
+                heading_numbering = true
+            "#},
+        )
+        .unwrap();
+        copy_templates(&root.path().join("templates"));
+        let pages = [
+            (
+                "numbered",
+                "heading_numbering = true",
+                "",
+                "",
+                Some(("1", "1.1")),
+            ),
+            (
+                "continued",
+                "heading_numbering = true",
+                " {numbering-start=2}",
+                "",
+                Some(("2", "2.1")),
+            ),
+            (
+                "child",
+                "heading_numbering = true",
+                " {numbering-start=2}",
+                " {numbering-start=0}",
+                Some(("2", "2.0")),
+            ),
+            (
+                "another",
+                "heading_numbering = true",
+                "",
+                "",
+                Some(("1", "1.1")),
+            ),
+            (
+                "disabled",
+                "heading_numbering = false",
+                " {numbering-start=bad}",
+                "",
+                None,
+            ),
+            ("default", "", " {numbering-start=bad}", "", None),
+        ];
+        for (slug, setting, root_attribute, child_attribute, _) in pages {
+            write_page(
+                root.path(),
+                &format!("posts/{slug}"),
+                &formatdoc! {r#"
+                    +++
+                    title = "Post"
+                    {setting}
+                    +++
+                    ## Section{root_attribute}
+                    ### Detail{child_attribute}
+                "#},
+            );
+        }
+        build(root.path(), BuildOptions::default()).unwrap();
+        for (slug, _, _, _, numbers) in pages {
+            let html =
+                fs::read_to_string(root.path().join(format!("public/posts/{slug}/index.html")))
+                    .unwrap();
+            if let Some((root, child)) = numbers {
+                for (id, number, title, level) in [
+                    ("section", root, "Section", 2),
+                    ("detail", child, "Detail", 3),
+                ] {
+                    assert!(html.contains(&format!(
+                        r#"<h{level} id="{id}"><span class="heading-number">{number}</span> {title}</h{level}>"#
+                    )));
+                    assert!(html.contains(&format!(
+                        r##"href="#{id}"><span class="heading-number">{number}</span> {title}</a>"##
+                    )));
+                }
+            } else {
+                assert!(html.contains(r#"<h2 id="section">Section</h2>"#));
+                assert!(!html.contains("heading-number"));
+            }
+        }
     }
 
     // ── build: page CSS ──
@@ -2321,7 +2359,7 @@ mod tests {
     }
 
     #[test]
-    fn find_page_css_returns_none_without_style() {
+    fn find_page_css_without_style_returns_none() {
         let bundle = Path::new("content/posts/my-post");
         let assets = vec![bundle.join("cover.webp")];
         assert!(
@@ -2330,7 +2368,7 @@ mod tests {
     }
 
     #[test]
-    fn find_page_css_returns_none_for_non_bundle() {
+    fn find_page_css_non_bundle_returns_none() {
         assert!(find_page_css(&[], None, "https://example.com/posts/my-post/").is_none());
     }
 }

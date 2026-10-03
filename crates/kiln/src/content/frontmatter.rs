@@ -298,7 +298,7 @@ fn at_line_boundary(s: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use indoc::indoc;
+    use indoc::{formatdoc, indoc};
 
     use super::*;
 
@@ -354,22 +354,6 @@ mod tests {
     // ── serialize ──
 
     #[test]
-    fn serialize_heading_numbering() {
-        for enabled in [true, false] {
-            let frontmatter = Frontmatter {
-                heading_numbering: enabled,
-                ..Default::default()
-            };
-            let serialized = toml::to_string(&frontmatter).unwrap();
-            let table: toml::Table = toml::from_str(&serialized).unwrap();
-            assert_eq!(
-                table.get("heading_numbering"),
-                enabled.then_some(&toml::Value::Boolean(true)),
-            );
-        }
-    }
-
-    #[test]
     fn serialize_featured_image_skips_unset_auto_fields() {
         let fi = FeaturedImage {
             src: "/img.webp".into(),
@@ -377,6 +361,22 @@ mod tests {
         };
         let serialized = toml::to_string(&fi).unwrap();
         assert_eq!(serialized, "src = \"/img.webp\"\n");
+    }
+
+    #[test]
+    fn serialize_heading_numbering() {
+        for (numbering, expected) in [(false, ""), (true, "heading_numbering = true\n")] {
+            let frontmatter = Frontmatter {
+                heading_numbering: numbering,
+                ..Default::default()
+            };
+            let serialized = toml::to_string(&frontmatter).unwrap();
+            assert_eq!(serialized, expected);
+            assert_eq!(
+                toml::from_str::<Frontmatter>(&serialized).unwrap(),
+                frontmatter
+            );
+        }
     }
 
     // ── parse ──
@@ -526,6 +526,18 @@ mod tests {
             err.contains("UTC offset"),
             "error should mention UTC offset requirement, got: {err}"
         );
+    }
+
+    #[test]
+    fn parse_invalid_heading_numbering_returns_error() {
+        for value in ["2", r#""true""#, "{}"] {
+            let input = formatdoc! {"
+                +++
+                heading_numbering = {value}
+                +++
+            "};
+            assert!(parse(&input).is_err(), "{value}");
+        }
     }
 
     // ── split_frontmatter ──
