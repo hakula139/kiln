@@ -43,7 +43,7 @@ pub(crate) fn highlight_code(syntax_set: &SyntaxSet, code: &str, spec: &CodeBloc
     }
     for cls in &spec.classes {
         wrapper_classes.push(' ');
-        wrapper_classes.push_str(cls);
+        wrapper_classes.push_str(&escape(cls));
     }
 
     let id_attr = spec
@@ -372,6 +372,23 @@ mod tests {
         assert!(
             html.contains(r#"<div class="code-block wide dark" id="my-code""#),
             "should propagate id and classes, html:\n{html}"
+        );
+    }
+
+    #[test]
+    fn highlight_code_escapes_custom_classes() {
+        let spec = crate::render::code_block::parse_fence_info(r#"rs {.a"b .x&copy;}"#, None);
+        let html = highlight_with_spec("fn main() {}\n", &spec);
+        let fragment = scraper::Html::parse_fragment(&html);
+        let selector = scraper::Selector::parse(".code-block").unwrap();
+        let wrapper = fragment.select(&selector).next().unwrap();
+
+        assert_eq!(
+            wrapper.value().attrs().collect::<Vec<_>>(),
+            vec![
+                ("class", r#"code-block a"b x&copy;"#),
+                ("data-lang", "rust")
+            ]
         );
     }
 
