@@ -238,6 +238,8 @@ cargo llvm-cov --ignore-filename-regex 'main\.rs'  # check test coverage
 
 ## Code Review
 
+Review the complete change and affected callers against these criteria:
+
 - Correctness and edge cases
 - Adherence to project conventions (this file)
 - Conciseness — prefer the simplest idiomatic solution
