@@ -868,9 +868,8 @@ mod tests {
                 base_url = "https://example.com"
                 title = "Test Site"
 
-                [params.heading_numbering]
-                enabled = true
-                start = 7
+                [params]
+                heading_numbering = true
             "#},
         )
         .unwrap();
@@ -878,54 +877,42 @@ mod tests {
         let pages = [
             (
                 "numbered",
-                indoc! {"
-                    [heading_numbering]
-                    enabled = true
-                "},
-                Some("1"),
+                "heading_numbering = true",
+                "",
+                "",
+                Some(("1", "1.1")),
             ),
             (
                 "continued",
-                indoc! {"
-                    [heading_numbering]
-                    enabled = true
-                    start = 2
-                "},
-                Some("2"),
+                "heading_numbering = true",
+                " {numbering-start=2}",
+                "",
+                Some(("2", "2.1")),
             ),
             (
                 "child",
-                indoc! {"
-                    [heading_numbering]
-                    enabled = true
-                    start = 2
-                "},
-                Some("2"),
+                "heading_numbering = true",
+                " {numbering-start=2}",
+                " {numbering-start=0}",
+                Some(("2", "2.0")),
             ),
             (
                 "another",
-                indoc! {"
-                    [heading_numbering]
-                    enabled = true
-                "},
-                Some("1"),
+                "heading_numbering = true",
+                "",
+                "",
+                Some(("1", "1.1")),
             ),
             (
                 "disabled",
-                indoc! {"
-                    [heading_numbering]
-                    start = 2
-                "},
+                "heading_numbering = false",
+                " {numbering-start=bad}",
+                "",
                 None,
             ),
-            ("default", "", None),
+            ("default", "", " {numbering-start=bad}", "", None),
         ];
-        for (slug, setting, _) in pages {
-            let attribute = if slug == "child" {
-                " {numbering-start=0}"
-            } else {
-                ""
-            };
+        for (slug, setting, root_attribute, child_attribute, _) in pages {
             write_page(
                 root.path(),
                 &format!("posts/{slug}"),
@@ -934,21 +921,20 @@ mod tests {
                     title = "Post"
                     {setting}
                     +++
-                    ## Section
-                    ### Detail{attribute}
+                    ## Section{root_attribute}
+                    ### Detail{child_attribute}
                 "#},
             );
         }
         build(root.path(), BuildOptions::default()).unwrap();
-        for (slug, _, number) in pages {
+        for (slug, _, _, _, numbers) in pages {
             let html =
                 fs::read_to_string(root.path().join(format!("public/posts/{slug}/index.html")))
                     .unwrap();
-            if let Some(number) = number {
-                let child = usize::from(slug != "child");
+            if let Some((root, child)) = numbers {
                 for (id, number, title, level) in [
-                    ("section", number.to_string(), "Section", 2),
-                    ("detail", format!("{number}.{child}"), "Detail", 3),
+                    ("section", root, "Section", 2),
+                    ("detail", child, "Detail", 3),
                 ] {
                     assert!(html.contains(&format!(
                         r#"<h{level} id="{id}"><span class="heading-number">{number}</span> {title}</h{level}>"#

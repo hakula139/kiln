@@ -54,7 +54,7 @@ pub struct Frontmatter {
     pub license: Option<String>,
 
     #[serde(default, skip_serializing_if = "is_default")]
-    pub heading_numbering: HeadingNumbering,
+    pub heading_numbering: bool,
 }
 
 /// Featured image metadata. `width` / `height` / `lqip_uri` are stamped by
@@ -93,23 +93,6 @@ pub struct ImageCredit {
     /// Link to the original work (e.g., a Pixiv artwork page).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
-}
-
-/// Per-page settings for automatic heading numbering.
-#[derive(Debug, Clone, Copy, PartialEq, Deserialize, Serialize)]
-#[serde(default)]
-pub struct HeadingNumbering {
-    pub enabled: bool,
-    pub start: usize,
-}
-
-impl Default for HeadingNumbering {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            start: 1,
-        }
-    }
 }
 
 fn is_default<T: Default + PartialEq>(t: &T) -> bool {
@@ -382,42 +365,7 @@ mod tests {
 
     #[test]
     fn serialize_heading_numbering() {
-        for (numbering, expected) in [
-            (HeadingNumbering::default(), ""),
-            (
-                HeadingNumbering {
-                    enabled: true,
-                    start: 1,
-                },
-                indoc! {"
-                    [heading_numbering]
-                    enabled = true
-                    start = 1
-                "},
-            ),
-            (
-                HeadingNumbering {
-                    enabled: true,
-                    start: 0,
-                },
-                indoc! {"
-                    [heading_numbering]
-                    enabled = true
-                    start = 0
-                "},
-            ),
-            (
-                HeadingNumbering {
-                    enabled: false,
-                    start: 2,
-                },
-                indoc! {"
-                    [heading_numbering]
-                    enabled = false
-                    start = 2
-                "},
-            ),
-        ] {
+        for (numbering, expected) in [(false, ""), (true, "heading_numbering = true\n")] {
             let frontmatter = Frontmatter {
                 heading_numbering: numbering,
                 ..Default::default()
@@ -458,6 +406,7 @@ mod tests {
             draft = true
             weight = 10
             license = "CC BY-NC-SA 4.0"
+            heading_numbering = true
 
             [featured_image]
             src = "/images/example.webp"
@@ -467,10 +416,6 @@ mod tests {
             title = "Example"
             author = "Artist"
             url = "https://example.com/artworks/123"
-
-            [heading_numbering]
-            enabled = true
-            start = 2
             +++
             Content here.
         "#};
@@ -500,13 +445,7 @@ mod tests {
         assert!(fm.draft);
         assert_eq!(fm.weight, Some(10));
         assert_eq!(fm.license.as_deref(), Some("CC BY-NC-SA 4.0"));
-        assert_eq!(
-            fm.heading_numbering,
-            HeadingNumbering {
-                enabled: true,
-                start: 2,
-            }
-        );
+        assert!(fm.heading_numbering);
         assert_eq!(body, "Content here.\n");
     }
 
@@ -543,34 +482,14 @@ mod tests {
     }
 
     #[test]
-    fn parse_heading_numbering_defaults() {
-        for (setting, expected) in [
-            ("", HeadingNumbering::default()),
-            (
-                "enabled = true",
-                HeadingNumbering {
-                    enabled: true,
-                    start: 1,
-                },
-            ),
-            (
-                "start = 2",
-                HeadingNumbering {
-                    enabled: false,
-                    start: 2,
-                },
-            ),
-            ("enabled = false", HeadingNumbering::default()),
-        ] {
-            let input = formatdoc! {"
-                +++
-                [heading_numbering]
-                {setting}
-                +++
-            "};
-            let (frontmatter, _) = parse(&input).unwrap();
-            assert_eq!(frontmatter.heading_numbering, expected);
-        }
+    fn parse_heading_numbering_disabled() {
+        let input = indoc! {"
+            +++
+            heading_numbering = false
+            +++
+        "};
+        let (frontmatter, _) = parse(input).unwrap();
+        assert!(!frontmatter.heading_numbering);
     }
 
     #[test]
@@ -611,32 +530,13 @@ mod tests {
 
     #[test]
     fn parse_invalid_heading_numbering_returns_error() {
-        for value in ["true", "false", "2"] {
+        for value in ["2", r#""true""#, "{}"] {
             let input = formatdoc! {"
                 +++
                 heading_numbering = {value}
                 +++
             "};
             assert!(parse(&input).is_err(), "{value}");
-        }
-    }
-
-    #[test]
-    fn parse_invalid_heading_numbering_settings_returns_error() {
-        for setting in [
-            "enabled = 1",
-            r#"enabled = "true""#,
-            "start = -1",
-            "start = 1.5",
-            r#"start = "2""#,
-        ] {
-            let input = formatdoc! {"
-                +++
-                [heading_numbering]
-                {setting}
-                +++
-            "};
-            assert!(parse(&input).is_err(), "{setting}");
         }
     }
 

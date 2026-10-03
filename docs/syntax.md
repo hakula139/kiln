@@ -40,7 +40,7 @@ All fields are optional. Defaults:
 | `tags`              | `[]`                  |
 | `draft`             | `false`               |
 | `weight`            | none                  |
-| `heading_numbering` | disabled (table)      |
+| `heading_numbering` | `false`               |
 
 `date` and `updated` are absolute instants. Post templates receive them as ISO 8601 strings in the time zone set in the site's `config.toml`, or UTC when `timezone` is unset:
 
@@ -119,7 +119,7 @@ Heading IDs are unique across the page body and nested directives. Repeated IDs 
 
 Headings are also collected into a structured table of contents, exposed to post templates as the `toc` variable. See [Post templates](themes.md#post-templates-posthtml).
 
-Heading numbering is disabled by default. Set `enabled = true` in `[heading_numbering]` to number headings and table-of-contents links. `start` sets the article's first number and defaults to `1`. Add `{numbering-start=0}` to a heading to start its local level at `0`, giving `2.0` under chapter `2`.
+Set `heading_numbering = true` in frontmatter to number headings and table-of-contents links, starting at `1`. Add `{numbering-start=2}` to the first heading to continue a previous article. A heading's `{numbering-start=0}` starts its local level at `0`, giving `2.0` under chapter `2`.
 
 ### Images
 

@@ -3,24 +3,15 @@ use std::collections::HashSet;
 use anyhow::{Context, Result, bail};
 use pulldown_cmark::HeadingLevel;
 
-use crate::content::frontmatter::HeadingNumbering;
 use crate::html::escape;
 
+#[derive(Default)]
 pub(super) struct HeadingNumbers {
-    start: usize,
     levels: Vec<(HeadingLevel, usize)>,
     used: HashSet<String>,
 }
 
 impl HeadingNumbers {
-    pub(super) fn new(settings: &HeadingNumbering) -> Self {
-        Self {
-            start: settings.start,
-            levels: Vec::new(),
-            used: HashSet::new(),
-        }
-    }
-
     /// Advances the outline number, optionally resetting its current level while preserving parents.
     pub(super) fn next(
         &mut self,
@@ -51,8 +42,6 @@ impl HeadingNumbers {
             previous.checked_add(1).with_context(|| {
                 format!("heading ID {id}: heading numbering exceeds the maximum supported integer")
             })?
-        } else if self.levels.is_empty() {
-            self.start
         } else {
             1
         };
