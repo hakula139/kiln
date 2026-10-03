@@ -239,7 +239,7 @@ cargo llvm-cov --ignore-filename-regex 'main\.rs'  # check test coverage
 
 ## Code Review
 
-After verification passes, run a dual review using both a reviewer subagent and a Codex MCP reviewer in parallel. Focus on:
+Review the complete change and affected callers against these criteria:
 
 - Correctness and edge cases
 - Adherence to project conventions (this file)
