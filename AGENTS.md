@@ -238,8 +238,6 @@ cargo llvm-cov --ignore-filename-regex 'main\.rs'  # check test coverage
 
 ## Code Review
 
-After verification passes, run a dual review using both a reviewer subagent and a configured assistant through the shared `acp-delegate` skill in parallel. Focus on:
-
 - Correctness and edge cases
 - Adherence to project conventions (this file)
 - Conciseness — prefer the simplest idiomatic solution
