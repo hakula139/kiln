@@ -176,7 +176,7 @@ Features:
 - CSS-class-based highlighting without inline styles, which requires a syntect theme stylesheet.
 - Line numbers are included automatically.
 - Language labels are canonicalized from syntax definitions (e.g., `rs` maps to `rust`).
-- Unrecognized languages fall back to plain text. Known non-code DSLs (e.g., `mermaid`) are silently treated as plain text.
+- Unrecognized languages fall back to plain text.
 
 Code blocks are wrapped in a structured HTML container:
 
