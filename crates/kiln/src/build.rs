@@ -205,9 +205,7 @@ fn build_page(
     sections: &[Section],
 ) -> Result<()> {
     let mut options = RenderOptions::from_params(&ctx.config.params)?;
-    options
-        .heading_numbering
-        .clone_from(&page.frontmatter.heading_numbering);
+    options.heading_numbering = page.frontmatter.heading_numbering;
 
     let rendered = render_page(
         &page.raw_content,
@@ -307,7 +305,6 @@ mod tests {
     use sha2::{Digest, Sha256};
 
     use super::*;
-
     use crate::test_utils::{PermissionGuard, copy_templates, template_dir, write_test_file};
 
     // ── build ──
@@ -386,82 +383,6 @@ mod tests {
             html.contains("<p>This is a test <strong>post</strong>.</p>"),
             "should have rendered content, html:\n{html}"
         );
-    }
-
-    #[test]
-    fn build_heading_numbering_is_per_page() {
-        let root = tempfile::tempdir().unwrap();
-        fs::write(
-            root.path().join("config.toml"),
-            indoc! {r#"
-                base_url = "https://example.com"
-                title = "Test Site"
-
-                [params.heading_numbering]
-                start = 7
-            "#},
-        )
-        .unwrap();
-        copy_templates(&root.path().join("templates"));
-        let pages = [
-            ("numbered", "[heading_numbering]", Some("1")),
-            (
-                "continued",
-                indoc! {"
-                    [heading_numbering]
-                    start = 2
-                "},
-                Some("2"),
-            ),
-            (
-                "child",
-                indoc! {"
-                    [heading_numbering]
-                    start = 2
-                    starts = { detail = 0 }
-                "},
-                Some("2"),
-            ),
-            ("another", "[heading_numbering]", Some("1")),
-            ("default", "", None),
-        ];
-        for (slug, setting, _) in pages {
-            write_page(
-                root.path(),
-                &format!("posts/{slug}"),
-                &formatdoc! {r#"
-                    +++
-                    title = "Post"
-                    {setting}
-                    +++
-                    ## Section
-                    ### Detail
-                "#},
-            );
-        }
-        build(root.path(), BuildOptions::default()).unwrap();
-        for (slug, _, number) in pages {
-            let html =
-                fs::read_to_string(root.path().join(format!("public/posts/{slug}/index.html")))
-                    .unwrap();
-            if let Some(number) = number {
-                let child = usize::from(slug != "child");
-                for (id, number, title, level) in [
-                    ("section", number.to_string(), "Section", 2),
-                    ("detail", format!("{number}.{child}"), "Detail", 3),
-                ] {
-                    assert!(html.contains(&format!(
-                        r#"<h{level} id="{id}"><span class="heading-number">{number}</span> {title}</h{level}>"#
-                    )));
-                    assert!(html.contains(&format!(
-                        r##"href="#{id}"><span class="heading-number">{number}</span> {title}</a>"##
-                    )));
-                }
-            } else {
-                assert!(html.contains(r#"<h2 id="section">Section</h2>"#));
-                assert!(!html.contains("heading-number"));
-            }
-        }
     }
 
     #[test]
@@ -936,6 +857,111 @@ mod tests {
         );
         assert!(html.contains("&lt;script&gt;</a>"));
         assert!(!html.contains("<script>"));
+    }
+
+    #[test]
+    fn build_heading_numbering_is_per_page() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(
+            root.path().join("config.toml"),
+            indoc! {r#"
+                base_url = "https://example.com"
+                title = "Test Site"
+
+                [params.heading_numbering]
+                enabled = true
+                start = 7
+            "#},
+        )
+        .unwrap();
+        copy_templates(&root.path().join("templates"));
+        let pages = [
+            (
+                "numbered",
+                indoc! {"
+                    [heading_numbering]
+                    enabled = true
+                "},
+                Some("1"),
+            ),
+            (
+                "continued",
+                indoc! {"
+                    [heading_numbering]
+                    enabled = true
+                    start = 2
+                "},
+                Some("2"),
+            ),
+            (
+                "child",
+                indoc! {"
+                    [heading_numbering]
+                    enabled = true
+                    start = 2
+                "},
+                Some("2"),
+            ),
+            (
+                "another",
+                indoc! {"
+                    [heading_numbering]
+                    enabled = true
+                "},
+                Some("1"),
+            ),
+            (
+                "disabled",
+                indoc! {"
+                    [heading_numbering]
+                    start = 2
+                "},
+                None,
+            ),
+            ("default", "", None),
+        ];
+        for (slug, setting, _) in pages {
+            let attribute = if slug == "child" {
+                " {numbering-start=0}"
+            } else {
+                ""
+            };
+            write_page(
+                root.path(),
+                &format!("posts/{slug}"),
+                &formatdoc! {r#"
+                    +++
+                    title = "Post"
+                    {setting}
+                    +++
+                    ## Section
+                    ### Detail{attribute}
+                "#},
+            );
+        }
+        build(root.path(), BuildOptions::default()).unwrap();
+        for (slug, _, number) in pages {
+            let html =
+                fs::read_to_string(root.path().join(format!("public/posts/{slug}/index.html")))
+                    .unwrap();
+            if let Some(number) = number {
+                let child = usize::from(slug != "child");
+                for (id, number, title, level) in [
+                    ("section", number.to_string(), "Section", 2),
+                    ("detail", format!("{number}.{child}"), "Detail", 3),
+                ] {
+                    assert!(html.contains(&format!(
+                        r#"<h{level} id="{id}"><span class="heading-number">{number}</span> {title}</h{level}>"#
+                    )));
+                    assert!(html.contains(&format!(
+                        r##"href="#{id}"><span class="heading-number">{number}</span> {title}</a>"##
+                    )));
+                }
+            } else {
+                assert!(html.contains(r#"<h2 id="section">Section</h2>"#));
+                assert!(!html.contains("heading-number"));
+            }
+        }
     }
 
     // ── build: page CSS ──
@@ -2347,7 +2373,7 @@ mod tests {
     }
 
     #[test]
-    fn find_page_css_returns_none_without_style() {
+    fn find_page_css_without_style_returns_none() {
         let bundle = Path::new("content/posts/my-post");
         let assets = vec![bundle.join("cover.webp")];
         assert!(
@@ -2356,7 +2382,7 @@ mod tests {
     }
 
     #[test]
-    fn find_page_css_returns_none_for_non_bundle() {
+    fn find_page_css_non_bundle_returns_none() {
         assert!(find_page_css(&[], None, "https://example.com/posts/my-post/").is_none());
     }
 }

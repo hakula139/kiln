@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use anyhow::Result;
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
@@ -55,28 +53,8 @@ pub struct Frontmatter {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub license: Option<String>,
 
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub heading_numbering: Option<HeadingNumbering>,
-}
-
-/// Per-page outline numbering, enabled by the presence of its frontmatter table.
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
-#[serde(default)]
-pub struct HeadingNumbering {
-    pub start: usize,
-
-    /// Resets the local counter at each allocated heading ID, retaining its parent numbers.
-    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
-    pub starts: BTreeMap<String, usize>,
-}
-
-impl Default for HeadingNumbering {
-    fn default() -> Self {
-        Self {
-            start: 1,
-            starts: BTreeMap::new(),
-        }
-    }
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub heading_numbering: HeadingNumbering,
 }
 
 /// Featured image metadata. `width` / `height` / `lqip_uri` are stamped by
@@ -115,6 +93,23 @@ pub struct ImageCredit {
     /// Link to the original work (e.g., a Pixiv artwork page).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
+}
+
+/// Per-page settings for automatic heading numbering.
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize, Serialize)]
+#[serde(default)]
+pub struct HeadingNumbering {
+    pub enabled: bool,
+    pub start: usize,
+}
+
+impl Default for HeadingNumbering {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            start: 1,
+        }
+    }
 }
 
 fn is_default<T: Default + PartialEq>(t: &T) -> bool {
@@ -376,44 +371,6 @@ mod tests {
     // ── serialize ──
 
     #[test]
-    fn serialize_heading_numbering() {
-        for numbering in [
-            None,
-            Some(HeadingNumbering::default()),
-            Some(HeadingNumbering {
-                start: 0,
-                starts: BTreeMap::from([("overview".into(), 0)]),
-            }),
-        ] {
-            let frontmatter = Frontmatter {
-                heading_numbering: numbering.clone(),
-                ..Default::default()
-            };
-            let serialized = toml::to_string(&frontmatter).unwrap();
-            let table: toml::Table = toml::from_str(&serialized).unwrap();
-            let expected = numbering.map(|numbering| {
-                let mut table = toml::Table::new();
-                table.insert(
-                    "start".into(),
-                    toml::Value::try_from(numbering.start).unwrap(),
-                );
-                if !numbering.starts.is_empty() {
-                    table.insert(
-                        "starts".into(),
-                        toml::Value::try_from(numbering.starts).unwrap(),
-                    );
-                }
-                toml::Value::Table(table)
-            });
-            assert_eq!(table.get("heading_numbering"), expected.as_ref());
-            assert_eq!(
-                toml::from_str::<Frontmatter>(&serialized).unwrap(),
-                frontmatter
-            );
-        }
-    }
-
-    #[test]
     fn serialize_featured_image_skips_unset_auto_fields() {
         let fi = FeaturedImage {
             src: "/img.webp".into(),
@@ -421,6 +378,57 @@ mod tests {
         };
         let serialized = toml::to_string(&fi).unwrap();
         assert_eq!(serialized, "src = \"/img.webp\"\n");
+    }
+
+    #[test]
+    fn serialize_heading_numbering() {
+        for (numbering, expected) in [
+            (HeadingNumbering::default(), ""),
+            (
+                HeadingNumbering {
+                    enabled: true,
+                    start: 1,
+                },
+                indoc! {"
+                    [heading_numbering]
+                    enabled = true
+                    start = 1
+                "},
+            ),
+            (
+                HeadingNumbering {
+                    enabled: true,
+                    start: 0,
+                },
+                indoc! {"
+                    [heading_numbering]
+                    enabled = true
+                    start = 0
+                "},
+            ),
+            (
+                HeadingNumbering {
+                    enabled: false,
+                    start: 2,
+                },
+                indoc! {"
+                    [heading_numbering]
+                    enabled = false
+                    start = 2
+                "},
+            ),
+        ] {
+            let frontmatter = Frontmatter {
+                heading_numbering: numbering,
+                ..Default::default()
+            };
+            let serialized = toml::to_string(&frontmatter).unwrap();
+            assert_eq!(serialized, expected);
+            assert_eq!(
+                toml::from_str::<Frontmatter>(&serialized).unwrap(),
+                frontmatter
+            );
+        }
     }
 
     // ── parse ──
@@ -450,9 +458,6 @@ mod tests {
             draft = true
             weight = 10
             license = "CC BY-NC-SA 4.0"
-            [heading_numbering]
-            start = 2
-            starts = { overview = 0 }
 
             [featured_image]
             src = "/images/example.webp"
@@ -462,6 +467,10 @@ mod tests {
             title = "Example"
             author = "Artist"
             url = "https://example.com/artworks/123"
+
+            [heading_numbering]
+            enabled = true
+            start = 2
             +++
             Content here.
         "#};
@@ -493,10 +502,10 @@ mod tests {
         assert_eq!(fm.license.as_deref(), Some("CC BY-NC-SA 4.0"));
         assert_eq!(
             fm.heading_numbering,
-            Some(HeadingNumbering {
+            HeadingNumbering {
+                enabled: true,
                 start: 2,
-                starts: BTreeMap::from([("overview".into(), 0)]),
-            })
+            }
         );
         assert_eq!(body, "Content here.\n");
     }
@@ -535,39 +544,23 @@ mod tests {
 
     #[test]
     fn parse_heading_numbering_defaults() {
-        let input = indoc! {"
-            +++
-            [heading_numbering]
-            +++
-        "};
-        let (frontmatter, _) = parse(input).unwrap();
-        assert_eq!(
-            frontmatter.heading_numbering,
-            Some(HeadingNumbering::default())
-        );
-    }
-
-    #[test]
-    fn parse_invalid_heading_numbering_returns_error() {
-        for value in ["true", "false", "2"] {
-            let input = formatdoc! {"
-                +++
-                heading_numbering = {value}
-                +++
-            "};
-            assert!(parse(&input).is_err(), "{value}");
-        }
-    }
-
-    #[test]
-    fn parse_invalid_heading_numbering_starts_returns_error() {
-        for setting in [
-            "start = -1",
-            "start = 1.5",
-            r#"start = "2""#,
-            "starts = { overview = -1 }",
-            "starts = { overview = 1.5 }",
-            r#"starts = { overview = "0" }"#,
+        for (setting, expected) in [
+            ("", HeadingNumbering::default()),
+            (
+                "enabled = true",
+                HeadingNumbering {
+                    enabled: true,
+                    start: 1,
+                },
+            ),
+            (
+                "start = 2",
+                HeadingNumbering {
+                    enabled: false,
+                    start: 2,
+                },
+            ),
+            ("enabled = false", HeadingNumbering::default()),
         ] {
             let input = formatdoc! {"
                 +++
@@ -575,7 +568,8 @@ mod tests {
                 {setting}
                 +++
             "};
-            assert!(parse(&input).is_err(), "{setting}");
+            let (frontmatter, _) = parse(&input).unwrap();
+            assert_eq!(frontmatter.heading_numbering, expected);
         }
     }
 
@@ -613,6 +607,37 @@ mod tests {
             err.contains("UTC offset"),
             "error should mention UTC offset requirement, got: {err}"
         );
+    }
+
+    #[test]
+    fn parse_invalid_heading_numbering_returns_error() {
+        for value in ["true", "false", "2"] {
+            let input = formatdoc! {"
+                +++
+                heading_numbering = {value}
+                +++
+            "};
+            assert!(parse(&input).is_err(), "{value}");
+        }
+    }
+
+    #[test]
+    fn parse_invalid_heading_numbering_settings_returns_error() {
+        for setting in [
+            "enabled = 1",
+            r#"enabled = "true""#,
+            "start = -1",
+            "start = 1.5",
+            r#"start = "2""#,
+        ] {
+            let input = formatdoc! {"
+                +++
+                [heading_numbering]
+                {setting}
+                +++
+            "};
+            assert!(parse(&input).is_err(), "{setting}");
+        }
     }
 
     // ── split_frontmatter ──

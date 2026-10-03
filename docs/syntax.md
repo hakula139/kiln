@@ -33,14 +33,14 @@ All fields are optional. Defaults:
 | ------------------- | --------------------- |
 | `title`             | `""`                  |
 | `description`       | none                  |
+| `slug`              | derived from filename |
 | `date`              | none                  |
 | `updated`           | none                  |
-| `draft`             | `false`               |
-| `tags`              | `[]`                  |
-| `slug`              | derived from filename |
-| `weight`            | none                  |
 | `featured_image`    | none (table)          |
-| `heading_numbering` | none (table)          |
+| `tags`              | `[]`                  |
+| `draft`             | `false`               |
+| `weight`            | none                  |
+| `heading_numbering` | disabled (table)      |
 
 `date` and `updated` are absolute instants. Post templates receive them as ISO 8601 strings in the time zone set in the site's `config.toml`, or UTC when `timezone` is unset:
 
@@ -119,7 +119,7 @@ Heading IDs are unique across the page body and nested directives. Repeated IDs 
 
 Headings are also collected into a structured table of contents, exposed to post templates as the `toc` variable. See [Post templates](themes.md#post-templates-posthtml).
 
-Add a `[heading_numbering]` table to the article frontmatter to number headings and table-of-contents links. The first heading starts at `1`. Set `start = 2` to continue a previous article. Set `starts = { "overview" = 0 }` to start a particular section at `0`, giving `2.0` under chapter `2`. Keys are heading IDs. Unknown IDs or duplicate outline numbers fail the build.
+Heading numbering is disabled by default. Set `enabled = true` in `[heading_numbering]` to number headings and table-of-contents links. `start` sets the article's first number and defaults to `1`. Add `{numbering-start=0}` to a heading to start its local level at `0`, giving `2.0` under chapter `2`.
 
 ### Images
 

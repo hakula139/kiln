@@ -33,7 +33,7 @@ pub struct RenderOptions {
     pub emojis: bool,
     pub fontawesome: bool,
     #[serde(skip)]
-    pub heading_numbering: Option<HeadingNumbering>,
+    pub heading_numbering: HeadingNumbering,
     pub table_nowrap_width: Option<usize>,
 }
 
@@ -65,7 +65,7 @@ mod tests {
         assert!(options.code_max_lines.is_none());
         assert!(!options.emojis);
         assert!(!options.fontawesome);
-        assert!(options.heading_numbering.is_none());
+        assert_eq!(options.heading_numbering, HeadingNumbering::default());
         assert!(options.table_nowrap_width.is_none());
     }
 
