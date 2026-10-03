@@ -119,7 +119,7 @@ Heading IDs are unique across the page body and nested directives. Repeated IDs 
 
 Headings are also collected into a structured table of contents, exposed to post templates as the `toc` variable. See [Post templates](themes.md#post-templates-posthtml).
 
-Set `heading_numbering = true` in the article frontmatter to number every Markdown heading. Numbers follow encountered heading levels: H2 → H4 → H3 → H2 becomes `1`, `1.1`, `1.2`, `2`. A deeper first heading starts at `1`. Numbering follows rendered document order across nested directives and referenced footnotes, and resets for each page. It leaves heading IDs and titles unchanged. Body headings and table-of-contents links prepend `<span class="heading-number">1</span>` followed by a space. Themes can style `.heading-number` to widen the gap.
+Set `heading_numbering = true` in the article frontmatter to number Markdown headings and table-of-contents links (`1`, `1.1`, `1.1.1`, etc.). Numbering restarts for each page.
 
 ### Images
 
