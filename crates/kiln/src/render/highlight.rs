@@ -391,7 +391,8 @@ mod tests {
             wrapper.value().attrs().collect::<Vec<_>>(),
             vec![
                 ("class", r#"code-block a"b x&copy;"#),
-                ("data-lang", "rust")
+                ("data-lang", "rust"),
+                ("open", "")
             ]
         );
     }
