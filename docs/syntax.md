@@ -119,7 +119,7 @@ Heading IDs are unique across the page body and nested directives. Repeated IDs 
 
 Headings are also collected into a structured table of contents, exposed to post templates as the `toc` variable. See [Post templates](themes.md#post-templates-posthtml).
 
-Set `heading_numbering = true` in frontmatter to number headings and table-of-contents links, starting at `1`. Add `{numbering-start=2}` to the first heading to continue a previous article. A heading's `{numbering-start=0}` starts its local level at `0`, giving `2.0` under chapter `2`.
+Set `heading_numbering = true` in frontmatter to number headings and table-of-contents links, starting at `1`. A heading's `{numbering-start=0}` starts its local level at `0`, giving `2.0` under chapter `2`.
 
 ### Images
 
