@@ -308,41 +308,7 @@ mod tests {
 
     use crate::test_utils::{PermissionGuard, copy_templates, template_dir, write_test_file};
 
-    /// Writes a content page at `content/<rel_path>/index.md`.
-    fn write_page(root: &Path, rel_path: &str, content: &str) {
-        write_test_file(root, &format!("content/{rel_path}/index.md"), content);
-    }
-
-    /// Copies all test templates except those listed in `exclude`.
-    fn copy_templates_except(dest: &Path, exclude: &[&str]) {
-        let src = template_dir();
-        fs::create_dir_all(dest).unwrap();
-        for entry in fs::read_dir(&src).unwrap() {
-            let entry = entry.unwrap();
-            let name = entry.file_name();
-            if !name.to_str().is_some_and(|n| exclude.contains(&n)) {
-                fs::copy(entry.path(), dest.join(&name)).unwrap();
-            }
-        }
-    }
-
     // ── build ──
-
-    #[test]
-    fn build_no_content() {
-        let root = tempfile::tempdir().unwrap();
-        fs::write(root.path().join("config.toml"), "").unwrap();
-        copy_templates(&root.path().join("templates"));
-
-        build(root.path(), BuildOptions::default()).unwrap();
-
-        let output_dir = root.path().join("public");
-        assert!(output_dir.exists(), "output directory should exist");
-        assert!(
-            output_dir.join("tags").join("index.html").exists(),
-            "should generate empty tags index"
-        );
-    }
 
     #[test]
     fn build_end_to_end() {
@@ -660,15 +626,23 @@ mod tests {
         );
     }
 
-    // ── build: theme ──
+    #[test]
+    fn build_no_content() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("config.toml"), "").unwrap();
+        copy_templates(&root.path().join("templates"));
 
-    fn setup_theme(root: &Path, theme_name: &str) {
-        let theme_dir = root.join("themes").join(theme_name);
-        let tmpl_dir = theme_dir.join("templates");
-        fs::create_dir_all(&tmpl_dir).unwrap();
-        copy_templates(&tmpl_dir);
-        fs::write(theme_dir.join("theme.toml"), "").unwrap();
+        build(root.path(), BuildOptions::default()).unwrap();
+
+        let output_dir = root.path().join("public");
+        assert!(output_dir.exists(), "output directory should exist");
+        assert!(
+            output_dir.join("tags").join("index.html").exists(),
+            "should generate empty tags index"
+        );
     }
+
+    // ── build: theme ──
 
     #[test]
     fn build_with_theme() {
@@ -1084,21 +1058,6 @@ mod tests {
     }
 
     #[test]
-    fn build_empty_home_page() {
-        let root = tempfile::tempdir().unwrap();
-        fs::write(root.path().join("config.toml"), "").unwrap();
-        copy_templates(&root.path().join("templates"));
-
-        build(root.path(), BuildOptions::default()).unwrap();
-
-        let home = root.path().join("public").join("index.html");
-        assert!(
-            home.exists(),
-            "should generate home page even with zero posts"
-        );
-    }
-
-    #[test]
     fn build_orphan_posts_on_home_not_in_sections() {
         let root = tempfile::tempdir().unwrap();
         fs::write(root.path().join("config.toml"), "").unwrap();
@@ -1154,32 +1113,6 @@ mod tests {
         assert!(
             !note_html.contains("Orphan Post"),
             "orphan post should NOT appear in section page, html:\n{note_html}"
-        );
-    }
-
-    #[test]
-    fn build_skips_home_without_template() {
-        let root = tempfile::tempdir().unwrap();
-        fs::write(root.path().join("config.toml"), "").unwrap();
-        copy_templates_except(&root.path().join("templates"), &["home.html"]);
-
-        write_page(
-            root.path(),
-            "posts/note/hello",
-            indoc! {r#"
-                +++
-                title = "Hello"
-                +++
-                Body
-            "#},
-        );
-
-        build(root.path(), BuildOptions::default()).unwrap();
-
-        let home = root.path().join("public").join("index.html");
-        assert!(
-            !home.exists(),
-            "should NOT generate home page without home.html template"
         );
     }
 
@@ -1269,6 +1202,47 @@ mod tests {
         );
     }
 
+    #[test]
+    fn build_empty_home_page() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("config.toml"), "").unwrap();
+        copy_templates(&root.path().join("templates"));
+
+        build(root.path(), BuildOptions::default()).unwrap();
+
+        let home = root.path().join("public").join("index.html");
+        assert!(
+            home.exists(),
+            "should generate home page even with zero posts"
+        );
+    }
+
+    #[test]
+    fn build_skips_home_without_template() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("config.toml"), "").unwrap();
+        copy_templates_except(&root.path().join("templates"), &["home.html"]);
+
+        write_page(
+            root.path(),
+            "posts/note/hello",
+            indoc! {r#"
+                +++
+                title = "Hello"
+                +++
+                Body
+            "#},
+        );
+
+        build(root.path(), BuildOptions::default()).unwrap();
+
+        let home = root.path().join("public").join("index.html");
+        assert!(
+            !home.exists(),
+            "should NOT generate home page without home.html template"
+        );
+    }
+
     // ── build: posts index ──
 
     #[test]
@@ -1352,32 +1326,6 @@ mod tests {
     }
 
     #[test]
-    fn build_posts_index_generated_even_when_empty() {
-        let root = tempfile::tempdir().unwrap();
-        fs::write(root.path().join("config.toml"), "").unwrap();
-        copy_templates(&root.path().join("templates"));
-
-        write_page(
-            root.path(),
-            "about-me",
-            indoc! {r#"
-                +++
-                title = "About Me"
-                +++
-                Bio
-            "#},
-        );
-
-        build(root.path(), BuildOptions::default()).unwrap();
-
-        let posts_index = root.path().join("public").join("posts").join("index.html");
-        assert!(
-            posts_index.exists(),
-            "should generate /posts/index.html even with no posts"
-        );
-    }
-
-    #[test]
     fn build_posts_index_pagination() {
         let root = tempfile::tempdir().unwrap();
         fs::write(
@@ -1424,6 +1372,32 @@ mod tests {
             .join("2")
             .join("index.html");
         assert!(page2.exists(), "should generate /posts/ page 2");
+    }
+
+    #[test]
+    fn build_posts_index_generated_even_when_empty() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("config.toml"), "").unwrap();
+        copy_templates(&root.path().join("templates"));
+
+        write_page(
+            root.path(),
+            "about-me",
+            indoc! {r#"
+                +++
+                title = "About Me"
+                +++
+                Bio
+            "#},
+        );
+
+        build(root.path(), BuildOptions::default()).unwrap();
+
+        let posts_index = root.path().join("public").join("posts").join("index.html");
+        assert!(
+            posts_index.exists(),
+            "should generate /posts/index.html even with no posts"
+        );
     }
 
     // ── build: section pages ──
@@ -1477,37 +1451,6 @@ mod tests {
         assert!(
             essay_index.exists(),
             "should generate /posts/essay/index.html"
-        );
-    }
-
-    #[test]
-    fn build_skips_archives_without_template() {
-        let root = tempfile::tempdir().unwrap();
-        fs::write(root.path().join("config.toml"), "").unwrap();
-        copy_templates_except(&root.path().join("templates"), &["archive.html"]);
-
-        write_page(
-            root.path(),
-            "posts/note/my-post",
-            indoc! {r#"
-                +++
-                title = "My Post"
-                +++
-                Body
-            "#},
-        );
-
-        build(root.path(), BuildOptions::default()).unwrap();
-
-        let section_index = root
-            .path()
-            .join("public")
-            .join("posts")
-            .join("note")
-            .join("index.html");
-        assert!(
-            !section_index.exists(),
-            "should NOT generate archive pages without archive.html template"
         );
     }
 
@@ -1604,6 +1547,37 @@ mod tests {
             .join("2")
             .join("index.html");
         assert!(page2.exists(), "should generate section page 2");
+    }
+
+    #[test]
+    fn build_skips_archives_without_template() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("config.toml"), "").unwrap();
+        copy_templates_except(&root.path().join("templates"), &["archive.html"]);
+
+        write_page(
+            root.path(),
+            "posts/note/my-post",
+            indoc! {r#"
+                +++
+                title = "My Post"
+                +++
+                Body
+            "#},
+        );
+
+        build(root.path(), BuildOptions::default()).unwrap();
+
+        let section_index = root
+            .path()
+            .join("public")
+            .join("posts")
+            .join("note")
+            .join("index.html");
+        assert!(
+            !section_index.exists(),
+            "should NOT generate archive pages without archive.html template"
+        );
     }
 
     // ── build: sections index ──
@@ -1827,33 +1801,6 @@ mod tests {
     }
 
     #[test]
-    fn build_no_tag_archive_pages_without_tags() {
-        let root = tempfile::tempdir().unwrap();
-        fs::write(root.path().join("config.toml"), "").unwrap();
-        copy_templates(&root.path().join("templates"));
-
-        write_page(
-            root.path(),
-            "posts/hello",
-            indoc! {r#"
-                +++
-                title = "Hello"
-                +++
-                Body
-            "#},
-        );
-
-        build(root.path(), BuildOptions::default()).unwrap();
-
-        let output_dir = root.path().join("public");
-        let tags_index = output_dir.join("tags").join("index.html");
-        assert!(
-            tags_index.exists(),
-            "should generate /tags/index.html even with no tags"
-        );
-    }
-
-    #[test]
     fn build_tag_archive_correct_with_standalone_pages() {
         let root = tempfile::tempdir().unwrap();
         fs::write(root.path().join("config.toml"), "").unwrap();
@@ -1899,6 +1846,33 @@ mod tests {
         assert!(
             !html.contains("About Me"),
             "tag archive should NOT list standalone pages, html:\n{html}"
+        );
+    }
+
+    #[test]
+    fn build_generates_tags_index_without_tags() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("config.toml"), "").unwrap();
+        copy_templates(&root.path().join("templates"));
+
+        write_page(
+            root.path(),
+            "posts/hello",
+            indoc! {r#"
+                +++
+                title = "Hello"
+                +++
+                Body
+            "#},
+        );
+
+        build(root.path(), BuildOptions::default()).unwrap();
+
+        let output_dir = root.path().join("public");
+        let tags_index = output_dir.join("tags").join("index.html");
+        assert!(
+            tags_index.exists(),
+            "should generate /tags/index.html even with no tags"
         );
     }
 
@@ -2136,21 +2110,6 @@ mod tests {
 
     // ── build: errors ──
 
-    fn setup_site_with_page(root: &Path) {
-        fs::write(root.join("config.toml"), "").unwrap();
-        copy_templates(&root.join("templates"));
-        write_page(
-            root,
-            "posts/hello",
-            indoc! {r#"
-                +++
-                title = "Hello"
-                +++
-                Body
-            "#},
-        );
-    }
-
     #[test]
     fn build_invalid_config_returns_error() {
         let root = tempfile::tempdir().unwrap();
@@ -2195,25 +2154,6 @@ mod tests {
         );
     }
 
-    fn assert_broken_template_fails(template_name: &str) {
-        let root = tempfile::tempdir().unwrap();
-        setup_site_with_page(root.path());
-
-        fs::write(
-            root.path().join("templates").join(template_name),
-            "{% invalid %}",
-        )
-        .unwrap();
-
-        let err = build(root.path(), BuildOptions::default())
-            .unwrap_err()
-            .to_string();
-        assert!(
-            err.contains("failed to render"),
-            "should report render failure for {template_name}, got: {err}"
-        );
-    }
-
     #[test]
     fn build_broken_post_template_returns_error() {
         assert_broken_template_fails("post.html");
@@ -2227,46 +2167,6 @@ mod tests {
     #[test]
     fn build_broken_overview_template_returns_error() {
         assert_broken_template_fails("overview.html");
-    }
-
-    #[test]
-    fn build_write_permission_denied_returns_error() {
-        let root = tempfile::tempdir().unwrap();
-        setup_site_with_page(root.path());
-
-        build(root.path(), BuildOptions::default()).unwrap();
-        let output_dir = root.path().join("public");
-        let _guard = PermissionGuard::restrict(&output_dir, 0o555);
-
-        let err = build(root.path(), BuildOptions::default())
-            .unwrap_err()
-            .to_string();
-        assert!(
-            err.contains("failed to write") || err.contains("failed to clean"),
-            "should report write or clean failure, got: {err}"
-        );
-    }
-
-    #[test]
-    fn build_asset_copy_permission_denied_returns_error() {
-        let root = tempfile::tempdir().unwrap();
-        setup_site_with_page(root.path());
-
-        let page_dir = root.path().join("content").join("posts").join("hello");
-        fs::write(page_dir.join("image.png"), "img-data").unwrap();
-
-        build(root.path(), BuildOptions::default()).unwrap();
-
-        let page_output = root.path().join("public").join("posts").join("hello");
-        let _guard = PermissionGuard::restrict(&page_output, 0o555);
-
-        let err = build(root.path(), BuildOptions::default())
-            .unwrap_err()
-            .to_string();
-        assert!(
-            err.contains("failed to copy asset") || err.contains("failed to clean"),
-            "should report asset copy or clean failure, got: {err}"
-        );
     }
 
     #[test]
@@ -2302,6 +2202,101 @@ mod tests {
             err.contains("failed to render"),
             "should report render failure, got: {err}"
         );
+    }
+
+    #[test]
+    fn build_output_cleanup_permission_denied_returns_error() {
+        let root = tempfile::tempdir().unwrap();
+        setup_site_with_page(root.path());
+
+        build(root.path(), BuildOptions::default()).unwrap();
+        let output_dir = root.path().join("public");
+        let _guard = PermissionGuard::restrict(&output_dir, 0o555);
+
+        let err = build(root.path(), BuildOptions::default())
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("failed to clean output directory"),
+            "should report output cleanup failure, got: {err}"
+        );
+    }
+
+    #[test]
+    fn build_asset_copy_permission_denied_returns_error() {
+        let root = tempfile::tempdir().unwrap();
+        setup_site_with_page(root.path());
+
+        let page_dir = root.path().join("content").join("posts").join("hello");
+        let asset = page_dir.join("image.png");
+        fs::write(&asset, "img-data").unwrap();
+        let _guard = PermissionGuard::restrict(&asset, 0o000);
+
+        let err = build(root.path(), BuildOptions::default())
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("failed to copy asset"),
+            "should report asset copy failure, got: {err}"
+        );
+    }
+
+    fn assert_broken_template_fails(template_name: &str) {
+        let root = tempfile::tempdir().unwrap();
+        setup_site_with_page(root.path());
+
+        fs::write(
+            root.path().join("templates").join(template_name),
+            "{% invalid %}",
+        )
+        .unwrap();
+
+        let err = build(root.path(), BuildOptions::default())
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("failed to render"),
+            "should report render failure for {template_name}, got: {err}"
+        );
+    }
+
+    fn setup_site_with_page(root: &Path) {
+        fs::write(root.join("config.toml"), "").unwrap();
+        copy_templates(&root.join("templates"));
+        write_page(
+            root,
+            "posts/hello",
+            indoc! {r#"
+                +++
+                title = "Hello"
+                +++
+                Body
+            "#},
+        );
+    }
+
+    fn write_page(root: &Path, rel_path: &str, content: &str) {
+        write_test_file(root, &format!("content/{rel_path}/index.md"), content);
+    }
+
+    fn copy_templates_except(dest: &Path, exclude: &[&str]) {
+        let src = template_dir();
+        fs::create_dir_all(dest).unwrap();
+        for entry in fs::read_dir(&src).unwrap() {
+            let entry = entry.unwrap();
+            let name = entry.file_name();
+            if !name.to_str().is_some_and(|n| exclude.contains(&n)) {
+                fs::copy(entry.path(), dest.join(&name)).unwrap();
+            }
+        }
+    }
+
+    fn setup_theme(root: &Path, theme_name: &str) {
+        let theme_dir = root.join("themes").join(theme_name);
+        let tmpl_dir = theme_dir.join("templates");
+        fs::create_dir_all(&tmpl_dir).unwrap();
+        copy_templates(&tmpl_dir);
+        fs::write(theme_dir.join("theme.toml"), "").unwrap();
     }
 
     // ── find_page_css ──

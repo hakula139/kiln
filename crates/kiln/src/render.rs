@@ -58,16 +58,17 @@ mod tests {
     // ── RenderOptions::from_params ──
 
     #[test]
-    fn render_options_defaults() {
+    fn from_params_defaults() {
         let options = RenderOptions::from_params(&toml::Table::new()).unwrap();
+        assert!(options.code_max_lines.is_none());
         assert!(!options.emojis);
         assert!(!options.fontawesome);
-        assert!(options.code_max_lines.is_none());
+        assert!(!options.heading_numbering);
         assert!(options.table_nowrap_width.is_none());
     }
 
     #[test]
-    fn render_options_all_set() {
+    fn from_params_known_options() {
         let params: toml::Table = toml::from_str(indoc! {r"
             code_max_lines = 40
             emojis = true
@@ -83,7 +84,7 @@ mod tests {
     }
 
     #[test]
-    fn render_options_ignores_unknown_keys() {
+    fn from_params_ignores_unknown_keys() {
         let params: toml::Table = toml::from_str(indoc! {r#"
             emojis = true
             site_title = "Example"
@@ -97,7 +98,7 @@ mod tests {
     }
 
     #[test]
-    fn render_options_type_mismatch_returns_error() {
+    fn from_params_type_mismatch_returns_error() {
         let params: toml::Table = toml::from_str(indoc! {r#"
             emojis = "yes"
         "#})
