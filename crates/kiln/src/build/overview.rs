@@ -9,18 +9,19 @@ use crate::template::vars::{BucketSummary, OverviewPageVars};
 use super::BuildContext;
 use super::listing::{BucketKind, ListingBucket};
 
-/// Generates overview index pages: `/sections/` and `/tags/`.
+/// Generates `/sections/` and `/tags/` overview pages and returns the number written.
 ///
 /// Skipped when `overview.html` is not present in the template set.
 pub(crate) fn build_overview_pages(
     ctx: &BuildContext,
     buckets: &[ListingBucket],
     output_dir: &Path,
-) -> Result<()> {
+) -> Result<usize> {
     if !ctx.template_engine.has_template("overview.html") {
-        return Ok(());
+        return Ok(0);
     }
 
+    let mut page_count = 0;
     for kind in BucketKind::iter().filter(|k| k.has_overview()) {
         let summaries: Vec<BucketSummary> = buckets
             .iter()
@@ -28,9 +29,10 @@ pub(crate) fn build_overview_pages(
             .map(BucketSummary::from)
             .collect();
         write_overview(ctx, kind, summaries, output_dir)?;
+        page_count += 1;
     }
 
-    Ok(())
+    Ok(page_count)
 }
 
 // ── Helpers ──

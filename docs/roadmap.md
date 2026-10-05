@@ -62,7 +62,7 @@ The default theme [**IgnIt**](https://github.com/hakula139/IgnIt) ships with Tai
 
 ### Tooling
 
-- `kiln build` for one-shot builds.
+- `kiln build` for one-shot builds with generated-page counts and total elapsed time, including search indexing.
 - `kiln serve` with file watching and live reload for fast iteration.
 - `kiln convert` to migrate Hugo sites into kiln, frontmatter and shortcodes included.
 

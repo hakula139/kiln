@@ -53,7 +53,12 @@ pub fn run_pagefind(output_dir: &Path, binary: Option<&str>) -> Result<()> {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     if !stdout.is_empty() {
-        eprint!("{stdout}");
+        tracing::debug!("{stdout}");
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if !stderr.is_empty() {
+        eprint!("{stderr}");
     }
 
     Ok(())

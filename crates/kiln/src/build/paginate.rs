@@ -5,7 +5,7 @@ use anyhow::{Context, Result};
 use crate::output::write_output;
 use crate::pagination::{PaginationVars, Paginator, paginated_url};
 
-/// Paginates items and writes rendered pages to the output directory.
+/// Writes paginated output and returns the number of pages written.
 ///
 /// Always generates at least one page (even when empty).
 pub(crate) fn write_paginated<T, F>(
@@ -14,14 +14,15 @@ pub(crate) fn write_paginated<T, F>(
     base_path: &str,
     output_dir: &Path,
     mut render: F,
-) -> Result<()>
+) -> Result<usize>
 where
     T: Clone,
     F: FnMut(Vec<T>, PaginationVars) -> Result<String>,
 {
     let paginator = Paginator::new(items, per_page);
 
-    for page_num in 1..=paginator.total_pages().max(1) {
+    let page_count = paginator.total_pages().max(1);
+    for page_num in 1..=page_count {
         let page_items = paginator.page_items(page_num).to_vec();
         let pagination = PaginationVars::new(base_path, page_num, paginator.total_pages());
 
@@ -35,7 +36,7 @@ where
             .with_context(|| format!("failed to write {}", dest.display()))?;
     }
 
-    Ok(())
+    Ok(page_count)
 }
 
 /// Resolves a pagination count from `params`, trying each TOML path in order and falling back to
