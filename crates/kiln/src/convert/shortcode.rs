@@ -138,8 +138,7 @@ fn emit_closing(name: &str, out: &mut String) {
 }
 
 fn emit_callout(sc: &ShortcodeArgs, out: &mut String) {
-    let type_name = sc.positional.first().copied().unwrap_or("");
-    let remaining = &sc.positional[1..];
+    let (type_name, remaining) = sc.positional.split_first().unwrap_or((&"", &[]));
 
     let (title, open) = match remaining {
         [.., "false"] => (remaining[..remaining.len() - 1].first().copied(), false),
@@ -207,7 +206,7 @@ fn emit_directive(name: &str, sc: &ShortcodeArgs) -> String {
 
 #[cfg(test)]
 mod tests {
-    use indoc::indoc;
+    use indoc::{formatdoc, indoc};
 
     use super::*;
 
@@ -313,6 +312,25 @@ mod tests {
                 :::
             "#}
         );
+    }
+
+    #[test]
+    fn callout_without_positional_args() {
+        for args in ["", r#"title="Title""#] {
+            let input = formatdoc! {"
+                {{{{< admonition {args} >}}}}
+                Body
+                {{{{< /admonition >}}}}
+            "};
+            assert_eq!(
+                convert_shortcodes(&input),
+                indoc! {"
+                    ::: callout {type=}
+                    Body
+                    :::
+                "}
+            );
+        }
     }
 
     // ── image ──
