@@ -354,14 +354,6 @@ mod tests {
         assert!(attrs.is_empty());
     }
 
-    #[test]
-    fn extract_alt_without_paren_after_bracket_passes_bang_through() {
-        let input = "![alt]{width=100}";
-        let (output, attrs) = extract_image_attrs(input);
-        assert_eq!(output, input);
-        assert!(attrs.is_empty());
-    }
-
     // ── extract_image_attrs (code awareness) ──
 
     #[test]

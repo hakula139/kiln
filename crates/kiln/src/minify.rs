@@ -319,7 +319,12 @@ mod tests {
             stats.files_shrunk, 3,
             "all three test inputs should actually shrink",
         );
-        assert!(stats.bytes_out < stats.bytes_in);
+        assert_eq!(stats.bytes_in, (html.len() + css.len() + js.len()) as u64);
+        let bytes_out = ["page.html", "style.css", "sub/app.js"]
+            .into_iter()
+            .map(|path| fs::metadata(root.join(path)).unwrap().len())
+            .sum::<u64>();
+        assert_eq!(stats.bytes_out, bytes_out);
 
         assert_eq!(fs::read(root.join("image.png")).unwrap(), png);
         assert_eq!(fs::read(root.join("vendor.min.css")).unwrap(), already_min);
@@ -327,6 +332,24 @@ mod tests {
         assert!(fs::read(root.join("page.html")).unwrap().len() < html.len());
         assert!(fs::read(root.join("style.css")).unwrap().len() < css.len());
         assert!(fs::read(root.join("sub").join("app.js")).unwrap().len() < js.len());
+    }
+
+    #[test]
+    fn minify_output_dir_preserves_smaller_original() {
+        let dir = tempfile::tempdir().unwrap();
+        let original = "console.log(1)";
+        fs::write(dir.path().join("app.js"), original).unwrap();
+
+        let stats = minify_output_dir(dir.path()).unwrap();
+
+        assert_eq!(stats.files_processed, 1);
+        assert_eq!(stats.files_shrunk, 0);
+        assert_eq!(stats.bytes_in, original.len() as u64);
+        assert_eq!(stats.bytes_out, original.len() as u64);
+        assert_eq!(
+            fs::read_to_string(dir.path().join("app.js")).unwrap(),
+            original
+        );
     }
 
     #[test]
@@ -343,7 +366,12 @@ mod tests {
         let stats = minify_output_dir(root).unwrap();
         assert_eq!(stats.files_processed, 2);
         assert_eq!(stats.files_shrunk, 1, "only CSS should shrink");
-
+        assert_eq!(stats.bytes_in, (good_css.len() + broken_js.len()) as u64);
+        assert_eq!(
+            stats.bytes_out,
+            fs::metadata(root.join("style.css")).unwrap().len()
+                + fs::metadata(root.join("broken.js")).unwrap().len()
+        );
         assert_eq!(fs::read(root.join("broken.js")).unwrap(), broken_js);
     }
 

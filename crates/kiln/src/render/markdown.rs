@@ -1170,17 +1170,36 @@ mod tests {
         write_tiny_png(&bundle.join("img.png"));
 
         let resolver = ImageResolver::new(dir.path(), crate::render::lqip::ImageConfig::default());
-        // Authored width=4 on an 8×4 source backfills height=2 via aspect.
         let out =
             render_with_resolver("![a](img.png){width=4} ![b](img.png)\n", &resolver, &bundle);
 
-        assert!(
-            !out.html.contains("<figure>"),
-            "two-image paragraph should not be a figure, html:\n{}",
-            out.html
+        let fragment = scraper::Html::parse_fragment(&out.html);
+        let images = scraper::Selector::parse("img").unwrap();
+        let attrs: Vec<_> = fragment
+            .select(&images)
+            .map(|image| {
+                (
+                    image.value().attr("src"),
+                    image.value().attr("alt"),
+                    image.value().attr("width"),
+                    image.value().attr("height"),
+                )
+            })
+            .collect();
+
+        assert_eq!(
+            attrs,
+            vec![
+                (Some("img.png"), Some("a"), Some("4"), Some("2")),
+                (Some("img.png"), Some("b"), Some("8"), Some("4")),
+            ]
         );
-        assert!(out.html.contains(r#"width="4""#), "html:\n{}", out.html);
-        assert!(out.html.contains(r#"height="2""#), "html:\n{}", out.html);
+        assert!(
+            fragment
+                .select(&scraper::Selector::parse("figure").unwrap())
+                .next()
+                .is_none()
+        );
     }
 
     #[test]
