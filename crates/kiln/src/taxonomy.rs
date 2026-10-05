@@ -113,7 +113,11 @@ fn collect_terms(values: &[String], page_idx: usize, grouped: &mut HashMap<Strin
             .entry(slugify(trimmed))
             .or_default()
             .entry(trimmed.to_lowercase())
-            .and_modify(|(_, indices)| indices.push(page_idx))
+            .and_modify(|(_, indices)| {
+                if indices.last() != Some(&page_idx) {
+                    indices.push(page_idx);
+                }
+            })
             .or_insert_with(|| (trimmed.to_owned(), vec![page_idx]));
     }
 }
@@ -182,6 +186,25 @@ mod tests {
             "should preserve first-seen display name"
         );
         assert_eq!(set.tags[0].page_count, 2);
+    }
+
+    #[test]
+    fn build_taxonomies_deduplicates_page_membership() {
+        let pages = [
+            make_page("Post A", &["Rust", "rust", " Rust ", "web"]),
+            make_page("Post B", &["rust"]),
+        ];
+        let set = build_taxonomies(&pages, None).unwrap();
+
+        assert_eq!(set.tags.len(), 2);
+        assert_eq!(set.tags[0].name, "Rust");
+        assert_eq!(set.tags[0].slug, "rust");
+        assert_eq!(set.tags[0].page_count, 2);
+        assert_eq!(set.tag_pages["rust"], [0, 1]);
+        assert_eq!(set.tags[1].name, "web");
+        assert_eq!(set.tags[1].slug, "web");
+        assert_eq!(set.tags[1].page_count, 1);
+        assert_eq!(set.tag_pages["web"], [0]);
     }
 
     #[test]
