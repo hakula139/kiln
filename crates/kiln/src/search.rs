@@ -71,9 +71,11 @@ mod tests {
     // ── run_pagefind ──
 
     #[test]
-    fn run_pagefind_succeeds_with_output() {
+    fn run_pagefind_succeeds_with_and_without_output() {
         let dir = tempfile::tempdir().unwrap();
-        run_pagefind(dir.path(), Some("echo")).unwrap();
+        for binary in ["echo", "true"] {
+            run_pagefind(dir.path(), Some(binary)).unwrap();
+        }
     }
 
     #[test]

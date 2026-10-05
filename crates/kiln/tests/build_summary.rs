@@ -42,60 +42,67 @@ fn build_summary_counts_generated_pages_and_includes_search_time() {
     "#, binary.display()});
     fs::write(config, config_text).unwrap();
 
-    let output = Command::new(env!("CARGO_BIN_EXE_kiln"))
-        .args(["build", "--root"])
-        .arg(root.path())
-        .env_remove("KILN_BASE_URL")
-        .env_remove("RUST_LOG")
-        .output()
-        .unwrap();
+    for log_filter in [None, Some("kiln::search=debug")] {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_kiln"));
+        command
+            .args(["build", "--root"])
+            .arg(root.path())
+            .env_remove("KILN_BASE_URL")
+            .env_remove("RUST_LOG");
+        if let Some(value) = log_filter {
+            command.env("RUST_LOG", value);
+        }
+        let output = command.output().unwrap();
 
-    let stderr = String::from_utf8(output.stderr).unwrap();
-    assert!(output.status.success(), "{stderr}");
-    let summary = stderr.lines().find(|s| s.starts_with("Built ")).unwrap();
-    assert!(
-        summary.starts_with("Built 14 pages (3 content) in "),
-        "{stderr}"
-    );
-    let html_count = walkdir::WalkDir::new(root.path().join("public"))
-        .into_iter()
-        .map(Result::unwrap)
-        .filter(|entry| {
-            entry.file_type().is_file() && entry.path().extension().is_some_and(|ext| ext == "html")
-        })
-        .count();
-    assert_eq!(html_count, 15);
-    assert!(
-        !root
-            .path()
-            .join("public/posts/topic/draft/index.html")
-            .exists()
-    );
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert!(output.status.success(), "{stderr}");
+        let summary = stderr.lines().find(|s| s.starts_with("Built ")).unwrap();
+        assert!(
+            summary.starts_with("Built 14 pages (3 content) in "),
+            "{stderr}"
+        );
+        let html_count = walkdir::WalkDir::new(root.path().join("public"))
+            .into_iter()
+            .map(Result::unwrap)
+            .filter(|entry| {
+                entry.file_type().is_file()
+                    && entry.path().extension().is_some_and(|ext| ext == "html")
+            })
+            .count();
+        assert_eq!(html_count, 15);
+        assert!(
+            !root
+                .path()
+                .join("public/posts/topic/draft/index.html")
+                .exists()
+        );
 
-    let total: f64 = summary
-        .split(" in ")
-        .nth(1)
-        .unwrap()
-        .trim_end_matches("s.")
-        .parse()
-        .unwrap();
-    let search: f64 = stderr
-        .lines()
-        .find_map(|s| s.strip_prefix("Search indexing: "))
-        .unwrap()
-        .trim_end_matches("s.")
-        .parse()
-        .unwrap();
-    assert!(search >= 0.05, "{stderr}");
-    assert!(total > search, "{stderr}");
-
-    assert!(stderr.contains("Search warning"), "{stderr}");
-    assert!(!stderr.contains("999 seconds"), "{stderr}");
-    assert!(
-        !String::from_utf8(output.stdout)
+        let total: f64 = summary
+            .split(" in ")
+            .nth(1)
             .unwrap()
-            .contains("999 seconds")
-    );
+            .trim_end_matches("s.")
+            .parse()
+            .unwrap();
+        let search: f64 = stderr
+            .lines()
+            .find_map(|s| s.strip_prefix("Search indexing: "))
+            .unwrap()
+            .trim_end_matches("s.")
+            .parse()
+            .unwrap();
+        assert!(search >= 0.05, "{stderr}");
+        assert!(total > search, "{stderr}");
+
+        assert!(stderr.contains("Search warning"), "{stderr}");
+        assert!(!stderr.contains("999 seconds"), "{stderr}");
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        assert_eq!(
+            stdout.contains("999 seconds"),
+            log_filter.is_some(),
+            "{stdout}"
+        );
+    }
 }
 
 #[test]
