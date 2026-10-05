@@ -31,6 +31,7 @@ fn build_summary_counts_generated_pages_and_includes_search_time() {
         "},
     );
     fs::set_permissions(&binary, fs::Permissions::from_mode(0o755)).unwrap();
+
     let config = root.path().join("config.toml");
     let mut config_text = fs::read_to_string(&config).unwrap();
     config_text.push_str(&formatdoc! {r#"
@@ -44,10 +45,11 @@ fn build_summary_counts_generated_pages_and_includes_search_time() {
     let output = Command::new(env!("CARGO_BIN_EXE_kiln"))
         .args(["build", "--root"])
         .arg(root.path())
-        .env_remove("RUST_LOG")
         .env_remove("KILN_BASE_URL")
+        .env_remove("RUST_LOG")
         .output()
         .unwrap();
+
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert!(output.status.success(), "{stderr}");
     let summary = stderr.lines().find(|s| s.starts_with("Built ")).unwrap();
@@ -55,6 +57,21 @@ fn build_summary_counts_generated_pages_and_includes_search_time() {
         summary.starts_with("Built 14 pages (3 content) in "),
         "{stderr}"
     );
+    let html_count = walkdir::WalkDir::new(root.path().join("public"))
+        .into_iter()
+        .map(Result::unwrap)
+        .filter(|entry| {
+            entry.file_type().is_file() && entry.path().extension().is_some_and(|ext| ext == "html")
+        })
+        .count();
+    assert_eq!(html_count, 15);
+    assert!(
+        !root
+            .path()
+            .join("public/posts/topic/draft/index.html")
+            .exists()
+    );
+
     let total: f64 = summary
         .split(" in ")
         .nth(1)
@@ -70,7 +87,8 @@ fn build_summary_counts_generated_pages_and_includes_search_time() {
         .parse()
         .unwrap();
     assert!(search >= 0.05, "{stderr}");
-    assert!(total >= search, "{stderr}");
+    assert!(total > search, "{stderr}");
+
     assert!(stderr.contains("Search warning"), "{stderr}");
     assert!(!stderr.contains("999 seconds"), "{stderr}");
     assert!(
@@ -78,47 +96,35 @@ fn build_summary_counts_generated_pages_and_includes_search_time() {
             .unwrap()
             .contains("999 seconds")
     );
-
-    let html_count = walkdir::WalkDir::new(root.path().join("public"))
-        .into_iter()
-        .map(Result::unwrap)
-        .filter(|entry| {
-            entry.file_type().is_file() && entry.path().extension().is_some_and(|ext| ext == "html")
-        })
-        .count();
-    assert_eq!(html_count, 15);
-    assert!(
-        !root
-            .path()
-            .join("public/posts/topic/draft/index.html")
-            .exists()
-    );
 }
 
 #[test]
 fn build_summary_skips_missing_templates_and_disabled_search_with_minify() {
     let root = tempfile::tempdir().unwrap();
     write_site(root.path());
+
     let output = Command::new(env!("CARGO_BIN_EXE_kiln"))
         .args(["build", "--minify", "--root"])
         .arg(root.path())
-        .env_remove("RUST_LOG")
         .env_remove("KILN_BASE_URL")
+        .env_remove("RUST_LOG")
         .output()
         .unwrap();
+
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert!(output.status.success(), "{stderr}");
     assert!(stderr.contains("Built 3 pages (3 content) in "), "{stderr}");
     assert!(!stderr.contains("Search indexing:"), "{stderr}");
+    assert!(
+        stderr
+            .lines()
+            .any(|line| line.starts_with("minified 4 files,")),
+        "{stderr}"
+    );
+
     assert!(!root.path().join("public/index.html").exists());
     assert!(!root.path().join("public/404.html").exists());
     assert!(root.path().join("public/posts/topic/a/index.html").exists());
-}
-
-fn write_file(root: &Path, path: &str, content: &str) {
-    let dest = root.join(path);
-    fs::create_dir_all(dest.parent().unwrap()).unwrap();
-    fs::write(dest, content).unwrap();
 }
 
 fn write_site(root: &Path) {
@@ -150,4 +156,10 @@ fn write_site(root: &Path) {
             "#},
         );
     }
+}
+
+fn write_file(root: &Path, path: &str, content: &str) {
+    let dest = root.join(path);
+    fs::create_dir_all(dest.parent().unwrap()).unwrap();
+    fs::write(dest, content).unwrap();
 }
