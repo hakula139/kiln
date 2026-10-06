@@ -361,6 +361,7 @@ pub(crate) fn page_section(
     else {
         return None;
     };
+    let base_url = base_url.trim_end_matches('/');
     let title = sections
         .iter()
         .find(|s| &s.slug == slug)
@@ -396,6 +397,7 @@ pub(crate) fn resolve_featured_image(
 
 /// Converts raw tag strings into `LinkedTerm`s with pre-computed URLs.
 pub(crate) fn linked_tags(tags: &[String], base_url: &str) -> Vec<LinkedTerm> {
+    let base_url = base_url.trim_end_matches('/');
     tags.iter()
         .map(|tag| LinkedTerm {
             name: tag.clone(),
@@ -830,6 +832,27 @@ mod tests {
         assert!(groups.is_empty());
     }
 
+    // ── page_section ──
+
+    #[test]
+    fn page_section_base_url_trailing_slashes() {
+        let mut page = crate::test_utils::test_page("Post A");
+        page.kind = PageKind::Post {
+            section: Some("notes".into()),
+        };
+        let sections = [Section {
+            slug: "notes".into(),
+            title: "Notes".into(),
+            page_count: 1,
+        }];
+
+        for base_url in ["https://example.com/blog", "https://example.com/blog/"] {
+            let section = page_section(&page, base_url, &sections).unwrap();
+            assert_eq!(section.name, "Notes");
+            assert_eq!(section.url, "https://example.com/blog/posts/notes/");
+        }
+    }
+
     // ── resolve_featured_image ──
 
     fn make_featured_image(src: &str) -> FeaturedImage {
@@ -948,6 +971,20 @@ mod tests {
                 .as_deref()
                 .is_some_and(|u| u.starts_with("data:image/webp;base64,"))
         );
+    }
+
+    // ── linked_tags ──
+
+    #[test]
+    fn linked_tags_base_url_trailing_slashes() {
+        let tags = ["Rust".into(), "Web Tools".into()];
+        for base_url in ["https://example.com/blog", "https://example.com/blog/"] {
+            let linked = linked_tags(&tags, base_url);
+            assert_eq!(linked[0].name, "Rust");
+            assert_eq!(linked[0].url, "https://example.com/blog/tags/rust/");
+            assert_eq!(linked[1].name, "Web Tools");
+            assert_eq!(linked[1].url, "https://example.com/blog/tags/web-tools/");
+        }
     }
 
     // ── page_year ──
