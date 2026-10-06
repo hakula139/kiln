@@ -158,9 +158,13 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
         &taxonomy_set,
     )?;
 
-    for page in &content.pages {
-        build_page(&ctx, page, &content.content_dir, &output_dir, &sections)?;
-    }
+    build_content_pages(
+        &ctx,
+        &content.pages,
+        &content.content_dir,
+        &output_dir,
+        &sections,
+    )?;
 
     let posts_title = section::load_index_title(&content.content_dir.join("posts"))
         .unwrap_or_else(|| ctx.i18n.t("all_posts").into_owned());
@@ -246,16 +250,37 @@ fn format_build_summary(
     summary
 }
 
-// ── Single-page rendering ──
+// ── Content rendering ──
+
+fn build_content_pages(
+    ctx: &BuildContext,
+    pages: &[Page],
+    content_dir: &Path,
+    output_dir: &Path,
+    sections: &[Section],
+) -> Result<()> {
+    if pages.is_empty() {
+        return Ok(());
+    }
+
+    let options = RenderOptions::from_params(&ctx.config.params)?;
+
+    for page in pages {
+        build_page(ctx, &options, page, content_dir, output_dir, sections)?;
+    }
+
+    Ok(())
+}
 
 fn build_page(
     ctx: &BuildContext,
+    options: &RenderOptions,
     page: &Page,
     content_dir: &Path,
     output_dir: &Path,
     sections: &[Section],
 ) -> Result<()> {
-    let mut options = RenderOptions::from_params(&ctx.config.params)?;
+    let mut options = options.clone();
     options.heading_numbering = page.frontmatter.heading_numbering;
 
     let rendered = render_page(
