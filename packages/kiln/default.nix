@@ -2,12 +2,14 @@
 # correct rpath / install_name on Linux and Darwin, no post-build patching.
 
 {
-  lib,
-  rustPlatform,
-  pkg-config,
-  nasm,
   dav1d,
   git,
+  lib,
+  makeWrapper,
+  nasm,
+  pkg-config,
+  rustPlatform,
+  tailwindcss_4,
   tzdata,
 }:
 
@@ -47,8 +49,9 @@ rustPlatform.buildRustPackage {
   cargoLock.lockFile = ../../Cargo.lock;
 
   nativeBuildInputs = [
-    pkg-config
+    makeWrapper
     nasm
+    pkg-config
   ];
   buildInputs = [ dav1d ];
 
@@ -59,10 +62,15 @@ rustPlatform.buildRustPackage {
   # to resolve IANA zone names in the time zone tests.
   nativeCheckInputs = [
     git
+    tailwindcss_4
     tzdata
   ];
   preCheck = ''
     export TZDIR=${tzdata}/share/zoneinfo
+  '';
+
+  postFixup = ''
+    wrapProgram $out/bin/kiln --prefix PATH : ${lib.makeBinPath [ tailwindcss_4 ]}
   '';
 
   meta = {

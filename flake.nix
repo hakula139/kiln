@@ -2,9 +2,9 @@
 # kiln Development Flake
 # ==============================================================================
 #
-# Provides Rust toolchain, libdav1d (AVIF decode), pagefind, git-cliff, and
-# pre-commit hooks. Also exposes `packages.{kiln,pagefind}` for downstream
-# consumers (site repos importing this flake).
+# Provides Rust toolchain, libdav1d (AVIF decode), Pagefind, Tailwind CSS, git-cliff,
+# and pre-commit hooks. Exposes `packages.{kiln,pagefind,tailwindcss}` for site
+# repos importing this flake.
 #
 #   nix develop        # interactive shell for hacking on kiln
 #   nix flake check    # run pre-commit hooks
@@ -194,8 +194,9 @@
               pkg-config
               # Release tooling.
               git-cliff
-              # Search backend invoked by `kiln build` when `[search] enabled`.
+              # Optional build processors.
               pagefind
+              tailwindcss_4
               # Node tooling for pre-commit hooks.
               nodejs_24
               pnpm
@@ -220,12 +221,12 @@
         # ----------------------------------------------------------------------
         # Packages (`nix build '.#<name>'`)
         # ----------------------------------------------------------------------
-        # `kiln` is source-built; `pagefind` is a vendored prebuilt. Site repos
-        # importing this flake get both via `kiln.packages.${system}.<name>`.
+        # Site repos consume these via `kiln.packages.${system}.<name>`.
         packages = {
           default = kiln;
           inherit kiln;
           inherit (pkgs) pagefind;
+          tailwindcss = pkgs.tailwindcss_4;
         };
 
         # ----------------------------------------------------------------------
