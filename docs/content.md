@@ -55,7 +55,7 @@ Without `_index.md`, the section title is derived from the directory name (title
 Pages are excluded from the build when:
 
 - `draft = true` in frontmatter
-- The filename starts with `_`, which includes the `_index.md` listing metadata files
+- A file or enclosing directory name starts with `_`, which includes the `_index.md` listing metadata files
 - The file has no TOML frontmatter (`+++` delimiters)
 
 ## Page Bundles
@@ -64,14 +64,12 @@ A **page bundle** is a directory containing an `index.md` alongside related file
 
 ```text
 content/posts/note/my-post/
-├── index.md                      # Page content
-├── cover.webp                    # Image (co-located asset)
+├── _assets/css/style.css     # Private page stylesheet source
+├── index.md                  # Page content
+├── cover.webp                # Image (co-located asset)
 └── assets/
-    ├── diagram.svg               # Nested assets work too
-    ├── data.csv                  # Data files for directives
-    └── css/
-        ├── _src/style.css        # Private handwritten source
-        └── style.generated.css   # Compiled page stylesheet
+    ├── diagram.svg           # Nested assets work too
+    └── data.csv              # Data files for directives
 ```
 
 Non-markdown files in the bundle directory (at any depth), excluding underscore-prefixed files and directories, are copied to the output alongside the rendered HTML. They become accessible at the same relative path:
@@ -104,21 +102,20 @@ This resolves to `/posts/note/my-post/cover.webp` in templates and listing pages
 
 ### Per-Page CSS
 
-A page bundle's stylesheet is `assets/css/style.generated.css`. kiln exposes its content-hashed URL as [`page_css`](themes.md#post-templates-posthtml). Themes link it from that page's `<head>` after the shared stylesheet. Other CSS files remain ordinary co-located assets and are not automatically loaded.
+A page bundle's stylesheet source is `_assets/css/style.css`. `kiln build` and `kiln serve` compile it automatically and expose its content-hashed URL as [`page_css`](themes.md#post-templates-posthtml). Themes link it from that page's `<head>` after the shared stylesheet. Other CSS files remain ordinary co-located assets and are not automatically loaded.
 
 ```text
 content/posts/avg/impressions/
-├── index.md
-└── assets/css/
-    ├── _src/style.css        # Private handwritten source
-    └── style.generated.css   # Compiled page stylesheet
+├── _assets/css/style.css        # Handwritten source, never published
+├── assets/                      # Images and other public page assets
+└── index.md                     # Page content
 ```
 
-The same source / output layout applies to shared CSS under `static/css/` in the site or theme. Run the theme's CSS compiler before building with kiln. kiln publishes compiled CSS without running Tailwind or another source processor.
+Compiled CSS is written only to the build output at `<page>/assets/css/style.css`, alongside a fingerprinted copy. `--minify` minifies it before computing its SHA-256 fingerprint. Local `@import` rules are bundled, and relative `url(...)` references are resolved from their original source files and rewritten for the published stylesheet location. Referenced assets must belong to the page bundle or the site / theme `static/` tree. Underscore-prefixed bundle assets remain private and cannot be referenced by published CSS.
 
-Page CSS follows the shared stylesheet's publication rules: `--minify` minifies it before computing its SHA-256 fingerprint. Both the original and fingerprinted files are published beside their sibling assets, preserving relative `url(...)` references. The fingerprint covers the stylesheet's bytes only, so imported CSS must be bundled before publication.
+Plain CSS supports imports and nesting without an external compiler. Themes can select Tailwind through [`[css]`](themes.md#stylesheets), and page styles then receive the shared entry's Tailwind definitions through `@reference`, supporting utilities such as `@apply` without duplicating shared styles.
 
-Only the owning page receives `page_css`, so its selectors and keyframes are independent of other page bundles. Scope selectors carefully within the page to avoid unintentionally styling shared navigation or theme components. The `:::` directive can provide a wrapper class when needed:
+Only the owning page receives `page_css`, so other pages do not load its selectors and keyframes. Scope selectors carefully within the page to avoid unintentionally styling shared navigation or theme components. The `:::` directive can provide a wrapper class when needed:
 
 <!-- dprint-ignore -->
 ```markdown
@@ -129,7 +126,7 @@ Only the owning page receives `page_css`, so its selectors and keyframes are ind
 :::
 ```
 
-Then target that class in `assets/css/_src/style.css`:
+Then target that class in `_assets/css/style.css`:
 
 ```css
 .rating-table td:first-child {
@@ -154,16 +151,6 @@ Static files differ from co-located assets: they are global (not tied to a page)
 
 ### Private build inputs (`_` prefix)
 
-Files and directories whose names start with `_` are skipped when static trees or page bundle assets are copied to the output. This lets you keep build-time inputs alongside the shipped bundle without exposing them. Typical use: colocating Tailwind sources with the compiled stylesheet.
+Files and directories whose names start with `_` are excluded from content discovery and page bundle asset publication. This keeps build inputs such as `_assets/css/style.css` with their owning page without exposing them. `_index.md` remains available as listing metadata.
 
-```text
-static/
-├── css/
-│   ├── _src/                 # not copied to output
-│   │   ├── style.css
-│   │   └── components/
-│   └── style.generated.css   # → /css/style.generated.css
-└── ...
-```
-
-The same convention applies to theme `static/` directories. Top-level static deployment files `_headers` and `_redirects` are published. All underscore-prefixed entries inside page bundles remain private.
+Site and theme `_assets/` directories are build inputs outside their static trees. Every file in `static/` is explicitly published, including underscore-prefixed names such as `_headers` and `_redirects`. Keep private inputs outside `static/`.

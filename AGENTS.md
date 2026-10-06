@@ -15,6 +15,8 @@ kiln init-theme <name> [--root]                              # Scaffold a new th
 kiln convert --source <dir> --dest <dir>                     # Convert a Hugo site root into a kiln site root
 ```
 
+`kiln build` and `kiln serve` compile site / theme / page `_assets/css/style.css` sources into the output. Plain CSS is the default, and `[css] processor = "tailwind"` selects the official standalone CLI supplied by the Nix package. Sources remain private, and `static/` copies all files verbatim.
+
 Both `kiln build` and `kiln serve` run Pagefind search indexing automatically when `[search] enabled = true` in `config.toml`.
 
 `kiln convert` expects site roots. It reads `source/content`, writes to `dest/content`, and copies `source/static` to `dest/static` without overwriting existing destination files.
@@ -23,86 +25,90 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 
 ```text
 .
-├── config.toml   # Site configuration (TOML)
-├── content/      # Markdown content (posts, standalone pages)
-├── crates/kiln/  # SSG engine: library (lib.rs) + CLI binary (main.rs)
-├── public/       # Build output (configurable via output_dir)
-├── static/       # Static files copied to output root (favicons, images)
-├── templates/    # MiniJinja templates (site overrides theme)
-└── themes/       # Themes (git submodules), each with templates/ + static/
+├── _assets/       # Private stylesheet sources
+├── config.toml    # Site configuration (TOML)
+├── content/       # Markdown content (posts, standalone pages)
+├── crates/kiln/   # SSG engine: library (lib.rs) + CLI binary (main.rs)
+├── public/        # Build output (configurable via output_dir)
+├── static/        # Static files copied to output root (favicons, images)
+├── templates/     # MiniJinja templates (site overrides theme)
+└── themes/        # Themes (git submodules), each with templates/, _assets/, and static/
 ```
 
 ### Crate Structure (`crates/kiln/src/`)
 
 ````text
 .
-├── attrs.rs            # Pandoc-style `{#id .class key=value}` attribute parser, shared across renderers
-├── build.rs            # BuildContext, build orchestration, per-page rendering, static / asset copying
-├── build/              # Listing pipeline and output generator submodules
-│   ├── archive.rs      # Paginated year-grouped archive pages (/posts/, /posts/<section>/, /tags/<slug>/)
-│   ├── assets.rs       # Canonical page stylesheet publication and ordinary bundle asset copying
-│   ├── error.rs        # 404 error page generation
-│   ├── feed.rs         # RSS feed orchestration (main + per-section + per-term feeds)
-│   ├── git.rs          # Optional content-file commit timestamps for post templates
-│   ├── home.rs         # Paginated home page generation
-│   ├── listing.rs      # ListedPage model, single-pass ListingArtifacts construction, sorting / grouping helpers
-│   ├── overview.rs     # Bucket overview index pages (/sections/, /tags/)
-│   ├── paginate.rs     # Generic write_paginated, paginate_config
-│   ├── sitemap.rs      # sitemap.xml + robots.txt generation
-│   └── url.rs          # page_url, resolve_relative_url: build-time URL resolution helpers
-├── config.rs           # TOML site configuration loading, theme resolution, param merging
-├── content.rs          # Module declarations for content/ submodules
-├── content/            # Content model submodules
-│   ├── discovery.rs    # Recursive content walking with draft / _-prefix / no-frontmatter exclusion
-│   ├── frontmatter.rs  # TOML frontmatter parsing (+++), Frontmatter / FeaturedImage / ImageCredit
-│   └── page.rs         # Page struct, PageKind, slug derivation, summary, output paths, co-located assets
-├── convert.rs          # Hugo → kiln content converter orchestrator
-├── convert/            # Hugo → kiln converter submodules
-│   ├── frontmatter.rs  # YAML → TOML frontmatter serde round-trip
-│   └── shortcode.rs    # Hugo shortcode → kiln directive conversion
-├── directive.rs        # Directive shared types (CalloutKind, DirectiveKind, DirectiveContext) + arg parser
-├── directive/          # :::-fenced directive parsing + rendering submodules
-│   ├── callout.rs      # 12 callout types (<details> with id / class propagation)
-│   ├── div.rs          # Fenced divs and unknown directives (<div> with id / class propagation)
-│   └── parser.rs       # Line-based stack parser, nesting, single-pass arg + Pandoc attr parsing
-├── feed.rs             # RSS 2.0 XML generation (Channel, generate_rss, RFC 2822 date formatting)
-├── html.rs             # Shared HTML utilities (escape, indent, writeln_indented)
-├── i18n.rs             # Layered i18n resolver (site → theme lang → theme English), t() with placeholder interpolation
-├── init.rs             # Theme scaffolding (kiln init-theme)
-├── markdown.rs         # Shared raw-markdown text utilities (code fence detection, code span scanning)
-├── minify.rs           # Post-build HTML / CSS / JS minification (lightningcss, oxc_minifier, minify-html)
-├── output.rs           # File output, static file copying, output directory cleaning
-├── pagination.rs       # Paginator for windowed views over slices, page URL computation
-├── render.rs           # RenderOptions struct + render submodule declarations
-├── render/             # Markdown rendering pipeline submodules
-│   ├── assets.rs       # PageAssets registry: scripts + auto-detected Feature flags (Math, Mermaid)
-│   ├── code_block.rs   # Fence info-string parsing → CodeBlockSpec (lang, title, highlights, collapse / expand)
-│   ├── emoji.rs        # GitHub-style :shortcode: → Unicode emoji replacement
-│   ├── footnote.rs     # Footnote relocation into an end-of-document list with per-reference backlinks
-│   ├── heading.rs      # Hierarchical heading numbering and shared number markup
-│   ├── highlight.rs    # syntect + two-face CSS-class highlighting with line numbers, header (lang or title)
-│   ├── icon.rs         # :(class): → <i> FontAwesome icon shortcode replacement
-│   ├── image.rs        # Block (<figure>) and inline (<img>) image rendering, lazy loading, <span class="lqip"> wrapper emission
-│   ├── image_attrs.rs  # Pandoc-style {#id .class width=N} extraction for images
-│   ├── lqip.rs         # ImageResolver: on-disk dimension reads + base64 WebP placeholder encoding (consumed via the .lqip wrapper)
-│   ├── markdown.rs     # pulldown-cmark, GFM, CJK heading IDs, KaTeX, block / inline images
-│   ├── mermaid.rs      # `<pre class="mermaid">` emit for `` ```mermaid `` fences (with data-source mirror)
-│   ├── page_ids.rs     # Shared page-wide ID allocation for headings and footnotes
-│   ├── pipeline.rs     # Full pipeline: directives → pre-processors → markdown → ToC
-│   ├── table.rs        # `nowrap` class on cells of short table columns
-│   └── toc.rs          # TocEntry struct, nested <nav> table of contents generation
-├── search.rs           # Pagefind search indexing (external binary invocation)
-├── section.rs          # Section struct, collect_sections() from page kinds, _index.md title loading
-├── serve.rs            # Dev server with file watching, WebSocket live reload, script injection
-├── sitemap.rs          # Sitemap XML + robots.txt generation
-├── static_assets.rs    # Merged static asset manifest + content-hashed CSS / JS publication
-├── taxonomy.rs         # TaxonomyKind, Taxonomy, Term, TaxonomySet, build_taxonomies()
-├── template.rs         # MiniJinja layered template engine, directive / archive / overview / error rendering
-├── template/           # Template submodules
-│   ├── functions.rs    # MiniJinja template functions (now, read_file, parse_csv, t, register_script)
-│   └── vars.rs         # Template variables structs (PostTemplateVars, PageSummary, etc.)
-├── test_utils.rs       # Shared test infrastructure (templates, helpers, Page factory)
-└── text.rs             # Shared format-agnostic text utilities (slugify, titlecase)
+├── attrs.rs             # Pandoc-style `{#id .class key=value}` attribute parser, shared across renderers
+├── build.rs             # BuildContext, build orchestration, per-page rendering, static / asset copying
+├── build/               # Listing pipeline and output generator submodules
+│   ├── archive.rs       # Paginated year-grouped archive pages (/posts/, /posts/<section>/, /tags/<slug>/)
+│   ├── assets.rs        # Ordinary bundle asset copying before stylesheet compilation
+│   ├── error.rs         # 404 error page generation
+│   ├── feed.rs          # RSS feed orchestration (main + per-section + per-term feeds)
+│   ├── git.rs           # Optional content-file commit timestamps for post templates
+│   ├── home.rs          # Paginated home page generation
+│   ├── listing.rs       # ListedPage model, single-pass ListingArtifacts construction, sorting / grouping helpers
+│   ├── overview.rs      # Bucket overview index pages (/sections/, /tags/)
+│   ├── paginate.rs      # Generic write_paginated, paginate_config
+│   ├── sitemap.rs       # sitemap.xml + robots.txt generation
+│   └── url.rs           # page_url, resolve_relative_url: build-time URL resolution helpers
+├── config.rs            # TOML site configuration loading, theme resolution, param merging
+├── content.rs           # Content submodule declarations and shared private-name predicate
+├── content/             # Content model submodules
+│   ├── discovery.rs     # Recursive content walking with draft / _-prefix / no-frontmatter exclusion
+│   ├── frontmatter.rs   # TOML frontmatter parsing (+++), Frontmatter / FeaturedImage / ImageCredit
+│   └── page.rs          # Page struct, PageKind, slug derivation, summary, output paths, co-located assets
+├── convert.rs           # Hugo → kiln content converter orchestrator
+├── convert/             # Hugo → kiln converter submodules
+│   ├── frontmatter.rs   # YAML → TOML frontmatter serde round-trip
+│   └── shortcode.rs     # Hugo shortcode → kiln directive conversion
+├── css.rs               # Shared / page CSS discovery, compilation, and published asset URL resolution
+├── directive.rs         # Directive shared types (CalloutKind, DirectiveKind, DirectiveContext) + arg parser
+├── directive/           # :::-fenced directive parsing + rendering submodules
+│   ├── callout.rs       # 12 callout types (<details> with id / class propagation)
+│   ├── div.rs           # Fenced divs and unknown directives (<div> with id / class propagation)
+│   └── parser.rs        # Line-based stack parser, nesting, single-pass arg + Pandoc attr parsing
+├── feed.rs              # RSS 2.0 XML generation (Channel, generate_rss, RFC 2822 date formatting)
+├── html.rs              # Shared HTML utilities (escape, indent, writeln_indented)
+├── i18n.rs              # Layered i18n resolver (site → theme lang → theme English), t() with placeholder interpolation
+├── init.rs              # Theme scaffolding (kiln init-theme)
+├── lib.rs               # Library module declarations
+├── main.rs              # CLI argument parsing and command dispatch
+├── markdown.rs          # Shared raw-markdown text utilities (code fence detection, code span scanning)
+├── minify.rs            # Post-build HTML / CSS / JS minification (lightningcss, oxc_minifier, minify-html)
+├── output.rs            # File output, static file copying, output directory cleaning
+├── pagination.rs        # Paginator for windowed views over slices, page URL computation
+├── render.rs            # RenderOptions struct + render submodule declarations
+├── render/              # Markdown rendering pipeline submodules
+│   ├── assets.rs        # PageAssets registry: scripts + auto-detected Feature flags (Math, Mermaid)
+│   ├── code_block.rs    # Fence info-string parsing → CodeBlockSpec (lang, title, highlights, collapse / expand)
+│   ├── emoji.rs         # GitHub-style :shortcode: → Unicode emoji replacement
+│   ├── footnote.rs      # Footnote relocation into an end-of-document list with per-reference backlinks
+│   ├── heading.rs       # Hierarchical heading numbering and shared number markup
+│   ├── highlight.rs     # syntect + two-face CSS-class highlighting with line numbers, header (lang or title)
+│   ├── icon.rs          # :(class): → <i> FontAwesome icon shortcode replacement
+│   ├── image.rs         # Block (<figure>) and inline (<img>) image rendering, lazy loading, <span class="lqip"> wrapper emission
+│   ├── image_attrs.rs   # Pandoc-style {#id .class width=N} extraction for images
+│   ├── lqip.rs          # ImageResolver: on-disk dimension reads + base64 WebP placeholder encoding (consumed via the .lqip wrapper)
+│   ├── markdown.rs      # pulldown-cmark, GFM, CJK heading IDs, KaTeX, block / inline images
+│   ├── mermaid.rs       # `<pre class="mermaid">` emit for `` ```mermaid `` fences (with data-source mirror)
+│   ├── page_ids.rs      # Shared page-wide ID allocation for headings and footnotes
+│   ├── pipeline.rs      # Full pipeline: directives → pre-processors → markdown → ToC
+│   ├── table.rs         # `nowrap` class on cells of short table columns
+│   └── toc.rs           # TocEntry struct, nested <nav> table of contents generation
+├── search.rs            # Pagefind search indexing (external binary invocation)
+├── section.rs           # Section struct, collect_sections() from page kinds, _index.md title loading
+├── serve.rs             # Dev server with file watching, WebSocket live reload, script injection
+├── sitemap.rs           # Sitemap XML + robots.txt generation
+├── static_assets.rs     # Merged static asset manifest + content-hashed CSS / JS publication
+├── taxonomy.rs          # TaxonomyKind, Taxonomy, Term, TaxonomySet, build_taxonomies()
+├── template.rs          # MiniJinja layered template engine, directive / archive / overview / error rendering
+├── template/            # Template submodules
+│   ├── functions.rs     # MiniJinja template functions (now, read_file, parse_csv, t, register_script)
+│   └── vars.rs          # Template variables structs (PostTemplateVars, PageSummary, etc.)
+├── test_utils.rs        # Shared test infrastructure (templates, helpers, Page factory)
+└── text.rs              # Shared format-agnostic text utilities (slugify, titlecase)
 ````
 
 ## Coding Conventions
@@ -208,7 +214,7 @@ Follows global CLAUDE.md commit / branch / PR conventions, plus:
 
 ## Nix Development
 
-`flake.nix` pins the Rust toolchain, `libdav1d` (AVIF), `pagefind`, and `git-cliff` for the dev shell. It also exposes `packages.{default,kiln,pagefind}` so site repos can consume kiln as a flake input (`inputs.kiln.url = "github:hakula139/kiln";`). `kiln` is source-built with dav1d wired in by Nix, and `pagefind` is a vendored prebuilt under `packages/pagefind/`.
+`flake.nix` pins the Rust toolchain, `libdav1d` (AVIF), `pagefind`, `tailwindcss`, and `git-cliff` for the dev shell. It also exposes `packages.{default,kiln,pagefind,tailwindcss}` so site repos can consume kiln as a flake input (`inputs.kiln.url = "github:hakula139/kiln";`). `kiln` is source-built with dav1d wired in by Nix, and `pagefind` is a vendored prebuilt under `packages/pagefind/`.
 
 ```bash
 nix develop                            # interactive shell (for hacking on kiln)

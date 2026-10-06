@@ -79,7 +79,7 @@ To use kiln in another flake, add this input:
 
 ```nix
 inputs.kiln.url = "github:hakula139/kiln";
-# Outputs: packages.${system}.{default,kiln,pagefind}
+# Outputs: packages.${system}.{default,kiln,pagefind,tailwindcss}
 ```
 
 `pagefind` ships alongside `kiln` so consumers don't have to pin the search backend separately.
@@ -98,20 +98,26 @@ kiln init-theme my-theme                                  # Scaffold a new theme
 kiln convert --source /path/to/hugo --dest /path/to/kiln  # Convert a Hugo site
 ```
 
+### Stylesheets
+
+Keep handwritten CSS at `_assets/css/style.css` in the site, theme, or page bundle. `kiln build` and `kiln serve` compile it automatically, bundle local imports, rewrite relative asset URLs, and publish fingerprinted CSS only in the build output. Page stylesheets load only on their owning page.
+
+Plain CSS with imports and nesting works without an external compiler. For Tailwind themes, install the official `tailwindcss` standalone CLI on `PATH`. kiln's Nix package supplies it automatically. Select the processor with `[css] processor = "tailwind"` in `theme.toml` or `config.toml`. See [Stylesheets](docs/themes.md#stylesheets) for source overrides and template links.
+
 ### Static Asset URLs
 
-Use `asset_url()` in templates when referencing a file from the merged theme and site `static/` trees:
+Use `asset_url()` in templates when referencing compiled CSS or a file from the merged theme and site `static/` trees:
 
 ```jinja
-<link rel="stylesheet" href="{{ asset_url('/css/style.generated.css') | safe }}">
+<link rel="stylesheet" href="{{ asset_url('/css/style.css') | safe }}">
 <script src="{{ asset_url('/js/app.js') | safe }}"></script>
 ```
 
-kiln copies CSS and JS to names containing the first 12 hexadecimal characters of their SHA-256 digest, such as `/css/style.generated.a1b2c3d4e5f6.css`. Other static files keep their original URLs. A missing path fails the build.
+kiln copies CSS and JS to names containing the first 12 hexadecimal characters of their SHA-256 digest, such as `/css/style.a1b2c3d4e5f6.css`. Other static files keep their original URLs. A missing path fails the build.
 
 The original CSS / JS files remain in the output because relative imports and existing hard-coded references may still depend on them. Templates using `asset_url()` receive the fingerprinted URL.
 
-The digest covers one file. Bundle self-contained entry assets before passing them to kiln because relative CSS imports and JavaScript module imports continue to use their original URLs.
+The digest covers one file. kiln bundles local imports in stylesheet sources. Prebuilt static CSS and JavaScript retain their import URLs, so bundle those entry assets separately when their dependencies need fingerprinted URLs.
 
 ### Minification
 
@@ -145,7 +151,7 @@ cargo build --release  # Binary at target/release/kiln
 
 ### Reproducible dev shell (Nix)
 
-For hacking on kiln itself, the shipped `flake.nix` pins the Rust toolchain, `libdav1d`, `pagefind`, `git-cliff`, and pre-commit hooks:
+For hacking on kiln itself, the shipped `flake.nix` pins the Rust toolchain, `libdav1d`, `pagefind`, `tailwindcss`, `git-cliff`, and pre-commit hooks:
 
 ```bash
 nix develop      # interactive shell

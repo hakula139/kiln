@@ -1,6 +1,6 @@
 # Themes
 
-kiln uses a theme system that separates site content from presentation. Themes provide templates, static assets, and default parameters. Site-level files always take precedence over theme files when both exist at the same path.
+kiln uses a theme system that separates site content from presentation. Themes provide templates, stylesheet sources, static assets, and default parameters. Site-level files always take precedence over theme files when both exist at the same path.
 
 ## Installation
 
@@ -25,17 +25,18 @@ A theme lives in `themes/<name>/` and follows this layout:
 
 ```text
 themes/IgnIt/
-├── static/                   # Static assets (CSS, JS, images)
-├── templates/                # MiniJinja templates
-│   ├── base.html             # Base layout
-│   ├── directives/           # Directive templates (optional)
-│   │   └── site.html         # Renders ::: site directives
-│   ├── archive.html          # Year-grouped archive page (e.g., /posts/, /tags/rust/)
-│   ├── home.html             # Home page with paginated post listing
-│   ├── overview.html         # Bucket overview page (e.g., /tags/, /sections/)
-│   ├── page.html             # Standalone page (about, etc.)
-│   └── post.html             # Post page template
-└── theme.toml                # Theme metadata and default parameters
+├── _assets/css/style.css   # Shared stylesheet source
+├── static/                 # Static assets (CSS, JS, images)
+├── templates/              # MiniJinja templates
+│   ├── base.html           # Base layout
+│   ├── directives/         # Directive templates (optional)
+│   │   └── site.html       # Renders ::: site directives
+│   ├── archive.html        # Year-grouped archive page (e.g., /posts/, /tags/rust/)
+│   ├── home.html           # Home page with paginated post listing
+│   ├── overview.html       # Bucket overview page (e.g., /tags/, /sections/)
+│   ├── page.html           # Standalone page (about, etc.)
+│   └── post.html           # Post page template
+└── theme.toml              # Theme metadata and default parameters
 ```
 
 ### `theme.toml`
@@ -53,10 +54,11 @@ fontawesome = true
 
 All fields are optional. kiln uses the following:
 
-| Field              | Description                                         |
-| ------------------ | --------------------------------------------------- |
-| `min_kiln_version` | Minimum kiln version (semver). Build fails if unmet |
-| `[params]`         | Default parameters that sites can override          |
+| Field              | Description                                                  |
+| ------------------ | ------------------------------------------------------------ |
+| `min_kiln_version` | Minimum kiln version (semver). Build fails if unmet          |
+| `[css]`            | Stylesheet processor, inherited unless the site overrides it |
+| `[params]`         | Default parameters that sites can override                   |
 
 The theme name is inferred from the directory name (e.g., `themes/IgnIt/` → `"IgnIt"`).
 
@@ -90,11 +92,11 @@ To override a theme template, place a file with the same name in your site's `te
 ```text
 my-site/
 ├── templates/
-│   └── post.html             # ← overrides theme's post.html
+│   └── post.html       # ← overrides theme's post.html
 └── themes/IgnIt/
     └── templates/
-        ├── base.html         # used (no site override)
-        └── post.html         # overridden by site's version
+        ├── base.html   # used (no site override)
+        └── post.html   # overridden by site's version
 ```
 
 This works for all templates, including directive templates under `templates/directives/`.
@@ -111,12 +113,46 @@ When both the site and theme provide a file at the same path, the site's version
 ```text
 my-site/
 ├── static/
-│   └── shared.css            # ← wins over theme's shared.css
+│   └── shared.css       # ← wins over theme's shared.css
 └── themes/IgnIt/
     └── static/
-        ├── theme.css         # copied (no site override)
-        └── shared.css        # overridden by site's version
+        ├── theme.css    # copied (no site override)
+        └── shared.css   # overridden by site's version
 ```
+
+### Stylesheets
+
+The shared stylesheet entry is `_assets/css/style.css` in the site or theme. A site entry takes precedence over the theme entry. To extend the theme's styles, import its source explicitly:
+
+```css
+@import "../../themes/my-theme/_assets/css/style.css";
+
+.site-banner {
+  font-weight: bold;
+}
+```
+
+`kiln build` and `kiln serve` compile the selected entry to `css/style.css` in the build output. No generated CSS is written to the source tree. Local imports are bundled, nested CSS is supported, and relative asset URLs are rewritten from their source locations to published static files. External and root-relative URLs pass through unchanged.
+
+Plain CSS is the default. A theme can select Tailwind CSS in `theme.toml`, and a site can override the same field in `config.toml`:
+
+```toml
+[css]
+processor = "tailwind"
+```
+
+Tailwind uses the official `tailwindcss` standalone CLI on `PATH`. kiln's Nix package supplies the pinned compiler. Other installations need the CLI installed separately when using a Tailwind theme. kiln runs compilation automatically and reports compiler failures as build errors. Themes provide CSS sources and configuration, without a compiler script or separate watch command.
+
+kiln supplies Tailwind source scanning for content and site / theme templates. [Page stylesheets](content.md#per-page-css) receive the selected shared entry through `@reference`, so they can use its theme definitions and utilities without emitting the shared stylesheet again.
+
+Templates link shared CSS through `asset_url()` and include `page_css` only in post / page templates:
+
+```jinja
+<link rel="stylesheet" href="{{ asset_url('/css/style.css') | safe }}">
+{% if page_css %}<link rel="stylesheet" href="{{ page_css | safe }}">{% endif %}
+```
+
+`kiln serve` watches site and theme sources and rebuilds stylesheets with the rest of the site. Page CSS is included only on its owning page. Its selectors still share the document with theme components, so use a page wrapper when selectors need a narrower scope.
 
 ### Parameter Merging
 
@@ -166,11 +202,15 @@ This creates the following structure under `themes/my-theme/`:
 
 ```text
 themes/my-theme/
-├── static/             # Empty directory for CSS, JS, images
+├── _assets/css/style.css   # Starter plain CSS
+├── i18n/                   # Starter translation tables
+│   ├── en.toml
+│   └── zh-Hans.toml
+├── static/                 # Empty directory for public files
 ├── templates/
-│   ├── base.html       # Minimal base layout with block inheritance
-│   └── post.html       # Post template extending base.html
-└── theme.toml          # Empty (all fields are optional)
+│   ├── base.html           # Minimal base layout with block inheritance
+│   └── post.html           # Post template extending base.html
+└── theme.toml              # Empty (all fields are optional)
 ```
 
 Set `theme = "my-theme"` in your site's `config.toml` to use it. From there, customize the templates and add static assets as needed.
@@ -182,7 +222,7 @@ To create a theme manually instead:
 1. Create the theme directory structure:
 
    ```bash
-   mkdir -p themes/my-theme/templates themes/my-theme/static
+   mkdir -p themes/my-theme/{_assets/css,templates,static}
    ```
 
 2. Add an empty `theme.toml` (all fields are optional):
@@ -199,6 +239,7 @@ To create a theme manually instead:
      <head>
        <meta charset="utf-8">
        {% block title %}<title>{{ config.title }}</title>{% endblock %}
+       <link rel="stylesheet" href="{{ asset_url('/css/style.css') | safe }}">
        {% block head %}{% endblock %}
      </head>
      <body>
@@ -214,6 +255,10 @@ To create a theme manually instead:
 
    {% block title %}<title>{{ title }} - {{ config.title }}</title>{% endblock %}
 
+   {% block head %}
+   {% if page_css %}<link rel="stylesheet" href="{{ page_css | safe }}">{% endif %}
+   {% endblock %}
+
    {% block body %}
    <article>
      <h1>{{ title }}</h1>
@@ -222,7 +267,9 @@ To create a theme manually instead:
    {% endblock %}
    ```
 
-5. Set `theme = "my-theme"` in your site's `config.toml`.
+5. Add your stylesheet at `themes/my-theme/_assets/css/style.css`.
+
+6. Set `theme = "my-theme"` in your site's `config.toml`.
 
 ### Template Variables
 
@@ -238,7 +285,7 @@ Whenever a template variable includes a page `date` or `updated`, kiln renders i
 | `description`     | string           | Post description                                                 |
 | `url`             | string           | Canonical URL of the post                                        |
 | `featured_image`  | object or `none` | Featured image (see below)                                       |
-| `page_css`        | string or `none` | Fingerprint URL to `assets/css/style.generated.css` (if any)     |
+| `page_css`        | string or `none` | Fingerprint URL to the compiled page stylesheet (if any)         |
 | `date`            | string or `none` | Publication date (ISO 8601)                                      |
 | `updated`         | string or `none` | Last update (ISO 8601; see [frontmatter](syntax.md#frontmatter)) |
 | `tags`            | list of objects  | Tags with `name` and `url` fields                                |
@@ -457,16 +504,16 @@ When `kwargs` are supplied, Python-style `{name}` placeholders in the string are
 
 #### `asset_url(path)`
 
-Resolves a root-relative path from the merged theme and site `static/` trees or a canonical page stylesheet. CSS and JS receive a filename containing the first 12 hexadecimal characters of their SHA-256 digest. Other static files keep their original URL. The build fails when the path is missing or contains a query, fragment, or traversal component.
+Resolves a root-relative path from the merged theme and site `static/` trees or compiled shared / page stylesheets. CSS and JS receive a filename containing the first 12 hexadecimal characters of their SHA-256 digest. Other static files keep their original URL. The build fails when the path is missing or contains a query, fragment, or traversal component.
 
 ```jinja
-<link rel="stylesheet" href="{{ asset_url('/css/style.generated.css') | safe }}">
+<link rel="stylesheet" href="{{ asset_url('/css/style.css') | safe }}">
 <script src="{{ asset_url('/js/app.js') | safe }}"></script>
 ```
 
 When `kiln build --minify` is used, shared CSS and JS are minified before kiln computes the digest. The fingerprint therefore identifies the bytes published under that URL.
 
-The digest covers only the referenced file. Bundle self-contained entry assets before passing them to kiln because relative CSS imports and JavaScript module imports keep their original URLs.
+The digest covers only the referenced file. kiln bundles local CSS imports in `_assets/css/style.css` entries. Prebuilt static CSS and JavaScript keep their import URLs, so bundle those entry assets before publication when their dependencies need fingerprinted URLs.
 
 #### `register_script(url, load="defer", module=false)`
 
@@ -612,11 +659,11 @@ kiln supports translatable strings via a layered i18n system. Themes ship defaul
 
 ```text
 themes/my-theme/i18n/
-├── en.toml              # Ultimate fallback (required if any other file exists)
-└── zh-Hans.toml         # Additional language (BCP 47 tag)
+├── en.toml             # Ultimate fallback (required if any other file exists)
+└── zh-Hans.toml        # Additional language (BCP 47 tag)
 
 my-site/i18n/
-└── zh-Hans.toml         # Site-level overrides for the active language
+└── zh-Hans.toml        # Site-level overrides for the active language
 ```
 
 The active language comes from `language` in `config.toml` (default `"en"`). Language tags follow [BCP 47](https://www.rfc-editor.org/info/bcp47) (e.g., `en`, `zh-Hans`, `ja`).
