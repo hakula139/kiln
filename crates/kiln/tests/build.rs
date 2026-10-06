@@ -585,6 +585,16 @@ fn build_keeps_root_page_css_separate_from_shared_css() {
     );
     write_test_file(
         root.path(),
+        "content/loose.md",
+        indoc! {r#"
+            +++
+            title = "Loose"
+            +++
+            Body
+        "#},
+    );
+    write_test_file(
+        root.path(),
         "assets/css/_src/style.css",
         ".shared { color: red; }",
     );
@@ -612,6 +622,9 @@ fn build_keeps_root_page_css_separate_from_shared_css() {
         "{html}"
     );
     assert!(!public.join("assets/css/_src").exists());
+    let loose = fs::read_to_string(public.join("loose/index.html")).unwrap();
+    assert!(!loose.contains("stylesheet"), "{loose}");
+    assert!(!public.join("loose/assets/css/page.css").exists());
 }
 
 #[test]
@@ -943,6 +956,37 @@ fn build_compiles_tailwind_imports_through_public_bundle_aliases() {
         "image"
     );
     assert!(!output.join("_assets").exists());
+}
+
+#[test]
+fn build_with_invalid_tailwind_utility_returns_error() {
+    let root = tempfile::tempdir().unwrap();
+    write_test_file(
+        root.path(),
+        "config.toml",
+        indoc! {r#"
+            [css]
+            processor = "tailwind"
+        "#},
+    );
+    copy_templates(&root.path().join("templates"));
+    write_test_file(
+        root.path(),
+        "assets/css/_src/style.css",
+        indoc! {r#"
+            @import "tailwindcss" source(none);
+            .invalid { @apply kiln-unknown-utility; }
+        "#},
+    );
+
+    let error = build(root.path(), BuildOptions::default()).unwrap_err();
+    let message = format!("{error:#}");
+    assert!(message.contains("assets/css/_src/style.css"), "{message}");
+    assert!(message.contains("Tailwind CSS exited with"), "{message}");
+    assert!(
+        message.contains("Cannot apply unknown utility class `kiln-unknown-utility`"),
+        "{message}"
+    );
 }
 
 // ── build: theme ──
