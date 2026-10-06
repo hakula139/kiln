@@ -1,6 +1,6 @@
 # Benchmarks
 
-Run benchmarks in the Nix development shell. `cargo bench --bench performance` uses [Criterion](https://criterion-rs.github.io/book/) with the repository's optimized profile. Fixture creation and output checks happen before sampling. Reports and saved samples live under `target/criterion/` (or `$CARGO_TARGET_DIR/criterion/` when configured).
+Run benchmarks in the Nix development shell. `cargo bench --bench performance` uses [Criterion](https://criterion-rs.github.io/book/) with the repository's optimized profile. Fixture creation and output checks happen before sampling. Reports and saved samples live under `criterion/` beside the compiled benchmark's profile directory, normally `target/criterion/`. A configured Cargo target directory or explicit target triple also determines the report location.
 
 ```bash
 cargo bench --bench performance

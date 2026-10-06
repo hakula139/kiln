@@ -11,14 +11,23 @@ mod render;
 #[path = "performance/shortcodes.rs"]
 mod shortcodes;
 
-use criterion::{criterion_group, criterion_main};
+use criterion::{Criterion, criterion_group, criterion_main};
 
-criterion_group!(
-    benches,
-    shortcodes::benchmarks,
-    options::benchmarks,
-    render::benchmarks,
-    images::benchmarks,
-    build::benchmarks,
-);
+criterion_group! {
+    name = benches;
+    config = benchmark_configuration();
+    targets =
+        shortcodes::benchmarks,
+        options::benchmarks,
+        render::benchmarks,
+        images::benchmarks,
+        build::benchmarks,
+}
 criterion_main!(benches);
+
+fn benchmark_configuration() -> Criterion {
+    // Cargo runs benchmark executables from <target>/<profile>/deps/.
+    let executable = std::env::current_exe().unwrap();
+    let target_dir = executable.ancestors().nth(3).unwrap();
+    Criterion::default().output_directory(&target_dir.join("criterion"))
+}
