@@ -43,19 +43,14 @@ pub fn convert(source: &Path, dest: &Path) -> Result<()> {
 
         let file_name = rel_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
-        if file_name == "_index.md" {
-            if let Some(dest_path) = index_dest_path(rel_path, &content_dest)
-                && !dest_path.exists()
-            {
-                if let Some(parent) = dest_path.parent() {
-                    fs::create_dir_all(parent)?;
-                }
-                convert_or_copy_markdown(entry.path(), &dest_path)?;
-            }
-            continue;
-        }
-
-        let dest_path = content_dest.join(rel_path);
+        let dest_path = if file_name == "_index.md" {
+            let Some(path) = index_dest_path(rel_path, &content_dest) else {
+                continue;
+            };
+            path
+        } else {
+            content_dest.join(rel_path)
+        };
 
         if dest_path.exists() {
             continue;

@@ -41,8 +41,7 @@ pub struct PageSummary {
     pub title: String,
     pub url: String,
     pub date: Option<String>,
-    /// True when the page has `weight` set in frontmatter. Themes use it to render a pinned-post
-    /// visual treatment, since the canonical sort already puts pinned posts at the top.
+    /// True when frontmatter sets `weight`. Home listings place pinned posts first.
     pub pinned: bool,
     pub description: String,
     pub featured_image: Option<FeaturedImage>,

@@ -1,9 +1,12 @@
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
-use std::process::Command;
 
 use indoc::{formatdoc, indoc};
+
+#[path = "support/cli.rs"]
+mod support;
+
+use support::{kiln, write_executable_file, write_test_file};
 
 // ── build ──
 
@@ -12,15 +15,14 @@ fn build_summary_counts_generated_pages_and_includes_search_time() {
     let root = tempfile::tempdir().unwrap();
     write_site(root.path());
     for name in ["home", "archive", "overview", "404"] {
-        write_file(
+        write_test_file(
             root.path(),
             &format!("templates/{name}.html"),
             "<p>Generated page</p>",
         );
     }
 
-    let binary = root.path().join("pagefind");
-    write_file(
+    let binary = write_executable_file(
         root.path(),
         "pagefind",
         indoc! {r"
@@ -30,7 +32,6 @@ fn build_summary_counts_generated_pages_and_includes_search_time() {
             echo 'Search warning' >&2
         "},
     );
-    fs::set_permissions(&binary, fs::Permissions::from_mode(0o755)).unwrap();
 
     let config = root.path().join("config.toml");
     let mut config_text = fs::read_to_string(&config).unwrap();
@@ -43,12 +44,8 @@ fn build_summary_counts_generated_pages_and_includes_search_time() {
     fs::write(config, config_text).unwrap();
 
     for log_filter in [None, Some("kiln::search=debug")] {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_kiln"));
-        command
-            .args(["build", "--root"])
-            .arg(root.path())
-            .env_remove("KILN_BASE_URL")
-            .env_remove("RUST_LOG");
+        let mut command = kiln();
+        command.args(["build", "--root"]).arg(root.path());
         if let Some(value) = log_filter {
             command.env("RUST_LOG", value);
         }
@@ -110,11 +107,9 @@ fn build_summary_skips_missing_templates_and_disabled_search_with_minify() {
     let root = tempfile::tempdir().unwrap();
     write_site(root.path());
 
-    let output = Command::new(env!("CARGO_BIN_EXE_kiln"))
+    let output = kiln()
         .args(["build", "--minify", "--root"])
         .arg(root.path())
-        .env_remove("KILN_BASE_URL")
-        .env_remove("RUST_LOG")
         .output()
         .unwrap();
 
@@ -135,7 +130,7 @@ fn build_summary_skips_missing_templates_and_disabled_search_with_minify() {
 }
 
 fn write_site(root: &Path) {
-    write_file(
+    write_test_file(
         root,
         "config.toml",
         indoc! {r#"
@@ -146,10 +141,10 @@ fn write_site(root: &Path) {
             paginate = 2
         "#},
     );
-    write_file(root, "templates/post.html", "{{ content | safe }}");
-    write_file(root, "static/extra.html", "<p>Copied HTML</p>");
+    write_test_file(root, "templates/post.html", "{{ content | safe }}");
+    write_test_file(root, "static/extra.html", "<p>Copied HTML</p>");
     for (slug, draft) in [("a", false), ("b", false), ("c", false), ("draft", true)] {
-        write_file(
+        write_test_file(
             root,
             &format!("content/posts/topic/{slug}/index.md"),
             &formatdoc! {r#"
@@ -163,10 +158,4 @@ fn write_site(root: &Path) {
             "#},
         );
     }
-}
-
-fn write_file(root: &Path, path: &str, content: &str) {
-    let dest = root.join(path);
-    fs::create_dir_all(dest.parent().unwrap()).unwrap();
-    fs::write(dest, content).unwrap();
 }

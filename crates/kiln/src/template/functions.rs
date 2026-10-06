@@ -188,3 +188,64 @@ pub(super) fn tpl_register_script(
 
     Ok("")
 }
+
+#[cfg(test)]
+mod tests {
+    use indoc::indoc;
+
+    use super::*;
+
+    // ── tpl_parse_csv ──
+
+    #[test]
+    fn tpl_parse_csv_basic() {
+        let rows = tpl_parse_csv(indoc! {"
+            A,B
+            1,2
+            3,4
+        "})
+        .unwrap();
+
+        assert_eq!(
+            rows,
+            minijinja::Value::from_serialize([["A", "B"], ["1", "2"], ["3", "4"]])
+        );
+    }
+
+    #[test]
+    fn tpl_parse_csv_quoted_fields() {
+        let rows = tpl_parse_csv(indoc! {r#"
+            name,value
+            "field with, comma","has ""quotes"""
+        "#})
+        .unwrap();
+
+        assert_eq!(
+            rows,
+            minijinja::Value::from_serialize([
+                ["name", "value"],
+                ["field with, comma", r#"has "quotes""#],
+            ])
+        );
+    }
+
+    #[test]
+    fn tpl_parse_csv_empty_input() {
+        assert_eq!(
+            tpl_parse_csv("").unwrap(),
+            minijinja::Value::from(Vec::<minijinja::Value>::new())
+        );
+    }
+
+    #[test]
+    fn tpl_parse_csv_unequal_lengths_returns_error() {
+        let error = tpl_parse_csv(indoc! {"
+            a,b
+            only-one
+        "})
+        .unwrap_err();
+
+        assert_eq!(error.kind(), minijinja::ErrorKind::InvalidOperation);
+        assert!(error.detail().unwrap().starts_with("CSV parse error: "));
+    }
+}

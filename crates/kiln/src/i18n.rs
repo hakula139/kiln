@@ -47,8 +47,8 @@ impl I18n {
     ///
     /// # Errors
     ///
-    /// Returns an error if a theme i18n directory has locale files but no `en.toml`, or if any
-    /// loaded file is not a flat table of string values.
+    /// Returns an error if the language tag is invalid, locale files cannot be read, a theme
+    /// with locale files lacks `en.toml`, or a loaded file is not a flat table of strings.
     pub fn load(site_root: &Path, theme_dir: Option<&Path>, language: &str) -> Result<Self> {
         // Paths below interpolate `language` into filenames, so guard against traversal or
         // oddly-shaped tags before anything touches the FS.
@@ -114,8 +114,7 @@ impl I18n {
         if let Some(value) = self.inner.strings.get(key) {
             return Cow::Borrowed(value);
         }
-        // Miss path always allocates: borrowing `key` here would tie the returned `Cow` to the
-        // caller's stack, forcing every call site to immediately clone.
+        // Owning a missing key keeps the result independent of the key's lifetime.
         Cow::Owned(key.to_owned())
     }
 
@@ -127,6 +126,20 @@ impl I18n {
     pub fn t_interp(&self, key: &str, args: &BTreeMap<&str, &str>) -> String {
         let template = self.t(key);
         interpolate(&template, args, |warning| self.emit_warning(key, warning))
+    }
+
+    fn emit_warning(&self, key: &str, warning: InterpolateWarning<'_>) {
+        let warn_key = match warning {
+            InterpolateWarning::MissingPlaceholder(name) => WarnKey::MissingPlaceholder {
+                key: key.to_owned(),
+                name: name.to_owned(),
+            },
+            InterpolateWarning::UnclosedPlaceholder(partial) => WarnKey::UnclosedPlaceholder {
+                key: key.to_owned(),
+                partial: partial.to_owned(),
+            },
+        };
+        self.warn_once(warn_key);
     }
 
     fn warn_once(&self, warning: WarnKey) {
@@ -145,20 +158,6 @@ impl I18n {
                 tracing::warn!(key, partial, "unclosed placeholder in i18n key");
             }
         }
-    }
-
-    fn emit_warning(&self, key: &str, warning: InterpolateWarning<'_>) {
-        let warn_key = match warning {
-            InterpolateWarning::MissingPlaceholder(name) => WarnKey::MissingPlaceholder {
-                key: key.to_owned(),
-                name: name.to_owned(),
-            },
-            InterpolateWarning::UnclosedPlaceholder(partial) => WarnKey::UnclosedPlaceholder {
-                key: key.to_owned(),
-                partial: partial.to_owned(),
-            },
-        };
-        self.warn_once(warn_key);
     }
 }
 

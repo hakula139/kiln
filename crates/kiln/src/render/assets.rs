@@ -27,7 +27,6 @@ impl PageAssets {
     /// Registers a script for the current page.
     ///
     /// Re-registering the exact same [`ScriptTag`] (same `url`, `load`, and `module`) is a no-op.
-    /// Linear search is fine here because a page registers at most a handful of scripts.
     ///
     /// # Errors
     ///
@@ -75,9 +74,7 @@ impl AssetsHandle {
     ///
     /// # Panics
     ///
-    /// Panics if the underlying mutex is poisoned, which only happens when another thread holding
-    /// the lock panicked. The build pipeline holds the lock for tiny synchronous mutations, so
-    /// this should never trigger.
+    /// Panics if the underlying mutex is poisoned.
     pub(crate) fn lock(&self) -> MutexGuard<'_, PageAssets> {
         self.inner.lock().expect("PageAssets mutex poisoned")
     }

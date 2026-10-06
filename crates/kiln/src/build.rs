@@ -71,7 +71,7 @@ pub struct BuildOptions<'a> {
 /// Returns an error if any build stage fails.
 #[expect(
     clippy::needless_pass_by_value,
-    reason = "BuildOptions is an owned options bag: callers construct it inline with `..Default::default()`, so taking it by value keeps call sites concise and lets future non-Copy fields land without a signature churn"
+    reason = "callers construct BuildOptions inline with `..Default::default()`, so taking it by value keeps call sites concise"
 )]
 pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
     let started = Instant::now();

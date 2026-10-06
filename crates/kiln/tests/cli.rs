@@ -1,22 +1,25 @@
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
-use std::process::Command;
 
 use indoc::{formatdoc, indoc};
+
+#[path = "support/cli.rs"]
+mod support;
+
+use support::{kiln, write_executable_file, write_test_file};
 
 // ── build ──
 
 #[test]
 fn build_base_url_argument_and_environment_precedence() {
     let root = tempfile::tempdir().unwrap();
-    write_file(
+    write_test_file(
         root.path(),
         "config.toml",
         r#"base_url = "https://config.example.com""#,
     );
-    write_file(root.path(), "templates/page.html", "{{ url | safe }}");
-    write_file(
+    write_test_file(root.path(), "templates/page.html", "{{ url | safe }}");
+    write_test_file(
         root.path(),
         "content/about/index.md",
         indoc! {r#"
@@ -127,7 +130,10 @@ fn build_search_failure_preserves_output_returns_error() {
     );
     assert!(stderr.contains("Backend output"), "{stderr}");
     assert!(stderr.contains("Backend diagnostic"), "{stderr}");
-    assert!(!stderr.contains("Build complete:"), "{stderr}");
+    assert!(
+        !stderr.lines().any(|line| line.starts_with("Built ")),
+        "{stderr}"
+    );
 }
 
 // ── convert ──
@@ -135,7 +141,7 @@ fn build_search_failure_preserves_output_returns_error() {
 #[test]
 fn convert_relative_source_and_new_destination() {
     let root = tempfile::tempdir().unwrap();
-    write_file(
+    write_test_file(
         root.path(),
         "source/content/post.md",
         indoc! {r#"
@@ -146,7 +152,7 @@ fn convert_relative_source_and_new_destination() {
             Converted body.
         "#},
     );
-    write_file(root.path(), "source/static/asset.txt", "Static asset");
+    write_test_file(root.path(), "source/static/asset.txt", "Static asset");
 
     let output = kiln()
         .args(["convert", "--source", "source", "--dest", "destination"])
@@ -205,7 +211,7 @@ fn init_theme_default_and_explicit_roots() {
         let stdout = String::from_utf8(output.stdout).unwrap();
         assert!(stdout.contains("Theme `example` created at "), "{stdout}");
 
-        write_file(
+        write_test_file(
             &expected_root,
             "config.toml",
             indoc! {r#"
@@ -214,7 +220,7 @@ fn init_theme_default_and_explicit_roots() {
                 theme = "example"
             "#},
         );
-        write_file(
+        write_test_file(
             &expected_root,
             "content/posts/post/index.md",
             indoc! {r#"
@@ -243,18 +249,10 @@ fn init_theme_default_and_explicit_roots() {
     }
 }
 
-fn kiln() -> Command {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_kiln"));
-    command.env_remove("KILN_BASE_URL").env_remove("RUST_LOG");
-    command
-}
-
 fn write_search_site(root: &Path, script: &str) {
-    write_file(root, "templates/post.html", "{{ content | safe }}");
-    let binary = root.join("pagefind");
-    write_file(root, "pagefind", script);
-    fs::set_permissions(&binary, fs::Permissions::from_mode(0o755)).unwrap();
-    write_file(
+    write_test_file(root, "templates/post.html", "{{ content | safe }}");
+    let binary = write_executable_file(root, "pagefind", script);
+    write_test_file(
         root,
         "config.toml",
         &formatdoc! {r#"
@@ -265,10 +263,4 @@ fn write_search_site(root: &Path, script: &str) {
             binary = "{}"
         "#, binary.display()},
     );
-}
-
-fn write_file(root: &Path, path: &str, content: &str) {
-    let dest = root.join(path);
-    fs::create_dir_all(dest.parent().unwrap()).unwrap();
-    fs::write(dest, content).unwrap();
 }

@@ -9,11 +9,13 @@ const DEFAULT_BINARY: &str = "pagefind";
 /// Runs the Pagefind indexer on the given output directory.
 ///
 /// Expects `output_dir` to contain the fully built site HTML. Pagefind writes
-/// its search index and client assets to `{output_dir}/pagefind/`.
+/// its search index and client assets to `{output_dir}/pagefind/`. Successful stdout uses debug
+/// logging, stderr remains visible, and failures include both streams.
 ///
 /// # Errors
 ///
-/// Returns an error if the Pagefind binary cannot be executed or exits with a non-zero status.
+/// Returns an error if the output path is not UTF-8, the binary cannot be executed, or it exits
+/// with a non-zero status.
 pub fn run_pagefind(output_dir: &Path, binary: Option<&str>) -> Result<()> {
     let binary = binary.unwrap_or(DEFAULT_BINARY);
     let site_arg = output_dir

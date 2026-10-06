@@ -14,7 +14,7 @@ use super::url::join_site_url;
 pub(crate) fn build_feeds(
     ctx: &BuildContext,
     listed_posts: &[ListedPage],
-    buckets: &[ListingBucket],
+    buckets: &[ListingBucket<'_>],
     output_dir: &Path,
 ) -> Result<()> {
     let base_url = &ctx.config.base_url;
@@ -40,7 +40,11 @@ pub(crate) fn build_feeds(
 
 // ── Helpers ──
 
-fn write_bucket_feed(ctx: &BuildContext, bucket: &ListingBucket, output_dir: &Path) -> Result<()> {
+fn write_bucket_feed(
+    ctx: &BuildContext,
+    bucket: &ListingBucket<'_>,
+    output_dir: &Path,
+) -> Result<()> {
     let base_url = &ctx.config.base_url;
     let dir_slug = bucket.base_path().trim_start_matches('/').to_owned();
     let channel = Channel {
@@ -49,7 +53,7 @@ fn write_bucket_feed(ctx: &BuildContext, bucket: &ListingBucket, output_dir: &Pa
         feed_url: join_site_url(base_url, &format!("{dir_slug}/index.xml")),
         description: ctx.config.description.clone(),
         language: ctx.config.language.clone(),
-        last_build_date: newest_date(&bucket.pages),
+        last_build_date: newest_date(bucket.pages),
     };
     let items: Vec<_> = bucket.pages.iter().map(|lp| lp.summary.clone()).collect();
     let xml = feed::generate_rss(&channel, &items, DEFAULT_FEED_LIMIT);

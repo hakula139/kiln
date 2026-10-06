@@ -291,8 +291,7 @@ async fn watch_loop(
     }
 }
 
-/// Builds into a staging directory, then atomically swaps it into place.
-/// On failure, the live output is untouched.
+/// Builds into a staging directory, preserving live output if the build fails, then promotes it.
 fn safe_rebuild(root: &Path, base_url: &str) -> Result<()> {
     let config = Config::load(root).context("failed to load config")?;
     let output_dir = config
@@ -318,7 +317,6 @@ fn safe_rebuild(root: &Path, base_url: &str) -> Result<()> {
         return Err(e);
     }
 
-    // Quick swap: live → backup, staging → live, remove backup.
     if backup_dir.exists() {
         _ = fs::remove_dir_all(&backup_dir);
     }
@@ -504,54 +502,6 @@ mod tests {
 
     // ── serve_until ──
 
-    /// Creates a minimal site that builds successfully.
-    fn setup_site(root: &Path) {
-        fs::write(root.join("config.toml"), "").unwrap();
-        copy_templates(&root.join("templates"));
-        let page_dir = root.join("content").join("posts").join("hello");
-        fs::create_dir_all(&page_dir).unwrap();
-        fs::write(
-            page_dir.join("index.md"),
-            indoc! {r#"
-                +++
-                title = "Hello"
-                +++
-                Body
-            "#},
-        )
-        .unwrap();
-    }
-
-    /// Polls until the server responds to an HTTP request.
-    async fn wait_for_server(addr: SocketAddr) {
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_millis(200))
-            .build()
-            .unwrap();
-        for _ in 0..50 {
-            if client.get(format!("http://{addr}/")).send().await.is_ok() {
-                return;
-            }
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        }
-        panic!("server did not start within 5 seconds");
-    }
-
-    /// Starts `serve_until` in a background task and returns the address and a shutdown sender.
-    async fn spawn_server(root: &Path) -> (SocketAddr, tokio::sync::oneshot::Sender<()>) {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
-        let root = root.to_owned();
-        tokio::spawn(async move {
-            _ = serve_until(&root, listener, false, async {
-                _ = shutdown_rx.await;
-            })
-            .await;
-        });
-        (addr, shutdown_tx)
-    }
-
     #[tokio::test]
     async fn serve_until_serves_html_with_live_reload() {
         let root = tempfile::tempdir().unwrap();
@@ -642,6 +592,54 @@ mod tests {
         drop(ws);
 
         _ = shutdown_tx.send(());
+    }
+
+    /// Creates a minimal site that builds successfully.
+    fn setup_site(root: &Path) {
+        fs::write(root.join("config.toml"), "").unwrap();
+        copy_templates(&root.join("templates"));
+        let page_dir = root.join("content").join("posts").join("hello");
+        fs::create_dir_all(&page_dir).unwrap();
+        fs::write(
+            page_dir.join("index.md"),
+            indoc! {r#"
+                +++
+                title = "Hello"
+                +++
+                Body
+            "#},
+        )
+        .unwrap();
+    }
+
+    /// Starts `serve_until` in a background task and returns the address and a shutdown sender.
+    async fn spawn_server(root: &Path) -> (SocketAddr, tokio::sync::oneshot::Sender<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+        let root = root.to_owned();
+        tokio::spawn(async move {
+            _ = serve_until(&root, listener, false, async {
+                _ = shutdown_rx.await;
+            })
+            .await;
+        });
+        (addr, shutdown_tx)
+    }
+
+    /// Polls until the server responds to an HTTP request.
+    async fn wait_for_server(addr: SocketAddr) {
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_millis(200))
+            .build()
+            .unwrap();
+        for _ in 0..50 {
+            if client.get(format!("http://{addr}/")).send().await.is_ok() {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        panic!("server did not start within 5 seconds");
     }
 
     // ── setup_watcher ──
@@ -782,40 +780,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn watch_loop_no_reload_on_failure() {
-        let root = tempfile::tempdir().unwrap();
-        setup_site(root.path());
-
-        // Break the template so rebuild fails.
-        fs::write(
-            root.path().join("templates").join("post.html"),
-            "{% invalid %}",
-        )
-        .unwrap();
-
-        let (event_tx, event_rx) = mpsc::unbounded_channel();
-        let (reload_tx, mut reload_rx) = broadcast::channel::<()>(16);
-
-        let root_path = root.path().to_owned();
-        tokio::spawn(watch_loop(
-            root_path,
-            "http://localhost:0".to_owned(),
-            event_rx,
-            reload_tx,
-        ));
-
-        event_tx.send(()).unwrap();
-
-        // Allow time for debounce + rebuild attempt.
-        tokio::time::sleep(Duration::from_millis(500)).await;
-
-        assert!(
-            reload_rx.try_recv().is_err(),
-            "should not send reload on failed rebuild"
-        );
-    }
-
-    #[tokio::test]
     async fn watch_loop_stops_when_sender_dropped() {
         let root = tempfile::tempdir().unwrap();
         setup_site(root.path());
@@ -837,6 +801,43 @@ mod tests {
             .await
             .expect("watch_loop should exit when event sender is dropped")
             .expect("watch_loop should exit without panicking");
+    }
+
+    #[tokio::test]
+    async fn watch_loop_no_reload_on_failure() {
+        let root = tempfile::tempdir().unwrap();
+        setup_site(root.path());
+
+        fs::write(
+            root.path().join("templates").join("post.html"),
+            "{% invalid %}",
+        )
+        .unwrap();
+
+        let (event_tx, event_rx) = mpsc::unbounded_channel();
+        let (reload_tx, mut reload_rx) = broadcast::channel::<()>(16);
+
+        let root_path = root.path().to_owned();
+        let handle = tokio::spawn(watch_loop(
+            root_path,
+            "http://localhost:0".to_owned(),
+            event_rx,
+            reload_tx,
+        ));
+
+        event_tx.send(()).unwrap();
+
+        drop(event_tx);
+        tokio::time::timeout(Duration::from_secs(5), handle)
+            .await
+            .expect("watch_loop should finish the failed rebuild within timeout")
+            .expect("watch_loop should exit without panicking");
+
+        assert_eq!(
+            reload_rx.try_recv(),
+            Err(broadcast::error::TryRecvError::Closed),
+            "should not send reload on failed rebuild"
+        );
     }
 
     // ── safe_rebuild ──
@@ -1019,19 +1020,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn build_router_returns_not_found() {
-        let dir = tempfile::tempdir().unwrap();
-
-        let app = setup_router(dir.path());
-        let response = app
-            .oneshot(Request::get("/nonexistent").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::NOT_FOUND);
-    }
-
-    #[tokio::test]
     async fn build_router_serves_custom_404_page() {
         let dir = tempfile::tempdir().unwrap();
         fs::write(
@@ -1102,24 +1090,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn build_router_ws_rejects_plain_http() {
-        let dir = tempfile::tempdir().unwrap();
-        let (tx, _) = broadcast::channel::<()>(16);
-        let app = build_router(dir.path(), tx);
-
-        let response = app
-            .oneshot(Request::get(LIVE_RELOAD_PATH).body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-
-        assert_eq!(
-            response.status(),
-            StatusCode::BAD_REQUEST,
-            "plain HTTP to WS endpoint should be rejected"
-        );
-    }
-
-    #[tokio::test]
     async fn build_router_ws_relays_reload() {
         use tokio_stream::StreamExt;
 
@@ -1163,6 +1133,37 @@ mod tests {
         })
         .await
         .expect("client disconnect should release its reload subscription");
+    }
+
+    #[tokio::test]
+    async fn build_router_ws_rejects_plain_http() {
+        let dir = tempfile::tempdir().unwrap();
+        let (tx, _) = broadcast::channel::<()>(16);
+        let app = build_router(dir.path(), tx);
+
+        let response = app
+            .oneshot(Request::get(LIVE_RELOAD_PATH).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(
+            response.status(),
+            StatusCode::BAD_REQUEST,
+            "plain HTTP to WS endpoint should be rejected"
+        );
+    }
+
+    #[tokio::test]
+    async fn build_router_returns_not_found() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let app = setup_router(dir.path());
+        let response = app
+            .oneshot(Request::get("/nonexistent").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
     /// Creates a router backed by a directory of static files.

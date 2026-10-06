@@ -38,7 +38,8 @@ pub struct RenderedPage {
 ///
 /// # Errors
 ///
-/// Returns an error if a directive template fails or heading numbering starts are invalid.
+/// Returns an error if a directive template fails or heading numbers are invalid, duplicate,
+/// or overflowing.
 pub fn render_page(
     raw_content: &str,
     syntax_set: &SyntaxSet,

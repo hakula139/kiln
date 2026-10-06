@@ -93,32 +93,16 @@ pub(crate) fn build_listing_artifacts(
         listed_pages.push(lp);
     }
 
-    let mut listed_posts: Vec<ListedPage> = post_indices
-        .iter()
-        .filter_map(|&idx| listed_pages.get(idx).cloned())
+    let listed_posts = select_pages(&listed_pages, &post_indices);
+    let section_posts = section_post_indices
+        .into_iter()
+        .map(|(slug, indices)| (slug, select_pages(&listed_pages, &indices)))
         .collect();
-    sort_by_date_desc(&mut listed_posts);
-
-    let mut section_posts: HashMap<String, Vec<ListedPage>> =
-        HashMap::with_capacity(section_post_indices.len());
-    for (slug, indices) in section_post_indices {
-        let mut pages: Vec<ListedPage> = indices
-            .iter()
-            .filter_map(|&idx| listed_pages.get(idx).cloned())
-            .collect();
-        sort_by_date_desc(&mut pages);
-        section_posts.insert(slug, pages);
-    }
-
-    let mut tag_pages = HashMap::with_capacity(taxonomy_set.tag_pages.len());
-    for (slug, indices) in &taxonomy_set.tag_pages {
-        let mut pages: Vec<ListedPage> = indices
-            .iter()
-            .filter_map(|&idx| listed_pages.get(idx).cloned())
-            .collect();
-        sort_by_date_desc(&mut pages);
-        tag_pages.insert(slug.clone(), pages);
-    }
+    let tag_pages = taxonomy_set
+        .tag_pages
+        .iter()
+        .map(|(slug, indices)| (slug.clone(), select_pages(&listed_pages, indices)))
+        .collect();
 
     Ok(ListingArtifacts {
         listed_pages,
@@ -172,6 +156,15 @@ fn build_listed_page(
     })
 }
 
+fn select_pages(listed_pages: &[ListedPage], indices: &[usize]) -> Vec<ListedPage> {
+    let mut pages: Vec<_> = indices
+        .iter()
+        .map(|&idx| listed_pages[idx].clone())
+        .collect();
+    sort_by_date_desc(&mut pages);
+    pages
+}
+
 // ── Listing buckets ──
 
 /// Identifies the flavor of a `ListingBucket`.
@@ -212,17 +205,17 @@ impl BucketKind {
 
 /// A named collection of pages shared by the archive, feed, and overview output generators.
 #[derive(Debug, Clone)]
-pub(crate) struct ListingBucket {
+pub(crate) struct ListingBucket<'a> {
     pub(crate) kind: BucketKind,
     /// Display name (localized "Posts", section title, tag name).
     pub(crate) name: String,
     /// URL-safe slug. For `BucketKind::Posts` echoes the plural (`"posts"`).
     pub(crate) slug: String,
     /// Pages in this bucket, sorted by date descending.
-    pub(crate) pages: Vec<ListedPage>,
+    pub(crate) pages: &'a [ListedPage],
 }
 
-impl ListingBucket {
+impl ListingBucket<'_> {
     /// URL path with a leading slash and no trailing slash (e.g., `/posts`, `/posts/note`,
     /// `/tags/rust`). Sections live under `/posts/` to match the existing site URL contract.
     #[must_use]
@@ -235,8 +228,8 @@ impl ListingBucket {
     }
 }
 
-impl From<&ListingBucket> for BucketSummary {
-    fn from(bucket: &ListingBucket) -> Self {
+impl From<&ListingBucket<'_>> for BucketSummary {
+    fn from(bucket: &ListingBucket<'_>) -> Self {
         Self {
             name: bucket.name.clone(),
             slug: bucket.slug.clone(),
@@ -247,29 +240,27 @@ impl From<&ListingBucket> for BucketSummary {
 }
 
 /// Assembles every listing bucket: the all-posts aggregate, one per section, and one per tag.
-/// Each bucket owns its pages (cloned from `artifacts`).
 #[must_use]
-pub(crate) fn build_listing_buckets(
-    artifacts: &ListingArtifacts,
+pub(crate) fn build_listing_buckets<'a>(
+    artifacts: &'a ListingArtifacts,
     sections: &[Section],
     taxonomy_set: &TaxonomySet,
     posts_title: String,
-) -> Vec<ListingBucket> {
+) -> Vec<ListingBucket<'a>> {
     let mut buckets = Vec::with_capacity(1 + sections.len() + taxonomy_set.tags.len());
 
     buckets.push(ListingBucket {
         kind: BucketKind::Posts,
         name: posts_title,
         slug: "posts".into(),
-        pages: artifacts.listed_posts.clone(),
+        pages: &artifacts.listed_posts,
     });
 
     for section in sections {
         let pages = artifacts
             .section_posts
             .get(section.slug.as_str())
-            .cloned()
-            .unwrap_or_default();
+            .map_or(&[][..], Vec::as_slice);
         buckets.push(ListingBucket {
             kind: BucketKind::Section,
             name: section.title.clone(),
@@ -282,8 +273,7 @@ pub(crate) fn build_listing_buckets(
         let pages = artifacts
             .tag_pages
             .get(&term.slug)
-            .cloned()
-            .unwrap_or_default();
+            .map_or(&[][..], Vec::as_slice);
         buckets.push(ListingBucket {
             kind: BucketKind::Tag,
             name: term.name.clone(),
@@ -436,31 +426,6 @@ mod tests {
     static EMPTY_RESOLVER: LazyLock<ImageResolver> =
         LazyLock::new(|| ImageResolver::new(Path::new(""), ImageConfig::default()));
 
-    fn make_listed_page(title: &str, date: Option<&str>) -> ListedPage {
-        make_listed_page_with(title, date, None)
-    }
-
-    fn make_listed_page_with(title: &str, date: Option<&str>, weight: Option<i64>) -> ListedPage {
-        let timestamp = date.map(|date| date.parse().unwrap());
-        ListedPage {
-            summary: PageSummary {
-                title: title.into(),
-                url: format!("/{title}/"),
-                date: timestamp.map(|date: Timestamp| date.to_string()),
-                pinned: weight.is_some(),
-                description: String::new(),
-                featured_image: None,
-                tags: Vec::new(),
-                section: None,
-            },
-            timestamp,
-            weight,
-            year: timestamp
-                .map(|date| page_year(date, None))
-                .unwrap_or_default(),
-        }
-    }
-
     // ── build_listing_artifacts ──
 
     #[test]
@@ -527,7 +492,7 @@ mod tests {
             kind: BucketKind::Posts,
             name: "Posts".into(),
             slug: "posts".into(),
-            pages: Vec::new(),
+            pages: &[],
         };
         assert_eq!(bucket.base_path(), "/posts");
     }
@@ -538,7 +503,7 @@ mod tests {
             kind: BucketKind::Section,
             name: "Note".into(),
             slug: "note".into(),
-            pages: Vec::new(),
+            pages: &[],
         };
         assert_eq!(bucket.base_path(), "/posts/note");
     }
@@ -549,7 +514,7 @@ mod tests {
             kind: BucketKind::Tag,
             name: "Rust".into(),
             slug: "rust".into(),
-            pages: Vec::new(),
+            pages: &[],
         };
         assert_eq!(bucket.base_path(), "/tags/rust");
     }
@@ -560,12 +525,16 @@ mod tests {
     fn build_listing_buckets_ordering() {
         use crate::taxonomy::TaxonomySet;
 
-        let posts = vec![make_listed_page("A", Some("2026-01-01T00:00:00Z"))];
+        let posts = vec![
+            make_listed_page("Post A", Some("2026-01-03T00:00:00Z")),
+            make_listed_page("Post B", Some("2026-01-02T00:00:00Z")),
+            make_listed_page("Post C", Some("2026-01-01T00:00:00Z")),
+        ];
         let artifacts = ListingArtifacts {
             listed_pages: posts.clone(),
             listed_posts: posts.clone(),
-            section_posts: HashMap::from([("note".into(), posts.clone())]),
-            tag_pages: HashMap::from([("rust".into(), posts)]),
+            section_posts: HashMap::from([("note".into(), vec![posts[1].clone()])]),
+            tag_pages: HashMap::from([("rust".into(), vec![posts[0].clone(), posts[2].clone()])]),
         };
         let sections = vec![Section {
             slug: "note".into(),
@@ -576,20 +545,41 @@ mod tests {
             tags: vec![crate::taxonomy::Term {
                 name: "Rust".into(),
                 slug: "rust".into(),
-                page_count: 1,
+                page_count: 2,
             }],
-            tag_pages: HashMap::from([("rust".into(), vec![0])]),
+            tag_pages: HashMap::from([("rust".into(), vec![0, 2])]),
         };
 
         let buckets = build_listing_buckets(&artifacts, &sections, &taxonomy_set, "Posts".into());
 
-        assert_eq!(buckets.len(), 3);
-        assert_eq!(buckets[0].kind, BucketKind::Posts);
-        assert_eq!(buckets[0].name, "Posts");
-        assert_eq!(buckets[1].kind, BucketKind::Section);
-        assert_eq!(buckets[1].slug, "note");
-        assert_eq!(buckets[2].kind, BucketKind::Tag);
-        assert_eq!(buckets[2].slug, "rust");
+        let summaries: Vec<_> = buckets
+            .iter()
+            .map(|bucket| {
+                (
+                    bucket.kind,
+                    bucket.name.as_str(),
+                    bucket.slug.as_str(),
+                    bucket
+                        .pages
+                        .iter()
+                        .map(|page| page.summary.title.as_str())
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            summaries,
+            [
+                (
+                    BucketKind::Posts,
+                    "Posts",
+                    "posts",
+                    vec!["Post A", "Post B", "Post C"]
+                ),
+                (BucketKind::Section, "Note", "note", vec!["Post B"]),
+                (BucketKind::Tag, "Rust", "rust", vec!["Post A", "Post C"]),
+            ]
+        );
     }
 
     #[test]
@@ -661,17 +651,6 @@ mod tests {
     }
 
     #[test]
-    fn sort_by_date_desc_undated_last() {
-        let mut pages = vec![
-            make_listed_page("undated", None),
-            make_listed_page("dated", Some("2026-01-01T00:00:00Z")),
-        ];
-        sort_by_date_desc(&mut pages);
-        assert_eq!(pages[0].summary.title, "dated");
-        assert_eq!(pages[1].summary.title, "undated");
-    }
-
-    #[test]
     fn sort_by_date_desc_uses_timestamp_not_rendered_string() {
         let mut pages = vec![
             make_listed_page("older", Some("2024-11-03T01:30:00-04:00")),
@@ -693,18 +672,18 @@ mod tests {
         assert_eq!(pages[1].summary.title, "pinned-old");
     }
 
-    // ── sort_pinned_first ──
-
     #[test]
-    fn sort_pinned_first_falls_back_to_date_desc_when_no_pins() {
+    fn sort_by_date_desc_undated_last() {
         let mut pages = vec![
-            make_listed_page("old", Some("2025-01-01T00:00:00Z")),
-            make_listed_page("new", Some("2026-06-15T00:00:00Z")),
+            make_listed_page("undated", None),
+            make_listed_page("dated", Some("2026-01-01T00:00:00Z")),
         ];
-        sort_pinned_first(&mut pages);
-        assert_eq!(pages[0].summary.title, "new");
-        assert_eq!(pages[1].summary.title, "old");
+        sort_by_date_desc(&mut pages);
+        assert_eq!(pages[0].summary.title, "dated");
+        assert_eq!(pages[1].summary.title, "undated");
     }
+
+    // ── sort_pinned_first ──
 
     #[test]
     fn sort_pinned_first_pinned_come_before_unpinned() {
@@ -778,6 +757,17 @@ mod tests {
         assert!(pages[0].summary.pinned);
     }
 
+    #[test]
+    fn sort_pinned_first_falls_back_to_date_desc_when_no_pins() {
+        let mut pages = vec![
+            make_listed_page("old", Some("2025-01-01T00:00:00Z")),
+            make_listed_page("new", Some("2026-06-15T00:00:00Z")),
+        ];
+        sort_pinned_first(&mut pages);
+        assert_eq!(pages[0].summary.title, "new");
+        assert_eq!(pages[1].summary.title, "old");
+    }
+
     // ── group_by_year ──
 
     #[test]
@@ -793,18 +783,6 @@ mod tests {
         assert_eq!(groups[0].pages.len(), 2);
         assert_eq!(groups[1].key, "2025");
         assert_eq!(groups[1].pages.len(), 1);
-    }
-
-    #[test]
-    fn group_by_year_undated_pages() {
-        let pages = vec![
-            make_listed_page("a", Some("2026-01-01T00:00:00Z")),
-            make_listed_page("b", None),
-        ];
-        let groups = group_by_year(pages);
-        assert_eq!(groups.len(), 2);
-        assert_eq!(groups[0].key, "2026");
-        assert_eq!(groups[1].key, "", "undated pages should have empty key");
     }
 
     #[test]
@@ -825,9 +803,46 @@ mod tests {
     }
 
     #[test]
+    fn group_by_year_undated_pages() {
+        let pages = vec![
+            make_listed_page("a", Some("2026-01-01T00:00:00Z")),
+            make_listed_page("b", None),
+        ];
+        let groups = group_by_year(pages);
+        assert_eq!(groups.len(), 2);
+        assert_eq!(groups[0].key, "2026");
+        assert_eq!(groups[1].key, "", "undated pages should have empty key");
+    }
+
+    #[test]
     fn group_by_year_empty() {
         let groups = group_by_year(Vec::new());
         assert!(groups.is_empty());
+    }
+
+    fn make_listed_page(title: &str, date: Option<&str>) -> ListedPage {
+        make_listed_page_with(title, date, None)
+    }
+
+    fn make_listed_page_with(title: &str, date: Option<&str>, weight: Option<i64>) -> ListedPage {
+        let timestamp = date.map(|date| date.parse().unwrap());
+        ListedPage {
+            summary: PageSummary {
+                title: title.into(),
+                url: format!("/{title}/"),
+                date: timestamp.map(|date: Timestamp| date.to_string()),
+                pinned: weight.is_some(),
+                description: String::new(),
+                featured_image: None,
+                tags: Vec::new(),
+                section: None,
+            },
+            timestamp,
+            weight,
+            year: timestamp
+                .map(|date| page_year(date, None))
+                .unwrap_or_default(),
+        }
     }
 
     // ── page_section ──
@@ -852,13 +867,6 @@ mod tests {
     }
 
     // ── resolve_featured_image ──
-
-    fn make_featured_image(src: &str) -> FeaturedImage {
-        FeaturedImage {
-            src: src.into(),
-            ..Default::default()
-        }
-    }
 
     #[test]
     fn resolve_featured_image_absolute_path() {
@@ -969,6 +977,13 @@ mod tests {
             )
             .is_none()
         );
+    }
+
+    fn make_featured_image(src: &str) -> FeaturedImage {
+        FeaturedImage {
+            src: src.into(),
+            ..Default::default()
+        }
     }
 
     // ── linked_tags ──

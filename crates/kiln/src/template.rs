@@ -28,11 +28,11 @@ impl TemplateEngine {
     /// Creates a layered template engine: `site_dir` overrides `theme_dir`.
     ///
     /// `site_dir` is silently ignored when missing (optional override). `theme_dir`, when set,
-    /// must exist. At least one directory is required. `i18n` backs the `t()` function.
+    /// must be a directory. At least one usable directory is required. `i18n` backs `t()`.
     ///
     /// # Errors
     ///
-    /// Errors if neither directory is provided, or if `theme_dir` is set but does not exist.
+    /// Returns an error if no usable template directory exists or the theme directory is invalid.
     pub fn new(site_dir: Option<&Path>, theme_dir: Option<&Path>, i18n: &I18n) -> Result<Self> {
         Self::new_with_assets(site_dir, theme_dir, i18n, &StaticAssetManifest::default())
     }
@@ -41,7 +41,7 @@ impl TemplateEngine {
     ///
     /// # Errors
     ///
-    /// Errors if neither template directory is provided, or if `theme_dir` is set but missing.
+    /// Returns an error if no usable template directory exists or the theme directory is invalid.
     pub fn new_with_assets(
         site_dir: Option<&Path>,
         theme_dir: Option<&Path>,
@@ -243,7 +243,6 @@ mod tests {
     use indoc::indoc;
 
     use super::*;
-
     use crate::content::frontmatter::FeaturedImage;
     use crate::pagination::PaginationVars;
     use crate::render::assets::{LoadStrategy, PageAssets};
@@ -455,6 +454,59 @@ mod tests {
         assert!(
             html.contains("&lt;script&gt;"),
             "title should contain escaped HTML entities, html:\n{html}"
+        );
+    }
+
+    #[test]
+    fn render_post_renders_t_through_real_template() {
+        let dir = tempfile::tempdir().unwrap();
+        test_fs::create_dir_all(dir.path().join("i18n")).unwrap();
+        test_fs::write(
+            dir.path().join("i18n").join("en.toml"),
+            r#"posted_on = "Posted on""#,
+        )
+        .unwrap();
+        let i18n =
+            crate::i18n::I18n::load(Path::new("/nonexistent"), Some(dir.path()), "en").unwrap();
+
+        let templates = tempfile::tempdir().unwrap();
+        test_fs::write(
+            templates.path().join("base.html"),
+            "{% block body %}{% endblock %}",
+        )
+        .unwrap();
+        test_fs::write(
+            templates.path().join("post.html"),
+            indoc! {r#"
+                {% extends "base.html" %}
+                {% block body %}
+                {{ t("posted_on") }} {{ date[:10] }}
+                {% endblock %}
+            "#},
+        )
+        .unwrap();
+
+        let engine = TemplateEngine::new(Some(templates.path()), None, &i18n).unwrap();
+        let config = test_config();
+        let vars = PostTemplateVars {
+            title: "",
+            description: "",
+            url: "",
+            featured_image: None,
+            page_css: None,
+            date: Some("2026-03-15T09:00:00Z".into()),
+            updated: None,
+            tags: Vec::new(),
+            section: None,
+            assets: PageAssets::default(),
+            content: "",
+            toc: "",
+            config: &config,
+        };
+        let html = engine.render_post(&vars).unwrap();
+        assert!(
+            html.contains("Posted on 2026-03-15"),
+            "should render localized prefix alongside the ISO date slice, html:\n{html}"
         );
     }
 
@@ -874,6 +926,21 @@ mod tests {
     }
 
     #[test]
+    fn render_404_returns_none_without_template() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
+        let config = test_config();
+        let vars = ErrorPageVars {
+            title: "404 Not Found",
+            config: &config,
+        };
+        assert!(
+            engine.render_404(&vars).is_none(),
+            "should return None when 404.html is missing"
+        );
+    }
+
+    #[test]
     fn render_404_template_failure_returns_error() {
         for (source, kind) in [
             ("{% invalid %}", minijinja::ErrorKind::SyntaxError),
@@ -897,21 +964,6 @@ mod tests {
                 kind
             );
         }
-    }
-
-    #[test]
-    fn render_404_returns_none_without_template() {
-        let dir = tempfile::tempdir().unwrap();
-        let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
-        let config = test_config();
-        let vars = ErrorPageVars {
-            title: "404 Not Found",
-            config: &config,
-        };
-        assert!(
-            engine.render_404(&vars).is_none(),
-            "should return None when 404.html is missing"
-        );
     }
 
     // ── render_directive ──
@@ -949,32 +1001,6 @@ mod tests {
     }
 
     #[test]
-    fn render_directive_returns_none_for_missing_template() {
-        let dir = tempfile::tempdir().unwrap();
-        let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
-        assert!(
-            engine
-                .render_directive("nonexistent", (), &AssetsHandle::default(), &test_config())
-                .is_none()
-        );
-    }
-
-    #[test]
-    fn render_directive_rejects_path_traversal() {
-        let dir = tempfile::tempdir().unwrap();
-        let directives_dir = dir.path().join("directives");
-        test_fs::create_dir_all(&directives_dir).unwrap();
-        // Place a file outside directives/ that a traversal would reach.
-        test_fs::write(dir.path().join("secret.html"), "LEAKED").unwrap();
-
-        let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
-        // `render_directive` builds "directives/../secret.html", which safe_join rejects.
-        let result =
-            engine.render_directive("../secret", (), &AssetsHandle::default(), &test_config());
-        assert!(result.is_none(), "path traversal should not find template");
-    }
-
-    #[test]
     fn render_directive_exposes_config_to_template() {
         let dir = tempfile::tempdir().unwrap();
         let directives_dir = dir.path().join("directives");
@@ -998,6 +1024,32 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(html, "title=Probe lang=fr");
+    }
+
+    #[test]
+    fn render_directive_returns_none_for_missing_template() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
+        assert!(
+            engine
+                .render_directive("nonexistent", (), &AssetsHandle::default(), &test_config())
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn render_directive_rejects_path_traversal() {
+        let dir = tempfile::tempdir().unwrap();
+        let directives_dir = dir.path().join("directives");
+        test_fs::create_dir_all(&directives_dir).unwrap();
+        // Place a file outside directives/ that a traversal would reach.
+        test_fs::write(dir.path().join("secret.html"), "LEAKED").unwrap();
+
+        let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
+        // `render_directive` builds "directives/../secret.html", which safe_join rejects.
+        let result =
+            engine.render_directive("../secret", (), &AssetsHandle::default(), &test_config());
+        assert!(result.is_none(), "path traversal should not find template");
     }
 
     #[test]
@@ -1064,20 +1116,20 @@ mod tests {
     }
 
     #[test]
-    fn has_template_missing() {
-        let engine = test_engine();
-        assert!(!engine.has_template("nonexistent.html"));
-    }
-
-    #[test]
     fn has_template_broken_returns_true() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("broken.html"), "{% invalid %}").unwrap();
+        test_fs::write(dir.path().join("broken.html"), "{% invalid %}").unwrap();
         let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
         assert!(
             engine.has_template("broken.html"),
-            "broken templates exist; render should surface the parse error",
+            "broken templates exist. Rendering should surface the parse error",
         );
+    }
+
+    #[test]
+    fn has_template_missing_returns_false() {
+        let engine = test_engine();
+        assert!(!engine.has_template("nonexistent.html"));
     }
 
     // ── tpl_now ──
@@ -1097,49 +1149,19 @@ mod tests {
 
     #[test]
     fn read_file_reads_relative_to_source_dir() {
-        let dir = tempfile::tempdir().unwrap();
-        let directives_dir = dir.path().join("directives");
-        test_fs::create_dir_all(&directives_dir).unwrap();
-        test_fs::write(
-            directives_dir.join("csv-reader.html"),
-            r"{% set data = read_file(positional_args[0]) %}DATA:{{ data }}",
-        )
-        .unwrap();
-
         let source = tempfile::tempdir().unwrap();
-        test_fs::write(source.path().join("scores.csv"), "A,B\n1,2").unwrap();
+        let contents = indoc! {"
+            A,B
+            1,2
+        "};
+        test_fs::write(source.path().join("scores.csv"), contents).unwrap();
 
-        let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
-        let ctx = crate::directive::DirectiveContext {
-            name: "csv-reader".into(),
-            positional_args: vec!["scores.csv".into()],
-            named_args: BTreeMap::default(),
-            id: None,
-            classes: Vec::new(),
-            body_html: String::new(),
-            body_raw: String::new(),
-            source_dir: Some(source.path().to_string_lossy().into_owned()),
-        };
-
-        let result =
-            engine.render_directive("csv-reader", ctx, &AssetsHandle::default(), &test_config());
-        let html = result.unwrap().unwrap();
-        assert!(
-            html.contains("DATA:A,B\n1,2"),
-            "should read file content, got: {html}"
-        );
+        let html = render_read_file("scores.csv", Some(source.path())).unwrap();
+        assert_eq!(html, contents);
     }
 
     #[test]
     fn read_file_follows_external_symlink() {
-        let dir = tempfile::tempdir().unwrap();
-        let directives = dir.path().join("directives");
-        test_fs::create_dir(&directives).unwrap();
-        test_fs::write(
-            directives.join("reader.html"),
-            r#"{{ read_file("data.txt") }}"#,
-        )
-        .unwrap();
         let source = tempfile::tempdir().unwrap();
         let external = tempfile::tempdir().unwrap();
         test_fs::write(external.path().join("data.txt"), "external <data>").unwrap();
@@ -1148,56 +1170,22 @@ mod tests {
             source.path().join("data.txt"),
         )
         .unwrap();
-        let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
-        let ctx = crate::directive::DirectiveContext {
-            name: "reader".into(),
-            positional_args: Vec::new(),
-            named_args: BTreeMap::new(),
-            id: None,
-            classes: Vec::new(),
-            body_html: String::new(),
-            body_raw: String::new(),
-            source_dir: Some(source.path().to_string_lossy().into_owned()),
-        };
 
-        let html = engine
-            .render_directive("reader", ctx, &AssetsHandle::default(), &test_config())
-            .unwrap()
-            .unwrap();
-
+        let html = render_read_file("data.txt", Some(source.path())).unwrap();
         assert_eq!(html, "external &lt;data&gt;");
     }
 
     #[test]
     fn read_file_path_traversal_returns_error() {
-        let dir = tempfile::tempdir().unwrap();
-        let directives_dir = dir.path().join("directives");
-        test_fs::create_dir_all(&directives_dir).unwrap();
-        test_fs::write(
-            directives_dir.join("reader.html"),
-            r"{{ read_file(positional_args[0]) }}",
-        )
-        .unwrap();
-
         let source = tempfile::tempdir().unwrap();
-        // Place a secret file outside source_dir.
-        test_fs::write(source.path().join("secret.txt"), "SECRET").unwrap();
+        let source_dir = source.path().join("subdir");
+        test_fs::create_dir(&source_dir).unwrap();
+        test_fs::write(source.path().join("outside.txt"), "outside").unwrap();
 
-        let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
-        let ctx = crate::directive::DirectiveContext {
-            name: "reader".into(),
-            positional_args: vec!["../secret.txt".into()],
-            named_args: BTreeMap::default(),
-            id: None,
-            classes: Vec::new(),
-            body_html: String::new(),
-            body_raw: String::new(),
-            source_dir: Some(source.path().join("subdir").to_string_lossy().into_owned()),
-        };
-
-        let result =
-            engine.render_directive("reader", ctx, &AssetsHandle::default(), &test_config());
-        let err = format!("{:#}", result.unwrap().unwrap_err());
+        let err = format!(
+            "{:#}",
+            render_read_file("../outside.txt", Some(&source_dir)).unwrap_err()
+        );
         assert!(
             err.contains("path traversal not allowed"),
             "should reject traversal, got: {err}"
@@ -1206,32 +1194,14 @@ mod tests {
 
     #[test]
     fn read_file_absolute_path_returns_error() {
-        let dir = tempfile::tempdir().unwrap();
-        let directives_dir = dir.path().join("directives");
-        test_fs::create_dir_all(&directives_dir).unwrap();
-        test_fs::write(
-            directives_dir.join("reader.html"),
-            r"{{ read_file(positional_args[0]) }}",
-        )
-        .unwrap();
-
         let source = tempfile::tempdir().unwrap();
+        let file = source.path().join("example.txt");
+        test_fs::write(&file, "body").unwrap();
 
-        let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
-        let ctx = crate::directive::DirectiveContext {
-            name: "reader".into(),
-            positional_args: vec!["/etc/passwd".into()],
-            named_args: BTreeMap::default(),
-            id: None,
-            classes: Vec::new(),
-            body_html: String::new(),
-            body_raw: String::new(),
-            source_dir: Some(source.path().to_string_lossy().into_owned()),
-        };
-
-        let result =
-            engine.render_directive("reader", ctx, &AssetsHandle::default(), &test_config());
-        let err = format!("{:#}", result.unwrap().unwrap_err());
+        let err = format!(
+            "{:#}",
+            render_read_file(file.to_str().unwrap(), Some(source.path())).unwrap_err()
+        );
         assert!(
             err.contains("path traversal not allowed"),
             "should reject absolute path, got: {err}"
@@ -1240,30 +1210,7 @@ mod tests {
 
     #[test]
     fn read_file_without_source_dir_returns_error() {
-        let dir = tempfile::tempdir().unwrap();
-        let directives_dir = dir.path().join("directives");
-        test_fs::create_dir_all(&directives_dir).unwrap();
-        test_fs::write(
-            directives_dir.join("reader.html"),
-            r#"{{ read_file("test.csv") }}"#,
-        )
-        .unwrap();
-
-        let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
-        let ctx = crate::directive::DirectiveContext {
-            name: "reader".into(),
-            positional_args: Vec::new(),
-            named_args: BTreeMap::default(),
-            id: None,
-            classes: Vec::new(),
-            body_html: String::new(),
-            body_raw: String::new(),
-            source_dir: None,
-        };
-
-        let result =
-            engine.render_directive("reader", ctx, &AssetsHandle::default(), &test_config());
-        let err = format!("{:#}", result.unwrap().unwrap_err());
+        let err = format!("{:#}", render_read_file("test.csv", None).unwrap_err());
         assert!(
             err.contains("read_file requires source_dir"),
             "should report missing source_dir, got: {err}"
@@ -1272,35 +1219,48 @@ mod tests {
 
     #[test]
     fn read_file_nonexistent_file_returns_error() {
-        let dir = tempfile::tempdir().unwrap();
-        let directives_dir = dir.path().join("directives");
-        test_fs::create_dir_all(&directives_dir).unwrap();
-        test_fs::write(
-            directives_dir.join("reader.html"),
-            r#"{{ read_file("missing.csv") }}"#,
-        )
-        .unwrap();
-
         let source = tempfile::tempdir().unwrap();
 
-        let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
-        let ctx = crate::directive::DirectiveContext {
-            name: "reader".into(),
-            positional_args: Vec::new(),
-            named_args: BTreeMap::default(),
-            id: None,
-            classes: Vec::new(),
-            body_html: String::new(),
-            body_raw: String::new(),
-            source_dir: Some(source.path().to_string_lossy().into_owned()),
-        };
-
-        let result =
-            engine.render_directive("reader", ctx, &AssetsHandle::default(), &test_config());
-        let err = format!("{:#}", result.unwrap().unwrap_err());
+        let err = format!(
+            "{:#}",
+            render_read_file("missing.csv", Some(source.path())).unwrap_err()
+        );
         assert!(
             err.contains("failed to read"),
             "should report file read error, got: {err}"
+        );
+    }
+
+    // ── tpl_parse_csv ──
+
+    #[test]
+    fn parse_csv_reads_and_escapes_rows_from_source_file() {
+        let (_templates, engine) = engine_with_directive(
+            "csv-test",
+            r#"{% set rows = parse_csv(read_file(positional_args[0])) %}{% for row in rows %}[{{ row | join("|") }}]{% endfor %}"#,
+        );
+        let source = tempfile::tempdir().unwrap();
+        test_fs::write(
+            source.path().join("data.csv"),
+            indoc! {r#"
+                name,value
+                "field with, comma","has ""quotes"""
+                one,two
+            "#},
+        )
+        .unwrap();
+        let mut ctx = empty_ctx("csv-test");
+        ctx.positional_args = vec!["data.csv".into()];
+        ctx.source_dir = Some(source.path().to_string_lossy().into_owned());
+
+        let html = engine
+            .render_directive("csv-test", ctx, &AssetsHandle::default(), &test_config())
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(
+            html,
+            "[name|value][field with, comma|has &quot;quotes&quot;][one|two]"
         );
     }
 
@@ -1317,16 +1277,6 @@ mod tests {
     }
 
     #[test]
-    fn t_returns_key_literal_for_missing_key() {
-        let engine = test_engine();
-        let result = engine
-            .env
-            .render_str(r#"{{ t("not_defined_anywhere") }}"#, ())
-            .unwrap();
-        assert_eq!(result, "not_defined_anywhere");
-    }
-
-    #[test]
     fn t_interpolates_keyword_arguments() {
         let dir = tempfile::tempdir().unwrap();
         test_fs::create_dir_all(dir.path().join("i18n")).unwrap();
@@ -1340,35 +1290,23 @@ mod tests {
 
         let templates = tempfile::tempdir().unwrap();
         let engine = TemplateEngine::new(Some(templates.path()), None, &i18n).unwrap();
-        let result = engine
-            .env
-            .render_str(r#"{{ t("greeting", name="Alex") }}"#, ())
-            .unwrap();
-        assert_eq!(result, "Hi Alex!");
+        for (template, expected) in [
+            (r#"{{ t("greeting", name="Alex") }}"#, "Hi Alex!"),
+            (r#"{{ t("greeting", name=none) }}"#, "Hi !"),
+        ] {
+            let result = engine.env.render_str(template, ()).unwrap();
+            assert_eq!(result, expected, "template: {template}");
+        }
     }
 
     #[test]
-    fn t_substitutes_empty_string_for_none_kwarg() {
-        // `minijinja::Value::to_string()` renders explicit `none` as the
-        // literal text `"none"`. `tpl_t` must special-case it so templates
-        // don't leak placeholder text when optional context is missing.
-        let dir = tempfile::tempdir().unwrap();
-        test_fs::create_dir_all(dir.path().join("i18n")).unwrap();
-        test_fs::write(
-            dir.path().join("i18n").join("en.toml"),
-            r#"greeting = "Hi {name}!""#,
-        )
-        .unwrap();
-        let i18n =
-            crate::i18n::I18n::load(Path::new("/nonexistent"), Some(dir.path()), "en").unwrap();
-
-        let templates = tempfile::tempdir().unwrap();
-        let engine = TemplateEngine::new(Some(templates.path()), None, &i18n).unwrap();
+    fn t_returns_key_literal_for_missing_key() {
+        let engine = test_engine();
         let result = engine
             .env
-            .render_str(r#"{{ t("greeting", name=none) }}"#, ())
+            .render_str(r#"{{ t("not_defined_anywhere") }}"#, ())
             .unwrap();
-        assert_eq!(result, "Hi !");
+        assert_eq!(result, "not_defined_anywhere");
     }
 
     // ── tpl_asset_url ──
@@ -1392,28 +1330,6 @@ mod tests {
     }
 
     // ── tpl_register_script ──
-
-    fn engine_with_directive(name: &str, body: &str) -> (tempfile::TempDir, TemplateEngine) {
-        let dir = tempfile::tempdir().unwrap();
-        let directives_dir = dir.path().join("directives");
-        test_fs::create_dir_all(&directives_dir).unwrap();
-        test_fs::write(directives_dir.join(format!("{name}.html")), body).unwrap();
-        let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
-        (dir, engine)
-    }
-
-    fn empty_ctx(name: &str) -> crate::directive::DirectiveContext {
-        crate::directive::DirectiveContext {
-            name: name.into(),
-            positional_args: Vec::new(),
-            named_args: BTreeMap::default(),
-            id: None,
-            classes: Vec::new(),
-            body_html: String::new(),
-            body_raw: String::new(),
-            source_dir: None,
-        }
-    }
 
     #[test]
     fn register_script_records_default_deferred_tag() {
@@ -1611,106 +1527,30 @@ mod tests {
         );
     }
 
-    // ── tpl_parse_csv ──
+    fn render_read_file(filename: &str, source_dir: Option<&Path>) -> Result<String> {
+        let (_templates, engine) =
+            engine_with_directive("reader", r"{{ read_file(positional_args[0]) }}");
+        let mut ctx = empty_ctx("reader");
+        ctx.positional_args = vec![filename.into()];
+        ctx.source_dir = source_dir.map(|path| path.to_string_lossy().into_owned());
 
-    #[test]
-    fn parse_csv_basic() {
-        let dir = tempfile::tempdir().unwrap();
-        let directives_dir = dir.path().join("directives");
-        test_fs::create_dir_all(&directives_dir).unwrap();
-        test_fs::write(
-            directives_dir.join("csv-test.html"),
-            r#"{% set rows = parse_csv(read_file(positional_args[0])) %}{% for row in rows %}{{ row | join(",") }};{% endfor %}"#,
-        )
-        .unwrap();
-
-        let source = tempfile::tempdir().unwrap();
-        test_fs::write(
-            source.path().join("data.csv"),
-            indoc! {"
-                A,B
-                1,2
-                3,4"
-            },
-        )
-        .unwrap();
-
-        let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
-        let ctx = crate::directive::DirectiveContext {
-            name: "csv-test".into(),
-            positional_args: vec!["data.csv".into()],
-            named_args: BTreeMap::default(),
-            id: None,
-            classes: Vec::new(),
-            body_html: String::new(),
-            body_raw: String::new(),
-            source_dir: Some(source.path().to_string_lossy().into_owned()),
-        };
-
-        let html = engine
-            .render_directive("csv-test", ctx, &AssetsHandle::default(), &test_config())
+        engine
+            .render_directive("reader", ctx, &AssetsHandle::default(), &test_config())
             .unwrap()
-            .unwrap();
-        assert_eq!(html, "A,B;1,2;3,4;");
     }
 
-    #[test]
-    fn parse_csv_quoted_fields() {
+    fn engine_with_directive(name: &str, body: &str) -> (tempfile::TempDir, TemplateEngine) {
         let dir = tempfile::tempdir().unwrap();
         let directives_dir = dir.path().join("directives");
         test_fs::create_dir_all(&directives_dir).unwrap();
-        test_fs::write(
-            directives_dir.join("csv-test.html"),
-            r#"{% set rows = parse_csv(read_file(positional_args[0])) %}{% for row in rows %}[{{ row | join("|") }}]{% endfor %}"#,
-        )
-        .unwrap();
-
-        let source = tempfile::tempdir().unwrap();
-        test_fs::write(
-            source.path().join("data.csv"),
-            indoc! {r#"
-                name,value
-                "field with, comma","has ""quotes"""
-            "#},
-        )
-        .unwrap();
-
+        test_fs::write(directives_dir.join(format!("{name}.html")), body).unwrap();
         let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
-        let ctx = crate::directive::DirectiveContext {
-            name: "csv-test".into(),
-            positional_args: vec!["data.csv".into()],
-            named_args: BTreeMap::default(),
-            id: None,
-            classes: Vec::new(),
-            body_html: String::new(),
-            body_raw: String::new(),
-            source_dir: Some(source.path().to_string_lossy().into_owned()),
-        };
-
-        let html = engine
-            .render_directive("csv-test", ctx, &AssetsHandle::default(), &test_config())
-            .unwrap()
-            .unwrap();
-        assert_eq!(
-            html,
-            "[name|value][field with, comma|has &quot;quotes&quot;]"
-        );
+        (dir, engine)
     }
 
-    #[test]
-    fn parse_csv_empty_input() {
-        let dir = tempfile::tempdir().unwrap();
-        let directives_dir = dir.path().join("directives");
-        test_fs::create_dir_all(&directives_dir).unwrap();
-        test_fs::write(
-            directives_dir.join("csv-test.html"),
-            r#"{% set rows = parse_csv("") %}{{ rows | length }}"#,
-        )
-        .unwrap();
-
-        let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
-        let ctx = crate::directive::DirectiveContext {
-            name: "csv-test".into(),
+    fn empty_ctx(name: &str) -> crate::directive::DirectiveContext {
+        crate::directive::DirectiveContext {
+            name: name.into(),
             positional_args: Vec::new(),
             named_args: BTreeMap::default(),
             id: None,
@@ -1718,102 +1558,6 @@ mod tests {
             body_html: String::new(),
             body_raw: String::new(),
             source_dir: None,
-        };
-
-        let html = engine
-            .render_directive("csv-test", ctx, &AssetsHandle::default(), &test_config())
-            .unwrap()
-            .unwrap();
-        assert_eq!(html, "0");
-    }
-
-    #[test]
-    fn parse_csv_malformed_returns_error() {
-        let dir = tempfile::tempdir().unwrap();
-        let directives_dir = dir.path().join("directives");
-        test_fs::create_dir_all(&directives_dir).unwrap();
-        test_fs::write(
-            directives_dir.join("csv-test.html"),
-            r"{% set rows = parse_csv(read_file(positional_args[0])) %}{{ rows | length }}",
-        )
-        .unwrap();
-
-        let source = tempfile::tempdir().unwrap();
-        test_fs::write(source.path().join("bad.csv"), "a,b\n\"unclosed").unwrap();
-
-        let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
-        let ctx = crate::directive::DirectiveContext {
-            name: "csv-test".into(),
-            positional_args: vec!["bad.csv".into()],
-            named_args: BTreeMap::default(),
-            id: None,
-            classes: Vec::new(),
-            body_html: String::new(),
-            body_raw: String::new(),
-            source_dir: Some(source.path().to_string_lossy().into_owned()),
-        };
-
-        let result =
-            engine.render_directive("csv-test", ctx, &AssetsHandle::default(), &test_config());
-        let err = format!("{:#}", result.unwrap().unwrap_err());
-        assert!(
-            err.contains("CSV parse error"),
-            "should report CSV error, got: {err}"
-        );
-    }
-
-    // ── Integration ──
-
-    #[test]
-    fn render_post_renders_t_through_real_template() {
-        let dir = tempfile::tempdir().unwrap();
-        test_fs::create_dir_all(dir.path().join("i18n")).unwrap();
-        test_fs::write(
-            dir.path().join("i18n").join("en.toml"),
-            r#"posted_on = "Posted on""#,
-        )
-        .unwrap();
-        let i18n =
-            crate::i18n::I18n::load(Path::new("/nonexistent"), Some(dir.path()), "en").unwrap();
-
-        let templates = tempfile::tempdir().unwrap();
-        test_fs::write(
-            templates.path().join("base.html"),
-            "{% block body %}{% endblock %}",
-        )
-        .unwrap();
-        test_fs::write(
-            templates.path().join("post.html"),
-            indoc! {r#"
-                {% extends "base.html" %}
-                {% block body %}
-                {{ t("posted_on") }} {{ date[:10] }}
-                {% endblock %}
-            "#},
-        )
-        .unwrap();
-
-        let engine = TemplateEngine::new(Some(templates.path()), None, &i18n).unwrap();
-        let config = test_config();
-        let vars = PostTemplateVars {
-            title: "",
-            description: "",
-            url: "",
-            featured_image: None,
-            page_css: None,
-            date: Some("2026-03-15T09:00:00Z".into()),
-            updated: None,
-            tags: Vec::new(),
-            section: None,
-            assets: PageAssets::default(),
-            content: "",
-            toc: "",
-            config: &config,
-        };
-        let html = engine.render_post(&vars).unwrap();
-        assert!(
-            html.contains("Posted on 2026-03-15"),
-            "should render localized prefix alongside the ISO date slice, html:\n{html}"
-        );
+        }
     }
 }
