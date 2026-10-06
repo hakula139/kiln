@@ -66,13 +66,15 @@ A **page bundle** is a directory containing an `index.md` alongside related file
 content/posts/note/my-post/
 ├── index.md           # Page content
 ├── cover.webp         # Image (co-located asset)
-├── style.css          # Per-page CSS (auto-detected)
 └── assets/
     ├── diagram.svg    # Nested assets work too
-    └── data.csv       # Data files for directives
+    ├── data.csv       # Data files for directives
+    └── css/
+        ├── _src/style.css        # Private handwritten source
+        └── style.generated.css   # Compiled page stylesheet
 ```
 
-All non-markdown files in the bundle directory (at any depth) are copied to the output alongside the rendered HTML. They become accessible at the same relative path:
+Non-markdown files in the bundle directory (at any depth), excluding underscore-prefixed files and directories, are copied to the output alongside the rendered HTML. They become accessible at the same relative path:
 
 | Source                                          | Output URL                               |
 | ----------------------------------------------- | ---------------------------------------- |
@@ -102,24 +104,21 @@ This resolves to `/posts/note/my-post/cover.webp` in templates and listing pages
 
 ### Per-Page CSS
 
-A page bundle may include a `style.css` file at any depth. kiln auto-detects it and exposes its URL to templates as [`page_css`](themes.md#post-templates-posthtml), which themes such as IgnIt link from the page's `<head>` after the main stylesheet.
+A page bundle's stylesheet is `assets/css/style.generated.css`. kiln exposes its content-hashed URL as [`page_css`](themes.md#post-templates-posthtml). Themes link it from that page's `<head>` after the shared stylesheet. Other CSS files remain ordinary co-located assets and are not automatically loaded.
 
 ```text
 content/posts/avg/impressions/
 ├── index.md
-└── style.css         ← auto-detected
+└── assets/css/
+    ├── _src/style.css        # Private handwritten source
+    └── style.generated.css   # Compiled page stylesheet
 ```
 
-or:
+The same source / output layout applies to shared CSS under `static/css/` in the site or theme. Run the theme's CSS compiler before building with kiln. kiln publishes compiled CSS without running Tailwind or another source processor.
 
-```text
-content/posts/avg/impressions/
-├── index.md
-└── assets/
-    └── style.css     ← also detected (nested)
-```
+Page CSS follows the shared stylesheet's publication rules: `--minify` minifies it before computing its SHA-256 fingerprint. Both the original and fingerprinted files are published beside their sibling assets, preserving relative `url(...)` references. The fingerprint covers the stylesheet's bytes only, so imported CSS must be bundled before publication.
 
-kiln copies the file as-is without running Tailwind or any other processor. To scope styles to the page, use the `:::` directive system to create a wrapper `<div>` with a class:
+Only the owning page receives `page_css`, so its selectors and keyframes are independent of other page bundles. Scope selectors carefully within the page to avoid unintentionally styling shared navigation or theme components. The `:::` directive can provide a wrapper class when needed:
 
 <!-- dprint-ignore -->
 ```markdown
@@ -130,7 +129,7 @@ kiln copies the file as-is without running Tailwind or any other processor. To s
 :::
 ```
 
-Then target that class in `style.css`:
+Then target that class in `assets/css/_src/style.css`:
 
 ```css
 .rating-table td:first-child {
@@ -155,16 +154,16 @@ Static files differ from co-located assets: they are global (not tied to a page)
 
 ### Private build inputs (`_` prefix)
 
-Files and directories whose names start with `_` are skipped when `static/` is copied to the output. This lets you keep build-time inputs alongside the shipped bundle without exposing them. Typical use: colocating Tailwind sources with the compiled stylesheet.
+Files and directories whose names start with `_` are skipped when static trees or page bundle assets are copied to the output. This lets you keep build-time inputs alongside the shipped bundle without exposing them. Typical use: colocating Tailwind sources with the compiled stylesheet.
 
 ```text
 static/
 ├── css/
 │   ├── _src/           # not copied to output
-│   │   ├── main.css
+│   │   ├── style.css
 │   │   └── components/
-│   └── style.css       → /css/style.css
+│   └── style.generated.css → /css/style.generated.css
 └── ...
 ```
 
-The same convention applies to theme `static/` directories.
+The same convention applies to theme `static/` directories. Top-level static deployment files `_headers` and `_redirects` are published. All underscore-prefixed entries inside page bundles remain private.

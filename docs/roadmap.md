@@ -29,7 +29,7 @@ The project's shape is deliberate:
 - RSS 2.0 feeds for the whole site, each section, and each taxonomy term.
 - Sitemap, `robots.txt`, and an optional template-driven 404 page.
 - Full-text search via [Pagefind](https://pagefind.app), wired in at build time.
-- Content-hashed CSS / JS URLs resolved from the merged static asset tree.
+- Content-hashed CSS / JS URLs resolved from the merged static asset tree, with canonical page bundle stylesheets using the same publication pipeline.
 - Optional HTML / CSS / JS minification with `kiln build --minify`, implemented in Rust with no Node toolchain required.
 - Page-scoped asset registry: themes load KaTeX, Mermaid, search, and other scripts only on pages that need them, no frontmatter flag required.
 - `output_dir` validation prevents writing outside the project root.

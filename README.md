@@ -103,11 +103,11 @@ kiln convert --source /path/to/hugo --dest /path/to/kiln  # Convert a Hugo site
 Use `asset_url()` in templates when referencing a file from the merged theme and site `static/` trees:
 
 ```jinja
-<link rel="stylesheet" href="{{ asset_url('/css/style.css') | safe }}">
+<link rel="stylesheet" href="{{ asset_url('/css/style.generated.css') | safe }}">
 <script src="{{ asset_url('/js/app.js') | safe }}"></script>
 ```
 
-kiln copies CSS and JS to names containing the first 12 hexadecimal characters of their SHA-256 digest, such as `/css/style.a1b2c3d4e5f6.css`. Other static files keep their original URLs. A missing path fails the build.
+kiln copies CSS and JS to names containing the first 12 hexadecimal characters of their SHA-256 digest, such as `/css/style.generated.a1b2c3d4e5f6.css`. Other static files keep their original URLs. A missing path fails the build.
 
 The original CSS / JS files remain in the output because relative imports and existing hard-coded references may still depend on them. Templates using `asset_url()` receive the fingerprinted URL.
 
@@ -115,7 +115,7 @@ The digest covers one file. Bundle self-contained entry assets before passing th
 
 ### Minification
 
-Passing `--minify` to `kiln build` minifies shared CSS / JS before their digests are computed, then processes generated HTML and page-bundle assets:
+Passing `--minify` to `kiln build` minifies shared CSS / JS and canonical page stylesheets before their digests are computed, then processes generated HTML and other page-bundle assets:
 
 - HTML via [`minify-html`](https://crates.io/crates/minify-html)
 - CSS via [`lightningcss`](https://crates.io/crates/lightningcss)

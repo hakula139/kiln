@@ -238,7 +238,7 @@ Whenever a template variable includes a page `date` or `updated`, kiln renders i
 | `description`     | string           | Post description                                                 |
 | `url`             | string           | Canonical URL of the post                                        |
 | `featured_image`  | object or `none` | Featured image (see below)                                       |
-| `page_css`        | string or `none` | URL to co-located `style.css` (if any)                           |
+| `page_css`        | string or `none` | Fingerprint URL to `assets/css/style.generated.css` (if any)     |
 | `date`            | string or `none` | Publication date (ISO 8601)                                      |
 | `updated`         | string or `none` | Last update (ISO 8601; see [frontmatter](syntax.md#frontmatter)) |
 | `tags`            | list of objects  | Tags with `name` and `url` fields                                |
@@ -457,10 +457,10 @@ When `kwargs` are supplied, Python-style `{name}` placeholders in the string are
 
 #### `asset_url(path)`
 
-Resolves a root-relative path from the merged theme and site `static/` trees. CSS and JS receive a filename containing the first 12 hexadecimal characters of their SHA-256 digest. Other static files keep their original URL. The build fails when the path is missing or contains a query, fragment, or traversal component.
+Resolves a root-relative path from the merged theme and site `static/` trees or a canonical page stylesheet. CSS and JS receive a filename containing the first 12 hexadecimal characters of their SHA-256 digest. Other static files keep their original URL. The build fails when the path is missing or contains a query, fragment, or traversal component.
 
 ```jinja
-<link rel="stylesheet" href="{{ asset_url('/css/style.css') | safe }}">
+<link rel="stylesheet" href="{{ asset_url('/css/style.generated.css') | safe }}">
 <script src="{{ asset_url('/js/app.js') | safe }}"></script>
 ```
 

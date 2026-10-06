@@ -1,4 +1,5 @@
 mod archive;
+mod assets;
 mod error;
 mod feed;
 mod git;
@@ -10,7 +11,7 @@ mod sitemap;
 mod url;
 
 use std::fmt::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
@@ -22,7 +23,7 @@ use crate::content::discovery::discover_content;
 use crate::content::page::{Page, PageKind};
 use crate::i18n::I18n;
 use crate::minify::{self, MinifyStats};
-use crate::output::{clean_output_dir, copy_file, copy_static, write_output};
+use crate::output::{clean_output_dir, copy_static, write_output};
 use crate::render::RenderOptions;
 use crate::render::lqip::ImageResolver;
 use crate::render::pipeline::render_page;
@@ -33,12 +34,13 @@ use crate::taxonomy::build_taxonomies;
 use crate::template::TemplateEngine;
 use crate::template::vars::PostTemplateVars;
 
+use self::assets::{copy_page_assets, copy_page_styles, page_style_url};
 use self::git::{GitInfo, updated_timestamp};
 use self::listing::{
     build_listing_artifacts, build_listing_buckets, format_page_date, linked_tags, page_section,
     resolve_featured_image,
 };
-use self::url::{page_url, resolve_relative_url};
+use self::url::page_url;
 
 /// Shared build state, created once per build invocation.
 struct BuildContext {
@@ -46,6 +48,7 @@ struct BuildContext {
     i18n: I18n,
     time_zone: Option<TimeZone>,
     syntax_set: SyntaxSet,
+    static_assets: StaticAssetManifest,
     template_engine: TemplateEngine,
     image_resolver: ImageResolver,
     git_info: Option<GitInfo>,
@@ -117,6 +120,8 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
     }
     copy_static(&root.join("static"), &output_dir)?;
 
+    copy_page_styles(&content.pages, &content.content_dir, &output_dir)?;
+
     let minify_stats = if minify {
         eprintln!("Minifying...");
         Some(minify::minify_static_assets(&output_dir).context("minification failed")?)
@@ -140,6 +145,7 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
         i18n,
         time_zone,
         syntax_set,
+        static_assets,
         template_engine,
         image_resolver,
         git_info,
@@ -182,7 +188,6 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
     finish_build(
         &ctx,
         &output_dir,
-        &static_assets,
         minify_stats,
         page_count,
         content.pages.len(),
@@ -193,16 +198,17 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
 fn finish_build(
     ctx: &BuildContext,
     output_dir: &Path,
-    static_assets: &StaticAssetManifest,
     mut minify_stats: Option<MinifyStats>,
     page_count: usize,
     content_count: usize,
     started: Instant,
 ) -> Result<()> {
     if let Some(stats) = &mut minify_stats {
-        *stats +=
-            minify::minify_output_dir_excluding(output_dir, static_assets.fingerprinted_paths())
-                .context("minification failed")?;
+        *stats += minify::minify_output_dir_excluding(
+            output_dir,
+            ctx.static_assets.fingerprinted_paths(),
+        )
+        .context("minification failed")?;
     }
 
     let search_duration = if ctx.config.search.enabled {
@@ -303,7 +309,7 @@ fn build_page(
         &ctx.image_resolver,
         page.source_path.parent(),
     );
-    let page_css = find_page_css(&page.assets, page.source_path.parent(), &url);
+    let page_css = page_style_url(page, content_dir, &ctx.config.base_url, &ctx.static_assets)?;
     let vars = PostTemplateVars {
         title: &page.frontmatter.title,
         description: page
@@ -344,71 +350,7 @@ fn build_page(
     let dest = output_dir.join(&output_path);
     write_output(&dest, &html).with_context(|| format!("failed to write {}", dest.display()))?;
 
-    if let Some(bundle_dir) = page.source_path.parent() {
-        let asset_output_dir = dest.parent().expect("output file should have a parent");
-        for asset in &page.assets {
-            let relative = asset.strip_prefix(bundle_dir).with_context(|| {
-                format!(
-                    "asset {} is not under {}",
-                    asset.display(),
-                    bundle_dir.display()
-                )
-            })?;
-            let asset_dest = asset_output_dir.join(relative);
-            copy_file(asset, &asset_dest)
-                .with_context(|| format!("failed to copy asset {}", asset.display()))?;
-        }
-    }
+    copy_page_assets(page, &dest, output_dir, &ctx.static_assets)?;
 
     Ok(())
-}
-
-/// Returns the URL path of the page bundle's `style.css` asset (e.g., `/posts/my-post/style.css`).
-fn find_page_css(assets: &[PathBuf], bundle_dir: Option<&Path>, page_url: &str) -> Option<String> {
-    let dir = bundle_dir?;
-    let css = assets
-        .iter()
-        .find(|p| p.file_name().and_then(|n| n.to_str()) == Some("style.css"))?;
-    let relative = css.strip_prefix(dir).ok()?;
-    Some(resolve_relative_url(&relative.to_string_lossy(), page_url))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // ── find_page_css ──
-
-    #[test]
-    fn find_page_css_detects_root_style() {
-        let bundle = Path::new("content/posts/my-post");
-        let assets = vec![bundle.join("cover.webp"), bundle.join("style.css")];
-        let result = find_page_css(&assets, Some(bundle), "https://example.com/posts/my-post/");
-        assert_eq!(result.as_deref(), Some("/posts/my-post/style.css"));
-    }
-
-    #[test]
-    fn find_page_css_detects_nested_style() {
-        let bundle = Path::new("content/posts/my-post");
-        let assets = vec![
-            bundle.join("assets/cover.webp"),
-            bundle.join("assets/style.css"),
-        ];
-        let result = find_page_css(&assets, Some(bundle), "https://example.com/posts/my-post/");
-        assert_eq!(result.as_deref(), Some("/posts/my-post/assets/style.css"));
-    }
-
-    #[test]
-    fn find_page_css_without_style_returns_none() {
-        let bundle = Path::new("content/posts/my-post");
-        let assets = vec![bundle.join("cover.webp")];
-        assert!(
-            find_page_css(&assets, Some(bundle), "https://example.com/posts/my-post/").is_none()
-        );
-    }
-
-    #[test]
-    fn find_page_css_non_bundle_returns_none() {
-        assert!(find_page_css(&[], None, "https://example.com/posts/my-post/").is_none());
-    }
 }
