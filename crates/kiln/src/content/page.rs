@@ -174,9 +174,7 @@ fn discover_assets(dir: &Path) -> Result<Vec<PathBuf>> {
     for entry in WalkDir::new(dir)
         .follow_links(true)
         .into_iter()
-        .filter_entry(|entry| {
-            entry.depth() == 0 || !entry.file_name().to_string_lossy().starts_with('_')
-        })
+        .filter_entry(|entry| entry.depth() == 0 || !super::is_private(entry.file_name()))
     {
         let entry = entry.with_context(|| format!("failed to read entry in {}", dir.display()))?;
         if !entry.file_type().is_file() {

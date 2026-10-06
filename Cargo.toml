@@ -49,6 +49,8 @@ oxc_codegen = "0.151"
 oxc_minifier = "0.151"
 oxc_parser = "0.151"
 oxc_span = "0.151"
+pathdiff = "0.2"
+percent-encoding = "2"
 pulldown-cmark = "0.13"
 regex = "1"
 reqwest = { version = "0.13", default-features = false }
@@ -62,6 +64,7 @@ syntect = { version = "5", default-features = false, features = [
   "html",
   "regex-onig",
 ] }
+tempfile = "3"
 tokio = { version = "1", features = [
   "fs",
   "macros",
@@ -84,6 +87,7 @@ tracing-subscriber = { version = "0.3", default-features = false, features = [
 two-face = "0.5"
 unicase = "2"
 unicode-width = "0.2"
+url = "2"
 walkdir = "2"
 webp = "0.3"
 

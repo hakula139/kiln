@@ -8,7 +8,7 @@ mod listing;
 mod overview;
 mod paginate;
 mod sitemap;
-mod url;
+pub(crate) mod url;
 
 use std::fmt::Write;
 use std::path::Path;
@@ -18,7 +18,7 @@ use anyhow::{Context, Result};
 use jiff::tz::TimeZone;
 use syntect::parsing::SyntaxSet;
 
-use self::assets::{copy_page_assets, copy_page_styles, page_style_url};
+use self::assets::copy_page_assets;
 use self::git::{GitInfo, updated_timestamp};
 use self::listing::{
     build_listing_artifacts, build_listing_buckets, format_page_date, linked_tags, page_section,
@@ -28,6 +28,7 @@ use self::url::page_url;
 use crate::config::Config;
 use crate::content::discovery::discover_content;
 use crate::content::page::{Page, PageKind};
+use crate::css::Stylesheets;
 use crate::i18n::I18n;
 use crate::minify::{self, MinifyStats};
 use crate::output::{clean_output_dir, copy_static, write_output};
@@ -47,6 +48,7 @@ struct BuildContext {
     i18n: I18n,
     time_zone: Option<TimeZone>,
     syntax_set: SyntaxSet,
+    stylesheets: Stylesheets,
     static_assets: StaticAssetManifest,
     template_engine: TemplateEngine,
     image_resolver: ImageResolver,
@@ -119,7 +121,9 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
     }
     copy_static(&root.join("static"), &output_dir)?;
 
-    copy_page_styles(&content.pages, &content.content_dir, &output_dir)?;
+    copy_page_assets(&content.pages, &content.content_dir, &output_dir)?;
+    let stylesheets = Stylesheets::discover(root, &config, &content.pages, &content.content_dir)?;
+    stylesheets.compile(root, &config, &output_dir)?;
 
     let minify_stats = if minify {
         eprintln!("Minifying...");
@@ -144,6 +148,7 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
         i18n,
         time_zone,
         syntax_set,
+        stylesheets,
         static_assets,
         template_engine,
         image_resolver,
@@ -308,7 +313,9 @@ fn build_page(
         &ctx.image_resolver,
         page.source_path.parent(),
     );
-    let page_css = page_style_url(page, content_dir, &ctx.config.base_url, &ctx.static_assets)?;
+    let page_css = ctx
+        .stylesheets
+        .page_url(page, &ctx.config.base_url, &ctx.static_assets)?;
     let vars = PostTemplateVars {
         title: &page.frontmatter.title,
         description: page
@@ -348,8 +355,6 @@ fn build_page(
 
     let dest = output_dir.join(&output_path);
     write_output(&dest, &html).with_context(|| format!("failed to write {}", dest.display()))?;
-
-    copy_page_assets(page, &dest, output_dir, &ctx.static_assets)?;
 
     Ok(())
 }

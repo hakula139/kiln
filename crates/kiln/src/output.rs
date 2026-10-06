@@ -18,8 +18,7 @@ pub fn clean_output_dir(path: &Path) -> Result<()> {
         .with_context(|| format!("failed to create output directory {}", path.display()))
 }
 
-/// Recursively copies files from `src` into `dest`, skipping `_`-prefixed entries (except
-/// top-level deployment config files like `_headers`). Source symlinks are materialized as regular
+/// Recursively copies every static file into `dest`, materializing source symlinks as regular
 /// files and directories. No-op if `src` does not exist.
 ///
 /// # Errors
@@ -35,19 +34,7 @@ pub fn copy_static(src: &Path, dest: &Path) -> Result<()> {
     let destination = dest
         .canonicalize()
         .with_context(|| format!("failed to resolve destination {}", dest.display()))?;
-    let walker = WalkDir::new(src)
-        .follow_links(true)
-        .into_iter()
-        .filter_entry(|e| e.depth() == 0 || !is_build_private(e.path(), e.depth()))
-        // WalkDir resolves links before filter_entry, so excluded broken links arrive as errors.
-        .filter(|entry| {
-            entry.as_ref().err().is_none_or(|error| {
-                error.depth() == 0
-                    || error
-                        .path()
-                        .is_none_or(|path| !is_build_private(path, error.depth()))
-            })
-        });
+    let walker = WalkDir::new(src).follow_links(true).into_iter();
     for entry in walker {
         let entry = entry.with_context(|| format!("failed to read entry in {}", src.display()))?;
         if entry.path_is_symlink() {
@@ -84,24 +71,6 @@ fn validate_source_link(path: &Path, destination: &Path) -> Result<()> {
     );
     Ok(())
 }
-
-/// Returns `true` for entries whose file name starts with `_`, except for deployment-config
-/// files in [`STATIC_DEPLOYMENT_CONFIG_FILES`] at the top level of the walked tree.
-fn is_build_private(path: &Path, depth: usize) -> bool {
-    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
-        return false;
-    };
-    if !name.starts_with('_') {
-        return false;
-    }
-    if depth == 1 && STATIC_DEPLOYMENT_CONFIG_FILES.contains(&name) {
-        return false;
-    }
-    true
-}
-
-/// Deployment-config files that bypass the `_`-prefix filter at the top level.
-const STATIC_DEPLOYMENT_CONFIG_FILES: &[&str] = &["_headers", "_redirects"];
 
 /// Copies a single file from `src` to `dest`, creating parent directories as needed.
 ///
@@ -220,7 +189,6 @@ mod tests {
         fs::write(external.path().join("_headers"), "nested headers").unwrap();
         symlink(external.path(), src.join("shared")).unwrap();
         symlink(external.path(), src.join("_private")).unwrap();
-        symlink(external.path().join("missing"), src.join("_broken")).unwrap();
         symlink(external.path().join("data.txt"), src.join("data.txt")).unwrap();
         symlink(external.path().join("_headers"), src.join("_headers")).unwrap();
 
@@ -240,10 +208,13 @@ mod tests {
             fs::read_to_string(dest.join("_headers")).unwrap(),
             "nested headers"
         );
-        assert!(!dest.join("_private").exists());
-        assert!(!dest.join("_broken").is_symlink());
-        assert!(!dest.join("shared/_private.txt").exists());
-        assert!(!dest.join("shared/_headers").exists());
+        for path in ["_private/_private.txt", "shared/_private.txt"] {
+            assert_eq!(fs::read_to_string(dest.join(path)).unwrap(), "private");
+        }
+        assert_eq!(
+            fs::read_to_string(dest.join("shared/_headers")).unwrap(),
+            "nested headers"
+        );
     }
 
     #[test]
@@ -265,76 +236,34 @@ mod tests {
     }
 
     #[test]
-    fn copy_static_skips_underscore_prefixed_files_and_dirs() {
+    fn copy_static_preserves_underscore_names_at_every_depth() {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("static");
         let dest = dir.path().join("public");
-        fs::create_dir_all(src.join("css").join("_src").join("components")).unwrap();
-        fs::create_dir_all(&dest).unwrap();
-        fs::write(src.join("css").join("style.css"), "public").unwrap();
-        fs::write(
-            src.join("css").join("_src").join("main.css"),
-            "private-entry",
-        )
-        .unwrap();
-        fs::write(
-            src.join("css")
-                .join("_src")
-                .join("components")
-                .join("nav.css"),
-            "private-nested",
-        )
-        .unwrap();
-        fs::write(src.join("_notes.txt"), "private-file").unwrap();
+        for file in [
+            "_headers",
+            "_redirects",
+            "_custom/data.txt",
+            "nested/_headers",
+        ] {
+            let path = src.join(file);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, file).unwrap();
+        }
 
         copy_static(&src, &dest).unwrap();
 
-        assert_eq!(
-            fs::read_to_string(dest.join("css").join("style.css")).unwrap(),
-            "public",
-            "non-underscore files should be copied",
-        );
-        assert!(
-            !dest.join("css").join("_src").exists(),
-            "underscore-prefixed directories should not be copied",
-        );
-        assert!(
-            !dest.join("_notes.txt").exists(),
-            "underscore-prefixed files should not be copied",
-        );
-    }
-
-    #[test]
-    fn copy_static_passes_through_top_level_deployment_config_files() {
-        let dir = tempfile::tempdir().unwrap();
-        let src = dir.path().join("static");
-        let dest = dir.path().join("public");
-        fs::create_dir_all(src.join("nested")).unwrap();
-        fs::create_dir_all(&dest).unwrap();
-        fs::write(src.join("_headers"), "top-level-headers").unwrap();
-        fs::write(src.join("_redirects"), "top-level-redirects").unwrap();
-        fs::write(src.join("nested").join("_headers"), "nested-headers").unwrap();
-
-        copy_static(&src, &dest).unwrap();
-
-        assert_eq!(
-            fs::read_to_string(dest.join("_headers")).unwrap(),
-            "top-level-headers",
-            "top-level _headers should pass through",
-        );
-        assert_eq!(
-            fs::read_to_string(dest.join("_redirects")).unwrap(),
-            "top-level-redirects",
-            "top-level _redirects should pass through",
-        );
-        assert!(
-            !dest.join("nested").join("_headers").exists(),
-            "nested _headers should still be filtered as build-private",
-        );
+        for file in [
+            "_headers",
+            "_redirects",
+            "_custom/data.txt",
+            "nested/_headers",
+        ] {
+            assert_eq!(fs::read_to_string(dest.join(file)).unwrap(), file);
+        }
     }
 
     // macOS APFS rejects non-UTF-8 filenames, while Linux ext4 and btrfs accept them.
-    // CI runs on ubuntu-latest, so coverage of the `to_str() == None` branch lands there.
     #[cfg(target_os = "linux")]
     #[test]
     fn copy_static_copies_files_with_non_utf8_names() {
@@ -345,18 +274,12 @@ mod tests {
         let src = dir.path().join("static");
         let dest = dir.path().join("public");
         fs::create_dir_all(&src).unwrap();
-        fs::create_dir_all(&dest).unwrap();
-        // Lone continuation bytes are invalid UTF-8.
-        let bad_name = OsStr::from_bytes(&[0xff, 0xfe]);
-        fs::write(src.join(bad_name), "binary").unwrap();
+        let name = OsStr::from_bytes(&[0xff, 0xfe]);
+        fs::write(src.join(name), "binary").unwrap();
 
         copy_static(&src, &dest).unwrap();
 
-        // `is_build_private` returns false for non-UTF-8 names, so the file passes through.
-        assert!(
-            dest.join(bad_name).exists(),
-            "non-UTF-8 filenames should not be filtered",
-        );
+        assert_eq!(fs::read(dest.join(name)).unwrap(), b"binary");
     }
 
     #[test]

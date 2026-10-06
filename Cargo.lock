@@ -1711,6 +1711,8 @@ dependencies = [
  "oxc_minifier 0.151.0",
  "oxc_parser 0.151.0",
  "oxc_span 0.151.0",
+ "pathdiff",
+ "percent-encoding",
  "pulldown-cmark",
  "regex",
  "reqwest",
@@ -1733,6 +1735,7 @@ dependencies = [
  "two-face",
  "unicase",
  "unicode-width",
+ "url",
  "walkdir",
  "webp",
 ]

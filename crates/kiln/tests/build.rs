@@ -322,6 +322,11 @@ fn build_materializes_external_bundle_symlinks() {
     fs::write(external.path().join("nested/image.svg"), "linked image").unwrap();
     fs::write(external.path().join("caption.txt"), "linked caption").unwrap();
     fs::write(external.path().join("notes.md"), "not a bundle asset").unwrap();
+    fs::write(
+        external.path().join("vendor.css"),
+        ".imported { background: url(nested/image.svg); }",
+    )
+    .unwrap();
     std::os::unix::fs::symlink(external.path(), bundle.join("shared")).unwrap();
     std::os::unix::fs::symlink(
         external.path().join("caption.txt"),
@@ -329,33 +334,68 @@ fn build_materializes_external_bundle_symlinks() {
     )
     .unwrap();
 
-    build(root.path(), BuildOptions::default()).unwrap();
-
-    let output = root.path().join("public/posts/example");
-    for (path, expected) in [
-        ("caption.txt", "linked caption"),
-        ("shared/caption.txt", "linked caption"),
-        ("shared/nested/image.svg", "linked image"),
-    ] {
-        let asset = output.join(path);
-        assert_eq!(fs::read_to_string(&asset).unwrap(), expected);
-        assert!(fs::symlink_metadata(asset).unwrap().file_type().is_file());
-    }
-    assert!(
-        fs::symlink_metadata(output.join("shared"))
-            .unwrap()
-            .is_dir()
+    fs::create_dir_all(bundle.join("_cache")).unwrap();
+    std::os::unix::fs::symlink(
+        external.path().join("missing"),
+        bundle.join("_cache/broken"),
+    )
+    .unwrap();
+    std::os::unix::fs::symlink(external.path(), bundle.join("_private")).unwrap();
+    write_test_file(root.path(), "static/icon.svg", "static image");
+    write_test_file(
+        root.path(),
+        "content/posts/example/_assets/css/style.css",
+        indoc! {r#"
+            @import "../../shared/vendor.css";
+            .image { background: url(../../shared/nested/image.svg); }
+            .caption { background: url(../../caption.txt); }
+            .static { background: url(../../../../../static/icon.svg); }
+        "#},
     );
-    assert!(!output.join("shared/notes.md").exists());
+
+    for processor in ["plain", "tailwind"] {
+        fs::write(
+            root.path().join("config.toml"),
+            formatdoc! {r#"
+                [css]
+                processor = "{processor}"
+            "#},
+        )
+        .unwrap();
+        build(root.path(), BuildOptions::default()).unwrap();
+
+        let output = root.path().join("public/posts/example");
+        for (path, expected) in [
+            ("caption.txt", "linked caption"),
+            ("shared/caption.txt", "linked caption"),
+            ("shared/nested/image.svg", "linked image"),
+        ] {
+            let asset = output.join(path);
+            assert_eq!(fs::read_to_string(&asset).unwrap(), expected);
+            assert!(fs::symlink_metadata(asset).unwrap().file_type().is_file());
+        }
+        assert!(
+            fs::symlink_metadata(output.join("shared"))
+                .unwrap()
+                .is_dir()
+        );
+        assert!(!output.join("shared/notes.md").exists());
+        assert!(!output.join("_cache").exists());
+        assert!(!output.join("_private").exists());
+        let css = fs::read_to_string(output.join("assets/css/style.css")).unwrap();
+        assert!(css.contains("../../shared/nested/image.svg"), "{css}");
+        assert!(css.contains("../../caption.txt"), "{css}");
+        assert!(css.contains(".imported"), "{css}");
+        assert!(css.contains("../../../../icon.svg"), "{css}");
+    }
 }
 
 #[test]
-fn build_publishes_only_canonical_page_styles_with_private_sources_omitted() {
+fn build_compiles_page_styles_with_private_sources_and_final_hashes() {
     let root = tempfile::tempdir().unwrap();
     fs::write(root.path().join("config.toml"), "").unwrap();
     copy_templates(&root.path().join("templates"));
-
-    for page in ["example", "other"] {
+    for page in ["example", "example/child", "other"] {
         write_page(
             root.path(),
             page,
@@ -369,192 +409,25 @@ fn build_publishes_only_canonical_page_styles_with_private_sources_omitted() {
     }
     write_test_file(
         root.path(),
-        "content/example/assets/css/style.generated.css",
-        ".rating { color: red; }",
+        "content/example/child/_assets/css/style.css",
+        r#"@import "nested/colors.css";"#,
     );
     write_test_file(
         root.path(),
-        "content/example/assets/css/_src/style.css",
-        "@apply hidden;",
+        "content/example/child/_assets/css/nested/colors.css",
+        ".rating { color: red; & > span { background-image: url(../../../assets/my%20icon.svg?time=12:00#icon:active); } }",
     );
     write_test_file(
         root.path(),
-        "content/example/assets/_private/data.json",
-        "private",
-    );
-    write_test_file(root.path(), "content/example/_notes.txt", "private");
-    write_test_file(root.path(), "content/example/assets/css/image.svg", "image");
-    write_test_file(
-        root.path(),
-        "content/example/assets/app.js",
-        "console.log('page');",
+        "content/example/child/assets/my icon.svg",
+        "bundle-image",
     );
     write_test_file(
         root.path(),
         "content/other/style.css",
-        ".old { color: blue; }",
+        ".ordinary { color: blue; }",
     );
-    write_test_file(
-        root.path(),
-        "content/other/assets/css/nested/style.generated.css",
-        ".nested {}",
-    );
-
-    build(
-        root.path(),
-        BuildOptions {
-            base_url_override: Some("https://example.com/subsite"),
-            ..Default::default()
-        },
-    )
-    .unwrap();
-
-    let public = root.path().join("public");
-    let html = fs::read_to_string(public.join("example/index.html")).unwrap();
-    let css_url = stylesheet_url(&html);
-    assert!(
-        css_url.starts_with("/subsite/example/assets/css/style.generated."),
-        "{html}"
-    );
-    assert_eq!(
-        fs::read_to_string(published_path(&public, &css_url)).unwrap(),
-        ".rating { color: red; }"
-    );
-    let other = fs::read_to_string(public.join("other/index.html")).unwrap();
-    assert!(!other.contains(r#"rel="stylesheet""#), "{other}");
-    for private in [
-        "example/assets/css/_src",
-        "example/assets/_private",
-        "example/_notes.txt",
-    ] {
-        assert!(!public.join(private).exists(), "published {private}");
-    }
-    assert_eq!(
-        fs::read_to_string(public.join("example/assets/app.js")).unwrap(),
-        "console.log('page');"
-    );
-    assert_eq!(
-        fs::read_to_string(public.join("example/assets/css/image.svg")).unwrap(),
-        "image"
-    );
-    assert_eq!(
-        fs::read_to_string(public.join("other/style.css")).unwrap(),
-        ".old { color: blue; }"
-    );
-}
-
-#[test]
-fn build_hashes_page_css_after_minification_and_preserves_relative_urls() {
-    let root = tempfile::tempdir().unwrap();
-    fs::write(root.path().join("config.toml"), "").unwrap();
-    copy_templates(&root.path().join("templates"));
-
-    write_page(
-        root.path(),
-        "example",
-        indoc! {r#"
-            +++
-            title = "Example"
-            +++
-            Page content.
-        "#},
-    );
-    let source =
-        "/* long source comment */ .rating { color: red; background-image: url(./image.svg); }";
-    write_test_file(
-        root.path(),
-        "content/example/assets/css/style.generated.css",
-        source,
-    );
-    write_test_file(root.path(), "content/example/assets/css/image.svg", "image");
-    write_test_file(root.path(), "static/css/style.generated.css", source);
-
-    build(
-        root.path(),
-        BuildOptions {
-            base_url_override: Some("https://example.com/subsite"),
-            minify: true,
-            ..Default::default()
-        },
-    )
-    .unwrap();
-
-    let public = root.path().join("public");
-    let html = fs::read_to_string(public.join("example/index.html")).unwrap();
-    let first = stylesheet_url(&html);
-    let bytes = fs::read(published_path(&public, &first)).unwrap();
-    let css = String::from_utf8(bytes.clone()).unwrap();
-    let digest = hex::encode(Sha256::digest(&bytes));
-    assert!(first.ends_with(&format!("style.generated.{}.css", &digest[..12])));
-    assert!(bytes.len() < source.len());
-    assert!(!css.contains("long source comment"));
-    assert!(
-        css.contains("url(./image.svg)") || css.contains("url(image.svg)"),
-        "{css}"
-    );
-    assert_eq!(
-        bytes,
-        fs::read(public.join("example/assets/css/style.generated.css")).unwrap()
-    );
-    assert_eq!(
-        bytes,
-        fs::read(public.join(format!("css/style.generated.{}.css", &digest[..12]))).unwrap()
-    );
-    assert_eq!(
-        fs::read_to_string(public.join("example/assets/css/image.svg")).unwrap(),
-        "image"
-    );
-
-    write_test_file(
-        root.path(),
-        "content/example/assets/css/style.generated.css",
-        ".rating { color: blue; }",
-    );
-    build(
-        root.path(),
-        BuildOptions {
-            base_url_override: Some("https://example.com/subsite"),
-            minify: true,
-            ..Default::default()
-        },
-    )
-    .unwrap();
-    let html = fs::read_to_string(public.join("example/index.html")).unwrap();
-    let second = stylesheet_url(&html);
-    assert_ne!(first, second);
-    assert!(!published_path(&public, &first).exists());
-    assert!(
-        fs::read_to_string(published_path(&public, &second))
-            .unwrap()
-            .contains("#00f")
-    );
-}
-
-#[test]
-fn build_preserves_prepublished_child_styles_when_copying_parent_bundle_assets() {
-    let root = tempfile::tempdir().unwrap();
-    fs::write(root.path().join("config.toml"), "").unwrap();
-    copy_templates(&root.path().join("templates"));
-
-    for page in ["example", "example/child"] {
-        write_page(
-            root.path(),
-            page,
-            indoc! {r#"
-                +++
-                title = "Example"
-                +++
-                Page content.
-            "#},
-        );
-    }
-    let source = "/* source comment */ .child { color: red; }";
-    write_test_file(
-        root.path(),
-        "content/example/child/assets/css/style.generated.css",
-        source,
-    );
-
+    write_test_file(root.path(), "static/_custom/settings.txt", "published");
     build(
         root.path(),
         BuildOptions {
@@ -567,12 +440,247 @@ fn build_preserves_prepublished_child_styles_when_copying_parent_bundle_assets()
 
     let public = root.path().join("public");
     let html = fs::read_to_string(public.join("example/child/index.html")).unwrap();
-    let fingerprinted = fs::read(published_path(&public, &stylesheet_url(&html))).unwrap();
-    let original = fs::read(public.join("example/child/assets/css/style.generated.css")).unwrap();
-    assert_eq!(original, fingerprinted);
-    assert!(original.len() < source.len());
-    let parent = fs::read_to_string(public.join("example/index.html")).unwrap();
-    assert!(!parent.contains("stylesheet"), "{parent}");
+    let first = stylesheet_url(&html);
+    let bytes = fs::read(published_path(&public, &first)).unwrap();
+    let css = String::from_utf8(bytes.clone()).unwrap();
+    let digest = hex::encode(Sha256::digest(&bytes));
+    assert!(
+        first.starts_with("/subsite/example/child/assets/css/style."),
+        "{first}"
+    );
+    assert!(first.ends_with(&format!("style.{}.css", &digest[..12])));
+    assert!(
+        css.contains("../my%20icon.svg?time=12:00#icon:active"),
+        "{css}"
+    );
+    assert!(css.contains("span"), "{css}");
+    assert_eq!(
+        bytes,
+        fs::read(public.join("example/child/assets/css/style.css")).unwrap()
+    );
+    assert!(!public.join("example/child/_assets").exists());
+    for page in ["example", "other"] {
+        let html = fs::read_to_string(public.join(page).join("index.html")).unwrap();
+        assert!(!html.contains("stylesheet"), "{html}");
+    }
+    assert_eq!(
+        fs::read_to_string(public.join("example/child/assets/my icon.svg")).unwrap(),
+        "bundle-image"
+    );
+    assert_eq!(
+        fs::read_to_string(public.join("_custom/settings.txt")).unwrap(),
+        "published"
+    );
+
+    write_test_file(
+        root.path(),
+        "content/example/child/_assets/css/style.css",
+        ".rating { color: blue; }",
+    );
+    build(
+        root.path(),
+        BuildOptions {
+            minify: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert!(!published_path(&public, &first).exists());
+    assert!(
+        fs::read_to_string(public.join("example/child/assets/css/style.css"))
+            .unwrap()
+            .contains("#00f")
+    );
+}
+
+#[test]
+fn build_fingerprints_bundle_assets_after_static_collisions() {
+    let root = tempfile::tempdir().unwrap();
+    copy_templates(&root.path().join("templates"));
+    write_page(
+        root.path(),
+        "example",
+        indoc! {r#"
+            +++
+            title = "Example"
+            +++
+            Content.
+        "#},
+    );
+    for (name, bundle, shared) in [
+        ("app.js", "console.log('bundle');", "console.log('static');"),
+        ("image.svg", "bundle-image", "static-image"),
+    ] {
+        write_test_file(
+            root.path(),
+            &format!("content/example/assets/{name}"),
+            bundle,
+        );
+        write_test_file(
+            root.path(),
+            &format!("static/example/assets/{name}"),
+            shared,
+        );
+    }
+    build(
+        root.path(),
+        BuildOptions {
+            minify: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    let public = root.path().join("public");
+    assert_eq!(
+        fs::read_to_string(public.join("example/assets/image.svg")).unwrap(),
+        "bundle-image"
+    );
+    let js = fs::read_to_string(public.join("example/assets/app.js")).unwrap();
+    assert!(js.contains("bundle") && !js.contains("static"), "{js}");
+    let hash = hex::encode(Sha256::digest(js.as_bytes()));
+    assert_eq!(
+        fs::read_to_string(public.join(format!("example/assets/app.{}.js", &hash[..12]))).unwrap(),
+        js
+    );
+}
+
+#[test]
+fn build_compiles_shared_css_with_site_override_and_theme_asset_urls() {
+    let root = tempfile::tempdir().unwrap();
+    write_test_file(root.path(), "config.toml", r#"theme = "example""#);
+    write_test_file(root.path(), "themes/example/theme.toml", "");
+    copy_templates(&root.path().join("templates"));
+    fs::create_dir_all(root.path().join("themes/example/templates")).unwrap();
+    write_test_file(
+        root.path(),
+        "themes/example/_assets/css/style.css",
+        r#"@import "./parts/font.css"; .theme { color: red; }"#,
+    );
+    write_test_file(
+        root.path(),
+        "themes/example/_assets/css/parts/font.css",
+        "@font-face { font-family: Example; src: url(../../../static/fonts/example.woff2?v=1#font); }",
+    );
+    write_test_file(
+        root.path(),
+        "themes/example/static/fonts/example.woff2",
+        "theme-font",
+    );
+    build(root.path(), BuildOptions::default()).unwrap();
+    let output = root.path().join("public/css/style.css");
+    let css = fs::read_to_string(&output).unwrap();
+    assert!(css.contains("../fonts/example.woff2?v=1#font"), "{css}");
+    assert!(css.contains(".theme"), "{css}");
+
+    write_test_file(
+        root.path(),
+        "_assets/css/style.css",
+        ".site { color: blue; }",
+    );
+    build(root.path(), BuildOptions::default()).unwrap();
+    let css = fs::read_to_string(&output).unwrap();
+    assert!(css.contains(".site") && !css.contains(".theme"), "{css}");
+    assert!(!root.path().join("public/_assets").exists());
+}
+
+#[test]
+fn build_compiles_tailwind_with_shared_context_and_fresh_candidates() {
+    let root = tempfile::tempdir().unwrap();
+    write_test_file(root.path(), "config.toml", r#"theme = "example""#);
+    write_test_file(
+        root.path(),
+        "themes/example/theme.toml",
+        indoc! {r#"
+            [css]
+            processor = "tailwind"
+        "#},
+    );
+    copy_templates(&root.path().join("templates"));
+    write_test_file(
+        root.path(),
+        "themes/example/templates/unused.html",
+        r#"<div class="underline"></div>"#,
+    );
+    write_test_file(
+        root.path(),
+        "themes/example/_assets/css/style.css",
+        indoc! {r#"
+            @import "tailwindcss" source(none);
+            @import "./parts/font.css";
+            @theme { --color-brand: #123456; }
+            @utility theme-image { background-image: url(../../static/image.svg); }
+        "#},
+    );
+    write_test_file(
+        root.path(),
+        "themes/example/_assets/css/parts/font.css",
+        "@font-face { font-family: Example; src: url(../../../static/fonts/example.woff2?version=1#font); }",
+    );
+    write_test_file(
+        root.path(),
+        "themes/example/static/fonts/example.woff2",
+        "font",
+    );
+    write_page(
+        root.path(),
+        "example",
+        indoc! {r#"
+            +++
+            title = "Example"
+            +++
+            ::: {.bg-brand}
+            Text.
+            :::
+        "#},
+    );
+    write_test_file(
+        root.path(),
+        "themes/example/static/image.svg",
+        "theme-image",
+    );
+    write_test_file(
+        root.path(),
+        "content/example/_assets/css/style.css",
+        indoc! {r#"
+            @import "./nested/rating.css";
+            .rating { @apply text-brand theme-image; & > span { @apply font-bold; } }
+        "#},
+    );
+    write_test_file(
+        root.path(),
+        "content/example/_assets/css/nested/rating.css",
+        ".image { background: url(../../../image.svg?q=1#icon); }",
+    );
+    write_test_file(root.path(), "content/example/image.svg", "image");
+    build(root.path(), BuildOptions::default()).unwrap();
+    let public = root.path().join("public");
+    let shared = fs::read_to_string(public.join("css/style.css")).unwrap();
+    assert!(
+        shared.contains(".bg-brand") && shared.contains(".underline"),
+        "{shared}"
+    );
+    assert!(
+        shared.contains("../fonts/example.woff2?version=1#font"),
+        "{shared}"
+    );
+    let page = fs::read_to_string(public.join("example/assets/css/style.css")).unwrap();
+    assert!(
+        page.contains("color: var(--color-brand, #123456)") && page.contains("font-weight"),
+        "{page}"
+    );
+    assert!(page.contains("../../image.svg?q=1#icon"), "{page}");
+    assert!(page.contains("../../../image.svg"), "{page}");
+    assert!(
+        !page.contains(".bg-brand") && !page.contains(".underline"),
+        "{page}"
+    );
+    let content = root.path().join("content/example/index.md");
+    let markdown = fs::read_to_string(&content).unwrap();
+    fs::write(content, markdown.replace(".bg-brand", ".text-brand")).unwrap();
+    build(root.path(), BuildOptions::default()).unwrap();
+    let rebuilt = fs::read_to_string(public.join("css/style.css")).unwrap();
+    assert!(!rebuilt.contains(".bg-brand"), "{rebuilt}");
 }
 
 #[test]

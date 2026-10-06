@@ -22,6 +22,9 @@ pub fn init_theme(root: &Path, name: &str) -> Result<()> {
     fs::create_dir_all(&i18n_dir).context("failed to create i18n directory")?;
 
     fs::write(theme_dir.join("theme.toml"), "").context("failed to write theme.toml")?;
+    let css_dir = theme_dir.join("_assets/css");
+    fs::create_dir_all(&css_dir).context("failed to create CSS source directory")?;
+    fs::write(css_dir.join("style.css"), "").context("failed to write CSS entry")?;
     fs::write(
         templates_dir.join("base.html"),
         indoc! {r#"
@@ -30,6 +33,7 @@ pub fn init_theme(root: &Path, name: &str) -> Result<()> {
               <head>
                 <meta charset="utf-8">
                 {% block title %}<title>{{ config.title }}</title>{% endblock %}
+                <link rel="stylesheet" href="{{ asset_url('/css/style.css') | safe }}">
                 {% block head %}{% endblock %}
               </head>
               <body>
