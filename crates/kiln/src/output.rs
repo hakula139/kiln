@@ -53,15 +53,7 @@ pub fn copy_static(src: &Path, dest: &Path) -> Result<()> {
     for entry in walker {
         let entry = entry.with_context(|| format!("failed to read entry in {}", src.display()))?;
         if entry.path_is_symlink() {
-            let source = entry.path().canonicalize().with_context(|| {
-                format!("failed to resolve source link {}", entry.path().display())
-            })?;
-            ensure!(
-                !source.starts_with(&destination) && !destination.starts_with(&source),
-                "source link {} overlaps destination {}",
-                entry.path().display(),
-                destination.display()
-            );
+            validate_source_link(entry.path(), &destination)?;
         }
         let relative = entry.path().strip_prefix(src).with_context(|| {
             format!(
@@ -78,6 +70,20 @@ pub fn copy_static(src: &Path, dest: &Path) -> Result<()> {
             copy_file(entry.path(), &target)?;
         }
     }
+    Ok(())
+}
+
+/// Rejects source links whose resolved targets overlap the canonical destination.
+fn validate_source_link(path: &Path, destination: &Path) -> Result<()> {
+    let source = path
+        .canonicalize()
+        .with_context(|| format!("failed to resolve source link {}", path.display()))?;
+    ensure!(
+        !source.starts_with(destination) && !destination.starts_with(&source),
+        "source link {} overlaps destination {}",
+        path.display(),
+        destination.display()
+    );
     Ok(())
 }
 
@@ -248,7 +254,7 @@ mod tests {
         let external = tempfile::tempdir().unwrap();
         fs::write(external.path().join("data.txt"), "linked root").unwrap();
         let src = dir.path().join("static");
-        std::os::unix::fs::symlink(external.path(), &src).unwrap();
+        symlink(external.path(), &src).unwrap();
         let dest = dir.path().join("public");
 
         copy_static(&src, &dest).unwrap();
@@ -396,7 +402,7 @@ mod tests {
                 fs::create_dir(&src).unwrap();
                 src.join("broken")
             };
-            std::os::unix::fs::symlink(dir.path().join("missing"), &link).unwrap();
+            symlink(dir.path().join("missing"), &link).unwrap();
 
             let err = copy_static(&src, &dir.path().join("public")).unwrap_err();
 
@@ -410,7 +416,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("static");
         fs::create_dir(&src).unwrap();
-        std::os::unix::fs::symlink(&src, src.join("cycle")).unwrap();
+        symlink(&src, src.join("cycle")).unwrap();
 
         let err = copy_static(&src, &dir.path().join("public")).unwrap_err();
 
@@ -431,7 +437,7 @@ mod tests {
             } else {
                 &dest
             };
-            std::os::unix::fs::symlink(target, src.join("linked")).unwrap();
+            symlink(target, src.join("linked")).unwrap();
 
             let err = copy_static(&src, &dest).unwrap_err();
 
@@ -459,6 +465,28 @@ mod tests {
         assert!(
             err.contains("failed to copy"),
             "should report copy failure, got: {err}"
+        );
+    }
+
+    // ── validate_source_link ──
+
+    #[test]
+    fn validate_source_link_broken_target_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let link = dir.path().join("broken");
+        symlink(dir.path().join("missing"), &link).unwrap();
+
+        let destination = dir.path().canonicalize().unwrap().join("public");
+
+        let err = validate_source_link(&link, &destination).unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            format!("failed to resolve source link {}", link.display())
+        );
+        assert_eq!(
+            err.downcast_ref::<std::io::Error>().unwrap().kind(),
+            std::io::ErrorKind::NotFound
         );
     }
 
