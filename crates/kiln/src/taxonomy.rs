@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 
-use anyhow::{Result, bail};
+use anyhow::{Result, bail, ensure};
 
 use crate::content::frontmatter;
 use crate::content::page::Page;
@@ -39,13 +39,13 @@ type SlugGroup = BTreeMap<String, (String, Vec<usize>)>;
 ///
 /// # Errors
 ///
-/// Returns an error when two tags that differ beyond case slugify to the same value, since one
-/// archive URL cannot serve both.
+/// Returns an error if a nonempty tag has no alphanumeric characters, or if tags differing beyond
+/// case share a slug, since one archive URL cannot serve both.
 pub fn build_taxonomies(pages: &[Page], content_dir: Option<&Path>) -> Result<TaxonomySet> {
     let mut grouped: HashMap<String, SlugGroup> = HashMap::new();
 
     for (idx, page) in pages.iter().enumerate() {
-        collect_terms(&page.frontmatter.tags, idx, &mut grouped);
+        collect_terms(&page.frontmatter.tags, idx, &mut grouped)?;
     }
 
     let mut tag_pages = HashMap::with_capacity(grouped.len());
@@ -103,14 +103,24 @@ fn load_term_title(content_dir: &Path, slug: &str) -> Option<String> {
 }
 
 /// Collects terms from a frontmatter field into the grouped map.
-fn collect_terms(values: &[String], page_idx: usize, grouped: &mut HashMap<String, SlugGroup>) {
+fn collect_terms(
+    values: &[String],
+    page_idx: usize,
+    grouped: &mut HashMap<String, SlugGroup>,
+) -> Result<()> {
     for value in values {
         let trimmed = value.trim();
         if trimmed.is_empty() {
             continue;
         }
+        let slug = slugify(trimmed);
+        ensure!(
+            !slug.is_empty(),
+            r#"tag "{trimmed}" must contain at least one letter or number"#,
+        );
+
         grouped
-            .entry(slugify(trimmed))
+            .entry(slug)
             .or_default()
             .entry(trimmed.to_lowercase())
             .and_modify(|(_, indices)| {
@@ -120,6 +130,8 @@ fn collect_terms(values: &[String], page_idx: usize, grouped: &mut HashMap<Strin
             })
             .or_insert_with(|| (trimmed.to_owned(), vec![page_idx]));
     }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -262,6 +274,21 @@ mod tests {
 
         assert_eq!(set.tags.len(), 1);
         assert_eq!(set.tags[0].name, "rust");
+    }
+
+    #[test]
+    fn build_taxonomies_empty_tag_slug_returns_error() {
+        for tag in ["!!!", " +++ ", "..."] {
+            let pages = [make_page("Post A", &[tag])];
+            let error = build_taxonomies(&pages, None).unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                format!(
+                    r#"tag "{}" must contain at least one letter or number"#,
+                    tag.trim()
+                ),
+            );
+        }
     }
 
     #[test]
