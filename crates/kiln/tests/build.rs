@@ -684,6 +684,44 @@ fn build_compiles_tailwind_with_shared_context_and_fresh_candidates() {
 }
 
 #[test]
+fn build_compiles_tailwind_imports_from_static_symlinks() {
+    let root = tempfile::tempdir().unwrap();
+    write_test_file(
+        root.path(),
+        "config.toml",
+        indoc! {r#"
+            [css]
+            processor = "tailwind"
+        "#},
+    );
+    copy_templates(&root.path().join("templates"));
+    write_test_file(
+        root.path(),
+        "_assets/css/style.css",
+        r#"@import "../../static/shared/vendor.css";"#,
+    );
+    let external = tempfile::tempdir().unwrap();
+    fs::write(
+        external.path().join("vendor.css"),
+        ".imported { background: url(image.svg); }",
+    )
+    .unwrap();
+    fs::write(external.path().join("image.svg"), "external image").unwrap();
+    fs::create_dir(root.path().join("static")).unwrap();
+    std::os::unix::fs::symlink(external.path(), root.path().join("static/shared")).unwrap();
+
+    build(root.path(), BuildOptions::default()).unwrap();
+
+    let public = root.path().join("public");
+    let css = fs::read_to_string(public.join("css/style.css")).unwrap();
+    assert!(css.contains("../shared/image.svg"), "{css}");
+    assert_eq!(
+        fs::read_to_string(public.join("shared/image.svg")).unwrap(),
+        "external image"
+    );
+}
+
+#[test]
 fn build_cleans_stale_output() {
     let root = tempfile::tempdir().unwrap();
     fs::write(root.path().join("config.toml"), "").unwrap();
