@@ -7,6 +7,7 @@ use crate::template::vars::HomePageVars;
 use super::BuildContext;
 use super::listing::{ListedPage, collect_page_summaries, sort_pinned_first};
 use super::paginate::{paginate_config, write_paginated};
+use super::url::join_site_url;
 
 /// Generates paginated home pages listing recent posts and returns the number written.
 ///
@@ -26,7 +27,7 @@ pub(crate) fn build_home_pages(
         10,
     );
 
-    let home_url = format!("{}/", ctx.config.base_url.trim_end_matches('/'));
+    let home_url = join_site_url(&ctx.config.base_url, "");
 
     let mut home_posts = listed_posts.to_vec();
     sort_pinned_first(&mut home_posts);

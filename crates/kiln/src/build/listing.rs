@@ -13,7 +13,7 @@ use crate::taxonomy::TaxonomySet;
 use crate::template::vars::{BucketSummary, LinkedTerm, PageGroup, PageSummary};
 use crate::text::slugify;
 
-use super::url::{page_url, resolve_relative_url};
+use super::url::{join_site_url, page_url, resolve_relative_url};
 
 // ── Listing model ──
 
@@ -357,7 +357,7 @@ pub(crate) fn page_section(
         .map_or(slug.as_str(), |s| s.title.as_str());
     Some(LinkedTerm {
         name: title.to_owned(),
-        url: format!("{base_url}/posts/{slug}/"),
+        url: join_site_url(base_url, &format!("posts/{slug}/")),
     })
 }
 
@@ -389,7 +389,7 @@ pub(crate) fn linked_tags(tags: &[String], base_url: &str) -> Vec<LinkedTerm> {
     tags.iter()
         .map(|tag| LinkedTerm {
             name: tag.clone(),
-            url: format!("{base_url}/tags/{}/", slugify(tag)),
+            url: join_site_url(base_url, &format!("tags/{}/", slugify(tag))),
         })
         .collect()
 }
@@ -845,6 +845,27 @@ mod tests {
         }
     }
 
+    // ── page_section ──
+
+    #[test]
+    fn page_section_base_url_trailing_slashes() {
+        let mut page = crate::test_utils::test_page("Post A");
+        page.kind = PageKind::Post {
+            section: Some("notes".into()),
+        };
+        let sections = [Section {
+            slug: "notes".into(),
+            title: "Notes".into(),
+            page_count: 1,
+        }];
+
+        for base_url in ["https://example.com/blog", "https://example.com/blog/"] {
+            let section = page_section(&page, base_url, &sections).unwrap();
+            assert_eq!(section.name, "Notes");
+            assert_eq!(section.url, "https://example.com/blog/posts/notes/");
+        }
+    }
+
     // ── resolve_featured_image ──
 
     #[test]
@@ -946,7 +967,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_featured_image_none() {
+    fn resolve_featured_image_absent_returns_none() {
         assert!(
             resolve_featured_image(
                 None,
@@ -962,6 +983,20 @@ mod tests {
         FeaturedImage {
             src: src.into(),
             ..Default::default()
+        }
+    }
+
+    // ── linked_tags ──
+
+    #[test]
+    fn linked_tags_base_url_trailing_slashes() {
+        let tags = ["Rust".into(), "Web Tools".into()];
+        for base_url in ["https://example.com/blog", "https://example.com/blog/"] {
+            let linked = linked_tags(&tags, base_url);
+            assert_eq!(linked[0].name, "Rust");
+            assert_eq!(linked[0].url, "https://example.com/blog/tags/rust/");
+            assert_eq!(linked[1].name, "Web Tools");
+            assert_eq!(linked[1].url, "https://example.com/blog/tags/web-tools/");
         }
     }
 
