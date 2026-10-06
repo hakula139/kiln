@@ -741,6 +741,48 @@ fn build_heading_numbering_is_per_page() {
     }
 }
 
+#[test]
+fn build_validates_render_options_only_for_content() {
+    let root = tempfile::tempdir().unwrap();
+    fs::write(
+        root.path().join("config.toml"),
+        indoc! {r#"
+            [params]
+            emojis = "yes"
+        "#},
+    )
+    .unwrap();
+    let templates = root.path().join("templates");
+    copy_templates(&templates);
+    fs::write(templates.join("home.html"), "<h1>Empty site</h1>").unwrap();
+
+    build(root.path(), BuildOptions::default()).unwrap();
+
+    assert_eq!(
+        fs::read_to_string(root.path().join("public/index.html")).unwrap(),
+        "<h1>Empty site</h1>"
+    );
+
+    write_page(
+        root.path(),
+        "posts/hello",
+        indoc! {r#"
+            +++
+            title = "Hello"
+            +++
+            Body
+        "#},
+    );
+
+    let err = build(root.path(), BuildOptions::default()).unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "failed to parse render options from [params]"
+    );
+    assert!(format!("{err:#}").contains("invalid type: string \"yes\", expected a boolean"));
+    assert!(!root.path().join("public/posts/hello/index.html").exists());
+}
+
 // ── build: page CSS ──
 
 #[test]
