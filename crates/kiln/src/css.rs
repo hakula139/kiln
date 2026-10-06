@@ -321,9 +321,6 @@ fn published_url(
             &source_root,
             is_bundle.then_some(&style.bundle_assets),
         )? {
-            if is_bundle && !style.bundle_assets.contains(&relative) {
-                bail!("CSS asset {url} is not a published bundle asset");
-            }
             let destination = output_root.join(relative);
             let relative = pathdiff::diff_paths(
                 destination,
@@ -349,10 +346,14 @@ fn published_relative(
     source_root: &Path,
     bundle_assets: Option<&BTreeSet<PathBuf>>,
 ) -> Result<Option<PathBuf>> {
-    for base in [published_source(source_root)?, source_root.canonicalize()?] {
-        if let Ok(relative) = asset.strip_prefix(base) {
-            return Ok(Some(relative.to_owned()));
-        }
+    let relative = [published_source(source_root)?, source_root.canonicalize()?]
+        .iter()
+        .find_map(|base| asset.strip_prefix(base).ok())
+        .map(Path::to_owned);
+    if let Some(relative) = &relative
+        && bundle_assets.is_none_or(|assets| assets.contains(relative))
+    {
+        return Ok(Some(relative.clone()));
     }
 
     // Tailwind resolves imported stylesheets through symlinks before rebasing their asset URLs.
@@ -375,6 +376,12 @@ fn published_relative(
                 return Ok(Some(entry.path().strip_prefix(source_root)?.join(relative)));
             }
         }
+    }
+    if relative.is_some() {
+        bail!(
+            "CSS asset {} is not a published bundle asset",
+            asset.display()
+        );
     }
     Ok(None)
 }

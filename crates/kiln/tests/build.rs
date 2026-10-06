@@ -722,6 +722,58 @@ fn build_compiles_tailwind_imports_from_static_symlinks() {
 }
 
 #[test]
+fn build_compiles_tailwind_imports_through_public_bundle_aliases() {
+    let root = tempfile::tempdir().unwrap();
+    write_test_file(
+        root.path(),
+        "config.toml",
+        indoc! {r#"
+            [css]
+            processor = "tailwind"
+        "#},
+    );
+    copy_templates(&root.path().join("templates"));
+    write_page(
+        root.path(),
+        "example",
+        indoc! {r#"
+            +++
+            title = "Example"
+            +++
+            Body
+        "#},
+    );
+    write_test_file(
+        root.path(),
+        "content/example/_assets/css/style.css",
+        r#"@import "../../public/vendor.css";"#,
+    );
+    write_test_file(
+        root.path(),
+        "content/example/_assets/vendor/vendor.css",
+        ".image { background: url(image.svg); }",
+    );
+    write_test_file(
+        root.path(),
+        "content/example/_assets/vendor/image.svg",
+        "image",
+    );
+    let bundle = root.path().join("content/example");
+    std::os::unix::fs::symlink(bundle.join("_assets/vendor"), bundle.join("public")).unwrap();
+
+    build(root.path(), BuildOptions::default()).unwrap();
+
+    let output = root.path().join("public/example");
+    let css = fs::read_to_string(output.join("assets/css/style.css")).unwrap();
+    assert!(css.contains("../../public/image.svg"), "{css}");
+    assert_eq!(
+        fs::read_to_string(output.join("public/image.svg")).unwrap(),
+        "image"
+    );
+    assert!(!output.join("_assets").exists());
+}
+
+#[test]
 fn build_cleans_stale_output() {
     let root = tempfile::tempdir().unwrap();
     fs::write(root.path().join("config.toml"), "").unwrap();
@@ -2541,6 +2593,8 @@ fn listing_links(html: &str) -> Vec<&str> {
         })
         .collect()
 }
+
+// ── Stylesheet assertions ──
 
 fn stylesheet_url(html: &str) -> String {
     let document = Html::parse_document(html);
