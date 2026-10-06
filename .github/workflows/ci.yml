@@ -145,7 +145,7 @@ jobs:
   pin-main:
     name: Pin main kiln build (${{ matrix.os }})
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [flake-check, node-check, rust-check, nix-build]
+    needs: [flake-check, nix-build, node-check, rust-check]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
