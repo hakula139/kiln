@@ -99,10 +99,6 @@ kiln init-theme my-theme                                   # Scaffold a new them
 kiln convert --source /path/to/hugo --dest /path/to/kiln   # Convert a Hugo site
 ```
 
-### Assets and Stylesheets
-
-See [Assets and Stylesheets](docs/assets.md) for public file layout, CSS sources, Tailwind setup, template URLs, and minification.
-
 ### Search
 
 kiln integrates with [Pagefind](https://pagefind.app) for full-text search. Install the binary (`cargo install pagefind` or `npm install -g pagefind`), then enable it in `config.toml`:
