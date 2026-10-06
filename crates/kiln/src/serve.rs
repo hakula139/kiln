@@ -963,7 +963,7 @@ mod tests {
         fs::write(sub.join("index.html"), "<html><body>About</body></html>").unwrap();
 
         let app = setup_router(dir.path());
-        for query in ["x=1&x=2", "next=%2Fposts%3Fx%3D1&text=a+b", ""] {
+        for query in ["x=1&x=2", "next=%2F%3F%3D&text=a+b", ""] {
             let response = app
                 .clone()
                 .oneshot(
