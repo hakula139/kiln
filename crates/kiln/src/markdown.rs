@@ -1,3 +1,78 @@
+/// Replaces colon-prefixed shortcodes outside fenced blocks and inline code spans.
+///
+/// `replace` appends a replacement and returns its consumed byte count, or returns `None`
+/// without writing. A match must consume a nonempty prefix ending at a UTF-8 boundary.
+#[must_use]
+pub(crate) fn replace_shortcodes(
+    input: &str,
+    mut replace: impl FnMut(&str, &mut String) -> Option<usize>,
+) -> String {
+    let mut output = String::with_capacity(input.len());
+    for_each_non_code_line(input, &mut output, |line, output| {
+        replace_shortcodes_in_line(line, output, &mut replace);
+    });
+    output
+}
+
+fn replace_shortcodes_in_line(
+    line: &str,
+    output: &mut String,
+    replace: &mut impl FnMut(&str, &mut String) -> Option<usize>,
+) {
+    let bytes = line.as_bytes();
+    let mut i = 0;
+
+    while i < bytes.len() {
+        if bytes[i] == b'`' {
+            let (end, span) = scan_code_span(line, i);
+            output.push_str(span);
+            i = end;
+            continue;
+        }
+
+        if bytes[i] == b':'
+            && let Some(consumed) = replace(&line[i..], output)
+        {
+            i += consumed;
+            continue;
+        }
+
+        let ch = line[i..].chars().next().unwrap();
+        output.push(ch);
+        i += ch.len_utf8();
+    }
+}
+
+/// Processes markdown line-by-line, passing each line outside fenced code
+/// blocks to `f`. Lines inside code blocks are appended to `output` unchanged.
+pub(crate) fn for_each_non_code_line(
+    input: &str,
+    output: &mut String,
+    mut f: impl FnMut(&str, &mut String),
+) {
+    let mut in_fenced_code = false;
+    let mut fence_char: u8 = 0;
+    let mut fence_count: usize = 0;
+
+    for line in input.split_inclusive('\n') {
+        if in_fenced_code {
+            if is_closing_code_fence(line, fence_char, fence_count) {
+                in_fenced_code = false;
+            }
+            output.push_str(line);
+            continue;
+        }
+        if let Some((ch, count)) = detect_opening_code_fence(line) {
+            in_fenced_code = true;
+            fence_char = ch;
+            fence_count = count;
+            output.push_str(line);
+            continue;
+        }
+        f(line, output);
+    }
+}
+
 /// Detects an opening code fence (three or more `` ` `` or `~` characters).
 /// Handles up to 3 spaces of leading indentation.
 #[must_use]
@@ -69,124 +144,172 @@ fn count_backticks(bytes: &[u8], start: usize) -> usize {
     bytes[start..].iter().take_while(|&&b| b == b'`').count()
 }
 
-/// Processes markdown line-by-line, passing each line outside fenced code
-/// blocks to `f`. Lines inside code blocks are appended to `output` unchanged.
-pub(crate) fn for_each_non_code_line(
-    input: &str,
-    output: &mut String,
-    mut f: impl FnMut(&str, &mut String),
-) {
-    let mut in_fenced_code = false;
-    let mut fence_char: u8 = 0;
-    let mut fence_count: usize = 0;
-
-    for line in input.split_inclusive('\n') {
-        if in_fenced_code {
-            if is_closing_code_fence(line, fence_char, fence_count) {
-                in_fenced_code = false;
-            }
-            output.push_str(line);
-            continue;
-        }
-        if let Some((ch, count)) = detect_opening_code_fence(line) {
-            in_fenced_code = true;
-            fence_char = ch;
-            fence_count = count;
-            output.push_str(line);
-            continue;
-        }
-        f(line, output);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use indoc::indoc;
 
     use super::*;
 
+    // ── replace_shortcodes ──
+
+    #[test]
+    fn replace_shortcodes_preserves_unicode_and_unmatched_colons() {
+        assert_eq!(
+            replace_shortcodes("文 :unknown: :x::x: 尾", replace_test_shortcode),
+            "文 :unknown: XX 尾"
+        );
+    }
+
+    #[test]
+    fn replace_shortcodes_preserves_code_and_line_endings() {
+        let input = indoc! {"
+            :x: `:x:` ``:x: ` :x:``
+            ```text
+            :x:
+            ```
+            ~~~
+            :x:
+            ~~~
+            `:x:
+        "};
+        let expected = indoc! {"
+            X `:x:` ``:x: ` :x:``
+            ```text
+            :x:
+            ```
+            ~~~
+            :x:
+            ~~~
+            `X
+        "};
+        for (input, expected) in [
+            (input.to_owned(), expected.to_owned()),
+            (input.replace('\n', "\r\n"), expected.replace('\n', "\r\n")),
+            (input.trim_end().to_owned(), expected.trim_end().to_owned()),
+        ] {
+            assert_eq!(replace_shortcodes(&input, replace_test_shortcode), expected);
+        }
+    }
+
+    fn replace_test_shortcode(rest: &str, output: &mut String) -> Option<usize> {
+        rest.strip_prefix(":x:")?;
+        output.push('X');
+        Some(3)
+    }
+
+    // ── for_each_non_code_line ──
+
+    #[test]
+    fn for_each_non_code_line_processes_normal_lines() {
+        let input = indoc! {"
+            a
+            b
+        "};
+        let mut out = String::new();
+        for_each_non_code_line(input, &mut out, |line, o| o.push_str(line));
+        assert_eq!(out, input);
+    }
+
+    #[test]
+    fn for_each_non_code_line_skips_fenced_code() {
+        let input = indoc! {"
+            before
+            ```
+            code
+            ```
+            after
+        "};
+        let mut processed = Vec::new();
+        let mut out = String::new();
+        for_each_non_code_line(input, &mut out, |line, o| {
+            processed.push(line.trim_end().to_string());
+            o.push_str(line);
+        });
+        assert_eq!(processed, vec!["before", "after"]);
+    }
+
     // ── detect_opening_code_fence ──
 
     #[test]
-    fn detect_opening_backtick_fence() {
+    fn detect_opening_code_fence_backtick_fence() {
         assert_eq!(detect_opening_code_fence("```"), Some((b'`', 3)));
         assert_eq!(detect_opening_code_fence("````"), Some((b'`', 4)));
     }
 
     #[test]
-    fn detect_opening_tilde_fence() {
+    fn detect_opening_code_fence_tilde_fence() {
         assert_eq!(detect_opening_code_fence("~~~"), Some((b'~', 3)));
         assert_eq!(detect_opening_code_fence("~~~~"), Some((b'~', 4)));
     }
 
     #[test]
-    fn detect_opening_with_info_string() {
+    fn detect_opening_code_fence_with_info_string() {
         assert_eq!(detect_opening_code_fence("```rust"), Some((b'`', 3)));
         assert_eq!(detect_opening_code_fence("~~~python"), Some((b'~', 3)));
     }
 
     #[test]
-    fn detect_opening_indented() {
+    fn detect_opening_code_fence_indented() {
         assert_eq!(detect_opening_code_fence("   ```"), Some((b'`', 3)));
     }
 
     #[test]
-    fn detect_opening_fewer_than_three_returns_none() {
+    fn detect_opening_code_fence_fewer_than_three_returns_none() {
         assert_eq!(detect_opening_code_fence("``"), None);
         assert_eq!(detect_opening_code_fence("~~"), None);
     }
 
     #[test]
-    fn detect_opening_over_indented_returns_none() {
+    fn detect_opening_code_fence_over_indented_returns_none() {
         assert_eq!(detect_opening_code_fence("    ```"), None);
     }
 
     #[test]
-    fn detect_opening_non_fence_char_returns_none() {
+    fn detect_opening_code_fence_non_fence_char_returns_none() {
         assert_eq!(detect_opening_code_fence("---"), None);
         assert_eq!(detect_opening_code_fence("plain text"), None);
     }
 
     #[test]
-    fn detect_opening_backtick_in_info_string_returns_none() {
+    fn detect_opening_code_fence_backtick_in_info_string_returns_none() {
         assert_eq!(detect_opening_code_fence("```foo`bar"), None);
     }
 
     // ── is_closing_code_fence ──
 
     #[test]
-    fn is_closing_matching_fence() {
+    fn is_closing_code_fence_matching_fence() {
         assert!(is_closing_code_fence("```", b'`', 3));
         assert!(is_closing_code_fence("~~~", b'~', 3));
     }
 
     #[test]
-    fn is_closing_longer_fence_closes() {
+    fn is_closing_code_fence_longer_fence_closes() {
         assert!(is_closing_code_fence("````", b'`', 3));
     }
 
     #[test]
-    fn is_closing_trailing_whitespace_allowed() {
+    fn is_closing_code_fence_trailing_whitespace_allowed() {
         assert!(is_closing_code_fence("```   ", b'`', 3));
     }
 
     #[test]
-    fn is_closing_shorter_fence_returns_false() {
+    fn is_closing_code_fence_shorter_fence_returns_false() {
         assert!(!is_closing_code_fence("```", b'`', 4));
     }
 
     #[test]
-    fn is_closing_mismatched_char_returns_false() {
+    fn is_closing_code_fence_mismatched_char_returns_false() {
         assert!(!is_closing_code_fence("~~~", b'`', 3));
     }
 
     #[test]
-    fn is_closing_trailing_text_returns_false() {
+    fn is_closing_code_fence_trailing_text_returns_false() {
         assert!(!is_closing_code_fence("``` foo", b'`', 3));
     }
 
     #[test]
-    fn is_closing_over_indented_returns_false() {
+    fn is_closing_code_fence_over_indented_returns_false() {
         assert!(!is_closing_code_fence("    ```", b'`', 3));
     }
 
@@ -230,36 +353,5 @@ mod tests {
     #[test]
     fn scan_code_span_unclosed() {
         assert_eq!(scan_code_span("`unclosed", 0), (1, "`"));
-    }
-
-    // ── for_each_non_code_line ──
-
-    #[test]
-    fn for_each_non_code_line_processes_normal_lines() {
-        let input = indoc! {"
-            a
-            b
-        "};
-        let mut out = String::new();
-        for_each_non_code_line(input, &mut out, |line, o| o.push_str(line));
-        assert_eq!(out, input);
-    }
-
-    #[test]
-    fn for_each_non_code_line_skips_fenced_code() {
-        let input = indoc! {"
-            before
-            ```
-            code
-            ```
-            after
-        "};
-        let mut processed = Vec::new();
-        let mut out = String::new();
-        for_each_non_code_line(input, &mut out, |line, o| {
-            processed.push(line.trim_end().to_string());
-            o.push_str(line);
-        });
-        assert_eq!(processed, vec!["before", "after"]);
     }
 }

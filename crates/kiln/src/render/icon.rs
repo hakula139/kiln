@@ -4,7 +4,7 @@ use std::sync::LazyLock;
 use regex::Regex;
 
 use crate::html::escape;
-use crate::markdown::{for_each_non_code_line, scan_code_span};
+use crate::markdown::replace_shortcodes;
 
 /// Matches icon shortcodes, e.g., `:(fas fa-link):`.
 static ICON_RE: LazyLock<Regex> =
@@ -15,41 +15,15 @@ static ICON_RE: LazyLock<Regex> =
 /// Skips replacements inside fenced code blocks (` ``` ` / `~~~`) and inline code spans (`` ` ``).
 #[must_use]
 pub fn replace_icons(input: &str) -> String {
-    let mut output = String::with_capacity(input.len());
-    for_each_non_code_line(input, &mut output, |line, out| {
-        replace_icons_in_line(line, out);
-    });
-    output
-}
-
-fn replace_icons_in_line(line: &str, output: &mut String) {
-    let bytes = line.as_bytes();
-    let mut i = 0;
-
-    while i < bytes.len() {
-        if bytes[i] == b'`' {
-            let (end, span) = scan_code_span(line, i);
-            output.push_str(span);
-            i = end;
-            continue;
-        }
-
-        if bytes[i] == b':'
-            && let Some(caps) = ICON_RE.captures(&line[i..])
-        {
-            _ = write!(
-                output,
-                r#"<i class="{}" aria-hidden="true"></i>"#,
-                escape(&caps[1])
-            );
-            i += caps[0].len();
-            continue;
-        }
-
-        let ch = line[i..].chars().next().unwrap();
-        output.push(ch);
-        i += ch.len_utf8();
-    }
+    replace_shortcodes(input, |rest, output| {
+        let caps = ICON_RE.captures(rest)?;
+        _ = write!(
+            output,
+            r#"<i class="{}" aria-hidden="true"></i>"#,
+            escape(&caps[1])
+        );
+        Some(caps[0].len())
+    })
 }
 
 #[cfg(test)]
@@ -74,8 +48,20 @@ mod tests {
     fn replace_icons_multiple() {
         let input = ":(fas fa-home): and :(fas fa-cog):";
         let output = replace_icons(input);
-        assert!(output.contains(r#"class="fas fa-home""#));
-        assert!(output.contains(r#"class="fas fa-cog""#));
+        assert_eq!(
+            output,
+            r#"<i class="fas fa-home" aria-hidden="true"></i> and <i class="fas fa-cog" aria-hidden="true"></i>"#
+        );
+    }
+
+    #[test]
+    fn replace_icons_escapes_html() {
+        let input = ":(fas fa-<script>):";
+        let output = replace_icons(input);
+        assert_eq!(
+            output,
+            r#"<i class="fas fa-&lt;script&gt;" aria-hidden="true"></i>"#
+        );
     }
 
     #[test]
@@ -93,30 +79,13 @@ mod tests {
         assert_eq!(output, input);
     }
 
-    #[test]
-    fn replace_icons_escapes_html() {
-        let input = ":(fas fa-<script>):";
-        let output = replace_icons(input);
-        assert!(output.contains("fa-&lt;script&gt;"), "output:\n{output}");
-    }
-
-    #[test]
-    fn replace_icons_unclosed_backtick() {
-        let input = "`:(fas fa-link):";
-        let output = replace_icons(input);
-        assert!(
-            output.contains(r#"class="fas fa-link""#),
-            "output:\n{output}"
-        );
-    }
-
     // ── replace_icons (code awareness) ──
 
     #[test]
     fn replace_icons_skips_inline_code() {
         let input = "use `:(fas fa-link):` syntax";
         let output = replace_icons(input);
-        assert!(output.contains(":(fas fa-link):"), "output:\n{output}");
+        assert_eq!(output, input);
     }
 
     #[test]
@@ -127,7 +96,7 @@ mod tests {
             ```
         "};
         let output = replace_icons(input);
-        assert!(output.contains(":(fas fa-link):"), "output:\n{output}");
+        assert_eq!(output, input);
 
         let input = indoc! {"
             ~~~
@@ -135,7 +104,7 @@ mod tests {
             ~~~
         "};
         let output = replace_icons(input);
-        assert!(output.contains(":(fas fa-link):"), "output:\n{output}");
+        assert_eq!(output, input);
     }
 
     #[test]
@@ -147,9 +116,19 @@ mod tests {
             :(fas fa-link):
         "};
         let output = replace_icons(input);
-        assert!(
-            output.contains(r#"class="fas fa-link""#),
-            "output:\n{output}"
+        assert_eq!(
+            output,
+            input.replace(
+                ":(fas fa-link):",
+                r#"<i class="fas fa-link" aria-hidden="true"></i>"#,
+            )
         );
+    }
+
+    #[test]
+    fn replace_icons_unclosed_backtick() {
+        let input = "`:(fas fa-link):";
+        let output = replace_icons(input);
+        assert_eq!(output, r#"`<i class="fas fa-link" aria-hidden="true"></i>"#);
     }
 }
