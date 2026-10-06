@@ -149,7 +149,7 @@ async fn serve_until(
     let app = build_router(&output_dir, reload_tx);
 
     eprintln!("\nServing at {base_url} (Press Ctrl+C to stop)");
-    eprint!("Watching: config.toml, content/, templates/, static/, i18n/");
+    eprint!("Watching: config.toml, content/, templates/, static/");
     if let Some(ref theme) = config.theme {
         eprint!(", themes/{theme}/");
     }
@@ -400,9 +400,14 @@ async fn serve_request(
 ) -> Response {
     let path = request.uri().path();
     if !path.ends_with('/') && has_index_html(output_dir, path).await {
+        let location = match request.uri().query() {
+            Some(query) => format!("{path}/?{query}"),
+            None => format!("{path}/"),
+        };
+
         return Response::builder()
             .status(StatusCode::MOVED_PERMANENTLY)
-            .header(header::LOCATION, format!("{path}/"))
+            .header(header::LOCATION, location)
             .body(Body::empty())
             .expect("redirect response is valid");
     }
@@ -740,6 +745,7 @@ mod tests {
     fn watch_paths_missing_dirs_skipped() {
         let root = tempfile::tempdir().unwrap();
         fs::create_dir(root.path().join("content")).unwrap();
+        // No templates/, static/, or config.toml
 
         let config = Config::default();
         let paths = watch_paths(root.path(), &config);
@@ -948,13 +954,28 @@ mod tests {
         fs::write(sub.join("index.html"), "<html><body>About</body></html>").unwrap();
 
         let app = setup_router(dir.path());
-        let response = app
-            .oneshot(Request::get("/about").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
+        for (uri, location) in [
+            ("/about", "/about/"),
+            ("/about?x=1&x=2", "/about/?x=1&x=2"),
+            (
+                "/about?next=%2F%3F%3D&text=a+b",
+                "/about/?next=%2F%3F%3D&text=a+b",
+            ),
+            ("/about?", "/about/?"),
+        ] {
+            let response = app
+                .clone()
+                .oneshot(Request::get(uri).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
 
-        assert_eq!(response.status(), StatusCode::MOVED_PERMANENTLY);
-        assert_eq!(response.headers().get(header::LOCATION).unwrap(), "/about/");
+            assert_eq!(response.status(), StatusCode::MOVED_PERMANENTLY, "{uri}");
+            assert_eq!(
+                response.headers().get(header::LOCATION).unwrap(),
+                location,
+                "{uri}"
+            );
+        }
     }
 
     #[tokio::test]
