@@ -59,3 +59,7 @@ reqwest = { workspace = true }
 tempfile = "3"
 tokio-stream = { workspace = true }
 tokio-tungstenite = { workspace = true }
+
+[[bench]]
+name = "shortcodes"
+harness = false
