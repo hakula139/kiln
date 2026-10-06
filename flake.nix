@@ -32,6 +32,12 @@
     };
 
     git-hooks-nix.url = "github:cachix/git-hooks.nix";
+
+    kiln-tailwindcss = {
+      url = "github:hakula139/kiln-tailwindcss";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.flake-utils.follows = "flake-utils";
+    };
   };
 
   # ----------------------------------------------------------------------------
@@ -43,6 +49,7 @@
       flake-utils,
       rust-overlay,
       git-hooks-nix,
+      kiln-tailwindcss,
       ...
     }:
     flake-utils.lib.eachDefaultSystem (
@@ -68,7 +75,7 @@
           ];
         };
 
-        cssCompiler = pkgs.callPackage ./packages/css { };
+        cssCompiler = kiln-tailwindcss.packages.${system}.default;
 
         # Some workspace dependencies require a newer Rust version than nixpkgs provides.
         kiln = pkgs.callPackage ./packages/kiln {
@@ -145,7 +152,7 @@
               enable = true;
               name = "prettier";
               entry = nodeHook "prettier-write" "prettier --write --ignore-unknown";
-              files = "\\.(json|mjs)$";
+              files = "\\.json$";
               pass_filenames = true;
             };
 
@@ -162,14 +169,6 @@
               name = "taplo";
               entry = nodeHook "taplo-write" "taplo format";
               files = "\\.toml$";
-              pass_filenames = true;
-            };
-
-            eslint = {
-              enable = true;
-              name = "eslint";
-              entry = nodeHook "eslint" "eslint --fix";
-              files = "\\.(js|mjs)$";
               pass_filenames = true;
             };
 

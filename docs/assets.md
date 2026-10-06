@@ -60,7 +60,7 @@ processor = "tailwind"
 
 kiln's Nix package includes everything needed for Tailwind.
 
-For other installations, install Node.js 20+ and the published processor:
+For other installations, install Node.js 20+ and the [Tailwind processor](https://github.com/hakula139/kiln-tailwindcss):
 
 ```bash
 npm install -g @kiln-ssg/tailwindcss
