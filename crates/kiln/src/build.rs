@@ -1,5 +1,5 @@
 mod archive;
-mod assets;
+pub(crate) mod assets;
 mod error;
 mod feed;
 mod git;
@@ -18,7 +18,7 @@ use anyhow::{Context, Result};
 use jiff::tz::TimeZone;
 use syntect::parsing::SyntaxSet;
 
-use self::assets::copy_page_assets;
+use self::assets::PublishedAssets;
 use self::git::{GitInfo, updated_timestamp};
 use self::listing::{
     build_listing_artifacts, build_listing_buckets, format_page_date, linked_tags, page_section,
@@ -31,7 +31,7 @@ use crate::content::page::{Page, PageKind};
 use crate::css::Stylesheets;
 use crate::i18n::I18n;
 use crate::minify::{self, MinifyStats};
-use crate::output::{clean_output_dir, copy_static, write_output};
+use crate::output::{clean_output_dir, write_output};
 use crate::render::RenderOptions;
 use crate::render::lqip::ImageResolver;
 use crate::render::pipeline::render_page;
@@ -116,14 +116,15 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
 
     clean_output_dir(&output_dir)?;
 
-    if let Some(ref td) = theme_dir {
-        copy_static(&td.join("static"), &output_dir)?;
-    }
-    copy_static(&root.join("static"), &output_dir)?;
-
-    copy_page_assets(&content.pages, &content.content_dir, &output_dir)?;
-    let stylesheets = Stylesheets::discover(root, &config, &content.pages, &content.content_dir)?;
-    stylesheets.compile(root, &config, &output_dir)?;
+    let assets = PublishedAssets::publish(
+        root,
+        theme_dir.as_deref(),
+        &content.content_dir,
+        &content.pages,
+        &output_dir,
+    )?;
+    let stylesheets = Stylesheets::discover(root, &config, &content.content_dir, &content.pages)?;
+    stylesheets.compile(root, &config, &assets, &output_dir)?;
 
     let minify_stats = if minify {
         eprintln!("Minifying...");
@@ -315,7 +316,7 @@ fn build_page(
     );
     let page_css = ctx
         .stylesheets
-        .page_url(page, &ctx.config.base_url, &ctx.static_assets)?;
+        .page_url(&ctx.config.base_url, &ctx.static_assets, page)?;
     let vars = PostTemplateVars {
         title: &page.frontmatter.title,
         description: page

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -10,7 +10,7 @@ process.env.NODE_PATH = [process.env.NODE_PATH, modules]
 const { compile } = await import("@tailwindcss/node");
 const { Scanner } = await import("@tailwindcss/oxide");
 
-const [input, output] = process.argv.slice(2);
+const [input] = process.argv.slice(2);
 const base = dirname(input);
 const compiler = await compile(await readFile(input, "utf8"), {
   base,
@@ -26,4 +26,4 @@ if (compiler.root !== "none") {
   });
 }
 const scanner = new Scanner({ sources });
-await writeFile(output, compiler.build(scanner.scan()));
+process.stdout.write(compiler.build(scanner.scan()));

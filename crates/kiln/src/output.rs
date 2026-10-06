@@ -1,5 +1,6 @@
+use std::collections::BTreeMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, ensure};
 use walkdir::WalkDir;
@@ -19,15 +20,17 @@ pub fn clean_output_dir(path: &Path) -> Result<()> {
 }
 
 /// Recursively copies every static file into `dest`, materializing source symlinks as regular
-/// files and directories. No-op if `src` does not exist.
+/// files and directories. Returns source → destination paths for copied files, or an empty map
+/// if `src` does not exist.
 ///
 /// # Errors
 ///
 /// Returns an error if traversal, directory creation, or copying fails, or a source link overlaps
 /// the destination directory.
-pub fn copy_static(src: &Path, dest: &Path) -> Result<()> {
+pub fn copy_static(src: &Path, dest: &Path) -> Result<BTreeMap<PathBuf, PathBuf>> {
+    let mut files = BTreeMap::new();
     if !src.exists() && !src.is_symlink() {
-        return Ok(());
+        return Ok(files);
     }
     fs::create_dir_all(dest)
         .with_context(|| format!("failed to create directory {}", dest.display()))?;
@@ -53,9 +56,10 @@ pub fn copy_static(src: &Path, dest: &Path) -> Result<()> {
                 .with_context(|| format!("failed to create directory {}", target.display()))?;
         } else {
             copy_file(entry.path(), &target)?;
+            files.insert(entry.into_path(), target);
         }
     }
-    Ok(())
+    Ok(files)
 }
 
 /// Rejects source links whose resolved targets overlap the canonical destination.

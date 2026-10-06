@@ -1,7 +1,7 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::fmt::Write;
 use std::fs;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{Context, Result, bail};
@@ -11,8 +11,8 @@ use lightningcss::stylesheet::{ParserOptions, PrinterOptions, StyleSheet};
 use lightningcss::traits::ToCss;
 use lightningcss::values::string::CSSString;
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, percent_decode_str, utf8_percent_encode};
-use walkdir::WalkDir;
 
+use crate::build::assets::PublishedAssets;
 use crate::build::url::{page_url, resolve_relative_url};
 use crate::config::{Config, CssProcessor};
 use crate::content::page::{Page, is_page_bundle};
@@ -29,9 +29,8 @@ const URL_PATH_ENCODE_SET: &AsciiSet = &NON_ALPHANUMERIC
 
 struct Stylesheet {
     source: PathBuf,
+    page: Option<PathBuf>,
     output: PathBuf,
-    bundle: Option<PathBuf>,
-    bundle_assets: BTreeSet<PathBuf>,
 }
 
 /// Discovered stylesheet ownership and public destinations for one build.
@@ -45,12 +44,12 @@ impl Stylesheets {
     ///
     /// # Errors
     ///
-    /// Returns an error when a page output or bundle asset source path cannot be resolved.
+    /// Returns an error when a page source or output path cannot be resolved.
     pub(crate) fn discover(
         root: &Path,
         config: &Config,
-        pages: &[Page],
         content_dir: &Path,
+        pages: &[Page],
     ) -> Result<Self> {
         let shared_source = std::iter::once(root.to_owned())
             .chain(config.theme_dir(root))
@@ -58,9 +57,8 @@ impl Stylesheets {
             .find(|path| path.is_file());
         let shared = shared_source.map(|source| Stylesheet {
             source,
+            page: None,
             output: PathBuf::from("css/style.css"),
-            bundle: None,
-            bundle_assets: BTreeSet::new(),
         });
         let mut styles = BTreeMap::new();
         for page in pages {
@@ -78,21 +76,11 @@ impl Stylesheets {
                     page.source_path.clone(),
                     Stylesheet {
                         source,
+                        page: Some(page.source_path.clone()),
                         output: output
                             .parent()
                             .context("page output has no parent")?
                             .join("assets/css/style.css"),
-                        bundle: Some(bundle.to_owned()),
-                        bundle_assets: page
-                            .assets
-                            .iter()
-                            .map(|asset| {
-                                asset
-                                    .strip_prefix(bundle)
-                                    .map(Path::to_owned)
-                                    .context("asset is outside its bundle")
-                            })
-                            .collect::<Result<_>>()?,
                     },
                 );
             }
@@ -108,12 +96,18 @@ impl Stylesheets {
     /// # Errors
     ///
     /// Returns an error for invalid sources, unpublished assets, or compiler and output failures.
-    pub(crate) fn compile(&self, root: &Path, config: &Config, output_dir: &Path) -> Result<()> {
+    pub(crate) fn compile(
+        &self,
+        root: &Path,
+        config: &Config,
+        assets: &PublishedAssets,
+        output_dir: &Path,
+    ) -> Result<()> {
         for style in self.shared.iter().chain(self.pages.values()) {
             let css = match config.css.processor.unwrap_or_default() {
-                CssProcessor::Plain => compile_plain(style, root, config),
+                CssProcessor::Plain => compile_plain(assets, style),
                 CssProcessor::Tailwind => {
-                    compile_tailwind(style, self.shared.as_ref(), root, config)
+                    compile_tailwind(root, config, assets, self.shared.as_ref(), style)
                 }
             }
             .with_context(|| format!("failed to compile {}", style.source.display()))?;
@@ -131,9 +125,9 @@ impl Stylesheets {
     /// Returns an error for an invalid UTF-8 output path or a missing compiled stylesheet.
     pub(crate) fn page_url(
         &self,
-        page: &Page,
         base_url: &str,
         manifest: &StaticAssetManifest,
+        page: &Page,
     ) -> Result<Option<String>> {
         self.pages
             .get(&page.source_path)
@@ -148,45 +142,27 @@ impl Stylesheets {
     }
 }
 
-fn compile_plain(style: &Stylesheet, root: &Path, config: &Config) -> Result<String> {
+fn compile_plain(assets: &PublishedAssets, style: &Stylesheet) -> Result<String> {
     let provider = CssProvider(FileProvider::new());
     let mut bundler = Bundler::new(&provider, None, ParserOptions::default());
     let stylesheet = bundler
         .bundle(&style.source)
         .map_err(|error| anyhow::anyhow!("{error}"))?;
-    publish_urls(&stylesheet, style, root, config)
-}
-
-struct CssProvider(FileProvider);
-
-impl SourceProvider for CssProvider {
-    type Error = std::io::Error;
-
-    fn read<'a>(&'a self, file: &Path) -> std::io::Result<&'a str> {
-        self.0.read(file)
-    }
-
-    fn resolve(&self, specifier: &str, origin: &Path) -> std::io::Result<ResolveResult> {
-        if is_external(specifier) {
-            Ok(ResolveResult::External(specifier.to_owned()))
-        } else {
-            self.0.resolve(specifier, origin)
-        }
-    }
+    publish_urls(assets, style, &stylesheet)
 }
 
 fn compile_tailwind(
-    style: &Stylesheet,
-    shared: Option<&Stylesheet>,
     root: &Path,
     config: &Config,
+    assets: &PublishedAssets,
+    shared: Option<&Stylesheet>,
+    style: &Stylesheet,
 ) -> Result<String> {
     let temp = tempfile::tempdir().context("failed to create CSS compiler workspace")?;
     let workspace = temp.path().canonicalize()?;
     let input = workspace.join("input.css");
-    let output = workspace.join("output.css");
     let mut source = String::new();
-    if style.bundle.is_some()
+    if style.page.is_some()
         && let Some(shared) = shared
     {
         _ = writeln!(
@@ -219,7 +195,6 @@ fn compile_tailwind(
     };
     let result = Command::new(binary)
         .arg(&input)
-        .arg(&output)
         .current_dir(root)
         .output()
         .context("failed to run `kiln-tailwindcss`. Install kiln's CSS processor package or use kiln's Nix package")?;
@@ -230,23 +205,40 @@ fn compile_tailwind(
             String::from_utf8_lossy(&result.stderr)
         );
     }
-    let compiled = fs::read_to_string(&output).context("failed to read Tailwind CSS output")?;
+    let compiled = String::from_utf8(result.stdout).context("Tailwind CSS output is not UTF-8")?;
     let stylesheet = StyleSheet::parse(
         &compiled,
         ParserOptions {
-            filename: output.to_string_lossy().into_owned(),
+            filename: input.to_string_lossy().into_owned(),
             ..ParserOptions::default()
         },
     )
     .map_err(|error| anyhow::anyhow!("{error}"))?;
-    publish_urls(&stylesheet, style, root, config)
+    publish_urls(assets, style, &stylesheet)
+}
+
+struct CssProvider(FileProvider);
+
+impl SourceProvider for CssProvider {
+    type Error = std::io::Error;
+
+    fn read<'a>(&'a self, file: &Path) -> std::io::Result<&'a str> {
+        self.0.read(file)
+    }
+
+    fn resolve(&self, specifier: &str, origin: &Path) -> std::io::Result<ResolveResult> {
+        if is_external(specifier) {
+            Ok(ResolveResult::External(specifier.to_owned()))
+        } else {
+            self.0.resolve(specifier, origin)
+        }
+    }
 }
 
 fn publish_urls(
-    stylesheet: &StyleSheet<'_>,
+    assets: &PublishedAssets,
     style: &Stylesheet,
-    root: &Path,
-    config: &Config,
+    stylesheet: &StyleSheet<'_>,
 ) -> Result<String> {
     let result = stylesheet
         .to_css(PrinterOptions {
@@ -262,7 +254,7 @@ fn publish_urls(
             Dependency::Import(import) => (import.placeholder, import.url),
             Dependency::Url(url) => {
                 let source = PathBuf::from(&url.loc.file_path);
-                let published = published_url(&url.url, &source, style, root, config)?;
+                let published = published_url(assets, style, &source, &url.url)?;
                 (url.placeholder, published)
             }
         };
@@ -272,11 +264,10 @@ fn publish_urls(
 }
 
 fn published_url(
-    url: &str,
-    source: &Path,
+    assets: &PublishedAssets,
     style: &Stylesheet,
-    root: &Path,
-    config: &Config,
+    source: &Path,
+    url: &str,
 ) -> Result<String> {
     if is_external(url) {
         return Ok(url.to_owned());
@@ -290,113 +281,26 @@ fn published_url(
         .parent()
         .context("CSS source has no parent")?
         .join(decoded.as_ref());
-    let asset = published_source(&referenced)
-        .with_context(|| format!("cannot resolve CSS asset {url} from {}", source.display()))?;
-    if !asset.is_file() {
-        bail!(
-            "CSS asset {url} from {} does not reference a published file",
-            source.display()
-        );
-    }
-    let mut roots = Vec::new();
-    if let Some(bundle) = &style.bundle {
-        let output = style
-            .output
-            .parent()
-            .and_then(Path::parent)
-            .and_then(Path::parent)
-            .context("page stylesheet output has no bundle")?;
-        roots.push((bundle.clone(), output.to_owned(), true));
-    }
-    roots.push((root.join("static"), PathBuf::new(), false));
-    if let Some(theme) = config.theme_dir(root) {
-        roots.push((theme.join("static"), PathBuf::new(), false));
-    }
-    for (source_root, output_root, is_bundle) in roots {
-        if !source_root.is_dir() {
-            continue;
-        }
-        if let Some(relative) = published_relative(
-            &asset,
-            &source_root,
-            is_bundle.then_some(&style.bundle_assets),
-        )? {
-            let destination = output_root.join(relative);
-            let relative = pathdiff::diff_paths(
-                destination,
-                style.output.parent().context("CSS output has no parent")?,
+    let destination = assets
+        .resolve(style.page.as_deref(), &referenced)
+        .with_context(|| format!("cannot resolve CSS asset {url} from {}", source.display()))?
+        .with_context(|| {
+            format!(
+                "CSS asset {url} from {} is not a published static file or owning-page asset",
+                source.display()
             )
-            .context("cannot resolve published CSS asset path")?;
-            let path = relative
-                .to_str()
-                .context("published CSS asset path is not valid UTF-8")?
-                .replace('\\', "/");
-            let encoded = utf8_percent_encode(&path, URL_PATH_ENCODE_SET);
-            return Ok(format!("{encoded}{suffix}"));
-        }
-    }
-    bail!(
-        "CSS asset {url} from {} is outside published static files and the owning page bundle",
-        source.display()
+        })?;
+    let relative = pathdiff::diff_paths(
+        destination,
+        style.output.parent().context("CSS output has no parent")?,
     )
-}
-
-fn published_relative(
-    asset: &Path,
-    source_root: &Path,
-    bundle_assets: Option<&BTreeSet<PathBuf>>,
-) -> Result<Option<PathBuf>> {
-    let relative = [published_source(source_root)?, source_root.canonicalize()?]
-        .iter()
-        .find_map(|base| asset.strip_prefix(base).ok())
-        .map(Path::to_owned);
-    if let Some(relative) = &relative
-        && bundle_assets.is_none_or(|assets| assets.contains(relative))
-    {
-        return Ok(Some(relative.clone()));
-    }
-
-    // Tailwind resolves imported stylesheets through symlinks before rebasing their asset URLs.
-    let canonical_asset = asset.canonicalize()?;
-    if let Some(assets) = bundle_assets {
-        for relative in assets {
-            if source_root.join(relative).canonicalize()? == canonical_asset {
-                return Ok(Some(relative.clone()));
-            }
-        }
-    } else {
-        for entry in WalkDir::new(source_root)
-            .follow_links(true)
-            .sort_by_file_name()
-        {
-            let entry = entry?;
-            if entry.path_is_symlink()
-                && let Ok(relative) = canonical_asset.strip_prefix(entry.path().canonicalize()?)
-            {
-                return Ok(Some(entry.path().strip_prefix(source_root)?.join(relative)));
-            }
-        }
-    }
-    if relative.is_some() {
-        bail!(
-            "CSS asset {} is not a published bundle asset",
-            asset.display()
-        );
-    }
-    Ok(None)
-}
-
-fn published_source(path: &Path) -> Result<PathBuf> {
-    // Canonicalization would erase the names under which symlinked assets are published.
-    let mut normalized = PathBuf::new();
-    for component in std::path::absolute(path)?.components() {
-        if component == Component::ParentDir {
-            normalized.pop();
-        } else {
-            normalized.push(component);
-        }
-    }
-    Ok(normalized)
+    .context("cannot resolve published CSS asset path")?;
+    let path = relative
+        .to_str()
+        .context("published CSS asset path is not valid UTF-8")?
+        .replace('\\', "/");
+    let encoded = utf8_percent_encode(&path, URL_PATH_ENCODE_SET);
+    Ok(format!("{encoded}{suffix}"))
 }
 
 fn is_external(url: &str) -> bool {
@@ -433,11 +337,18 @@ mod tests {
         );
         let style = Stylesheet {
             source: root.path().join(ENTRY),
+            page: None,
             output: PathBuf::from("css/style.css"),
-            bundle: None,
-            bundle_assets: BTreeSet::new(),
         };
-        let css = compile_plain(&style, root.path(), &Config::default()).unwrap();
+        let assets = PublishedAssets::publish(
+            root.path(),
+            None,
+            &root.path().join("content"),
+            &[],
+            &root.path().join("public"),
+        )
+        .unwrap();
+        let css = compile_plain(&assets, &style).unwrap();
         for url in [
             "https://example.com/base.css",
             "/images/root.svg",
@@ -473,11 +384,18 @@ mod tests {
         std::os::unix::fs::symlink(external.path(), root.path().join("static/shared")).unwrap();
         let style = Stylesheet {
             source: root.path().join(ENTRY),
+            page: None,
             output: PathBuf::from("css/style.css"),
-            bundle: None,
-            bundle_assets: BTreeSet::new(),
         };
-        let css = compile_plain(&style, root.path(), &Config::default()).unwrap();
+        let assets = PublishedAssets::publish(
+            root.path(),
+            None,
+            &root.path().join("content"),
+            &[],
+            &root.path().join("public"),
+        )
+        .unwrap();
+        let css = compile_plain(&assets, &style).unwrap();
         assert!(css.contains("../alias.svg"), "{css}");
         assert!(css.contains("../shared/image.svg"), "{css}");
         assert!(!css.contains("shared/../"), "{css}");
@@ -494,33 +412,29 @@ mod tests {
         write_test_file(root.path(), "unpublished.svg", "unpublished");
         let style = Stylesheet {
             source: root.path().join("content/example/_assets/css/style.css"),
+            page: Some(root.path().join("content/example/index.md")),
             output: PathBuf::from("example/assets/css/style.css"),
-            bundle: Some(root.path().join("content/example")),
-            bundle_assets: BTreeSet::new(),
         };
-        let config = Config::default();
-        let private = published_url(
-            "../../_secret.svg",
-            &style.source,
-            &style,
+        let assets = PublishedAssets::publish(
             root.path(),
-            &config,
+            None,
+            &root.path().join("content"),
+            &[],
+            &root.path().join("public"),
         )
-        .unwrap_err();
-        assert!(
-            private.to_string().contains("not a published bundle asset"),
-            "{private}"
-        );
+        .unwrap();
+        let private =
+            published_url(&assets, &style, &style.source, "../../_secret.svg").unwrap_err();
+        assert!(private.to_string().contains("not a published"), "{private}");
         let unpublished = published_url(
-            "../../../../unpublished.svg",
-            &style.source,
+            &assets,
             &style,
-            root.path(),
-            &config,
+            &style.source,
+            "../../../../unpublished.svg",
         )
         .unwrap_err();
         assert!(
-            unpublished.to_string().contains("outside published"),
+            unpublished.to_string().contains("not a published"),
             "{unpublished}"
         );
 
@@ -528,27 +442,21 @@ mod tests {
         write_test_file(root.path(), "content/_secret.svg", "private");
         let root_style = Stylesheet {
             source: root.path().join("content/_assets/css/style.css"),
+            page: Some(root.path().join("content/index.md")),
             output: PathBuf::from("assets/css/style.css"),
-            bundle: Some(root.path().join("content")),
-            bundle_assets: BTreeSet::new(),
         };
         let private = published_url(
-            "../../_secret.svg",
-            &root_style.source,
+            &assets,
             &root_style,
-            root.path(),
-            &config,
+            &root_style.source,
+            "../../_secret.svg",
         )
         .unwrap_err();
-        assert!(
-            private.to_string().contains("not a published bundle asset"),
-            "{private}"
-        );
+        assert!(private.to_string().contains("not a published"), "{private}");
 
         write_test_file(root.path(), "content/index.md", "Markdown source");
         for url in ["../../index.md", "../.."] {
-            let error = published_url(url, &root_style.source, &root_style, root.path(), &config)
-                .unwrap_err();
+            let error = published_url(&assets, &root_style, &root_style.source, url).unwrap_err();
             assert!(error.to_string().contains("published"), "{error}");
         }
     }

@@ -43,7 +43,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 ├── build.rs             # BuildContext, build orchestration, per-page rendering, static / asset copying
 ├── build/               # Listing pipeline and output generator submodules
 │   ├── archive.rs       # Paginated year-grouped archive pages (/posts/, /posts/<section>/, /tags/<slug>/)
-│   ├── assets.rs        # Ordinary bundle asset copying before stylesheet compilation
+│   ├── assets.rs        # Static / bundle asset publication and source → output paths
 │   ├── error.rs         # 404 error page generation
 │   ├── feed.rs          # RSS feed orchestration (main + per-section + per-term feeds)
 │   ├── git.rs           # Optional content-file commit timestamps for post templates

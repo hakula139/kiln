@@ -8,18 +8,7 @@ Any prose that should land in the changelog must come from a commit message: use
 
 ## Standard release
 
-1. Bump version in `Cargo.toml` (`workspace.package.version`). Keep the Tailwind processor package and lockfile versions aligned:
-
-   ```bash
-   (cd packages/css && npm version X.Y.Z --no-git-tag-version)
-   ```
-
-   Refresh `npmDepsHash` in `packages/css/default.nix` from the updated lockfile, then verify the processor package:
-
-   ```bash
-   nix run --inputs-from . nixpkgs#prefetch-npm-deps -- packages/css/package-lock.json
-   nix build .#kiln-tailwindcss
-   ```
+1. Bump version in `Cargo.toml` (`workspace.package.version`).
 
 2. Run `cargo build` to refresh `Cargo.lock`.
 
@@ -52,6 +41,15 @@ Any prose that should land in the changelog must come from a commit message: use
    - `kiln-x86_64-pc-windows-msvc.zip` (+ `.sha256`)
 
 Each archive contains the kiln binary and a `css/` directory with the Tailwind processor, its package manifest, and its dependency lockfile. Tailwind users install Node.js and set up the processor as described in [Stylesheets](README.md#stylesheets). Plain CSS needs only the kiln binary.
+
+## Tailwind processor dependencies
+
+The private package in `packages/css/` is versioned independently of kiln. When its dependency lockfile changes, refresh `npmDepsHash` in `packages/css/default.nix` and verify the package:
+
+```bash
+nix run --inputs-from . nixpkgs#prefetch-npm-deps -- packages/css/package-lock.json
+nix build .#kiln-tailwindcss
+```
 
 ## Installing `git-cliff`
 
