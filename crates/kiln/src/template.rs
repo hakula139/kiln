@@ -180,19 +180,15 @@ impl TemplateEngine {
     /// Renders the 404 error page using the `404.html` template.
     ///
     /// Returns `None` if the template does not exist. Returns `Some(Err(_))`
-    /// if the template exists but rendering fails.
+    /// if loading or rendering the template fails.
     pub fn render_404(&self, vars: &ErrorPageVars<'_>) -> Option<Result<String>> {
-        let template = self.env.get_template("404.html").ok()?;
-        Some(
-            template
-                .render(vars)
-                .context("failed to render 404 template"),
-        )
+        self.render_optional_template("404.html", vars)
+            .map(|result| result.context("failed to render 404 template"))
     }
 
     /// Tries to render a directive using `directives/<name>.html`.
     ///
-    /// Returns `None` if no template exists. `Some(Err(_))` if it exists but rendering fails.
+    /// Returns `None` if no template exists. `Some(Err(_))` if loading or rendering fails.
     pub fn render_directive(
         &self,
         name: &str,
@@ -201,7 +197,6 @@ impl TemplateEngine {
         config: &Config,
     ) -> Option<Result<String>> {
         let template_name = format!("directives/{name}.html");
-        let template = self.env.get_template(&template_name).ok()?;
         let merged = merge_maps([
             minijinja::context! {
                 __assets => Value::from_object(assets.clone()),
@@ -209,11 +204,12 @@ impl TemplateEngine {
             },
             Value::from_serialize(&ctx),
         ]);
-        Some(
-            template
-                .render(merged)
-                .with_context(|| format!("failed to render directive template: {template_name}")),
-        )
+        self.render_optional_template(&template_name, merged)
+            .map(|result| {
+                result.with_context(|| {
+                    format!("failed to render directive template: {template_name}")
+                })
+            })
     }
 
     /// Returns `true` if a template with the given name exists.
@@ -224,6 +220,17 @@ impl TemplateEngine {
         match self.env.get_template(name) {
             Ok(_) => true,
             Err(e) => e.kind() != minijinja::ErrorKind::TemplateNotFound,
+        }
+    }
+
+    fn render_optional_template(
+        &self,
+        name: &str,
+        vars: impl Serialize,
+    ) -> Option<Result<String, minijinja::Error>> {
+        match self.env.get_template(name) {
+            Err(error) if error.kind() == minijinja::ErrorKind::TemplateNotFound => None,
+            result => Some(result.and_then(|template| template.render(vars))),
         }
     }
 }
@@ -867,6 +874,32 @@ mod tests {
     }
 
     #[test]
+    fn render_404_template_failure_returns_error() {
+        for (source, kind) in [
+            ("{% invalid %}", minijinja::ErrorKind::SyntaxError),
+            (
+                "{% for x in 42 %}{{ x }}{% endfor %}",
+                minijinja::ErrorKind::InvalidOperation,
+            ),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            test_fs::write(dir.path().join("404.html"), source).unwrap();
+            let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
+            let config = test_config();
+            let vars = ErrorPageVars {
+                title: "404 Not Found",
+                config: &config,
+            };
+
+            let error = engine.render_404(&vars).unwrap().unwrap_err();
+            assert_eq!(
+                error.downcast_ref::<minijinja::Error>().unwrap().kind(),
+                kind
+            );
+        }
+    }
+
+    #[test]
     fn render_404_returns_none_without_template() {
         let dir = tempfile::tempdir().unwrap();
         let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
@@ -965,6 +998,25 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(html, "title=Probe lang=fr");
+    }
+
+    #[test]
+    fn render_directive_malformed_template_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let directives_dir = dir.path().join("directives");
+        test_fs::create_dir_all(&directives_dir).unwrap();
+        test_fs::write(directives_dir.join("bad.html"), "{% invalid %}").unwrap();
+        let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
+
+        let error = engine
+            .render_directive("bad", (), &AssetsHandle::default(), &test_config())
+            .unwrap()
+            .unwrap_err();
+        assert_eq!(
+            error.downcast_ref::<minijinja::Error>().unwrap().kind(),
+            minijinja::ErrorKind::SyntaxError,
+        );
+        assert!(error.to_string().contains("directives/bad.html"));
     }
 
     #[test]
