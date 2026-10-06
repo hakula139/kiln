@@ -2,6 +2,7 @@
 # correct rpath / install_name on Linux and Darwin, no post-build patching.
 
 {
+  cargoLock,
   cssCompiler,
   dav1d,
   git,
@@ -12,17 +13,12 @@
   rustPlatform,
   src,
   tzdata,
+  version,
 }:
 
-let
-  cargoToml = fromTOML (builtins.readFile "${src}/Cargo.toml");
-in
 rustPlatform.buildRustPackage {
   pname = "kiln";
-  inherit (cargoToml.workspace.package) version;
-
-  inherit src;
-  cargoLock.lockFile = "${src}/Cargo.lock";
+  inherit cargoLock src version;
 
   nativeBuildInputs = [
     makeWrapper

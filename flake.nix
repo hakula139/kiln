@@ -73,6 +73,8 @@
         # Some workspace dependencies require a newer Rust version than nixpkgs provides.
         kiln = pkgs.callPackage ./packages/kiln {
           inherit cssCompiler;
+          cargoLock.lockFile = ./Cargo.lock;
+          version = (pkgs.lib.importTOML ./Cargo.toml).workspace.package.version;
           rustPlatform = pkgs.makeRustPlatform {
             cargo = rustToolchain;
             rustc = rustToolchain;
