@@ -16,8 +16,8 @@ The project's shape is deliberate:
 - CJK-aware heading IDs and table of contents, so Chinese / Japanese / Korean headings stay linkable.
 - `:::` directive blocks rendered through theme templates: callouts, link cards, music embeds, anything you can template.
 - Image attributes, emoji and Font Awesome icon shortcodes, and rich code-block presentation helpers.
-- Pandoc-style code-block attributes such as `` ```rust {title="src/main.rs" highlight="1,3-5" collapse} `` for titles, line highlighting, and forced collapse / expand.
-- Mermaid diagrams via `` ```mermaid `` fences. Themes load mermaid.js only on pages that contain a diagram.
+- Pandoc-style code-block attributes such as ` ```rust {title="src/main.rs" highlight="1,3-5" collapse} ` for titles, line highlighting, and forced collapse / expand.
+- Mermaid diagrams via ` ```mermaid ` fences. Themes load mermaid.js only on pages that contain a diagram.
 
 ### Publishing
 

@@ -506,7 +506,7 @@ mod tests {
     fn render_markdown_paragraph() {
         let out = render("Hello, world!");
         assert_eq!(out.html.trim(), "<p>Hello, world!</p>");
-        assert!(out.headings.is_empty());
+        assert_eq!(out.headings, Vec::<TocEntry>::new());
     }
 
     // ── render_markdown: headings ──

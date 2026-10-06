@@ -357,7 +357,7 @@ mod tests {
         let config = Config::default();
         assert_eq!(config.base_url, localhost_url(DEFAULT_PORT));
         assert_eq!(config.title, "My Site");
-        assert!(config.description.is_empty());
+        assert_eq!(config.description, "");
         assert_eq!(config.language, "en");
         assert!(config.timezone.is_none());
         assert!(!config.enable_git_info);
@@ -367,9 +367,9 @@ mod tests {
         assert!(!config.search.enabled);
         assert!(config.search.binary.is_none());
         assert!(config.menu.is_empty());
-        assert!(config.author.name.is_empty());
-        assert!(config.author.email.is_empty());
-        assert!(config.author.link.is_empty());
+        assert_eq!(config.author.name, "");
+        assert_eq!(config.author.email, "");
+        assert_eq!(config.author.link, "");
         assert_eq!(config.image.lqip_size, 16);
         assert_eq!(config.image.lqip_quality, 25);
     }

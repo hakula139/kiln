@@ -399,7 +399,7 @@ mod tests {
         fs::write(dir.path().join("image.png"), "fake-png").unwrap();
 
         let page = Page::from_file(&file).unwrap();
-        assert!(page.assets.is_empty());
+        assert_eq!(page.assets, Vec::<PathBuf>::new());
     }
 
     #[test]

@@ -126,7 +126,7 @@ mod tests {
         let spec = parse_fence_info("rust", Some(40));
         assert_eq!(spec.lang.as_deref(), Some("rust"));
         assert!(spec.title.is_none());
-        assert!(spec.highlight.is_empty());
+        assert_eq!(spec.highlight, Vec::<RangeInclusive<usize>>::new());
         assert!(spec.collapse.is_none());
         assert_eq!(spec.max_lines, Some(40));
     }
@@ -238,7 +238,7 @@ mod tests {
     fn parse_fence_info_unknown_attrs_discarded() {
         let spec = parse_fence_info(r#"rust {title="T" unknown="val" foo=bar}"#, None);
         assert_eq!(spec.title.as_deref(), Some("T"));
-        assert!(spec.highlight.is_empty());
+        assert_eq!(spec.highlight, Vec::<RangeInclusive<usize>>::new());
         assert!(spec.collapse.is_none());
     }
 
@@ -265,7 +265,7 @@ mod tests {
     fn parse_fence_info_unclosed_quote() {
         let spec = parse_fence_info(r#"rust {title="a}b.rs"#, None);
         assert_eq!(spec.title.as_deref(), Some("a}b.rs"));
-        assert!(spec.highlight.is_empty());
+        assert_eq!(spec.highlight, Vec::<RangeInclusive<usize>>::new());
     }
 
     // ── parse_highlight_ranges ──
@@ -300,6 +300,9 @@ mod tests {
 
     #[test]
     fn parse_highlight_ranges_empty() {
-        assert!(parse_highlight_ranges("").is_empty());
+        assert_eq!(
+            parse_highlight_ranges(""),
+            Vec::<RangeInclusive<usize>>::new()
+        );
     }
 }

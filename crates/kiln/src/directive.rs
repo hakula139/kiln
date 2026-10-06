@@ -235,10 +235,10 @@ mod tests {
     #[test]
     fn parse_directive_args_empty() {
         let args = parse_directive_args("");
-        assert!(args.positional.is_empty());
+        assert_eq!(args.positional, Vec::<String>::new());
         assert!(args.named.is_empty());
         assert!(args.id.is_none());
-        assert!(args.classes.is_empty());
+        assert_eq!(args.classes, Vec::<String>::new());
     }
 
     #[test]
@@ -251,7 +251,7 @@ mod tests {
     #[test]
     fn parse_directive_args_named_only() {
         let args = parse_directive_args(r#"server="netease" type="song""#);
-        assert!(args.positional.is_empty());
+        assert_eq!(args.positional, Vec::<String>::new());
         assert_eq!(args.named["server"], "netease");
         assert_eq!(args.named["type"], "song");
     }
@@ -285,7 +285,7 @@ mod tests {
     #[test]
     fn parse_directive_args_named_unquoted_value() {
         let args = parse_directive_args("key=value");
-        assert!(args.positional.is_empty());
+        assert_eq!(args.positional, Vec::<String>::new());
         assert_eq!(args.named["key"], "value");
     }
 
@@ -320,7 +320,7 @@ mod tests {
         let args = parse_directive_args("#my-id .highlight .wide type=tip");
         assert_eq!(args.id.as_deref(), Some("my-id"));
         assert_eq!(args.classes, vec!["highlight", "wide"]);
-        assert!(args.positional.is_empty());
+        assert_eq!(args.positional, Vec::<String>::new());
         assert_eq!(args.named["type"], "tip");
     }
 
@@ -329,6 +329,6 @@ mod tests {
         let args = parse_directive_args(r##""#literal" ".keep""##);
         assert_eq!(args.positional, vec!["#literal", ".keep"]);
         assert!(args.id.is_none());
-        assert!(args.classes.is_empty());
+        assert_eq!(args.classes, Vec::<String>::new());
     }
 }
