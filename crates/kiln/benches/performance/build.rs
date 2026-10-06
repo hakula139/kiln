@@ -1,12 +1,16 @@
 use std::fmt::Write;
 use std::fs;
+use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
 use criterion::{BenchmarkId, Criterion, SamplingMode, Throughput};
+use scraper::{Html, Selector};
 use walkdir::WalkDir;
 
-use super::fixtures::{PROSE, Site};
+use kiln::feed::DEFAULT_FEED_LIMIT;
+
+use super::fixtures::{PROSE, Site, extra_params};
 
 /// Includes CLI startup and prior-output cleanup, with fixture validation outside sampling.
 pub(super) fn benchmarks(criterion: &mut Criterion) {
@@ -44,8 +48,8 @@ pub(super) fn benchmarks(criterion: &mut Criterion) {
 fn add_params(site: &Site, count: usize) {
     let path = site.root().join("config.toml");
     let mut config = fs::read_to_string(&path).unwrap();
-    for index in 0..count {
-        _ = writeln!(config, r#"setting_{index} = "Example value {index}""#);
+    for (name, value) in extra_params(count) {
+        _ = writeln!(config, "{name} = {value}");
     }
     fs::write(path, config).unwrap();
 }
@@ -76,23 +80,61 @@ fn verify_build(site: &Site, pages: usize, minify: bool) {
         .count();
     let expected_pages = pages + 4 * pages.div_ceil(10) + 4 * (pages / 4).div_ceil(10) + 3;
     assert_eq!(actual_pages, expected_pages);
-    assert!(
-        fs::read_to_string(output.join("index.xml"))
-            .unwrap()
-            .contains("<title>Post 0</title>")
+    verify_listings(&output, pages);
+    let feed = fs::read_to_string(output.join("index.xml")).unwrap();
+    assert_eq!(
+        feed.matches("<item>").count(),
+        pages.min(DEFAULT_FEED_LIMIT)
     );
-    assert!(output.join("tags/common/index.html").is_file());
-    assert!(output.join("sections/index.html").is_file());
-    assert!(
-        fs::read_to_string(output.join("style.css"))
-            .unwrap()
-            .contains("#123456")
-    );
-    assert!(
-        fs::read_to_string(output.join("script.js"))
-            .unwrap()
-            .contains("42")
-    );
+    assert!(feed.contains("<title>Post 0</title>"));
+    let css = fs::read_to_string(output.join("style.css")).unwrap();
+    let script = fs::read_to_string(output.join("script.js")).unwrap();
+    if minify {
+        assert_eq!(css, "body{color:#123456}");
+        assert_eq!(script, "const value=42;");
+    } else {
+        assert_eq!(css, "body { color: #123456; }\n");
+        assert_eq!(script, "const value = 42;\n");
+    }
+}
+
+fn verify_listings(output: &Path, pages: usize) {
+    let mut expected_posts: Vec<_> = (0..pages)
+        .map(|index| {
+            (
+                format!("Post {index}"),
+                format!("https://example.com/posts/notes/post-{index}/"),
+            )
+        })
+        .collect();
+    expected_posts.sort_by(|a, b| a.1.cmp(&b.1));
+    expected_posts.truncate(10);
+
+    let selector = Selector::parse("a").unwrap();
+    for path in [
+        "index.html",
+        "posts/index.html",
+        "posts/notes/index.html",
+        "tags/common/index.html",
+    ] {
+        let html = fs::read_to_string(output.join(path)).unwrap();
+        let document = Html::parse_document(&html);
+        let posts: Vec<_> = document
+            .select(&selector)
+            .map(|post| {
+                (
+                    post.text().collect::<String>(),
+                    post.value().attr("href").unwrap().to_owned(),
+                )
+            })
+            .collect();
+        assert_eq!(posts, expected_posts, "{path}");
+    }
+    let html = fs::read_to_string(output.join("sections/index.html")).unwrap();
+    let document = Html::parse_document(&html);
+    let sections: Vec<_> = document.select(&selector).collect();
+    assert_eq!(sections.len(), 1);
+    assert_eq!(sections[0].value().attr("href"), Some("/posts/notes/"));
 }
 
 fn run_build(site: &Site, minify: bool) {

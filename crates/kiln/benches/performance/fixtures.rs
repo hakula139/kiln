@@ -72,6 +72,16 @@ impl Site {
     }
 }
 
+/// Generates string settings outside the supported rendering options.
+pub(super) fn extra_params(count: usize) -> impl Iterator<Item = (String, toml::Value)> {
+    (0..count).map(|index| {
+        (
+            format!("setting_{index}"),
+            format!("Example value {index}").into(),
+        )
+    })
+}
+
 fn write_templates(root: &Path) {
     for (name, template) in [
         (

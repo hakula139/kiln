@@ -26,8 +26,13 @@ criterion_group! {
 criterion_main!(benches);
 
 fn benchmark_configuration() -> Criterion {
+    let criterion = Criterion::default();
+    if std::env::var_os("CRITERION_HOME").is_some() {
+        return criterion;
+    }
+
     // Cargo runs benchmark executables from <target>/<profile>/deps/.
     let executable = std::env::current_exe().unwrap();
     let target_dir = executable.ancestors().nth(3).unwrap();
-    Criterion::default().output_directory(&target_dir.join("criterion"))
+    criterion.output_directory(&target_dir.join("criterion"))
 }

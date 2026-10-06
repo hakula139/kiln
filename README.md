@@ -32,11 +32,11 @@ A static site generator written in Rust for [hakula.xyz](https://hakula.xyz), wi
 
 | Document                         | Description                                         |
 | -------------------------------- | --------------------------------------------------- |
-| [Benchmarks](BENCHMARKS.md)      | Repeatable performance measurements and comparisons |
 | [Roadmap](docs/roadmap.md)       | Current shipped capability areas and planned work   |
 | [Content Guide](docs/content.md) | Page bundles, co-located assets, per-page CSS       |
 | [Syntax Guide](docs/syntax.md)   | Markdown extensions, frontmatter fields, directives |
 | [Theming](docs/themes.md)        | Themes, templates, navigation menus, and i18n       |
+| [Benchmarks](docs/benchmarks.md) | Performance measurements and baseline comparisons   |
 
 ## Installation
 
