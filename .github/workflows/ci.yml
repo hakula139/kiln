@@ -110,12 +110,10 @@ jobs:
         config:
           - runner: ubuntu-latest
             cachix_pins:
-              actionlint-main-x86_64-linux: .#actionlint
               kiln-main-x86_64-linux: .#kiln
               pagefind-main-x86_64-linux: .#pagefind
           - runner: macos-latest
             cachix_pins:
-              actionlint-main-aarch64-darwin: .#actionlint
               kiln-main-aarch64-darwin: .#kiln
               pagefind-main-aarch64-darwin: .#pagefind
     env:

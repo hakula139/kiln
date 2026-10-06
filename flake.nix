@@ -64,8 +64,6 @@
 
         pkgs = import nixpkgs { inherit system overlays; };
 
-        actionlint = pkgs.callPackage ./packages/actionlint { };
-
         # Stable Rust with clippy / coverage / editor extensions.
         rustToolchain = pkgs.rust-bin.stable.latest.default.override {
           extensions = [
@@ -116,11 +114,6 @@
         preCommitCheck = git-hooks-nix.lib.${system}.run {
           src = ./.;
           hooks = {
-            actionlint = {
-              enable = true;
-              package = actionlint;
-            };
-
             check-added-large-files.enable = true;
             check-yaml.enable = true;
             end-of-file-fixer.enable = true;
@@ -231,7 +224,7 @@
         # importing this flake get both via `kiln.packages.${system}.<name>`.
         packages = {
           default = kiln;
-          inherit actionlint kiln;
+          inherit kiln;
           inherit (pkgs) pagefind;
         };
 
