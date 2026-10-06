@@ -15,15 +15,15 @@ pub fn init_theme(root: &Path, name: &str) -> Result<()> {
         bail!("theme directory already exists: {}", theme_dir.display());
     }
 
+    let css_dir = theme_dir.join("_assets/css");
     let templates_dir = theme_dir.join("templates");
     let i18n_dir = theme_dir.join("i18n");
+    fs::create_dir_all(&css_dir).context("failed to create CSS source directory")?;
     fs::create_dir_all(&templates_dir).context("failed to create templates directory")?;
     fs::create_dir_all(theme_dir.join("static")).context("failed to create static directory")?;
     fs::create_dir_all(&i18n_dir).context("failed to create i18n directory")?;
 
     fs::write(theme_dir.join("theme.toml"), "").context("failed to write theme.toml")?;
-    let css_dir = theme_dir.join("_assets/css");
-    fs::create_dir_all(&css_dir).context("failed to create CSS source directory")?;
     fs::write(css_dir.join("style.css"), "").context("failed to write CSS entry")?;
     fs::write(
         templates_dir.join("base.html"),
@@ -170,7 +170,7 @@ mod tests {
 
         let err = init_theme(root.path(), "my-theme").unwrap_err().to_string();
         assert!(
-            err.contains("failed to create templates directory"),
+            err.contains("failed to create CSS source directory"),
             "should report directory creation failure, got: {err}"
         );
     }

@@ -149,7 +149,7 @@ async fn serve_until(
     let app = build_router(&output_dir, reload_tx);
 
     eprintln!("\nServing at {base_url} (Press Ctrl+C to stop)");
-    eprint!("Watching: config.toml, _assets/, content/, templates/, static/, i18n/");
+    eprint!("Watching: config.toml, _assets/, content/, i18n/, static/, templates/");
     if let Some(ref theme) = config.theme {
         eprint!(", themes/{theme}/");
     }
@@ -239,7 +239,7 @@ fn watch_paths(root: &Path, config: &Config) -> Vec<WatchEntry> {
         });
     }
 
-    for dir in ["_assets", "content", "templates", "static", "i18n"] {
+    for dir in ["_assets", "content", "i18n", "static", "templates"] {
         let path = root.join(dir);
         if path.is_dir() {
             paths.push(WatchEntry {
@@ -255,8 +255,8 @@ fn watch_paths(root: &Path, config: &Config) -> Vec<WatchEntry> {
             ("theme.toml", false),
             ("_assets", true),
             ("i18n", true),
-            ("templates", true),
             ("static", true),
+            ("templates", true),
         ] {
             let path = theme_dir.join(name);
             if path.exists() {
@@ -704,9 +704,9 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         fs::create_dir(root.path().join("_assets")).unwrap();
         fs::create_dir(root.path().join("content")).unwrap();
-        fs::create_dir(root.path().join("templates")).unwrap();
-        fs::create_dir(root.path().join("static")).unwrap();
         fs::create_dir(root.path().join("i18n")).unwrap();
+        fs::create_dir(root.path().join("static")).unwrap();
+        fs::create_dir(root.path().join("templates")).unwrap();
         fs::write(root.path().join("config.toml"), "").unwrap();
 
         let config = Config::default();
@@ -716,9 +716,9 @@ mod tests {
         assert!(paths[0].path.ends_with("config.toml") && !paths[0].recursive);
         assert!(paths[1].path.ends_with("_assets") && paths[1].recursive);
         assert!(paths[2].path.ends_with("content") && paths[2].recursive);
-        assert!(paths[3].path.ends_with("templates") && paths[3].recursive);
+        assert!(paths[3].path.ends_with("i18n") && paths[3].recursive);
         assert!(paths[4].path.ends_with("static") && paths[4].recursive);
-        assert!(paths[5].path.ends_with("i18n") && paths[5].recursive);
+        assert!(paths[5].path.ends_with("templates") && paths[5].recursive);
     }
 
     #[test]
@@ -884,28 +884,6 @@ mod tests {
     }
 
     #[test]
-    fn safe_rebuild_recovers_after_css_import_failure() {
-        let root = tempfile::tempdir().unwrap();
-        setup_site(root.path());
-        let css_dir = root.path().join("_assets/css");
-        fs::create_dir_all(&css_dir).unwrap();
-        fs::write(css_dir.join("style.css"), ".before { color: red; }").unwrap();
-        crate::build(root.path(), BuildOptions::default()).unwrap();
-        let output = root.path().join("public/css/style.css");
-        let original = fs::read_to_string(&output).unwrap();
-
-        fs::write(css_dir.join("style.css"), r#"@import "missing.css";"#).unwrap();
-        assert!(safe_rebuild(root.path(), "http://localhost:0").is_err());
-        assert_eq!(fs::read_to_string(&output).unwrap(), original);
-        assert!(!root.path().join("public.staging").exists());
-
-        fs::write(css_dir.join("missing.css"), ".recovered { color: blue; }").unwrap();
-        safe_rebuild(root.path(), "http://localhost:0").unwrap();
-        assert!(fs::read_to_string(&output).unwrap().contains(".recovered"));
-        assert!(!root.path().join("public.prev").exists());
-    }
-
-    #[test]
     fn safe_rebuild_no_existing_output() {
         let root = tempfile::tempdir().unwrap();
         setup_site(root.path());
@@ -975,6 +953,28 @@ mod tests {
             "output should be untouched after failed rebuild"
         );
         assert!(!root.path().join("public.staging").exists());
+        assert!(!root.path().join("public.prev").exists());
+    }
+
+    #[test]
+    fn safe_rebuild_recovers_after_css_import_failure() {
+        let root = tempfile::tempdir().unwrap();
+        setup_site(root.path());
+        let css_dir = root.path().join("_assets/css");
+        fs::create_dir_all(&css_dir).unwrap();
+        fs::write(css_dir.join("style.css"), ".before { color: red; }").unwrap();
+        crate::build(root.path(), BuildOptions::default()).unwrap();
+        let output = root.path().join("public/css/style.css");
+        let original = fs::read_to_string(&output).unwrap();
+
+        fs::write(css_dir.join("style.css"), r#"@import "missing.css";"#).unwrap();
+        assert!(safe_rebuild(root.path(), "http://localhost:0").is_err());
+        assert_eq!(fs::read_to_string(&output).unwrap(), original);
+        assert!(!root.path().join("public.staging").exists());
+
+        fs::write(css_dir.join("missing.css"), ".recovered { color: blue; }").unwrap();
+        safe_rebuild(root.path(), "http://localhost:0").unwrap();
+        assert!(fs::read_to_string(&output).unwrap().contains(".recovered"));
         assert!(!root.path().join("public.prev").exists());
     }
 

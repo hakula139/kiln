@@ -391,6 +391,133 @@ fn build_materializes_external_bundle_symlinks() {
 }
 
 #[test]
+fn build_fingerprints_bundle_assets_after_static_collisions() {
+    let root = tempfile::tempdir().unwrap();
+    copy_templates(&root.path().join("templates"));
+    write_page(
+        root.path(),
+        "example",
+        indoc! {r#"
+            +++
+            title = "Example"
+            +++
+            Content.
+        "#},
+    );
+    for (name, bundle, shared) in [
+        ("app.js", "console.log('bundle');", "console.log('static');"),
+        ("image.svg", "bundle-image", "static-image"),
+    ] {
+        write_test_file(
+            root.path(),
+            &format!("content/example/assets/{name}"),
+            bundle,
+        );
+        write_test_file(
+            root.path(),
+            &format!("static/example/assets/{name}"),
+            shared,
+        );
+    }
+    build(
+        root.path(),
+        BuildOptions {
+            minify: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    let public = root.path().join("public");
+    assert_eq!(
+        fs::read_to_string(public.join("example/assets/image.svg")).unwrap(),
+        "bundle-image"
+    );
+    let js = fs::read_to_string(public.join("example/assets/app.js")).unwrap();
+    assert!(js.contains("bundle") && !js.contains("static"), "{js}");
+    let hash = hex::encode(Sha256::digest(js.as_bytes()));
+    assert_eq!(
+        fs::read_to_string(public.join(format!("example/assets/app.{}.js", &hash[..12]))).unwrap(),
+        js
+    );
+}
+
+#[test]
+fn build_cleans_stale_output() {
+    let root = tempfile::tempdir().unwrap();
+    fs::write(root.path().join("config.toml"), "").unwrap();
+    copy_templates(&root.path().join("templates"));
+
+    let output_dir = root.path().join("public");
+    fs::create_dir_all(output_dir.join("old")).unwrap();
+    fs::write(output_dir.join("old").join("stale.html"), "stale").unwrap();
+
+    build(root.path(), BuildOptions::default()).unwrap();
+
+    assert!(
+        !output_dir.join("old").exists(),
+        "stale output should be removed"
+    );
+}
+
+#[test]
+fn build_no_content() {
+    let root = tempfile::tempdir().unwrap();
+    fs::write(root.path().join("config.toml"), "").unwrap();
+    copy_templates(&root.path().join("templates"));
+
+    build(root.path(), BuildOptions::default()).unwrap();
+
+    let output_dir = root.path().join("public");
+    assert!(output_dir.exists(), "output directory should exist");
+    assert!(
+        output_dir.join("tags").join("index.html").exists(),
+        "should generate empty tags index"
+    );
+}
+
+// ── build: stylesheets ──
+
+#[test]
+fn build_compiles_shared_css_with_site_override_and_theme_asset_urls() {
+    let root = tempfile::tempdir().unwrap();
+    write_test_file(root.path(), "config.toml", r#"theme = "example""#);
+    write_test_file(root.path(), "themes/example/theme.toml", "");
+    copy_templates(&root.path().join("templates"));
+    fs::create_dir_all(root.path().join("themes/example/templates")).unwrap();
+    write_test_file(
+        root.path(),
+        "themes/example/_assets/css/style.css",
+        r#"@import "./parts/font.css"; .theme { color: red; }"#,
+    );
+    write_test_file(
+        root.path(),
+        "themes/example/_assets/css/parts/font.css",
+        "@font-face { font-family: Example; src: url(../../../static/fonts/example.woff2?v=1#font); }",
+    );
+    write_test_file(
+        root.path(),
+        "themes/example/static/fonts/example.woff2",
+        "theme-font",
+    );
+    build(root.path(), BuildOptions::default()).unwrap();
+    let output = root.path().join("public/css/style.css");
+    let css = fs::read_to_string(&output).unwrap();
+    assert!(css.contains("../fonts/example.woff2?v=1#font"), "{css}");
+    assert!(css.contains(".theme"), "{css}");
+
+    write_test_file(
+        root.path(),
+        "_assets/css/style.css",
+        ".site { color: blue; }",
+    );
+    build(root.path(), BuildOptions::default()).unwrap();
+    let css = fs::read_to_string(&output).unwrap();
+    assert!(css.contains(".site") && !css.contains(".theme"), "{css}");
+    assert!(!root.path().join("public/_assets").exists());
+}
+
+#[test]
 fn build_compiles_page_styles_with_private_sources_and_final_hashes() {
     let root = tempfile::tempdir().unwrap();
     fs::write(root.path().join("config.toml"), "").unwrap();
@@ -491,97 +618,6 @@ fn build_compiles_page_styles_with_private_sources_and_final_hashes() {
             .unwrap()
             .contains("#00f")
     );
-}
-
-#[test]
-fn build_fingerprints_bundle_assets_after_static_collisions() {
-    let root = tempfile::tempdir().unwrap();
-    copy_templates(&root.path().join("templates"));
-    write_page(
-        root.path(),
-        "example",
-        indoc! {r#"
-            +++
-            title = "Example"
-            +++
-            Content.
-        "#},
-    );
-    for (name, bundle, shared) in [
-        ("app.js", "console.log('bundle');", "console.log('static');"),
-        ("image.svg", "bundle-image", "static-image"),
-    ] {
-        write_test_file(
-            root.path(),
-            &format!("content/example/assets/{name}"),
-            bundle,
-        );
-        write_test_file(
-            root.path(),
-            &format!("static/example/assets/{name}"),
-            shared,
-        );
-    }
-    build(
-        root.path(),
-        BuildOptions {
-            minify: true,
-            ..Default::default()
-        },
-    )
-    .unwrap();
-
-    let public = root.path().join("public");
-    assert_eq!(
-        fs::read_to_string(public.join("example/assets/image.svg")).unwrap(),
-        "bundle-image"
-    );
-    let js = fs::read_to_string(public.join("example/assets/app.js")).unwrap();
-    assert!(js.contains("bundle") && !js.contains("static"), "{js}");
-    let hash = hex::encode(Sha256::digest(js.as_bytes()));
-    assert_eq!(
-        fs::read_to_string(public.join(format!("example/assets/app.{}.js", &hash[..12]))).unwrap(),
-        js
-    );
-}
-
-#[test]
-fn build_compiles_shared_css_with_site_override_and_theme_asset_urls() {
-    let root = tempfile::tempdir().unwrap();
-    write_test_file(root.path(), "config.toml", r#"theme = "example""#);
-    write_test_file(root.path(), "themes/example/theme.toml", "");
-    copy_templates(&root.path().join("templates"));
-    fs::create_dir_all(root.path().join("themes/example/templates")).unwrap();
-    write_test_file(
-        root.path(),
-        "themes/example/_assets/css/style.css",
-        r#"@import "./parts/font.css"; .theme { color: red; }"#,
-    );
-    write_test_file(
-        root.path(),
-        "themes/example/_assets/css/parts/font.css",
-        "@font-face { font-family: Example; src: url(../../../static/fonts/example.woff2?v=1#font); }",
-    );
-    write_test_file(
-        root.path(),
-        "themes/example/static/fonts/example.woff2",
-        "theme-font",
-    );
-    build(root.path(), BuildOptions::default()).unwrap();
-    let output = root.path().join("public/css/style.css");
-    let css = fs::read_to_string(&output).unwrap();
-    assert!(css.contains("../fonts/example.woff2?v=1#font"), "{css}");
-    assert!(css.contains(".theme"), "{css}");
-
-    write_test_file(
-        root.path(),
-        "_assets/css/style.css",
-        ".site { color: blue; }",
-    );
-    build(root.path(), BuildOptions::default()).unwrap();
-    let css = fs::read_to_string(&output).unwrap();
-    assert!(css.contains(".site") && !css.contains(".theme"), "{css}");
-    assert!(!root.path().join("public/_assets").exists());
 }
 
 #[test]
@@ -771,40 +807,6 @@ fn build_compiles_tailwind_imports_through_public_bundle_aliases() {
         "image"
     );
     assert!(!output.join("_assets").exists());
-}
-
-#[test]
-fn build_cleans_stale_output() {
-    let root = tempfile::tempdir().unwrap();
-    fs::write(root.path().join("config.toml"), "").unwrap();
-    copy_templates(&root.path().join("templates"));
-
-    let output_dir = root.path().join("public");
-    fs::create_dir_all(output_dir.join("old")).unwrap();
-    fs::write(output_dir.join("old").join("stale.html"), "stale").unwrap();
-
-    build(root.path(), BuildOptions::default()).unwrap();
-
-    assert!(
-        !output_dir.join("old").exists(),
-        "stale output should be removed"
-    );
-}
-
-#[test]
-fn build_no_content() {
-    let root = tempfile::tempdir().unwrap();
-    fs::write(root.path().join("config.toml"), "").unwrap();
-    copy_templates(&root.path().join("templates"));
-
-    build(root.path(), BuildOptions::default()).unwrap();
-
-    let output_dir = root.path().join("public");
-    assert!(output_dir.exists(), "output directory should exist");
-    assert!(
-        output_dir.join("tags").join("index.html").exists(),
-        "should generate empty tags index"
-    );
 }
 
 // ── build: theme ──

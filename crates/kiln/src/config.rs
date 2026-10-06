@@ -532,6 +532,17 @@ mod tests {
         assert!(config.menu["social"][0].external);
     }
 
+    #[test]
+    fn deserialize_unknown_css_processor_returns_error() {
+        assert!(
+            toml::from_str::<Config>(indoc! {r#"
+                [css]
+                processor = "unknown"
+            "#})
+            .is_err()
+        );
+    }
+
     // ── load ──
 
     #[test]
@@ -783,13 +794,6 @@ mod tests {
         assert_eq!(
             Config::load(root.path()).unwrap().css.processor,
             Some(CssProcessor::Plain)
-        );
-        assert!(
-            toml::from_str::<Config>(indoc! {r#"
-                [css]
-                processor = "unknown"
-            "#})
-            .is_err()
         );
     }
 
