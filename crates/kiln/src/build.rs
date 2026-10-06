@@ -9,7 +9,9 @@ mod paginate;
 mod sitemap;
 mod url;
 
+use std::fmt::Write;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use jiff::tz::TimeZone;
@@ -72,6 +74,7 @@ pub struct BuildOptions<'a> {
     reason = "BuildOptions is an owned options bag: callers construct it inline with `..Default::default()`, so taking it by value keeps call sites concise and lets future non-Copy fields land without a signature churn"
 )]
 pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
+    let started = Instant::now();
     let BuildOptions {
         base_url_override,
         output_dir_override,
@@ -114,7 +117,7 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
     }
     copy_static(&root.join("static"), &output_dir)?;
 
-    let mut minify_stats = if minify {
+    let minify_stats = if minify {
         eprintln!("Minifying...");
         Some(minify::minify_static_assets(&output_dir).context("minification failed")?)
     } else {
@@ -163,36 +166,84 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
         .unwrap_or_else(|| ctx.i18n.t("all_posts").into_owned());
     let buckets = build_listing_buckets(&artifacts, &sections, &taxonomy_set, posts_title);
 
-    home::build_home_pages(&ctx, &artifacts.listed_posts, &output_dir)?;
-    archive::build_archive_pages(&ctx, &buckets, &output_dir)?;
-    overview::build_overview_pages(&ctx, &buckets, &output_dir)?;
+    let mut page_count = content.pages.len();
+    page_count += home::build_home_pages(&ctx, &artifacts.listed_posts, &output_dir)?;
+    page_count += archive::build_archive_pages(&ctx, &buckets, &output_dir)?;
+    page_count += overview::build_overview_pages(&ctx, &buckets, &output_dir)?;
 
     feed::build_feeds(&ctx, &artifacts.listed_posts, &buckets, &output_dir)?;
     sitemap::build_sitemap_and_robots(&ctx, &artifacts.listed_pages, &output_dir)?;
-    error::build_404(&ctx, &output_dir)?;
+    page_count += error::build_404(&ctx, &output_dir)?;
 
+    finish_build(
+        &ctx,
+        &output_dir,
+        &static_assets,
+        minify_stats,
+        page_count,
+        content.pages.len(),
+        started,
+    )
+}
+
+fn finish_build(
+    ctx: &BuildContext,
+    output_dir: &Path,
+    static_assets: &StaticAssetManifest,
+    mut minify_stats: Option<MinifyStats>,
+    page_count: usize,
+    content_count: usize,
+    started: Instant,
+) -> Result<()> {
     if let Some(stats) = &mut minify_stats {
         *stats +=
-            minify::minify_output_dir_excluding(&output_dir, static_assets.fingerprinted_paths())
+            minify::minify_output_dir_excluding(output_dir, static_assets.fingerprinted_paths())
                 .context("minification failed")?;
     }
 
-    if ctx.config.search.enabled {
-        eprintln!("Running Pagefind...");
-        search::run_pagefind(&output_dir, ctx.config.search.binary.as_deref())
+    let search_duration = if ctx.config.search.enabled {
+        eprintln!("Indexing search...");
+        let search_started = Instant::now();
+        search::run_pagefind(output_dir, ctx.config.search.binary.as_deref())
             .context("search indexing failed")?;
-    }
+        Some(search_started.elapsed())
+    } else {
+        None
+    };
 
-    report_build_summary(content.pages.len(), minify_stats.as_ref());
-    Ok(())
-}
-
-/// Prints the end-of-build summary line(s) to stderr.
-fn report_build_summary(page_count: usize, minify_stats: Option<&MinifyStats>) {
-    eprintln!("Build complete: {page_count} page(s).");
+    eprintln!(
+        "{}",
+        format_build_summary(
+            page_count,
+            content_count,
+            started.elapsed(),
+            search_duration
+        )
+    );
     if let Some(stats) = minify_stats {
         eprintln!("{stats}");
     }
+    Ok(())
+}
+
+fn format_build_summary(
+    page_count: usize,
+    content_count: usize,
+    elapsed: Duration,
+    search_duration: Option<Duration>,
+) -> String {
+    let mut summary = format!(
+        "Built {page_count} pages ({content_count} content) in {:.3}s.",
+        elapsed.as_secs_f64()
+    );
+    if let Some(duration) = search_duration {
+        _ = write!(
+            summary,
+            "\nSearch indexing: {:.3}s.",
+            duration.as_secs_f64()
+        );
+    }
+    summary
 }
 
 // ── Single-page rendering ──

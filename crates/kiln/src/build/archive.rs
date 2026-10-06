@@ -8,16 +8,16 @@ use super::BuildContext;
 use super::listing::{BucketKind, ListingBucket, group_by_year};
 use super::paginate::{paginate_config, write_paginated};
 
-/// Generates all archive pages: `/posts/`, `/posts/<section>/`, and `/tags/<slug>/`.
+/// Generates `/posts/`, section, and tag archives and returns the number of pages written.
 ///
 /// Skipped when `archive.html` is not present in the template set.
 pub(crate) fn build_archive_pages(
     ctx: &BuildContext,
     buckets: &[ListingBucket],
     output_dir: &Path,
-) -> Result<()> {
+) -> Result<usize> {
     if !ctx.template_engine.has_template("archive.html") {
-        return Ok(());
+        return Ok(0);
     }
 
     let section_per_page = paginate_config(
@@ -27,15 +27,16 @@ pub(crate) fn build_archive_pages(
     );
     let tag_per_page = paginate_config(&ctx.config.params, &[&["paginate"]], 10);
 
+    let mut page_count = 0;
     for bucket in buckets {
         let per_page = match bucket.kind {
             BucketKind::Tag => tag_per_page,
             BucketKind::Posts | BucketKind::Section => section_per_page,
         };
-        write_archive(ctx, bucket, per_page, output_dir)?;
+        page_count += write_archive(ctx, bucket, per_page, output_dir)?;
     }
 
-    Ok(())
+    Ok(page_count)
 }
 
 // ── Helpers ──
@@ -45,7 +46,7 @@ fn write_archive(
     bucket: &ListingBucket,
     per_page: usize,
     output_dir: &Path,
-) -> Result<()> {
+) -> Result<usize> {
     let base_path = bucket.base_path();
     write_paginated(
         &bucket.pages,
