@@ -22,19 +22,15 @@
   # Inputs
   # ----------------------------------------------------------------------------
   inputs = {
-    # Nixpkgs - NixOS 26.05 stable release
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
 
-    # Per-system flake outputs
     flake-utils.url = "github:numtide/flake-utils";
 
-    # Rust toolchains
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    # Pre-commit hooks
     git-hooks-nix.url = "github:cachix/git-hooks.nix";
   };
 
@@ -64,7 +60,6 @@
 
         pkgs = import nixpkgs { inherit system overlays; };
 
-        # Stable Rust with clippy / coverage / editor extensions.
         rustToolchain = pkgs.rust-bin.stable.latest.default.override {
           extensions = [
             "llvm-tools-preview"
@@ -75,23 +70,28 @@
 
         cssCompiler = pkgs.callPackage ./packages/css { };
 
-        # Source-build kiln with the rust-overlay toolchain — nixpkgs's stable
-        # rustc lags behind some workspace deps' minimum required version.
+        # Some workspace dependencies require a newer Rust version than nixpkgs provides.
         kiln = pkgs.callPackage ./packages/kiln {
           inherit cssCompiler;
           rustPlatform = pkgs.makeRustPlatform {
             cargo = rustToolchain;
             rustc = rustToolchain;
           };
+          src = pkgs.lib.fileset.toSource {
+            root = ./.;
+            fileset = pkgs.lib.fileset.unions [
+              ./Cargo.toml
+              ./Cargo.lock
+              ./crates
+            ];
+          };
         };
 
         # ----------------------------------------------------------------------
         # Node Hook Wrapper
         # ----------------------------------------------------------------------
-        # `pnpm exec` needs node + pnpm on PATH and the project's
-        # `node_modules` materialised. The Nix sandbox lacks the latter, so
-        # `nix flake check` skips these hooks; the equivalent checks run in
-        # CI via direct `pnpm` scripts.
+        # Node hooks need the local dependencies, which the Nix sandbox excludes.
+        # CI runs the equivalent checks directly with pnpm.
         nodeHook =
           name: cmd:
           let
@@ -130,7 +130,7 @@
             statix.enable = true;
             deadnix.enable = true;
 
-            # Clippy stays in CI — the bare hook process can't see libdav1d.
+            # Clippy needs libdav1d from the dev shell and runs in CI.
             rustfmt = {
               enable = true;
               packageOverrides = {
@@ -160,6 +160,14 @@
               name = "taplo";
               entry = nodeHook "taplo-write" "taplo format";
               files = "\\.toml$";
+              pass_filenames = true;
+            };
+
+            eslint = {
+              enable = true;
+              name = "eslint";
+              entry = nodeHook "eslint" "eslint --fix";
+              files = "\\.(js|mjs)$";
               pass_filenames = true;
             };
 
@@ -194,16 +202,12 @@
               cssCompiler
             ]
             ++ (with pkgs; [
-              # Native build deps (AVIF decode via dav1d-sys).
               dav1d
-              nasm
-              pkg-config
-              # Release tooling.
               git-cliff
-              # Optional build processors.
-              pagefind
-              # Node tooling for pre-commit hooks.
+              nasm
               nodejs_24
+              pagefind
+              pkg-config
               pnpm
             ])
             # libiconv resolves onig_sys / libwebp-sys link errors on darwin.

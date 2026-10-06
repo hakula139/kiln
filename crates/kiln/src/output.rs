@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -19,15 +20,19 @@ pub fn clean_output_dir(path: &Path) -> Result<()> {
         .with_context(|| format!("failed to create output directory {}", path.display()))
 }
 
-/// Recursively copies every static file into `dest`, materializing source symlinks as regular
-/// files and directories. Returns source → destination paths for copied files, or an empty map
-/// if `src` does not exist.
+/// Recursively copies included files into `dest`, materializing source symlinks as regular
+/// files and directories. `include` filters file and directory names, skipping excluded subtrees.
+/// Returns source → destination paths for copied files, or an empty map if `src` does not exist.
 ///
 /// # Errors
 ///
 /// Returns an error if traversal, directory creation, or copying fails, or a source link overlaps
 /// the destination directory.
-pub fn copy_static(src: &Path, dest: &Path) -> Result<BTreeMap<PathBuf, PathBuf>> {
+pub fn copy_directory(
+    src: &Path,
+    dest: &Path,
+    include: impl Fn(&OsStr) -> bool,
+) -> Result<BTreeMap<PathBuf, PathBuf>> {
     let mut files = BTreeMap::new();
     if !src.exists() && !src.is_symlink() {
         return Ok(files);
@@ -37,8 +42,7 @@ pub fn copy_static(src: &Path, dest: &Path) -> Result<BTreeMap<PathBuf, PathBuf>
     let destination = dest
         .canonicalize()
         .with_context(|| format!("failed to resolve destination {}", dest.display()))?;
-    let walker = WalkDir::new(src).follow_links(true).into_iter();
-    for entry in walker {
+    for entry in walk_directory(src, &include) {
         let entry = entry.with_context(|| format!("failed to read entry in {}", src.display()))?;
         if entry.path_is_symlink() {
             validate_source_link(entry.path(), &destination)?;
@@ -60,6 +64,23 @@ pub fn copy_static(src: &Path, dest: &Path) -> Result<BTreeMap<PathBuf, PathBuf>
         }
     }
     Ok(files)
+}
+
+/// Walks included names recursively, excluding errors from links with excluded names.
+pub(crate) fn walk_directory<'a>(
+    src: &Path,
+    include: &'a impl Fn(&OsStr) -> bool,
+) -> impl Iterator<Item = walkdir::Result<walkdir::DirEntry>> + 'a {
+    WalkDir::new(src)
+        .follow_links(true)
+        .into_iter()
+        .filter_entry(move |entry| entry.depth() == 0 || include(entry.file_name()))
+        .filter(move |entry| match entry {
+            Ok(_) => true,
+            Err(error) => {
+                error.depth() == 0 || error.path().and_then(Path::file_name).is_none_or(include)
+            }
+        })
 }
 
 /// Rejects source links whose resolved targets overlap the canonical destination.
@@ -155,10 +176,10 @@ mod tests {
         );
     }
 
-    // ── copy_static ──
+    // ── copy_directory ──
 
     #[test]
-    fn copy_static_copies_recursively() {
+    fn copy_directory_copies_recursively() {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("static");
         let dest = dir.path().join("public");
@@ -167,7 +188,7 @@ mod tests {
         fs::write(src.join("favicon.ico"), "icon").unwrap();
         fs::write(src.join("images").join("logo.png"), "logo").unwrap();
 
-        copy_static(&src, &dest).unwrap();
+        copy_directory(&src, &dest, |_| true).unwrap();
 
         assert_eq!(
             fs::read_to_string(dest.join("favicon.ico")).unwrap(),
@@ -180,7 +201,7 @@ mod tests {
     }
 
     #[test]
-    fn copy_static_materializes_external_symlinks() {
+    fn copy_directory_materializes_external_symlinks() {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("static");
         let dest = dir.path().join("public");
@@ -196,7 +217,7 @@ mod tests {
         symlink(external.path().join("data.txt"), src.join("data.txt")).unwrap();
         symlink(external.path().join("_headers"), src.join("_headers")).unwrap();
 
-        copy_static(&src, &dest).unwrap();
+        copy_directory(&src, &dest, |_| true).unwrap();
 
         for (path, expected) in [
             ("data.txt", "linked file"),
@@ -222,7 +243,7 @@ mod tests {
     }
 
     #[test]
-    fn copy_static_symlink_root() {
+    fn copy_directory_symlink_root() {
         let dir = tempfile::tempdir().unwrap();
         let external = tempfile::tempdir().unwrap();
         fs::write(external.path().join("data.txt"), "linked root").unwrap();
@@ -230,7 +251,7 @@ mod tests {
         symlink(external.path(), &src).unwrap();
         let dest = dir.path().join("public");
 
-        copy_static(&src, &dest).unwrap();
+        copy_directory(&src, &dest, |_| true).unwrap();
 
         assert_eq!(
             fs::read_to_string(dest.join("data.txt")).unwrap(),
@@ -240,7 +261,7 @@ mod tests {
     }
 
     #[test]
-    fn copy_static_preserves_underscore_names_at_every_depth() {
+    fn copy_directory_preserves_underscore_names_at_every_depth() {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("static");
         let dest = dir.path().join("public");
@@ -256,7 +277,7 @@ mod tests {
             fs::write(path, file).unwrap();
         }
 
-        copy_static(&src, &dest).unwrap();
+        copy_directory(&src, &dest, |_| true).unwrap();
 
         for file in files {
             assert_eq!(fs::read_to_string(dest.join(file)).unwrap(), file);
@@ -266,7 +287,7 @@ mod tests {
     // macOS APFS rejects non-UTF-8 filenames, while Linux ext4 and btrfs accept them.
     #[cfg(target_os = "linux")]
     #[test]
-    fn copy_static_copies_files_with_non_utf8_names() {
+    fn copy_directory_copies_files_with_non_utf8_names() {
         use std::ffi::OsStr;
         use std::os::unix::ffi::OsStrExt;
 
@@ -277,24 +298,52 @@ mod tests {
         let name = OsStr::from_bytes(&[0xff, 0xfe]);
         fs::write(src.join(name), "binary").unwrap();
 
-        copy_static(&src, &dest).unwrap();
+        copy_directory(&src, &dest, |_| true).unwrap();
 
         assert_eq!(fs::read(dest.join(name)).unwrap(), b"binary");
     }
 
     #[test]
-    fn copy_static_missing_src_is_noop() {
+    fn copy_directory_excludes_invalid_links_and_preserves_public_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("assets");
+        let dest = dir.path().join("public");
+        fs::create_dir(&src).unwrap();
+        fs::write(src.join("visible.txt"), "published").unwrap();
+        symlink(src.join("missing"), src.join("_broken")).unwrap();
+        symlink(&src, src.join("_cycle")).unwrap();
+
+        copy_directory(&src, &dest, |name| !crate::content::is_private(name)).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(dest.join("visible.txt")).unwrap(),
+            "published"
+        );
+        assert!(!dest.join("_broken").exists());
+        assert!(!dest.join("_cycle").exists());
+
+        symlink(src.join("missing"), src.join("broken")).unwrap();
+        let error =
+            copy_directory(&src, &dest, |name| !crate::content::is_private(name)).unwrap_err();
+        assert_eq!(
+            error.downcast_ref::<walkdir::Error>().unwrap().path(),
+            Some(src.join("broken").as_path())
+        );
+    }
+
+    #[test]
+    fn copy_directory_missing_src_is_noop() {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("static");
         let dest = dir.path().join("public");
 
-        copy_static(&src, &dest).unwrap();
+        copy_directory(&src, &dest, |_| true).unwrap();
 
         assert!(!dest.exists());
     }
 
     #[test]
-    fn copy_static_unreadable_subdir_returns_error() {
+    fn copy_directory_unreadable_subdir_returns_error() {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("static");
         let dest = dir.path().join("public");
@@ -305,7 +354,9 @@ mod tests {
 
         let _guard = PermissionGuard::restrict(&subdir, 0o000);
 
-        let err = copy_static(&src, &dest).unwrap_err().to_string();
+        let err = copy_directory(&src, &dest, |_| true)
+            .unwrap_err()
+            .to_string();
         assert!(
             err.contains("failed to read entry"),
             "should report entry read failure, got: {err}"
@@ -313,7 +364,7 @@ mod tests {
     }
 
     #[test]
-    fn copy_static_broken_symlinks_returns_error() {
+    fn copy_directory_broken_symlinks_returns_error() {
         for root_link in [false, true] {
             let dir = tempfile::tempdir().unwrap();
             let src = dir.path().join("static");
@@ -325,7 +376,7 @@ mod tests {
             };
             symlink(dir.path().join("missing"), &link).unwrap();
 
-            let err = copy_static(&src, &dir.path().join("public")).unwrap_err();
+            let err = copy_directory(&src, &dir.path().join("public"), |_| true).unwrap_err();
 
             assert!(err.to_string().contains("failed to read entry"));
             assert!(format!("{err:#}").contains(link.to_str().unwrap()));
@@ -333,19 +384,19 @@ mod tests {
     }
 
     #[test]
-    fn copy_static_symlink_cycle_returns_error() {
+    fn copy_directory_symlink_cycle_returns_error() {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("static");
         fs::create_dir(&src).unwrap();
         symlink(&src, src.join("cycle")).unwrap();
 
-        let err = copy_static(&src, &dir.path().join("public")).unwrap_err();
+        let err = copy_directory(&src, &dir.path().join("public"), |_| true).unwrap_err();
 
         assert!(format!("{err:#}").contains("loop"));
     }
 
     #[test]
-    fn copy_static_symlink_overlaps_destination_returns_error() {
+    fn copy_directory_symlink_overlaps_destination_returns_error() {
         for target_is_ancestor in [false, true] {
             let dir = tempfile::tempdir().unwrap();
             let src = dir.path().join("static");
@@ -360,7 +411,7 @@ mod tests {
             };
             symlink(target, src.join("linked")).unwrap();
 
-            let err = copy_static(&src, &dest).unwrap_err();
+            let err = copy_directory(&src, &dest, |_| true).unwrap_err();
 
             assert!(err.to_string().contains("overlaps destination"));
             assert_eq!(
@@ -372,7 +423,7 @@ mod tests {
     }
 
     #[test]
-    fn copy_static_unwritable_dest_returns_error() {
+    fn copy_directory_unwritable_dest_returns_error() {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("static");
         let dest = dir.path().join("public");
@@ -382,7 +433,9 @@ mod tests {
 
         let _guard = PermissionGuard::restrict(&dest, 0o444);
 
-        let err = copy_static(&src, &dest).unwrap_err().to_string();
+        let err = copy_directory(&src, &dest, |_| true)
+            .unwrap_err()
+            .to_string();
         assert!(
             err.contains("failed to copy"),
             "should report copy failure, got: {err}"

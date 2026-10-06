@@ -4,9 +4,9 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use itertools::Itertools;
 use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
-use walkdir::WalkDir;
 
 use super::frontmatter::{self, Frontmatter};
+use crate::output::walk_directory;
 
 /// Distinguishes blog posts (under `content/posts/`) from standalone pages.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -171,11 +171,7 @@ pub(crate) fn is_page_bundle(path: &Path) -> bool {
 /// Returns sorted absolute paths for deterministic output.
 fn discover_assets(dir: &Path) -> Result<Vec<PathBuf>> {
     let mut assets = Vec::new();
-    for entry in WalkDir::new(dir)
-        .follow_links(true)
-        .into_iter()
-        .filter_entry(|entry| entry.depth() == 0 || !super::is_private(entry.file_name()))
-    {
+    for entry in walk_directory(dir, &|name| !super::is_private(name)) {
         let entry = entry.with_context(|| format!("failed to read entry in {}", dir.display()))?;
         if !entry.file_type().is_file() {
             continue;
@@ -462,6 +458,28 @@ mod tests {
             err.contains("failed to read"),
             "should report entry read failure, got: {err}"
         );
+    }
+
+    #[test]
+    fn from_file_excludes_private_invalid_asset_symlinks() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("index.md"),
+            indoc! {r#"
+                +++
+                title = "Example"
+                +++
+            "#},
+        )
+        .unwrap();
+        let public = dir.path().join("visible.txt");
+        fs::write(&public, "published").unwrap();
+        std::os::unix::fs::symlink(dir.path().join("missing"), dir.path().join("_broken")).unwrap();
+        std::os::unix::fs::symlink(dir.path(), dir.path().join("_cycle")).unwrap();
+
+        let page = Page::from_file(&dir.path().join("index.md")).unwrap();
+
+        assert_eq!(page.assets, vec![public]);
     }
 
     #[test]

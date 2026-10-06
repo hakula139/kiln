@@ -344,12 +344,12 @@ fn build_materializes_external_bundle_symlinks() {
     write_test_file(root.path(), "static/icon.svg", "static image");
     write_test_file(
         root.path(),
-        "content/posts/example/_assets/css/style.css",
+        "content/posts/example/assets/css/_src/style.css",
         indoc! {r#"
-            @import "../../shared/vendor.css";
-            .image { background: url(../../shared/nested/image.svg); }
-            .caption { background: url(../../caption.txt); }
-            .static { background: url(../../../../../static/icon.svg); }
+            @import "../../../shared/vendor.css";
+            .image { background: url(../../../shared/nested/image.svg); }
+            .caption { background: url(../../../caption.txt); }
+            .static { background: url(../../../../../../static/icon.svg); }
         "#},
     );
 
@@ -382,7 +382,7 @@ fn build_materializes_external_bundle_symlinks() {
         assert!(!output.join("shared/notes.md").exists());
         assert!(!output.join("_cache").exists());
         assert!(!output.join("_private").exists());
-        let css = fs::read_to_string(output.join("assets/css/style.css")).unwrap();
+        let css = fs::read_to_string(output.join("assets/css/page.css")).unwrap();
         assert!(css.contains("../../shared/nested/image.svg"), "{css}");
         assert!(css.contains("../../caption.txt"), "{css}");
         assert!(css.contains(".imported"), "{css}");
@@ -476,45 +476,181 @@ fn build_no_content() {
     );
 }
 
+#[test]
+fn build_publishes_assets_with_owner_precedence_and_private_sources() {
+    let root = tempfile::tempdir().unwrap();
+    write_test_file(root.path(), "config.toml", r#"theme = "example""#);
+    write_test_file(root.path(), "themes/example/theme.toml", "");
+    fs::create_dir_all(root.path().join("themes/example/templates")).unwrap();
+    copy_templates(&root.path().join("templates"));
+    for (path, value) in [
+        ("themes/example/assets/theme.txt", "theme resource"),
+        ("themes/example/assets/overlay.txt", "theme asset"),
+        (
+            "themes/example/static/assets/theme-overlay.txt",
+            "theme overlay",
+        ),
+        ("themes/example/assets/theme-overlay.txt", "theme asset"),
+        ("themes/example/assets/_secret.txt", "private theme"),
+        ("themes/example/assets/layers.txt", "theme asset"),
+        ("themes/example/static/assets/layers.txt", "theme overlay"),
+        ("assets/layers.txt", "site asset"),
+        ("assets/overlay.txt", "site asset"),
+        ("static/assets/overlay.txt", "site overlay"),
+        ("assets/_secret.txt", "private"),
+        ("assets/nested/_cache/secret.txt", "private"),
+        ("static/_headers", "root headers"),
+    ] {
+        write_test_file(root.path(), path, value);
+    }
+    build(root.path(), BuildOptions::default()).unwrap();
+
+    let public = root.path().join("public");
+    for (path, value) in [
+        ("assets/theme.txt", "theme resource"),
+        ("assets/theme-overlay.txt", "theme overlay"),
+        ("assets/layers.txt", "site asset"),
+        ("assets/overlay.txt", "site overlay"),
+        ("_headers", "root headers"),
+    ] {
+        assert_eq!(fs::read_to_string(public.join(path)).unwrap(), value);
+    }
+    assert!(!public.join("assets/_secret.txt").exists());
+    assert!(!public.join("assets/nested/_cache").exists());
+}
+
+#[test]
+fn build_reads_image_dimensions_from_published_theme_and_site_assets() {
+    let root = tempfile::tempdir().unwrap();
+    write_test_file(root.path(), "config.toml", r#"theme = "example""#);
+    write_test_file(root.path(), "themes/example/theme.toml", "");
+    fs::create_dir_all(root.path().join("themes/example/templates")).unwrap();
+    copy_templates(&root.path().join("templates"));
+    let theme_images = root.path().join("themes/example/assets/images");
+    fs::create_dir_all(&theme_images).unwrap();
+    image::RgbaImage::from_pixel(3, 5, image::Rgba([0, 0, 0, 255]))
+        .save(theme_images.join("theme.png"))
+        .unwrap();
+    image::RgbaImage::from_pixel(7, 9, image::Rgba([0, 0, 0, 255]))
+        .save(theme_images.join("override.png"))
+        .unwrap();
+    let site_images = root.path().join("assets/images");
+    fs::create_dir_all(&site_images).unwrap();
+    image::RgbaImage::from_pixel(11, 13, image::Rgba([0, 0, 0, 255]))
+        .save(site_images.join("override.png"))
+        .unwrap();
+    write_page(
+        root.path(),
+        "example",
+        indoc! {r#"
+            +++
+            title = "Example"
+            +++
+            ![Theme](/assets/images/theme.png)
+
+            ![Site](/assets/images/override.png)
+        "#},
+    );
+    build(root.path(), BuildOptions::default()).unwrap();
+
+    let html = fs::read_to_string(root.path().join("public/example/index.html")).unwrap();
+    let document = Html::parse_document(&html);
+    let selector = Selector::parse("img").unwrap();
+    let dimensions: Vec<_> = document
+        .select(&selector)
+        .map(|image| (image.value().attr("width"), image.value().attr("height")))
+        .collect();
+    assert_eq!(
+        dimensions,
+        vec![(Some("3"), Some("5")), (Some("11"), Some("13"))]
+    );
+}
+
 // ── build: stylesheets ──
+
+#[test]
+fn build_keeps_root_page_css_separate_from_shared_css() {
+    let root = tempfile::tempdir().unwrap();
+    write_test_file(root.path(), "config.toml", "");
+    copy_templates_except(&root.path().join("templates"), &["home.html"]);
+    write_page(
+        root.path(),
+        "",
+        indoc! {r#"
+            +++
+            title = "Root"
+            +++
+            Body
+        "#},
+    );
+    write_test_file(
+        root.path(),
+        "assets/css/_src/style.css",
+        ".shared { color: red; }",
+    );
+    write_test_file(
+        root.path(),
+        "content/assets/css/_src/style.css",
+        ".page { color: blue; }",
+    );
+    build(root.path(), BuildOptions::default()).unwrap();
+
+    let public = root.path().join("public");
+    let shared = fs::read_to_string(public.join("assets/css/site.css")).unwrap();
+    let page = fs::read_to_string(public.join("assets/css/page.css")).unwrap();
+    assert!(
+        shared.contains(".shared") && !shared.contains(".page"),
+        "{shared}"
+    );
+    assert!(
+        page.contains(".page") && !page.contains(".shared"),
+        "{page}"
+    );
+    let html = fs::read_to_string(public.join("index.html")).unwrap();
+    assert!(
+        stylesheet_url(&html).contains("/assets/css/page."),
+        "{html}"
+    );
+    assert!(!public.join("assets/css/_src").exists());
+}
 
 #[test]
 fn build_compiles_shared_css_with_site_override_and_theme_asset_urls() {
     let root = tempfile::tempdir().unwrap();
     write_test_file(root.path(), "config.toml", r#"theme = "example""#);
     write_test_file(root.path(), "themes/example/theme.toml", "");
-    copy_templates(&root.path().join("templates"));
     fs::create_dir_all(root.path().join("themes/example/templates")).unwrap();
+    copy_templates(&root.path().join("templates"));
     write_test_file(
         root.path(),
-        "themes/example/_assets/css/style.css",
+        "themes/example/assets/css/_src/style.css",
         r#"@import "./parts/font.css"; .theme { color: red; }"#,
     );
     write_test_file(
         root.path(),
-        "themes/example/_assets/css/parts/font.css",
-        "@font-face { font-family: Example; src: url(../../../static/fonts/example.woff2?v=1#font); }",
+        "themes/example/assets/css/_src/parts/font.css",
+        "@font-face { font-family: Example; src: url(../../../fonts/example.woff2?v=1#font); }",
     );
     write_test_file(
         root.path(),
-        "themes/example/static/fonts/example.woff2",
+        "themes/example/assets/fonts/example.woff2",
         "theme-font",
     );
     build(root.path(), BuildOptions::default()).unwrap();
-    let output = root.path().join("public/css/style.css");
+    let output = root.path().join("public/assets/css/site.css");
     let css = fs::read_to_string(&output).unwrap();
     assert!(css.contains("../fonts/example.woff2?v=1#font"), "{css}");
     assert!(css.contains(".theme"), "{css}");
 
     write_test_file(
         root.path(),
-        "_assets/css/style.css",
+        "assets/css/_src/style.css",
         ".site { color: blue; }",
     );
     build(root.path(), BuildOptions::default()).unwrap();
     let css = fs::read_to_string(&output).unwrap();
     assert!(css.contains(".site") && !css.contains(".theme"), "{css}");
-    assert!(!root.path().join("public/_assets").exists());
+    assert!(!root.path().join("public/assets/css/_src").exists());
 }
 
 #[test]
@@ -536,13 +672,13 @@ fn build_compiles_page_styles_with_private_sources_and_final_hashes() {
     }
     write_test_file(
         root.path(),
-        "content/example/child/_assets/css/style.css",
+        "content/example/child/assets/css/_src/style.css",
         r#"@import "nested/colors.css";"#,
     );
     write_test_file(
         root.path(),
-        "content/example/child/_assets/css/nested/colors.css",
-        ".rating { color: red; & > span { background-image: url(../../../assets/my%20icon.svg?time=12:00#icon:active); } }",
+        "content/example/child/assets/css/_src/nested/colors.css",
+        ".rating { color: red; & > span { background-image: url(../../../my%20icon.svg?time=12:00#icon:active); } }",
     );
     write_test_file(
         root.path(),
@@ -572,10 +708,10 @@ fn build_compiles_page_styles_with_private_sources_and_final_hashes() {
     let css = String::from_utf8(bytes.clone()).unwrap();
     let digest = hex::encode(Sha256::digest(&bytes));
     assert!(
-        first.starts_with("/subsite/example/child/assets/css/style."),
+        first.starts_with("/subsite/example/child/assets/css/page."),
         "{first}"
     );
-    assert!(first.ends_with(&format!("style.{}.css", &digest[..12])));
+    assert!(first.ends_with(&format!("page.{}.css", &digest[..12])));
     assert!(
         css.contains("../my%20icon.svg?time=12:00#icon:active"),
         "{css}"
@@ -583,9 +719,9 @@ fn build_compiles_page_styles_with_private_sources_and_final_hashes() {
     assert!(css.contains("span"), "{css}");
     assert_eq!(
         bytes,
-        fs::read(public.join("example/child/assets/css/style.css")).unwrap()
+        fs::read(public.join("example/child/assets/css/page.css")).unwrap()
     );
-    assert!(!public.join("example/child/_assets").exists());
+    assert!(!public.join("example/child/assets/css/_src").exists());
     for page in ["example", "other"] {
         let html = fs::read_to_string(public.join(page).join("index.html")).unwrap();
         assert!(!html.contains("stylesheet"), "{html}");
@@ -601,7 +737,7 @@ fn build_compiles_page_styles_with_private_sources_and_final_hashes() {
 
     write_test_file(
         root.path(),
-        "content/example/child/_assets/css/style.css",
+        "content/example/child/assets/css/_src/style.css",
         ".rating { color: blue; }",
     );
     build(
@@ -614,7 +750,7 @@ fn build_compiles_page_styles_with_private_sources_and_final_hashes() {
     .unwrap();
     assert!(!published_path(&public, &first).exists());
     assert!(
-        fs::read_to_string(public.join("example/child/assets/css/style.css"))
+        fs::read_to_string(public.join("example/child/assets/css/page.css"))
             .unwrap()
             .contains("#00f")
     );
@@ -640,22 +776,22 @@ fn build_compiles_tailwind_with_shared_context_and_fresh_candidates() {
     );
     write_test_file(
         root.path(),
-        "themes/example/_assets/css/style.css",
+        "themes/example/assets/css/_src/style.css",
         indoc! {r#"
             @import "tailwindcss" source(none);
             @import "./parts/font.css";
             @theme { --color-brand: #123456; }
-            @utility theme-image { background-image: url(../../static/image.svg); }
+            @utility theme-image { background-image: url(../../image.svg); }
         "#},
     );
     write_test_file(
         root.path(),
-        "themes/example/_assets/css/parts/font.css",
-        "@font-face { font-family: Example; src: url(../../../static/fonts/example.woff2?version=1#font); }",
+        "themes/example/assets/css/_src/parts/font.css",
+        "@font-face { font-family: Example; src: url(../../../fonts/example.woff2?version=1#font); }",
     );
     write_test_file(
         root.path(),
-        "themes/example/static/fonts/example.woff2",
+        "themes/example/assets/fonts/example.woff2",
         "font",
     );
     write_page(
@@ -672,12 +808,12 @@ fn build_compiles_tailwind_with_shared_context_and_fresh_candidates() {
     );
     write_test_file(
         root.path(),
-        "themes/example/static/image.svg",
+        "themes/example/assets/image.svg",
         "theme-image",
     );
     write_test_file(
         root.path(),
-        "content/example/_assets/css/style.css",
+        "content/example/assets/css/_src/style.css",
         indoc! {r#"
             @import "./nested/rating.css";
             .rating { @apply text-brand theme-image; & > span { @apply font-bold; } }
@@ -685,13 +821,13 @@ fn build_compiles_tailwind_with_shared_context_and_fresh_candidates() {
     );
     write_test_file(
         root.path(),
-        "content/example/_assets/css/nested/rating.css",
-        ".image { background: url(../../../image.svg?q=1#icon); }",
+        "content/example/assets/css/_src/nested/rating.css",
+        ".image { background: url(../../../../image.svg?q=1#icon); }",
     );
     write_test_file(root.path(), "content/example/image.svg", "image");
     build(root.path(), BuildOptions::default()).unwrap();
     let public = root.path().join("public");
-    let shared = fs::read_to_string(public.join("css/style.css")).unwrap();
+    let shared = fs::read_to_string(public.join("assets/css/site.css")).unwrap();
     assert!(
         shared.contains(".bg-brand") && shared.contains(".underline"),
         "{shared}"
@@ -700,13 +836,13 @@ fn build_compiles_tailwind_with_shared_context_and_fresh_candidates() {
         shared.contains("../fonts/example.woff2?version=1#font"),
         "{shared}"
     );
-    let page = fs::read_to_string(public.join("example/assets/css/style.css")).unwrap();
+    let page = fs::read_to_string(public.join("example/assets/css/page.css")).unwrap();
     assert!(
         page.contains("color: var(--color-brand, #123456)") && page.contains("font-weight"),
         "{page}"
     );
     assert!(page.contains("../../image.svg?q=1#icon"), "{page}");
-    assert!(page.contains("../../../image.svg"), "{page}");
+    assert!(page.contains("../../../assets/image.svg"), "{page}");
     assert!(
         !page.contains(".bg-brand") && !page.contains(".underline"),
         "{page}"
@@ -715,7 +851,7 @@ fn build_compiles_tailwind_with_shared_context_and_fresh_candidates() {
     let markdown = fs::read_to_string(&content).unwrap();
     fs::write(content, markdown.replace(".bg-brand", ".text-brand")).unwrap();
     build(root.path(), BuildOptions::default()).unwrap();
-    let rebuilt = fs::read_to_string(public.join("css/style.css")).unwrap();
+    let rebuilt = fs::read_to_string(public.join("assets/css/site.css")).unwrap();
     assert!(!rebuilt.contains(".bg-brand"), "{rebuilt}");
 }
 
@@ -733,8 +869,8 @@ fn build_compiles_tailwind_imports_from_static_symlinks() {
     copy_templates(&root.path().join("templates"));
     write_test_file(
         root.path(),
-        "_assets/css/style.css",
-        r#"@import "../../static/shared/vendor.css";"#,
+        "assets/css/_src/style.css",
+        r#"@import "../../../static/shared/vendor.css";"#,
     );
     let external = tempfile::tempdir().unwrap();
     fs::write(
@@ -749,8 +885,8 @@ fn build_compiles_tailwind_imports_from_static_symlinks() {
     build(root.path(), BuildOptions::default()).unwrap();
 
     let public = root.path().join("public");
-    let css = fs::read_to_string(public.join("css/style.css")).unwrap();
-    assert!(css.contains("../shared/image.svg"), "{css}");
+    let css = fs::read_to_string(public.join("assets/css/site.css")).unwrap();
+    assert!(css.contains("../../shared/image.svg"), "{css}");
     assert_eq!(
         fs::read_to_string(public.join("shared/image.svg")).unwrap(),
         "external image"
@@ -781,8 +917,8 @@ fn build_compiles_tailwind_imports_through_public_bundle_aliases() {
     );
     write_test_file(
         root.path(),
-        "content/example/_assets/css/style.css",
-        r#"@import "../../public/vendor.css";"#,
+        "content/example/assets/css/_src/style.css",
+        r#"@import "../../../public/vendor.css";"#,
     );
     write_test_file(
         root.path(),
@@ -800,7 +936,7 @@ fn build_compiles_tailwind_imports_through_public_bundle_aliases() {
     build(root.path(), BuildOptions::default()).unwrap();
 
     let output = root.path().join("public/example");
-    let css = fs::read_to_string(output.join("assets/css/style.css")).unwrap();
+    let css = fs::read_to_string(output.join("assets/css/page.css")).unwrap();
     assert!(css.contains("../../public/image.svg"), "{css}");
     assert_eq!(
         fs::read_to_string(output.join("public/image.svg")).unwrap(),

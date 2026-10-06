@@ -17,7 +17,7 @@ tags = ["rust", "web"]
 slug = "custom-slug"
 
 [featured_image]
-src = "/images/hero.jpg"
+src = "/assets/images/hero.jpg"
 position = "top"
 
 [featured_image.credit]

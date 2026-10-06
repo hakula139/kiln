@@ -142,7 +142,7 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
         &static_assets,
     )
     .context("failed to initialize template engine")?;
-    let image_resolver = ImageResolver::new(&root.join("static"), config.image.clone());
+    let image_resolver = ImageResolver::new(&output_dir, config.image.clone());
     let git_info = GitInfo::new(root, config.enable_git_info);
     let ctx = BuildContext {
         config,

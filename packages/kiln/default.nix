@@ -10,27 +10,19 @@
   nasm,
   pkg-config,
   rustPlatform,
+  src,
   tzdata,
 }:
 
 let
-  cargoToml = fromTOML (builtins.readFile ../../Cargo.toml);
-
-  src = lib.fileset.toSource {
-    root = ../..;
-    fileset = lib.fileset.unions [
-      ../../Cargo.toml
-      ../../Cargo.lock
-      ../../crates
-    ];
-  };
+  cargoToml = fromTOML (builtins.readFile (src + "/Cargo.toml"));
 in
 rustPlatform.buildRustPackage {
   pname = "kiln";
   inherit (cargoToml.workspace.package) version;
 
   inherit src;
-  cargoLock.lockFile = ../../Cargo.lock;
+  cargoLock.lockFile = src + "/Cargo.lock";
 
   nativeBuildInputs = [
     makeWrapper

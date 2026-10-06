@@ -3,8 +3,9 @@ use std::path::{Component, Path, PathBuf};
 
 use anyhow::{Context, Result};
 
+use crate::content::is_private;
 use crate::content::page::Page;
-use crate::output::{copy_file, copy_static};
+use crate::output::{copy_directory, copy_file};
 
 #[derive(Default)]
 struct PublishedFiles {
@@ -12,9 +13,9 @@ struct PublishedFiles {
     aliases: BTreeMap<PathBuf, PathBuf>,
 }
 
-/// Source → output paths recorded while publishing static and owning-page assets.
+/// Source → output paths recorded while publishing shared and owning-page assets.
 pub(crate) struct PublishedAssets {
-    static_files: PublishedFiles,
+    shared_files: PublishedFiles,
     pages: BTreeMap<PathBuf, PublishedFiles>,
 }
 
@@ -31,14 +32,16 @@ impl PublishedAssets {
         pages: &[Page],
         output_dir: &Path,
     ) -> Result<Self> {
-        let mut static_files = PublishedFiles::default();
-        for source in theme_dir
-            .into_iter()
-            .map(|dir| dir.join("static"))
-            .chain(std::iter::once(root.join("static")))
-        {
-            static_files.extend(PublishedFiles::new(
-                copy_static(&source, output_dir)?,
+        let mut shared_files = PublishedFiles::default();
+        for owner in theme_dir.into_iter().chain(std::iter::once(root)) {
+            shared_files.extend(PublishedFiles::new(
+                copy_directory(&owner.join("assets"), &output_dir.join("assets"), |name| {
+                    !is_private(name)
+                })?,
+                output_dir,
+            )?);
+            shared_files.extend(PublishedFiles::new(
+                copy_directory(&owner.join("static"), output_dir, |_| true)?,
                 output_dir,
             )?);
         }
@@ -52,7 +55,7 @@ impl PublishedAssets {
             );
         }
         Ok(Self {
-            static_files,
+            shared_files,
             pages: page_files,
         })
     }
@@ -71,7 +74,7 @@ impl PublishedAssets {
         {
             return Ok(Some(path));
         }
-        self.static_files.resolve(&source)
+        self.shared_files.resolve(&source)
     }
 }
 
@@ -149,6 +152,8 @@ mod tests {
     use std::fs;
     use std::os::unix::fs::symlink;
 
+    use indoc::indoc;
+
     use super::*;
 
     #[test]
@@ -179,7 +184,15 @@ mod tests {
         let mut pages = Vec::new();
         for name in ["first", "second"] {
             let source = content.join(name).join("index.md");
-            fs::write(&source, "+++\ntitle = 'Example'\n+++\n").unwrap();
+            fs::write(
+                &source,
+                indoc! {r#"
+                    +++
+                    title = "Example"
+                    +++
+                "#},
+            )
+            .unwrap();
             pages.push(Page::from_file(&source).unwrap());
         }
 

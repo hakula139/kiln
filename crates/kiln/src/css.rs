@@ -19,7 +19,7 @@ use crate::content::page::{Page, is_page_bundle};
 use crate::output::write_output;
 use crate::static_assets::{StaticAssetManifest, path_to_url};
 
-const ENTRY: &str = "_assets/css/style.css";
+const ENTRY: &str = "assets/css/_src/style.css";
 const URL_PATH_ENCODE_SET: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'/')
     .remove(b'.')
@@ -58,7 +58,7 @@ impl Stylesheets {
         let shared = shared_source.map(|source| Stylesheet {
             source,
             page: None,
-            output: PathBuf::from("css/style.css"),
+            output: PathBuf::from("assets/css/site.css"),
         });
         let mut styles = BTreeMap::new();
         for page in pages {
@@ -80,7 +80,7 @@ impl Stylesheets {
                         output: output
                             .parent()
                             .context("page output has no parent")?
-                            .join("assets/css/style.css"),
+                            .join("assets/css/page.css"),
                     },
                 );
             }
@@ -338,7 +338,7 @@ mod tests {
         let style = Stylesheet {
             source: root.path().join(ENTRY),
             page: None,
-            output: PathBuf::from("css/style.css"),
+            output: PathBuf::from("assets/css/site.css"),
         };
         let assets = PublishedAssets::publish(
             root.path(),
@@ -367,9 +367,9 @@ mod tests {
             root.path(),
             ENTRY,
             indoc! {r"
-                .icon { background: url(../../static/alias.svg); }
-                .nested { background: url(../../static/shared/image.svg); }
-                .parent { background: url(../../static/shared/../alias.svg); }
+                .icon { background: url(../../../static/alias.svg); }
+                .nested { background: url(../../../static/shared/image.svg); }
+                .parent { background: url(../../../static/shared/../alias.svg); }
             "},
         );
         write_test_file(root.path(), "original.svg", "image");
@@ -385,7 +385,7 @@ mod tests {
         let style = Stylesheet {
             source: root.path().join(ENTRY),
             page: None,
-            output: PathBuf::from("css/style.css"),
+            output: PathBuf::from("assets/css/site.css"),
         };
         let assets = PublishedAssets::publish(
             root.path(),
@@ -396,8 +396,8 @@ mod tests {
         )
         .unwrap();
         let css = compile_plain(&assets, &style).unwrap();
-        assert!(css.contains("../alias.svg"), "{css}");
-        assert!(css.contains("../shared/image.svg"), "{css}");
+        assert!(css.contains("../../alias.svg"), "{css}");
+        assert!(css.contains("../../shared/image.svg"), "{css}");
         assert!(!css.contains("shared/../"), "{css}");
         assert!(!css.contains("original.svg"), "{css}");
     }
@@ -407,13 +407,15 @@ mod tests {
     #[test]
     fn published_url_private_and_unpublished_assets_returns_error() {
         let root = tempfile::tempdir().unwrap();
-        write_test_file(root.path(), "content/example/_assets/css/style.css", "");
+        write_test_file(root.path(), "content/example/assets/css/_src/style.css", "");
         write_test_file(root.path(), "content/example/_secret.svg", "private");
         write_test_file(root.path(), "unpublished.svg", "unpublished");
         let style = Stylesheet {
-            source: root.path().join("content/example/_assets/css/style.css"),
+            source: root
+                .path()
+                .join("content/example/assets/css/_src/style.css"),
             page: Some(root.path().join("content/example/index.md")),
-            output: PathBuf::from("example/assets/css/style.css"),
+            output: PathBuf::from("example/assets/css/page.css"),
         };
         let assets = PublishedAssets::publish(
             root.path(),
@@ -424,13 +426,13 @@ mod tests {
         )
         .unwrap();
         let private =
-            published_url(&assets, &style, &style.source, "../../_secret.svg").unwrap_err();
+            published_url(&assets, &style, &style.source, "../../../_secret.svg").unwrap_err();
         assert!(private.to_string().contains("not a published"), "{private}");
         let unpublished = published_url(
             &assets,
             &style,
             &style.source,
-            "../../../../unpublished.svg",
+            "../../../../../unpublished.svg",
         )
         .unwrap_err();
         assert!(
@@ -438,24 +440,24 @@ mod tests {
             "{unpublished}"
         );
 
-        write_test_file(root.path(), "content/_assets/css/style.css", "");
+        write_test_file(root.path(), "content/assets/css/_src/style.css", "");
         write_test_file(root.path(), "content/_secret.svg", "private");
         let root_style = Stylesheet {
-            source: root.path().join("content/_assets/css/style.css"),
+            source: root.path().join("content/assets/css/_src/style.css"),
             page: Some(root.path().join("content/index.md")),
-            output: PathBuf::from("assets/css/style.css"),
+            output: PathBuf::from("assets/css/page.css"),
         };
         let private = published_url(
             &assets,
             &root_style,
             &root_style.source,
-            "../../_secret.svg",
+            "../../../_secret.svg",
         )
         .unwrap_err();
         assert!(private.to_string().contains("not a published"), "{private}");
 
         write_test_file(root.path(), "content/index.md", "Markdown source");
-        for url in ["../../index.md", "../.."] {
+        for url in ["../../../index.md", "../../.."] {
             let error = published_url(&assets, &root_style, &root_style.source, url).unwrap_err();
             assert!(error.to_string().contains("published"), "{error}");
         }

@@ -149,7 +149,7 @@ async fn serve_until(
     let app = build_router(&output_dir, reload_tx);
 
     eprintln!("\nServing at {base_url} (Press Ctrl+C to stop)");
-    eprint!("Watching: config.toml, _assets/, content/, i18n/, static/, templates/");
+    eprint!("Watching: config.toml, assets/, content/, i18n/, static/, templates/");
     if let Some(ref theme) = config.theme {
         eprint!(", themes/{theme}/");
     }
@@ -239,7 +239,7 @@ fn watch_paths(root: &Path, config: &Config) -> Vec<WatchEntry> {
         });
     }
 
-    for dir in ["_assets", "content", "i18n", "static", "templates"] {
+    for dir in ["assets", "content", "i18n", "static", "templates"] {
         let path = root.join(dir);
         if path.is_dir() {
             paths.push(WatchEntry {
@@ -253,7 +253,7 @@ fn watch_paths(root: &Path, config: &Config) -> Vec<WatchEntry> {
     if let Some(theme_dir) = config.theme_dir(root) {
         for (name, recursive) in [
             ("theme.toml", false),
-            ("_assets", true),
+            ("assets", true),
             ("i18n", true),
             ("static", true),
             ("templates", true),
@@ -702,7 +702,7 @@ mod tests {
     #[test]
     fn watch_paths_all_dirs_present() {
         let root = tempfile::tempdir().unwrap();
-        fs::create_dir(root.path().join("_assets")).unwrap();
+        fs::create_dir(root.path().join("assets")).unwrap();
         fs::create_dir(root.path().join("content")).unwrap();
         fs::create_dir(root.path().join("i18n")).unwrap();
         fs::create_dir(root.path().join("static")).unwrap();
@@ -714,7 +714,7 @@ mod tests {
 
         assert_eq!(paths.len(), 6);
         assert!(paths[0].path.ends_with("config.toml") && !paths[0].recursive);
-        assert!(paths[1].path.ends_with("_assets") && paths[1].recursive);
+        assert!(paths[1].path.ends_with("assets") && paths[1].recursive);
         assert!(paths[2].path.ends_with("content") && paths[2].recursive);
         assert!(paths[3].path.ends_with("i18n") && paths[3].recursive);
         assert!(paths[4].path.ends_with("static") && paths[4].recursive);
@@ -726,13 +726,13 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         fs::write(root.path().join("config.toml"), "").unwrap();
         let theme_dir = root.path().join("themes").join("my-theme");
-        fs::create_dir_all(theme_dir.join("_assets")).unwrap();
+        fs::create_dir_all(theme_dir.join("assets")).unwrap();
         fs::write(theme_dir.join("theme.toml"), "").unwrap();
 
         let config: Config = toml::from_str(r#"theme = "my-theme""#).unwrap();
         let paths = watch_paths(root.path(), &config);
 
-        let theme_entry = paths.iter().find(|e| e.path.ends_with("my-theme/_assets"));
+        let theme_entry = paths.iter().find(|e| e.path.ends_with("my-theme/assets"));
         assert!(theme_entry.is_some(), "should include theme directory");
         assert!(theme_entry.unwrap().recursive);
     }
@@ -960,11 +960,11 @@ mod tests {
     fn safe_rebuild_recovers_after_css_import_failure() {
         let root = tempfile::tempdir().unwrap();
         setup_site(root.path());
-        let css_dir = root.path().join("_assets/css");
+        let css_dir = root.path().join("assets/css/_src");
         fs::create_dir_all(&css_dir).unwrap();
         fs::write(css_dir.join("style.css"), ".before { color: red; }").unwrap();
         crate::build(root.path(), BuildOptions::default()).unwrap();
-        let output = root.path().join("public/css/style.css");
+        let output = root.path().join("public/assets/css/site.css");
         let original = fs::read_to_string(&output).unwrap();
 
         fs::write(css_dir.join("style.css"), r#"@import "missing.css";"#).unwrap();

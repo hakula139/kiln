@@ -15,7 +15,7 @@ kiln init-theme <name> [--root]                              # Scaffold a new th
 kiln convert --source <dir> --dest <dir>                     # Convert a Hugo site root into a kiln site root
 ```
 
-`kiln build` and `kiln serve` compile site / theme / page `_assets/css/style.css` sources into the output. Plain CSS is the default, and `[css] processor = "tailwind"` selects kiln's Tailwind processor supplied by the Nix package. Sources remain private, and `static/` copies all files verbatim.
+Asset publication and CSS contracts belong in [docs/assets.md](docs/assets.md). Update that document when changing the pipeline.
 
 Both `kiln build` and `kiln serve` run Pagefind search indexing automatically when `[search] enabled = true` in `config.toml`.
 
@@ -25,14 +25,14 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 
 ```text
 .
-├── _assets/       # Private stylesheet sources
+├── assets/        # Shared files published under /assets/
 ├── config.toml    # Site configuration (TOML)
 ├── content/       # Markdown content (posts, standalone pages)
 ├── crates/kiln/   # SSG engine: library (lib.rs) + CLI binary (main.rs)
 ├── public/        # Build output (configurable via output_dir)
-├── static/        # Static files copied to output root (favicons, images)
+├── static/        # Files copied to output root (favicons, manifests)
 ├── templates/     # MiniJinja templates (site overrides theme)
-└── themes/        # Themes (git submodules), each with templates/, _assets/, and static/
+└── themes/        # Themes (git submodules), each with templates/, assets/, and static/
 ```
 
 ### Crate Structure (`crates/kiln/src/`)
@@ -101,7 +101,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 ├── section.rs           # Section struct, collect_sections() from page kinds, _index.md title loading
 ├── serve.rs             # Dev server with file watching, WebSocket live reload, script injection
 ├── sitemap.rs           # Sitemap XML + robots.txt generation
-├── static_assets.rs     # Merged static asset manifest + content-hashed CSS / JS publication
+├── static_assets.rs     # Published asset manifest + content-hashed CSS / JS URLs
 ├── taxonomy.rs          # TaxonomyKind, Taxonomy, Term, TaxonomySet, build_taxonomies()
 ├── template.rs          # MiniJinja layered template engine, directive / archive / overview / error rendering
 ├── template/            # Template submodules
@@ -214,7 +214,7 @@ Follows global CLAUDE.md commit / branch / PR conventions, plus:
 
 ## Nix Development
 
-`flake.nix` pins the Rust toolchain, `libdav1d` (AVIF), `pagefind`, `kiln-tailwindcss`, and `git-cliff` for the dev shell. It also exposes `packages.{default,kiln,kiln-tailwindcss,pagefind}` so site repos can consume kiln as a flake input (`inputs.kiln.url = "github:hakula139/kiln";`). `kiln` is source-built with dav1d wired in by Nix. The packaged binary supplies the Tailwind processor from `packages/css/`, including its Node.js runtime and pinned dependencies. `pagefind` is a vendored prebuilt under `packages/pagefind/`.
+See [Building from Source](README.md#building-from-source) for toolchain requirements and setup.
 
 ```bash
 nix develop                            # interactive shell (for hacking on kiln)
@@ -222,11 +222,9 @@ nix flake check                        # run pre-commit hooks
 nix build '.#kiln'                     # build kiln from source
 ```
 
-`direnv` auto-activates the shell via `.envrc`.
-
 ### Pre-commit hooks
 
-The hooks cover file hygiene, Nix, Rust, JSON, Markdown, TOML, and spelling. Clippy stays in CI because the bare hook process cannot see `libdav1d`.
+Clippy stays in CI because the bare hook process cannot see `libdav1d`. Run `pnpm format`, `pnpm lint`, and `pnpm spellcheck` directly when changing Node sources or documentation.
 
 ### Adding native dependencies
 

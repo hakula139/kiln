@@ -18,7 +18,7 @@ buildNpmPackage {
       ./package-lock.json
     ];
   };
-  npmDepsHash = "sha256-hX/BVs/LT5AWvTK+kt1aCLUptgkPZEM6all6QhQxblg=";
+  npmDepsHash = "sha256-eeMTqKO2xK2wCA7eZtIxrR9CdiNk7dhCe8eXEXKZHiI=";
   dontNpmBuild = true;
 
   meta = {

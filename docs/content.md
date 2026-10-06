@@ -7,19 +7,19 @@ kiln discovers content in the `content/` directory. This document describes how 
 ```text
 content/
 ├── about-me/
-│   └── index.md                  # Standalone page → /about-me/
+│   └── index.md             # Standalone page → /about-me/
 ├── posts/
-│   ├── _index.md                 # Optional: sets title for /posts/ listing
+│   ├── _index.md            # Optional: sets title for /posts/ listing
 │   ├── note/
-│   │   ├── _index.md             # Optional: sets title for /posts/note/ listing
+│   │   ├── _index.md        # Optional: sets title for /posts/note/ listing
 │   │   └── my-post/
-│   │       ├── index.md          # Post (sectioned) → /posts/note/my-post/
-│   │       ├── cover.webp        # Co-located asset
+│   │       ├── index.md     # Post (sectioned) → /posts/note/my-post/
+│   │       ├── cover.webp   # Co-located asset
 │   │       └── assets/
 │   │           └── diagram.svg
-│   └── standalone-post.md        # Post (orphan, no bundle) → /posts/standalone-post/
+│   └── standalone-post.md   # Post (orphan, no bundle) → /posts/standalone-post/
 └── comments/
-    └── index.md                  # Standalone page → /comments/
+    └── index.md             # Standalone page → /comments/
 ```
 
 ### Page Kinds
@@ -64,12 +64,12 @@ A **page bundle** is a directory containing an `index.md` alongside related file
 
 ```text
 content/posts/note/my-post/
-├── _assets/css/style.css     # Private page stylesheet source
-├── index.md                  # Page content
-├── cover.webp                # Image (co-located asset)
-└── assets/
-    ├── diagram.svg           # Nested assets work too
-    └── data.csv              # Data files for directives
+├── assets/
+│   ├── css/_src/style.css   # Private page stylesheet source
+│   ├── data.csv            # Data files for directives
+│   └── diagram.svg         # Nested assets work too
+├── cover.webp              # Image (co-located asset)
+└── index.md                # Page content
 ```
 
 Non-markdown files in the bundle directory (at any depth), excluding underscore-prefixed files and directories, are copied to the output alongside the rendered HTML. They become accessible at the same relative path:
@@ -102,20 +102,9 @@ This resolves to `/posts/note/my-post/cover.webp` in templates and listing pages
 
 ### Per-Page CSS
 
-A page bundle's stylesheet source is `_assets/css/style.css`. `kiln build` and `kiln serve` compile it automatically and expose its content-hashed URL as [`page_css`](themes.md#post-templates-posthtml). Themes link it from that page's `<head>` after the shared stylesheet. Other CSS files remain ordinary co-located assets and are not automatically loaded.
+Put the page stylesheet at `assets/css/_src/style.css` within its bundle. See [Assets and Stylesheets](assets.md#stylesheet-sources) for compilation, processor setup, asset URLs, and template loading.
 
-```text
-content/posts/avg/impressions/
-├── _assets/css/style.css        # Handwritten source, never published
-├── assets/                      # Images and other public page assets
-└── index.md                     # Page content
-```
-
-Compiled CSS is written only to the build output at `<page>/assets/css/style.css`, alongside a fingerprinted copy. `--minify` minifies it before computing its SHA-256 fingerprint. Local `@import` rules are bundled, and relative `url(...)` references are resolved from their original source files and rewritten for the published stylesheet location. Referenced assets must belong to the page bundle or the site / theme `static/` tree. Underscore-prefixed bundle assets remain private and cannot be referenced by published CSS.
-
-Plain CSS supports imports and nesting without an external compiler. Themes can select Tailwind through [`[css]`](themes.md#stylesheets), and page styles then receive the shared entry's Tailwind definitions through `@reference`, supporting utilities such as `@apply` without duplicating shared styles.
-
-Only the owning page receives `page_css`, so other pages do not load its selectors and keyframes. Scope selectors carefully within the page to avoid unintentionally styling shared navigation or theme components. The `:::` directive can provide a wrapper class when needed:
+The `:::` directive can provide a wrapper class for page-specific selectors:
 
 <!-- dprint-ignore -->
 ```markdown
@@ -126,7 +115,7 @@ Only the owning page receives `page_css`, so other pages do not load its selecto
 :::
 ```
 
-Then target that class in `_assets/css/style.css`:
+Then target that class in `assets/css/_src/style.css`:
 
 ```css
 .rating-table td:first-child {
@@ -135,22 +124,6 @@ Then target that class in `_assets/css/style.css`:
 }
 ```
 
-## Static Files
+## Shared Assets
 
-Files in the site's `static/` directory are copied to the output root. Use this for files shared across all pages:
-
-```text
-static/
-├── favicon.ico       → /favicon.ico
-├── images/
-│   └── logo.png      → /images/logo.png
-└── manifest.webmanifest
-```
-
-Static files differ from co-located assets: they are global (not tied to a page) and are referenced with absolute paths (e.g., `/images/logo.png`).
-
-### Private build inputs (`_` prefix)
-
-Files and directories whose names start with `_` are excluded from content discovery and page bundle asset publication. This keeps build inputs such as `_assets/css/style.css` with their owning page without exposing them. `_index.md` remains available as listing metadata.
-
-Site and theme `_assets/` directories are build inputs outside their static trees. Every file in `static/` is explicitly published, including underscore-prefixed names such as `_headers` and `_redirects`. Keep private inputs outside `static/`.
+Use `assets/` for shared public files and `static/` for files requiring output-root paths. See [Public Files](assets.md#public-files) for publication rules and override precedence.

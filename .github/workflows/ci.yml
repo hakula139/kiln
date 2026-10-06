@@ -97,7 +97,10 @@ jobs:
       - name: Install dependencies
         run: nix develop -c pnpm install --frozen-lockfile
 
-      - name: Lint Markdown
+      - name: Format
+        run: nix develop -c pnpm format
+
+      - name: Lint
         run: nix develop -c pnpm lint
 
       - name: Spell check

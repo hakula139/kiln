@@ -15,7 +15,7 @@ pub fn init_theme(root: &Path, name: &str) -> Result<()> {
         bail!("theme directory already exists: {}", theme_dir.display());
     }
 
-    let css_dir = theme_dir.join("_assets/css");
+    let css_dir = theme_dir.join("assets/css/_src");
     let templates_dir = theme_dir.join("templates");
     let i18n_dir = theme_dir.join("i18n");
     fs::create_dir_all(&css_dir).context("failed to create CSS source directory")?;
@@ -33,7 +33,7 @@ pub fn init_theme(root: &Path, name: &str) -> Result<()> {
               <head>
                 <meta charset="utf-8">
                 {% block title %}<title>{{ config.title }}</title>{% endblock %}
-                <link rel="stylesheet" href="{{ asset_url('/css/style.css') | safe }}">
+                <link rel="stylesheet" href="{{ asset_url('/assets/css/site.css') | safe }}">
                 {% block head %}{% endblock %}
               </head>
               <body>

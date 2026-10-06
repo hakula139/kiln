@@ -30,13 +30,14 @@ A static site generator written in Rust for [hakula.xyz](https://hakula.xyz), wi
 
 ## Documentation
 
-| Document                         | Description                                         |
-| -------------------------------- | --------------------------------------------------- |
-| [Roadmap](docs/roadmap.md)       | Current shipped capability areas and planned work   |
-| [Content Guide](docs/content.md) | Page bundles, co-located assets, per-page CSS       |
-| [Syntax Guide](docs/syntax.md)   | Markdown extensions, frontmatter fields, directives |
-| [Theming](docs/themes.md)        | Themes, templates, navigation menus, and i18n       |
-| [Benchmarks](docs/benchmarks.md) | Performance measurements and baseline comparisons   |
+| Document                         | Description                                             |
+| -------------------------------- | ------------------------------------------------------- |
+| [Roadmap](docs/roadmap.md)       | Current shipped capability areas and planned work       |
+| [Content Guide](docs/content.md) | Page bundles and co-located assets                      |
+| [Assets](docs/assets.md)         | Publication, stylesheets, fingerprints, and live reload |
+| [Syntax Guide](docs/syntax.md)   | Markdown extensions, frontmatter fields, directives     |
+| [Theming](docs/themes.md)        | Themes, templates, navigation menus, and i18n           |
+| [Benchmarks](docs/benchmarks.md) | Performance measurements and baseline comparisons       |
 
 ## Installation
 
@@ -98,44 +99,9 @@ kiln init-theme my-theme                                   # Scaffold a new them
 kiln convert --source /path/to/hugo --dest /path/to/kiln   # Convert a Hugo site
 ```
 
-### Stylesheets
+### Assets and Stylesheets
 
-Keep handwritten CSS at `_assets/css/style.css` in the site, theme, or page bundle. `kiln build` and `kiln serve` compile it automatically, bundle local imports, rewrite relative asset URLs, and publish fingerprinted CSS only in the build output. Page stylesheets load only on their owning page.
-
-Plain CSS with imports and nesting works without an external compiler. Select Tailwind with `[css] processor = "tailwind"` in `theme.toml` or `config.toml`. kiln's Nix package supplies its Tailwind processor and Node.js runtime automatically. See [Stylesheets](docs/themes.md#stylesheets) for source overrides and template links.
-
-For other installations, install Node.js 20+ and set up the bundled `css/` processor once from the extracted release directory:
-
-```bash
-(cd css && npm ci && npm link)
-```
-
-From a source checkout, use `packages/css` as the directory. This installs `kiln-tailwindcss` on `PATH`. Keep the processor directory in place because `npm link` links to it. Then `kiln build` and `kiln serve` run the processor automatically.
-
-### Static Asset URLs
-
-Use `asset_url()` in templates when referencing compiled CSS or a file from the merged theme and site `static/` trees:
-
-```jinja
-<link rel="stylesheet" href="{{ asset_url('/css/style.css') | safe }}">
-<script src="{{ asset_url('/js/app.js') | safe }}"></script>
-```
-
-kiln copies CSS and JS to names containing the first 12 hexadecimal characters of their SHA-256 digest, such as `/css/style.a1b2c3d4e5f6.css`. Other static files keep their original URLs. A missing path fails the build.
-
-The original CSS / JS files remain in the output because relative imports and existing hard-coded references may still depend on them. Templates using `asset_url()` receive the fingerprinted URL.
-
-The digest covers one file. kiln bundles local imports in stylesheet sources. Prebuilt static CSS and JavaScript retain their import URLs, so bundle those entry assets separately when their dependencies need fingerprinted URLs.
-
-### Minification
-
-Passing `--minify` to `kiln build` minifies all published CSS / JS before computing fingerprints, then minifies generated HTML:
-
-- HTML via [`minify-html`](https://crates.io/crates/minify-html)
-- CSS via [`lightningcss`](https://crates.io/crates/lightningcss)
-- JS via [`oxc_minifier`](https://crates.io/crates/oxc_minifier)
-
-Files matching `*.min.css` or `*.min.js` are skipped so pre-minified vendor bundles such as Pagefind's UI JS pass through untouched. Unusable inputs log a warning and keep the original file.
+See [Assets and Stylesheets](docs/assets.md) for public file layout, CSS sources, Tailwind setup, template URLs, and minification.
 
 ### Search
 
@@ -151,7 +117,7 @@ enabled = true
 
 ## Building from Source
 
-Requires [Rust](https://www.rust-lang.org/tools/install) 1.85+ (edition 2024) and `libdav1d` (for the `image` crate's AVIF decoder).
+Requires stable [Rust](https://www.rust-lang.org/tools/install) and `libdav1d` for AVIF decoding.
 
 ```bash
 cargo build --release  # Binary at target/release/kiln
@@ -159,7 +125,7 @@ cargo build --release  # Binary at target/release/kiln
 
 ### Reproducible dev shell (Nix)
 
-For hacking on kiln itself, the shipped `flake.nix` pins the Rust toolchain, `libdav1d`, `pagefind`, `kiln-tailwindcss`, `git-cliff`, and pre-commit hooks:
+The Nix development shell provides the build dependencies and pre-commit hooks:
 
 ```bash
 nix develop      # interactive shell
