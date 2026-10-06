@@ -149,7 +149,7 @@ async fn serve_until(
     let app = build_router(&output_dir, reload_tx);
 
     eprintln!("\nServing at {base_url} (Press Ctrl+C to stop)");
-    eprint!("Watching: config.toml, content/, templates/, static/");
+    eprint!("Watching: config.toml, content/, templates/, static/, i18n/");
     if let Some(ref theme) = config.theme {
         eprint!(", themes/{theme}/");
     }
@@ -235,7 +235,7 @@ fn watch_paths(root: &Path, config: &Config) -> Vec<WatchEntry> {
         });
     }
 
-    for dir in ["content", "templates", "static"] {
+    for dir in ["content", "templates", "static", "i18n"] {
         let path = root.join(dir);
         if path.is_dir() {
             paths.push(WatchEntry {
@@ -667,6 +667,34 @@ mod tests {
         assert_eq!(event, Some(()));
     }
 
+    #[tokio::test]
+    async fn setup_watcher_sends_event_on_site_translation_change() {
+        let root = tempfile::tempdir().unwrap();
+        let i18n = root.path().join("i18n");
+        fs::create_dir(&i18n).unwrap();
+        let translation = i18n.join("en.toml");
+        fs::write(&translation, r#"greeting = "Hello""#).unwrap();
+
+        let config = Config::default();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let _watcher: notify::PollWatcher = setup_watcher(
+            root.path(),
+            &config,
+            tx,
+            notify::Config::default()
+                .with_poll_interval(Duration::from_millis(50))
+                .with_compare_contents(true),
+        )
+        .unwrap();
+
+        fs::write(&translation, r#"greeting = "Welcome""#).unwrap();
+
+        let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .expect("should receive event after site translation change within timeout");
+        assert_eq!(event, Some(()));
+    }
+
     // ── watch_paths ──
 
     #[test]
@@ -675,23 +703,24 @@ mod tests {
         fs::create_dir(root.path().join("content")).unwrap();
         fs::create_dir(root.path().join("templates")).unwrap();
         fs::create_dir(root.path().join("static")).unwrap();
+        fs::create_dir(root.path().join("i18n")).unwrap();
         fs::write(root.path().join("config.toml"), "").unwrap();
 
         let config = Config::default();
         let paths = watch_paths(root.path(), &config);
 
-        assert_eq!(paths.len(), 4);
+        assert_eq!(paths.len(), 5);
         assert!(paths[0].path.ends_with("config.toml") && !paths[0].recursive);
         assert!(paths[1].path.ends_with("content") && paths[1].recursive);
         assert!(paths[2].path.ends_with("templates") && paths[2].recursive);
         assert!(paths[3].path.ends_with("static") && paths[3].recursive);
+        assert!(paths[4].path.ends_with("i18n") && paths[4].recursive);
     }
 
     #[test]
     fn watch_paths_missing_dirs_skipped() {
         let root = tempfile::tempdir().unwrap();
         fs::create_dir(root.path().join("content")).unwrap();
-        // No templates/, static/, or config.toml
 
         let config = Config::default();
         let paths = watch_paths(root.path(), &config);
