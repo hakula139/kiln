@@ -18,6 +18,13 @@ use anyhow::{Context, Result};
 use jiff::tz::TimeZone;
 use syntect::parsing::SyntaxSet;
 
+use self::assets::{copy_page_assets, copy_page_styles, page_style_url};
+use self::git::{GitInfo, updated_timestamp};
+use self::listing::{
+    build_listing_artifacts, build_listing_buckets, format_page_date, linked_tags, page_section,
+    resolve_featured_image,
+};
+use self::url::page_url;
 use crate::config::Config;
 use crate::content::discovery::discover_content;
 use crate::content::page::{Page, PageKind};
@@ -33,14 +40,6 @@ use crate::static_assets::StaticAssetManifest;
 use crate::taxonomy::build_taxonomies;
 use crate::template::TemplateEngine;
 use crate::template::vars::PostTemplateVars;
-
-use self::assets::{copy_page_assets, copy_page_styles, page_style_url};
-use self::git::{GitInfo, updated_timestamp};
-use self::listing::{
-    build_listing_artifacts, build_listing_buckets, format_page_date, linked_tags, page_section,
-    resolve_featured_image,
-};
-use self::url::page_url;
 
 /// Shared build state, created once per build invocation.
 struct BuildContext {

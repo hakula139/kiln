@@ -1,7 +1,8 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use indoc::{formatdoc, indoc};
+use scraper::{Html, Selector};
 use sha2::{Digest, Sha256};
 
 use kiln::build::{BuildOptions, build};
@@ -346,6 +347,232 @@ fn build_materializes_external_bundle_symlinks() {
             .is_dir()
     );
     assert!(!output.join("shared/notes.md").exists());
+}
+
+#[test]
+fn build_publishes_only_canonical_page_styles_with_private_sources_omitted() {
+    let root = tempfile::tempdir().unwrap();
+    fs::write(root.path().join("config.toml"), "").unwrap();
+    copy_templates(&root.path().join("templates"));
+
+    for page in ["example", "other"] {
+        write_page(
+            root.path(),
+            page,
+            indoc! {r#"
+                +++
+                title = "Example"
+                +++
+                Page content.
+            "#},
+        );
+    }
+    write_test_file(
+        root.path(),
+        "content/example/assets/css/style.generated.css",
+        ".rating { color: red; }",
+    );
+    write_test_file(
+        root.path(),
+        "content/example/assets/css/_src/style.css",
+        "@apply hidden;",
+    );
+    write_test_file(
+        root.path(),
+        "content/example/assets/_private/data.json",
+        "private",
+    );
+    write_test_file(root.path(), "content/example/_notes.txt", "private");
+    write_test_file(root.path(), "content/example/assets/css/image.svg", "image");
+    write_test_file(
+        root.path(),
+        "content/example/assets/app.js",
+        "console.log('page');",
+    );
+    write_test_file(
+        root.path(),
+        "content/other/style.css",
+        ".old { color: blue; }",
+    );
+    write_test_file(
+        root.path(),
+        "content/other/assets/css/nested/style.generated.css",
+        ".nested {}",
+    );
+
+    build(
+        root.path(),
+        BuildOptions {
+            base_url_override: Some("https://example.com/subsite"),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    let public = root.path().join("public");
+    let html = fs::read_to_string(public.join("example/index.html")).unwrap();
+    let css_url = stylesheet_url(&html);
+    assert!(
+        css_url.starts_with("/subsite/example/assets/css/style.generated."),
+        "{html}"
+    );
+    assert_eq!(
+        fs::read_to_string(published_path(&public, &css_url)).unwrap(),
+        ".rating { color: red; }"
+    );
+    let other = fs::read_to_string(public.join("other/index.html")).unwrap();
+    assert!(!other.contains(r#"rel="stylesheet""#), "{other}");
+    for private in [
+        "example/assets/css/_src",
+        "example/assets/_private",
+        "example/_notes.txt",
+    ] {
+        assert!(!public.join(private).exists(), "published {private}");
+    }
+    assert_eq!(
+        fs::read_to_string(public.join("example/assets/app.js")).unwrap(),
+        "console.log('page');"
+    );
+    assert_eq!(
+        fs::read_to_string(public.join("example/assets/css/image.svg")).unwrap(),
+        "image"
+    );
+    assert_eq!(
+        fs::read_to_string(public.join("other/style.css")).unwrap(),
+        ".old { color: blue; }"
+    );
+}
+
+#[test]
+fn build_hashes_page_css_after_minification_and_preserves_relative_urls() {
+    let root = tempfile::tempdir().unwrap();
+    fs::write(root.path().join("config.toml"), "").unwrap();
+    copy_templates(&root.path().join("templates"));
+
+    write_page(
+        root.path(),
+        "example",
+        indoc! {r#"
+            +++
+            title = "Example"
+            +++
+            Page content.
+        "#},
+    );
+    let source =
+        "/* long source comment */ .rating { color: red; background-image: url(./image.svg); }";
+    write_test_file(
+        root.path(),
+        "content/example/assets/css/style.generated.css",
+        source,
+    );
+    write_test_file(root.path(), "content/example/assets/css/image.svg", "image");
+    write_test_file(root.path(), "static/css/style.generated.css", source);
+
+    build(
+        root.path(),
+        BuildOptions {
+            base_url_override: Some("https://example.com/subsite"),
+            minify: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    let public = root.path().join("public");
+    let html = fs::read_to_string(public.join("example/index.html")).unwrap();
+    let first = stylesheet_url(&html);
+    let bytes = fs::read(published_path(&public, &first)).unwrap();
+    let css = String::from_utf8(bytes.clone()).unwrap();
+    let digest = hex::encode(Sha256::digest(&bytes));
+    assert!(first.ends_with(&format!("style.generated.{}.css", &digest[..12])));
+    assert!(bytes.len() < source.len());
+    assert!(!css.contains("long source comment"));
+    assert!(
+        css.contains("url(./image.svg)") || css.contains("url(image.svg)"),
+        "{css}"
+    );
+    assert_eq!(
+        bytes,
+        fs::read(public.join("example/assets/css/style.generated.css")).unwrap()
+    );
+    assert_eq!(
+        bytes,
+        fs::read(public.join(format!("css/style.generated.{}.css", &digest[..12]))).unwrap()
+    );
+    assert_eq!(
+        fs::read_to_string(public.join("example/assets/css/image.svg")).unwrap(),
+        "image"
+    );
+
+    write_test_file(
+        root.path(),
+        "content/example/assets/css/style.generated.css",
+        ".rating { color: blue; }",
+    );
+    build(
+        root.path(),
+        BuildOptions {
+            base_url_override: Some("https://example.com/subsite"),
+            minify: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let html = fs::read_to_string(public.join("example/index.html")).unwrap();
+    let second = stylesheet_url(&html);
+    assert_ne!(first, second);
+    assert!(!published_path(&public, &first).exists());
+    assert!(
+        fs::read_to_string(published_path(&public, &second))
+            .unwrap()
+            .contains("#00f")
+    );
+}
+
+#[test]
+fn build_preserves_prepublished_child_styles_when_copying_parent_bundle_assets() {
+    let root = tempfile::tempdir().unwrap();
+    fs::write(root.path().join("config.toml"), "").unwrap();
+    copy_templates(&root.path().join("templates"));
+
+    for page in ["example", "example/child"] {
+        write_page(
+            root.path(),
+            page,
+            indoc! {r#"
+                +++
+                title = "Example"
+                +++
+                Page content.
+            "#},
+        );
+    }
+    let source = "/* source comment */ .child { color: red; }";
+    write_test_file(
+        root.path(),
+        "content/example/child/assets/css/style.generated.css",
+        source,
+    );
+
+    build(
+        root.path(),
+        BuildOptions {
+            base_url_override: Some("https://example.com/subsite"),
+            minify: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    let public = root.path().join("public");
+    let html = fs::read_to_string(public.join("example/child/index.html")).unwrap();
+    let fingerprinted = fs::read(published_path(&public, &stylesheet_url(&html))).unwrap();
+    let original = fs::read(public.join("example/child/assets/css/style.generated.css")).unwrap();
+    assert_eq!(original, fingerprinted);
+    assert!(original.len() < source.len());
+    let parent = fs::read_to_string(public.join("example/index.html")).unwrap();
+    assert!(!parent.contains("stylesheet"), "{parent}");
 }
 
 #[test]
@@ -2167,6 +2394,23 @@ fn listing_links(html: &str) -> Vec<&str> {
             &item[start..end]
         })
         .collect()
+}
+
+fn stylesheet_url(html: &str) -> String {
+    let document = Html::parse_document(html);
+    let selector = Selector::parse(r#"link[rel="stylesheet"]"#).unwrap();
+    document
+        .select(&selector)
+        .next()
+        .unwrap()
+        .value()
+        .attr("href")
+        .unwrap()
+        .to_owned()
+}
+
+fn published_path(root: &Path, url: &str) -> PathBuf {
+    root.join(url.strip_prefix("/subsite/").unwrap())
 }
 
 // ── Error assertions ──

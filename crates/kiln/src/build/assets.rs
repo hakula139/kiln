@@ -2,14 +2,18 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
+use super::url::{page_url, resolve_relative_url};
 use crate::content::page::Page;
 use crate::output::copy_file;
 use crate::static_assets::{StaticAssetManifest, path_to_url};
 
-use super::url::{page_url, resolve_relative_url};
-
 const PAGE_STYLE: &str = "assets/css/style.generated.css";
 
+/// Stages canonical page stylesheets before minification and fingerprinting.
+///
+/// # Errors
+///
+/// Returns an error if a page output path cannot be resolved or a stylesheet cannot be copied.
 pub(super) fn copy_page_styles(
     pages: &[Page],
     content_dir: &Path,
@@ -25,6 +29,12 @@ pub(super) fn copy_page_styles(
     Ok(())
 }
 
+/// Returns the root-relative fingerprinted stylesheet URL, including the site's base path.
+/// Returns `None` when the page has no canonical stylesheet.
+///
+/// # Errors
+///
+/// Returns an error for an invalid output path or a stylesheet missing from the manifest.
 pub(super) fn page_style_url(
     page: &Page,
     content_dir: &Path,
@@ -45,6 +55,11 @@ pub(super) fn page_style_url(
     )))
 }
 
+/// Copies public bundle assets without replacing assets already published by the manifest.
+///
+/// # Errors
+///
+/// Returns an error if an asset is outside its bundle or output tree, or copying fails.
 pub(super) fn copy_page_assets(
     page: &Page,
     output: &Path,

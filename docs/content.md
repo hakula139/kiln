@@ -7,19 +7,19 @@ kiln discovers content in the `content/` directory. This document describes how 
 ```text
 content/
 ├── about-me/
-│   └── index.md                          # Standalone page → /about-me/
+│   └── index.md                  # Standalone page → /about-me/
 ├── posts/
-│   ├── _index.md                         # Optional: sets title for /posts/ listing
+│   ├── _index.md                 # Optional: sets title for /posts/ listing
 │   ├── note/
-│   │   ├── _index.md                     # Optional: sets title for /posts/note/ listing
+│   │   ├── _index.md             # Optional: sets title for /posts/note/ listing
 │   │   └── my-post/
-│   │       ├── index.md                  # Post (sectioned) → /posts/note/my-post/
-│   │       ├── cover.webp                # Co-located asset
+│   │       ├── index.md          # Post (sectioned) → /posts/note/my-post/
+│   │       ├── cover.webp        # Co-located asset
 │   │       └── assets/
 │   │           └── diagram.svg
-│   └── standalone-post.md                # Post (orphan, no bundle) → /posts/standalone-post/
+│   └── standalone-post.md        # Post (orphan, no bundle) → /posts/standalone-post/
 └── comments/
-    └── index.md                          # Standalone page → /comments/
+    └── index.md                  # Standalone page → /comments/
 ```
 
 ### Page Kinds
@@ -64,11 +64,11 @@ A **page bundle** is a directory containing an `index.md` alongside related file
 
 ```text
 content/posts/note/my-post/
-├── index.md           # Page content
-├── cover.webp         # Image (co-located asset)
+├── index.md                      # Page content
+├── cover.webp                    # Image (co-located asset)
 └── assets/
-    ├── diagram.svg    # Nested assets work too
-    ├── data.csv       # Data files for directives
+    ├── diagram.svg               # Nested assets work too
+    ├── data.csv                  # Data files for directives
     └── css/
         ├── _src/style.css        # Private handwritten source
         └── style.generated.css   # Compiled page stylesheet
@@ -159,10 +159,10 @@ Files and directories whose names start with `_` are skipped when static trees o
 ```text
 static/
 ├── css/
-│   ├── _src/           # not copied to output
+│   ├── _src/                 # not copied to output
 │   │   ├── style.css
 │   │   └── components/
-│   └── style.generated.css → /css/style.generated.css
+│   └── style.generated.css   # → /css/style.generated.css
 └── ...
 ```
 

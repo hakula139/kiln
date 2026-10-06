@@ -127,6 +127,7 @@ fn validate_url(url: &str) -> std::result::Result<(), minijinja::Error> {
     Ok(())
 }
 
+/// Converts a relative asset path to a root-relative URL, or `None` for invalid components.
 pub(crate) fn path_to_url(path: &Path) -> Option<String> {
     let components = path
         .components()
