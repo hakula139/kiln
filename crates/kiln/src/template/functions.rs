@@ -16,7 +16,7 @@ pub(super) fn tpl_now() -> String {
 // ── File IO ──
 
 /// Reads a file relative to the directive's `source_dir`. Rejects `..`, absolute, and rooted
-/// path components to keep reads inside the page's source directory.
+/// path components. Symlinks may refer to files outside the source directory.
 pub(super) fn tpl_read_file(
     state: &minijinja::State,
     filename: &str,

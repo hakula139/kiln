@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::Path;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, ensure};
 use walkdir::WalkDir;
 
 /// Creates an empty output directory, removing existing contents first.
@@ -19,21 +19,40 @@ pub fn clean_output_dir(path: &Path) -> Result<()> {
 }
 
 /// Recursively copies files from `src` into `dest`, skipping `_`-prefixed entries (except
-/// top-level deployment config files like `_headers`). No-op if `src` does not exist.
+/// top-level deployment config files like `_headers`). Source symlinks are materialized as regular
+/// files and directories. No-op if `src` does not exist.
 ///
 /// # Errors
 ///
-/// Returns an error if directory creation or file copying fails.
+/// Returns an error if traversal, directory creation, or copying fails, or a source link overlaps
+/// the destination directory.
 pub fn copy_static(src: &Path, dest: &Path) -> Result<()> {
-    if !src.exists() {
+    if !src.exists() && !src.is_symlink() {
         return Ok(());
     }
+    fs::create_dir_all(dest)
+        .with_context(|| format!("failed to create directory {}", dest.display()))?;
+    let destination = dest
+        .canonicalize()
+        .with_context(|| format!("failed to resolve destination {}", dest.display()))?;
     let walker = WalkDir::new(src)
-        .follow_links(false)
+        .follow_links(true)
         .into_iter()
-        .filter_entry(|e| e.depth() == 0 || !is_build_private(e));
+        .filter_entry(|e| e.depth() == 0 || !is_build_private(e.path(), e.depth()))
+        // WalkDir resolves links before filter_entry, so excluded broken links arrive as errors.
+        .filter(|entry| {
+            entry.as_ref().err().is_none_or(|error| {
+                error.depth() == 0
+                    || error
+                        .path()
+                        .is_none_or(|path| !is_build_private(path, error.depth()))
+            })
+        });
     for entry in walker {
         let entry = entry.with_context(|| format!("failed to read entry in {}", src.display()))?;
+        if entry.path_is_symlink() {
+            validate_source_link(entry.path(), &destination)?;
+        }
         let relative = entry.path().strip_prefix(src).with_context(|| {
             format!(
                 "path {} is not under {}",
@@ -52,16 +71,30 @@ pub fn copy_static(src: &Path, dest: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Rejects source links whose resolved targets overlap the canonical destination.
+fn validate_source_link(path: &Path, destination: &Path) -> Result<()> {
+    let source = path
+        .canonicalize()
+        .with_context(|| format!("failed to resolve source link {}", path.display()))?;
+    ensure!(
+        !source.starts_with(destination) && !destination.starts_with(&source),
+        "source link {} overlaps destination {}",
+        path.display(),
+        destination.display()
+    );
+    Ok(())
+}
+
 /// Returns `true` for entries whose file name starts with `_`, except for deployment-config
 /// files in [`STATIC_DEPLOYMENT_CONFIG_FILES`] at the top level of the walked tree.
-fn is_build_private(entry: &walkdir::DirEntry) -> bool {
-    let Some(name) = entry.file_name().to_str() else {
+fn is_build_private(path: &Path, depth: usize) -> bool {
+    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
         return false;
     };
     if !name.starts_with('_') {
         return false;
     }
-    if entry.depth() == 1 && STATIC_DEPLOYMENT_CONFIG_FILES.contains(&name) {
+    if depth == 1 && STATIC_DEPLOYMENT_CONFIG_FILES.contains(&name) {
         return false;
     }
     true
@@ -100,6 +133,8 @@ pub fn write_output(path: &Path, content: &str) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use std::os::unix::fs::symlink;
+
     use super::*;
     use crate::test_utils::PermissionGuard;
 
@@ -169,6 +204,64 @@ mod tests {
             fs::read_to_string(dest.join("images").join("logo.png")).unwrap(),
             "logo"
         );
+    }
+
+    #[test]
+    fn copy_static_materializes_external_symlinks() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("static");
+        let dest = dir.path().join("public");
+        let external = tempfile::tempdir().unwrap();
+        fs::create_dir_all(&src).unwrap();
+        fs::create_dir(external.path().join("nested")).unwrap();
+        fs::write(external.path().join("nested/data.txt"), "linked directory").unwrap();
+        fs::write(external.path().join("data.txt"), "linked file").unwrap();
+        fs::write(external.path().join("_private.txt"), "private").unwrap();
+        fs::write(external.path().join("_headers"), "nested headers").unwrap();
+        symlink(external.path(), src.join("shared")).unwrap();
+        symlink(external.path(), src.join("_private")).unwrap();
+        symlink(external.path().join("missing"), src.join("_broken")).unwrap();
+        symlink(external.path().join("data.txt"), src.join("data.txt")).unwrap();
+        symlink(external.path().join("_headers"), src.join("_headers")).unwrap();
+
+        copy_static(&src, &dest).unwrap();
+
+        for (path, expected) in [
+            ("data.txt", "linked file"),
+            ("shared/data.txt", "linked file"),
+            ("shared/nested/data.txt", "linked directory"),
+        ] {
+            let output = dest.join(path);
+            assert_eq!(fs::read_to_string(&output).unwrap(), expected);
+            assert!(fs::symlink_metadata(output).unwrap().file_type().is_file());
+        }
+        assert!(fs::symlink_metadata(dest.join("shared")).unwrap().is_dir());
+        assert_eq!(
+            fs::read_to_string(dest.join("_headers")).unwrap(),
+            "nested headers"
+        );
+        assert!(!dest.join("_private").exists());
+        assert!(!dest.join("_broken").is_symlink());
+        assert!(!dest.join("shared/_private.txt").exists());
+        assert!(!dest.join("shared/_headers").exists());
+    }
+
+    #[test]
+    fn copy_static_symlink_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let external = tempfile::tempdir().unwrap();
+        fs::write(external.path().join("data.txt"), "linked root").unwrap();
+        let src = dir.path().join("static");
+        symlink(external.path(), &src).unwrap();
+        let dest = dir.path().join("public");
+
+        copy_static(&src, &dest).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(dest.join("data.txt")).unwrap(),
+            "linked root"
+        );
+        assert!(fs::symlink_metadata(&dest).unwrap().is_dir());
     }
 
     #[test]
@@ -297,6 +390,65 @@ mod tests {
     }
 
     #[test]
+    fn copy_static_broken_symlinks_returns_error() {
+        for root_link in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let src = dir.path().join("static");
+            let link = if root_link {
+                src.clone()
+            } else {
+                fs::create_dir(&src).unwrap();
+                src.join("broken")
+            };
+            symlink(dir.path().join("missing"), &link).unwrap();
+
+            let err = copy_static(&src, &dir.path().join("public")).unwrap_err();
+
+            assert!(err.to_string().contains("failed to read entry"));
+            assert!(format!("{err:#}").contains(link.to_str().unwrap()));
+        }
+    }
+
+    #[test]
+    fn copy_static_symlink_cycle_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("static");
+        fs::create_dir(&src).unwrap();
+        symlink(&src, src.join("cycle")).unwrap();
+
+        let err = copy_static(&src, &dir.path().join("public")).unwrap_err();
+
+        assert!(format!("{err:#}").contains("loop"));
+    }
+
+    #[test]
+    fn copy_static_symlink_overlaps_destination_returns_error() {
+        for target_is_ancestor in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let src = dir.path().join("static");
+            let dest = dir.path().join("public");
+            fs::create_dir(&src).unwrap();
+            fs::create_dir(&dest).unwrap();
+            fs::write(dest.join("sentinel.txt"), "unchanged").unwrap();
+            let target = if target_is_ancestor {
+                dir.path()
+            } else {
+                &dest
+            };
+            symlink(target, src.join("linked")).unwrap();
+
+            let err = copy_static(&src, &dest).unwrap_err();
+
+            assert!(err.to_string().contains("overlaps destination"));
+            assert_eq!(
+                fs::read_to_string(dest.join("sentinel.txt")).unwrap(),
+                "unchanged"
+            );
+            assert!(!dest.join("linked").exists());
+        }
+    }
+
+    #[test]
     fn copy_static_unwritable_dest_returns_error() {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("static");
@@ -311,6 +463,28 @@ mod tests {
         assert!(
             err.contains("failed to copy"),
             "should report copy failure, got: {err}"
+        );
+    }
+
+    // ── validate_source_link ──
+
+    #[test]
+    fn validate_source_link_broken_target_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let link = dir.path().join("broken");
+        symlink(dir.path().join("missing"), &link).unwrap();
+
+        let destination = dir.path().canonicalize().unwrap().join("public");
+
+        let err = validate_source_link(&link, &destination).unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            format!("failed to resolve source link {}", link.display())
+        );
+        assert_eq!(
+            err.downcast_ref::<std::io::Error>().unwrap().kind(),
+            std::io::ErrorKind::NotFound
         );
     }
 

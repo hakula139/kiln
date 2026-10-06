@@ -2,14 +2,14 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-use crate::markdown::{for_each_non_code_line, scan_code_span};
+use crate::markdown::replace_shortcodes;
 
 /// Matches GitHub-style emoji shortcodes, e.g., `:smile:`, `:+1:`.
 ///
 /// Character set mirrors GitHub's shortcode names: lowercase ASCII, digits,
 /// underscores, hyphens, and `+`.
 static EMOJI_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r":([a-z0-9_+\-]+):").expect("emoji regex should compile"));
+    LazyLock::new(|| Regex::new(r"^:([a-z0-9_+\-]+):").expect("emoji regex should compile"));
 
 /// Replaces `:shortcode:` emoji shortcodes with Unicode emoji characters.
 ///
@@ -18,39 +18,12 @@ static EMOJI_RE: LazyLock<Regex> =
 /// blocks (` ``` ` / `~~~`) and inline code spans (`` ` ``).
 #[must_use]
 pub fn replace_emojis(input: &str) -> String {
-    let mut output = String::with_capacity(input.len());
-    for_each_non_code_line(input, &mut output, |line, out| {
-        replace_emojis_in_line(line, out);
-    });
-    output
-}
-
-fn replace_emojis_in_line(line: &str, output: &mut String) {
-    let bytes = line.as_bytes();
-    let mut i = 0;
-
-    while i < bytes.len() {
-        if bytes[i] == b'`' {
-            let (end, span) = scan_code_span(line, i);
-            output.push_str(span);
-            i = end;
-            continue;
-        }
-
-        if bytes[i] == b':'
-            && let Some(caps) = EMOJI_RE.captures(&line[i..])
-            && caps.get(0).unwrap().start() == 0
-            && let Some(emoji) = gh_emoji::get(&caps[1])
-        {
-            output.push_str(emoji);
-            i += caps[0].len();
-            continue;
-        }
-
-        let ch = line[i..].chars().next().unwrap();
-        output.push(ch);
-        i += ch.len_utf8();
-    }
+    replace_shortcodes(input, |rest, output| {
+        let caps = EMOJI_RE.captures(rest)?;
+        let emoji = gh_emoji::get(&caps[1])?;
+        output.push_str(emoji);
+        Some(caps[0].len())
+    })
 }
 
 #[cfg(test)]
@@ -69,8 +42,12 @@ mod tests {
     #[test]
     fn replace_emojis_multiple() {
         let output = replace_emojis(":rocket: and :+1:");
-        assert!(output.contains('\u{1f680}'), "output:\n{output}");
-        assert!(output.contains('\u{1f44d}'), "output:\n{output}");
+        assert_eq!(output, "\u{1f680} and \u{1f44d}");
+    }
+
+    #[test]
+    fn replace_emojis_preserves_nonmatching_prefix_before_shortcode() {
+        assert_eq!(replace_emojis(": invalid :smile:"), ": invalid \u{1f604}");
     }
 
     #[test]
@@ -101,20 +78,13 @@ mod tests {
         assert_eq!(output, input);
     }
 
-    #[test]
-    fn replace_emojis_unclosed_backtick() {
-        let input = "`:smile:";
-        let output = replace_emojis(input);
-        assert!(output.contains('\u{1f604}'), "output:\n{output}");
-    }
-
     // ── replace_emojis (code awareness) ──
 
     #[test]
     fn replace_emojis_skips_inline_code() {
         let input = "use `:smile:` syntax";
         let output = replace_emojis(input);
-        assert!(output.contains(":smile:"), "output:\n{output}");
+        assert_eq!(output, input);
     }
 
     #[test]
@@ -125,7 +95,7 @@ mod tests {
             ```
         "};
         let output = replace_emojis(input);
-        assert!(output.contains(":smile:"), "output:\n{output}");
+        assert_eq!(output, input);
 
         let input = indoc! {"
             ~~~
@@ -133,7 +103,7 @@ mod tests {
             ~~~
         "};
         let output = replace_emojis(input);
-        assert!(output.contains(":smile:"), "output:\n{output}");
+        assert_eq!(output, input);
     }
 
     #[test]
@@ -145,6 +115,13 @@ mod tests {
             :smile:
         "};
         let output = replace_emojis(input);
-        assert!(output.contains('\u{1f604}'), "output:\n{output}");
+        assert_eq!(output, input.replace(":smile:", "\u{1f604}"));
+    }
+
+    #[test]
+    fn replace_emojis_unclosed_backtick() {
+        let input = "`:smile:";
+        let output = replace_emojis(input);
+        assert_eq!(output, "`\u{1f604}");
     }
 }

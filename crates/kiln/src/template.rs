@@ -509,6 +509,7 @@ mod tests {
             "should render localized prefix alongside the ISO date slice, html:\n{html}"
         );
     }
+
     #[test]
     fn render_post_missing_template_returns_error() {
         let dir = tempfile::tempdir().unwrap();
@@ -1117,16 +1118,16 @@ mod tests {
     #[test]
     fn has_template_broken_returns_true() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("broken.html"), "{% invalid %}").unwrap();
+        test_fs::write(dir.path().join("broken.html"), "{% invalid %}").unwrap();
         let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
         assert!(
             engine.has_template("broken.html"),
-            "broken templates exist; render should surface the parse error",
+            "broken templates exist. Rendering should surface the parse error",
         );
     }
 
     #[test]
-    fn has_template_missing() {
+    fn has_template_missing_returns_false() {
         let engine = test_engine();
         assert!(!engine.has_template("nonexistent.html"));
     }
@@ -1157,6 +1158,21 @@ mod tests {
 
         let html = render_read_file("scores.csv", Some(source.path())).unwrap();
         assert_eq!(html, contents);
+    }
+
+    #[test]
+    fn read_file_follows_external_symlink() {
+        let source = tempfile::tempdir().unwrap();
+        let external = tempfile::tempdir().unwrap();
+        test_fs::write(external.path().join("data.txt"), "external <data>").unwrap();
+        std::os::unix::fs::symlink(
+            external.path().join("data.txt"),
+            source.path().join("data.txt"),
+        )
+        .unwrap();
+
+        let html = render_read_file("data.txt", Some(source.path())).unwrap();
+        assert_eq!(html, "external &lt;data&gt;");
     }
 
     #[test]

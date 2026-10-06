@@ -149,7 +149,7 @@ async fn serve_until(
     let app = build_router(&output_dir, reload_tx);
 
     eprintln!("\nServing at {base_url} (Press Ctrl+C to stop)");
-    eprint!("Watching: config.toml, content/, templates/, static/");
+    eprint!("Watching: config.toml, content/, templates/, static/, i18n/");
     if let Some(ref theme) = config.theme {
         eprint!(", themes/{theme}/");
     }
@@ -745,7 +745,6 @@ mod tests {
     fn watch_paths_missing_dirs_skipped() {
         let root = tempfile::tempdir().unwrap();
         fs::create_dir(root.path().join("content")).unwrap();
-        // No templates/, static/, or config.toml
 
         let config = Config::default();
         let paths = watch_paths(root.path(), &config);
