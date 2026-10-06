@@ -171,7 +171,7 @@ fn is_page_bundle(path: &Path) -> bool {
 /// Returns sorted absolute paths for deterministic output.
 fn discover_assets(dir: &Path) -> Result<Vec<PathBuf>> {
     let mut assets = Vec::new();
-    for entry in WalkDir::new(dir).follow_links(false) {
+    for entry in WalkDir::new(dir).follow_links(true) {
         let entry = entry.with_context(|| format!("failed to read entry in {}", dir.display()))?;
         if !entry.file_type().is_file() {
             continue;
@@ -458,6 +458,43 @@ mod tests {
             err.contains("failed to read"),
             "should report entry read failure, got: {err}"
         );
+    }
+
+    #[test]
+    fn from_file_invalid_asset_symlink_returns_error() {
+        for cycle in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            fs::write(
+                dir.path().join("index.md"),
+                indoc! {r#"
+                    +++
+                    title = "Post A"
+                    +++
+                "#},
+            )
+            .unwrap();
+            let target = if cycle {
+                dir.path().to_owned()
+            } else {
+                dir.path().join("missing")
+            };
+            let link = dir.path().join("asset");
+            std::os::unix::fs::symlink(&target, &link).unwrap();
+
+            let err = Page::from_file(&dir.path().join("index.md")).unwrap_err();
+
+            assert!(err.to_string().contains("failed to read assets"));
+            let walk_error = err.downcast_ref::<walkdir::Error>().unwrap();
+            assert_eq!(walk_error.path(), Some(link.as_path()));
+            if cycle {
+                assert_eq!(walk_error.loop_ancestor(), Some(dir.path()));
+            } else {
+                assert_eq!(
+                    walk_error.io_error().unwrap().kind(),
+                    std::io::ErrorKind::NotFound
+                );
+            }
+        }
     }
 
     // ── from_content ──

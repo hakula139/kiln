@@ -1131,6 +1131,44 @@ mod tests {
     }
 
     #[test]
+    fn read_file_follows_external_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let directives = dir.path().join("directives");
+        test_fs::create_dir(&directives).unwrap();
+        test_fs::write(
+            directives.join("reader.html"),
+            r#"{{ read_file("data.txt") }}"#,
+        )
+        .unwrap();
+        let source = tempfile::tempdir().unwrap();
+        let external = tempfile::tempdir().unwrap();
+        test_fs::write(external.path().join("data.txt"), "external <data>").unwrap();
+        std::os::unix::fs::symlink(
+            external.path().join("data.txt"),
+            source.path().join("data.txt"),
+        )
+        .unwrap();
+        let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
+        let ctx = crate::directive::DirectiveContext {
+            name: "reader".into(),
+            positional_args: Vec::new(),
+            named_args: BTreeMap::new(),
+            id: None,
+            classes: Vec::new(),
+            body_html: String::new(),
+            body_raw: String::new(),
+            source_dir: Some(source.path().to_string_lossy().into_owned()),
+        };
+
+        let html = engine
+            .render_directive("reader", ctx, &AssetsHandle::default(), &test_config())
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(html, "external &lt;data&gt;");
+    }
+
+    #[test]
     fn read_file_path_traversal_returns_error() {
         let dir = tempfile::tempdir().unwrap();
         let directives_dir = dir.path().join("directives");
