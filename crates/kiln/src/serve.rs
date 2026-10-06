@@ -402,9 +402,14 @@ async fn serve_request(
 ) -> Response {
     let path = request.uri().path();
     if !path.ends_with('/') && has_index_html(output_dir, path).await {
+        let location = match request.uri().query() {
+            Some(query) => format!("{path}/?{query}"),
+            None => format!("{path}/"),
+        };
+
         return Response::builder()
             .status(StatusCode::MOVED_PERMANENTLY)
-            .header(header::LOCATION, format!("{path}/"))
+            .header(header::LOCATION, location)
             .body(Body::empty())
             .expect("redirect response is valid");
     }
@@ -948,6 +953,33 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::MOVED_PERMANENTLY);
         assert_eq!(response.headers().get(header::LOCATION).unwrap(), "/about/");
+    }
+
+    #[tokio::test]
+    async fn build_router_redirect_preserves_query() {
+        let dir = tempfile::tempdir().unwrap();
+        let sub = dir.path().join("about");
+        fs::create_dir(&sub).unwrap();
+        fs::write(sub.join("index.html"), "<html><body>About</body></html>").unwrap();
+
+        let app = setup_router(dir.path());
+        for query in ["x=1&x=2", "next=%2Fposts%3Fx%3D1&text=a+b", ""] {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::get(format!("/about?{query}"))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+
+            assert_eq!(response.status(), StatusCode::MOVED_PERMANENTLY);
+            assert_eq!(
+                response.headers().get(header::LOCATION).unwrap(),
+                &format!("/about/?{query}"),
+            );
+        }
     }
 
     #[tokio::test]
