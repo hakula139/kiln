@@ -75,7 +75,7 @@ pub fn discover_content(root: &Path) -> Result<ContentSet> {
     Ok(ContentSet { pages, content_dir })
 }
 
-/// Returns `true` if the file starts with a `+++` frontmatter delimiter (optionally preceded
+/// Returns `true` if content starts with a `+++` frontmatter delimiter (optionally preceded
 /// by a UTF-8 BOM). Files without frontmatter are skipped during discovery.
 fn has_frontmatter(content: &str) -> bool {
     let content = content.strip_prefix('\u{feff}').unwrap_or(content);

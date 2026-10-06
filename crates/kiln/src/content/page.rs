@@ -39,14 +39,19 @@ impl Page {
     ///
     /// # Errors
     ///
-    /// Returns an error if the file cannot be read, the frontmatter is invalid, or a slug cannot
-    /// be derived from the file path.
+    /// Returns an error if reading the page or bundle assets fails, frontmatter is invalid, or a
+    /// slug cannot be derived from the file path.
     pub fn from_file(path: &Path) -> Result<Self> {
         let content = fs::read_to_string(path)
             .with_context(|| format!("failed to read {}", path.display()))?;
         Self::from_content_with_assets(&content, path)
     }
 
+    /// Parses already-read Markdown and discovers co-located assets for page-bundle source paths.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if parsing or bundle-asset discovery fails.
     pub(super) fn from_content_with_assets(content: &str, path: &Path) -> Result<Self> {
         let mut page = Self::from_content(content, path)
             .with_context(|| format!("failed to parse {}", path.display()))?;
