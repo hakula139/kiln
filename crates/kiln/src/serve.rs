@@ -149,7 +149,7 @@ async fn serve_until(
     let app = build_router(&output_dir, reload_tx);
 
     eprintln!("\nServing at {base_url} (Press Ctrl+C to stop)");
-    eprint!("Watching: config.toml, content/, templates/, static/");
+    eprint!("Watching: config.toml, content/, templates/, static/, i18n/");
     if let Some(ref theme) = config.theme {
         eprint!(", themes/{theme}/");
     }
@@ -235,7 +235,7 @@ fn watch_paths(root: &Path, config: &Config) -> Vec<WatchEntry> {
         });
     }
 
-    for dir in ["content", "templates", "static"] {
+    for dir in ["content", "templates", "static", "i18n"] {
         let path = root.join(dir);
         if path.is_dir() {
             paths.push(WatchEntry {
@@ -642,29 +642,46 @@ mod tests {
     // ── setup_watcher ──
 
     #[tokio::test]
-    async fn setup_watcher_sends_event_on_file_change() {
-        let root = tempfile::tempdir().unwrap();
-        let content = root.path().join("content");
-        fs::create_dir(&content).unwrap();
-        fs::write(root.path().join("config.toml"), "").unwrap();
+    async fn setup_watcher_sends_event_on_watched_file_change() {
+        for (directory, filename, original, updated) in [
+            ("content", "test.md", None, "Hello"),
+            (
+                "i18n",
+                "en.toml",
+                Some(r#"greeting = "Hello""#),
+                r#"greeting = "Howdy""#,
+            ),
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let watched_dir = root.path().join(directory);
+            fs::create_dir(&watched_dir).unwrap();
+            fs::write(root.path().join("config.toml"), "").unwrap();
+            let file = watched_dir.join(filename);
+            if let Some(content) = original {
+                fs::write(&file, content).unwrap();
+            }
 
-        let config = Config::default();
-        let (tx, mut rx) = mpsc::unbounded_channel();
+            let config = Config::default();
+            let (tx, mut rx) = mpsc::unbounded_channel();
+            let _watcher: notify::PollWatcher = setup_watcher(
+                root.path(),
+                &config,
+                tx,
+                notify::Config::default()
+                    .with_poll_interval(Duration::from_millis(50))
+                    .with_compare_contents(true),
+            )
+            .unwrap();
 
-        let _watcher: notify::PollWatcher = setup_watcher(
-            root.path(),
-            &config,
-            tx,
-            notify::Config::default().with_poll_interval(Duration::from_millis(50)),
-        )
-        .unwrap();
+            fs::write(&file, updated).unwrap();
 
-        fs::write(content.join("test.md"), "hello").unwrap();
-
-        let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
-            .await
-            .expect("should receive event after file change within timeout");
-        assert_eq!(event, Some(()));
+            let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+                .await
+                .unwrap_or_else(|_| {
+                    panic!("should receive event after changing {directory}/{filename}")
+                });
+            assert_eq!(event, Some(()), "{directory}/{filename}");
+        }
     }
 
     // ── watch_paths ──
@@ -675,29 +692,18 @@ mod tests {
         fs::create_dir(root.path().join("content")).unwrap();
         fs::create_dir(root.path().join("templates")).unwrap();
         fs::create_dir(root.path().join("static")).unwrap();
+        fs::create_dir(root.path().join("i18n")).unwrap();
         fs::write(root.path().join("config.toml"), "").unwrap();
 
         let config = Config::default();
         let paths = watch_paths(root.path(), &config);
 
-        assert_eq!(paths.len(), 4);
+        assert_eq!(paths.len(), 5);
         assert!(paths[0].path.ends_with("config.toml") && !paths[0].recursive);
         assert!(paths[1].path.ends_with("content") && paths[1].recursive);
         assert!(paths[2].path.ends_with("templates") && paths[2].recursive);
         assert!(paths[3].path.ends_with("static") && paths[3].recursive);
-    }
-
-    #[test]
-    fn watch_paths_missing_dirs_skipped() {
-        let root = tempfile::tempdir().unwrap();
-        fs::create_dir(root.path().join("content")).unwrap();
-        // No templates/, static/, or config.toml
-
-        let config = Config::default();
-        let paths = watch_paths(root.path(), &config);
-
-        assert_eq!(paths.len(), 1);
-        assert!(paths[0].path.ends_with("content"));
+        assert!(paths[4].path.ends_with("i18n") && paths[4].recursive);
     }
 
     #[test]
@@ -730,6 +736,18 @@ mod tests {
             theme_entry.is_none(),
             "should not include any theme directory"
         );
+    }
+
+    #[test]
+    fn watch_paths_missing_dirs_skipped() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir(root.path().join("content")).unwrap();
+
+        let config = Config::default();
+        let paths = watch_paths(root.path(), &config);
+
+        assert_eq!(paths.len(), 1);
+        assert!(paths[0].path.ends_with("content"));
     }
 
     // ── watch_loop ──
@@ -847,37 +865,6 @@ mod tests {
     }
 
     #[test]
-    fn safe_rebuild_failure_leaves_output_intact() {
-        let root = tempfile::tempdir().unwrap();
-        setup_site(root.path());
-
-        crate::build(root.path(), BuildOptions::default()).unwrap();
-        let output = root
-            .path()
-            .join("public")
-            .join("posts")
-            .join("hello")
-            .join("index.html");
-        let original = fs::read_to_string(&output).unwrap();
-
-        fs::write(
-            root.path().join("templates").join("post.html"),
-            "{% invalid %}",
-        )
-        .unwrap();
-
-        assert!(safe_rebuild(root.path(), "http://localhost:0").is_err());
-
-        let preserved = fs::read_to_string(&output).unwrap();
-        assert_eq!(
-            preserved, original,
-            "output should be untouched after failed rebuild"
-        );
-        assert!(!root.path().join("public.staging").exists());
-        assert!(!root.path().join("public.prev").exists());
-    }
-
-    #[test]
     fn safe_rebuild_no_existing_output() {
         let root = tempfile::tempdir().unwrap();
         setup_site(root.path());
@@ -917,6 +904,37 @@ mod tests {
         safe_rebuild(root.path(), "http://localhost:0").unwrap();
         assert!(root.path().join("public").exists());
         assert!(!backup.exists(), "leftover backup dir should be removed");
+    }
+
+    #[test]
+    fn safe_rebuild_failure_leaves_output_intact() {
+        let root = tempfile::tempdir().unwrap();
+        setup_site(root.path());
+
+        crate::build(root.path(), BuildOptions::default()).unwrap();
+        let output = root
+            .path()
+            .join("public")
+            .join("posts")
+            .join("hello")
+            .join("index.html");
+        let original = fs::read_to_string(&output).unwrap();
+
+        fs::write(
+            root.path().join("templates").join("post.html"),
+            "{% invalid %}",
+        )
+        .unwrap();
+
+        assert!(safe_rebuild(root.path(), "http://localhost:0").is_err());
+
+        let preserved = fs::read_to_string(&output).unwrap();
+        assert_eq!(
+            preserved, original,
+            "output should be untouched after failed rebuild"
+        );
+        assert!(!root.path().join("public.staging").exists());
+        assert!(!root.path().join("public.prev").exists());
     }
 
     // ── build_router ──
