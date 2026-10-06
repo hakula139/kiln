@@ -186,7 +186,7 @@ mod tests {
             }
         );
         assert_eq!(blocks[0].id, None);
-        assert!(blocks[0].classes.is_empty());
+        assert_eq!(blocks[0].classes, Vec::<String>::new());
         assert_eq!(blocks[0].body, "Hello world");
         assert_eq!(blocks[0].range, 0..input.len());
     }
@@ -339,7 +339,7 @@ mod tests {
             }
         );
         assert_eq!(blocks[0].id.as_deref(), Some("my-id"));
-        assert!(blocks[0].classes.is_empty());
+        assert_eq!(blocks[0].classes, Vec::<String>::new());
     }
 
     #[test]
@@ -450,7 +450,7 @@ mod tests {
             }
         );
         assert_eq!(blocks[0].id.as_deref(), Some("section"));
-        assert!(blocks[0].classes.is_empty());
+        assert_eq!(blocks[0].classes, Vec::<String>::new());
     }
 
     #[test]
@@ -651,7 +651,7 @@ mod tests {
             :::
             ```
         "};
-        assert!(parse_directives(input).is_empty());
+        assert_eq!(parse_directives(input), Vec::<DirectiveBlock>::new());
 
         let input = indoc! {"
             ~~~
@@ -660,7 +660,7 @@ mod tests {
             :::
             ~~~
         "};
-        assert!(parse_directives(input).is_empty());
+        assert_eq!(parse_directives(input), Vec::<DirectiveBlock>::new());
     }
 
     #[test]
@@ -847,7 +847,7 @@ mod tests {
 
             No directives here.
         "};
-        assert!(parse_directives(input).is_empty());
+        assert_eq!(parse_directives(input), Vec::<DirectiveBlock>::new());
     }
 
     #[test]
@@ -912,10 +912,10 @@ mod tests {
     fn parse_directive_head_bare_name() {
         let head = parse_directive_head("callout");
         assert_eq!(head.name, "callout");
-        assert!(head.positional_args.is_empty());
+        assert_eq!(head.positional_args, Vec::<String>::new());
         assert!(head.named_args.is_empty());
         assert_eq!(head.id, None);
-        assert!(head.classes.is_empty());
+        assert_eq!(head.classes, Vec::<String>::new());
     }
 
     #[test]
@@ -958,7 +958,7 @@ mod tests {
     fn parse_directive_head_trailing_content_after_close_brace_kept() {
         let head = parse_directive_head(r#"embed {src="example.com"} <!-- note } -->"#);
         assert_eq!(head.name, "embed");
-        assert!(head.positional_args.is_empty());
+        assert_eq!(head.positional_args, Vec::<String>::new());
         assert_eq!(
             head.named_args,
             BTreeMap::from([("src".into(), "example.com".into())]),
@@ -969,17 +969,17 @@ mod tests {
     fn parse_directive_head_extra_text_after_name_without_braces_ignored() {
         let head = parse_directive_head("name extra text");
         assert_eq!(head.name, "name");
-        assert!(head.positional_args.is_empty());
+        assert_eq!(head.positional_args, Vec::<String>::new());
         assert!(head.named_args.is_empty());
         assert_eq!(head.id, None);
-        assert!(head.classes.is_empty());
+        assert_eq!(head.classes, Vec::<String>::new());
     }
 
     #[test]
     fn parse_directive_head_unclosed_quoted_value() {
         let head = parse_directive_head(r#"callout {title="a}b"#);
         assert_eq!(head.name, "callout");
-        assert!(head.positional_args.is_empty());
+        assert_eq!(head.positional_args, Vec::<String>::new());
         assert!(head.named_args.is_empty());
     }
 

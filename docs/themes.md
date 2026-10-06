@@ -252,10 +252,10 @@ Whenever a template variable includes a page `date` or `updated`, kiln renders i
 
 `assets` is populated by the renderer as it walks the page (and any nested directive bodies):
 
-| Field      | Type            | Description                                                                                                                                                             |
-| ---------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `features` | list of strings | Auto-detected runtime dependencies. Current values: `"math"` (set when the page contains math expressions), `"mermaid"` (set when a `` ```mermaid `` fence is present). |
-| `scripts`  | list of objects | Scripts registered via [`register_script(...)`](#register_scripturl-loaddefer-modulefalse). Each entry has `url`, `load` (string), and `module` (bool).                 |
+| Field      | Type            | Description                                                                                                                                                           |
+| ---------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `features` | list of strings | Auto-detected runtime dependencies. Current values: `"math"` (set when the page contains math expressions), `"mermaid"` (set when a ` ```mermaid ` fence is present). |
+| `scripts`  | list of objects | Scripts registered via [`register_script(...)`](#register_scripturl-loaddefer-modulefalse). Each entry has `url`, `load` (string), and `module` (bool).               |
 
 Templates gate conditional CDN loads with membership tests on `assets.features`. Use the `assets is defined` guard when the include is shared with listing templates (`home.html`, `archive.html`, `overview.html`, `404.html`). Only `post.html` and `page.html` receive `assets`:
 

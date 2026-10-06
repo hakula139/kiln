@@ -216,20 +216,20 @@ mod tests {
     fn parse_positional() {
         let sc = parse_shortcode_args(r#"info "Title" false"#);
         assert_eq!(sc.positional, vec!["info", "Title", "false"]);
-        assert!(sc.named.is_empty());
+        assert_eq!(sc.named, Vec::<(&str, &str)>::new());
     }
 
     #[test]
     fn parse_named() {
         let sc = parse_shortcode_args(r#"src="test.webp" width="500""#);
-        assert!(sc.positional.is_empty());
+        assert_eq!(sc.positional, Vec::<&str>::new());
         assert_eq!(sc.named, vec![("src", "test.webp"), ("width", "500")]);
     }
 
     #[test]
     fn parse_unquoted_value() {
         let sc = parse_shortcode_args(r#"src="icon.svg" linked=false"#);
-        assert!(sc.positional.is_empty());
+        assert_eq!(sc.positional, Vec::<&str>::new());
         assert_eq!(sc.named, vec![("src", "icon.svg"), ("linked", "false")]);
     }
 
@@ -237,7 +237,7 @@ mod tests {
     fn parse_unquoted_cjk() {
         let sc = parse_shortcode_args("info 封面出处 false");
         assert_eq!(sc.positional, vec!["info", "封面出处", "false"]);
-        assert!(sc.named.is_empty());
+        assert_eq!(sc.named, Vec::<(&str, &str)>::new());
     }
 
     // ── callout (from admonition) ──

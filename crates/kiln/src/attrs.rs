@@ -235,8 +235,8 @@ mod tests {
     fn parse_pandoc_attrs_empty() {
         let result = parse_pandoc_attrs("");
         assert!(result.id.is_none());
-        assert!(result.classes.is_empty());
-        assert!(result.kvs.is_empty());
+        assert_eq!(result.classes, Vec::<&str>::new());
+        assert_eq!(result.kvs, Vec::<(&str, Cow<'_, str>)>::new());
     }
 
     #[test]

@@ -57,6 +57,7 @@ serde
 slugification
 slugified
 slugify
+smol
 statix
 stdenv
 strasse
