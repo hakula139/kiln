@@ -44,7 +44,11 @@ impl Page {
     pub fn from_file(path: &Path) -> Result<Self> {
         let content = fs::read_to_string(path)
             .with_context(|| format!("failed to read {}", path.display()))?;
-        let mut page = Self::from_content(&content, path)
+        Self::from_content_with_assets(&content, path)
+    }
+
+    pub(super) fn from_content_with_assets(content: &str, path: &Path) -> Result<Self> {
+        let mut page = Self::from_content(content, path)
             .with_context(|| format!("failed to parse {}", path.display()))?;
 
         if is_page_bundle(path)
