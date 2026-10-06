@@ -16,29 +16,13 @@
 let
   cargoToml = fromTOML (builtins.readFile ../../Cargo.toml);
 
-  excluded = [
-    ".claude"
-    ".github"
-    "docs"
-    "packages"
-    "CHANGELOG.md"
-    "CLAUDE.md"
-    "README.md"
-    "RELEASING.md"
-    "cliff.toml"
-    "codecov.yml"
-    "cspell.json"
-  ];
-
-  src = lib.cleanSourceWith {
-    src = ../..;
-    filter =
-      path: _type:
-      let
-        rel = lib.removePrefix (toString ../.. + "/") (toString path);
-        firstSegment = lib.head (lib.splitString "/" rel);
-      in
-      !(lib.elem firstSegment excluded);
+  src = lib.fileset.toSource {
+    root = ../..;
+    fileset = lib.fileset.unions [
+      ../../Cargo.toml
+      ../../Cargo.lock
+      ../../crates
+    ];
   };
 in
 rustPlatform.buildRustPackage {

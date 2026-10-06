@@ -104,7 +104,7 @@ Keep handwritten CSS at `_assets/css/style.css` in the site, theme, or page bund
 
 Plain CSS with imports and nesting works without an external compiler. Select Tailwind with `[css] processor = "tailwind"` in `theme.toml` or `config.toml`. kiln's Nix package supplies its Tailwind processor and Node.js runtime automatically. See [Stylesheets](docs/themes.md#stylesheets) for source overrides and template links.
 
-For other installations, install Node.js and set up the bundled `css/` processor once from the extracted release directory:
+For other installations, install Node.js 20+ and set up the bundled `css/` processor once from the extracted release directory:
 
 ```bash
 (cd css && npm ci && npm link)
@@ -129,13 +129,13 @@ The digest covers one file. kiln bundles local imports in stylesheet sources. Pr
 
 ### Minification
 
-Passing `--minify` to `kiln build` minifies shared CSS / JS and canonical page stylesheets before their digests are computed, then processes generated HTML and other page-bundle assets:
+Passing `--minify` to `kiln build` minifies all published CSS / JS before computing fingerprints, then minifies generated HTML:
 
 - HTML via [`minify-html`](https://crates.io/crates/minify-html)
 - CSS via [`lightningcss`](https://crates.io/crates/lightningcss)
 - JS via [`oxc_minifier`](https://crates.io/crates/oxc_minifier)
 
-Files matching `*.min.css` or `*.min.js` are skipped so pre-minified vendor bundles such as Pagefind's UI JS pass through untouched. Unusable inputs log a warning and keep the original file, so `--minify` never blocks a build.
+Files matching `*.min.css` or `*.min.js` are skipped so pre-minified vendor bundles such as Pagefind's UI JS pass through untouched. Unusable inputs log a warning and keep the original file.
 
 ### Search
 

@@ -157,8 +157,8 @@ impl Default for Config {
 impl Config {
     /// Loads site configuration from `config.toml` in the given root.
     ///
-    /// Missing `config.toml` uses defaults. A configured theme supplies default params through
-    /// its required `theme.toml`.
+    /// Missing `config.toml` uses defaults. A configured theme supplies default params and CSS
+    /// settings through its required `theme.toml`.
     ///
     /// # Errors
     ///
@@ -761,9 +761,9 @@ mod tests {
         setup_theme(
             root.path(),
             indoc! {r#"
-            [css]
-            processor = "tailwind"
-        "#},
+                [css]
+                processor = "tailwind"
+            "#},
         );
         fs::write(root.path().join("config.toml"), r#"theme = "test-theme""#).unwrap();
         assert_eq!(
@@ -774,10 +774,10 @@ mod tests {
         fs::write(
             root.path().join("config.toml"),
             indoc! {r#"
-            theme = "test-theme"
-            [css]
-            processor = "plain"
-        "#},
+                theme = "test-theme"
+                [css]
+                processor = "plain"
+            "#},
         )
         .unwrap();
         assert_eq!(
@@ -786,9 +786,9 @@ mod tests {
         );
         assert!(
             toml::from_str::<Config>(indoc! {r#"
-            [css]
-            processor = "unknown"
-        "#})
+                [css]
+                processor = "unknown"
+            "#})
             .is_err()
         );
     }

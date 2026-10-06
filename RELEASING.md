@@ -14,6 +14,13 @@ Any prose that should land in the changelog must come from a commit message: use
    (cd packages/css && npm version X.Y.Z --no-git-tag-version)
    ```
 
+   Refresh `npmDepsHash` in `packages/css/default.nix` from the updated lockfile, then verify the processor package:
+
+   ```bash
+   nix run --inputs-from . nixpkgs#prefetch-npm-deps -- packages/css/package-lock.json
+   nix build .#kiln-tailwindcss
+   ```
+
 2. Run `cargo build` to refresh `Cargo.lock`.
 
 3. Prepend the new changelog section:

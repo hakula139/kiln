@@ -11,5 +11,5 @@
     }
   ],
   "dictionaries": ["project-words"],
-  "ignorePaths": ["Cargo.lock", "pnpm-lock.yaml", "**/package-lock.json"]
+  "ignorePaths": ["Cargo.lock", "pnpm-lock.yaml", "package-lock.json"]
 }

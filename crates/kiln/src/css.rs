@@ -15,7 +15,7 @@ use walkdir::WalkDir;
 
 use crate::build::url::{page_url, resolve_relative_url};
 use crate::config::{Config, CssProcessor};
-use crate::content::page::Page;
+use crate::content::page::{Page, is_page_bundle};
 use crate::output::write_output;
 use crate::static_assets::{StaticAssetManifest, path_to_url};
 
@@ -43,6 +43,8 @@ pub(crate) struct Stylesheets {
 impl Stylesheets {
     /// Resolves site overrides and page-owned entry points before compiling any sources.
     ///
+    /// # Errors
+    ///
     /// Returns an error when a page output or bundle asset source path cannot be resolved.
     pub(crate) fn discover(
         root: &Path,
@@ -62,11 +64,7 @@ impl Stylesheets {
         });
         let mut styles = BTreeMap::new();
         for page in pages {
-            if page
-                .source_path
-                .file_name()
-                .is_none_or(|name| name != "index.md")
-            {
+            if !is_page_bundle(&page.source_path) {
                 continue;
             }
             let bundle = page
@@ -107,6 +105,8 @@ impl Stylesheets {
 
     /// Compiles private sources into the build output, preserving published asset references.
     ///
+    /// # Errors
+    ///
     /// Returns an error for invalid sources, unpublished assets, or compiler and output failures.
     pub(crate) fn compile(&self, root: &Path, config: &Config, output_dir: &Path) -> Result<()> {
         for style in self.shared.iter().chain(self.pages.values()) {
@@ -124,7 +124,11 @@ impl Stylesheets {
 
     /// Returns the owning page's fingerprinted stylesheet URL, including the site's base path.
     ///
-    /// Returns an error if the compiled stylesheet is missing from the manifest.
+    /// Returns `None` when the page has no owning stylesheet.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for an invalid UTF-8 output path or a missing compiled stylesheet.
     pub(crate) fn page_url(
         &self,
         page: &Page,
@@ -185,27 +189,27 @@ fn compile_tailwind(
     if style.bundle.is_some()
         && let Some(shared) = shared
     {
-        writeln!(
+        _ = writeln!(
             source,
             "@reference {};",
             css_string(&shared.source.canonicalize()?.to_string_lossy())?
-        )?;
+        );
     }
-    writeln!(
+    _ = writeln!(
         source,
         "@import {};",
         css_string(&style.source.canonicalize()?.to_string_lossy())?
-    )?;
+    );
     for dir in std::iter::once(root.join("content"))
         .chain(std::iter::once(root.join("templates")))
         .chain(config.theme_dir(root).map(|dir| dir.join("templates")))
         .filter(|dir| dir.is_dir())
     {
-        writeln!(
+        _ = writeln!(
             source,
             "@source {};",
             css_string(&dir.canonicalize()?.to_string_lossy())?
-        )?;
+        );
     }
     fs::write(&input, source)?;
     let binary = if cfg!(windows) {
@@ -400,6 +404,8 @@ fn css_string(value: &str) -> Result<String> {
 
 #[cfg(test)]
 mod tests {
+    use indoc::indoc;
+
     use super::*;
     use crate::test_utils::write_test_file;
 
@@ -411,7 +417,7 @@ mod tests {
         write_test_file(
             root.path(),
             ENTRY,
-            indoc::indoc! {r#"
+            indoc! {r#"
                 @import "https://example.com/base.css";
                 .root { background: url(/images/root.svg); }
                 .data { background: url("data:image/svg+xml,<svg/>"); }
@@ -474,7 +480,7 @@ mod tests {
     // ── published_url ──
 
     #[test]
-    fn published_url_rejects_private_and_unpublished_assets() {
+    fn published_url_private_and_unpublished_assets_returns_error() {
         let root = tempfile::tempdir().unwrap();
         write_test_file(root.path(), "content/example/_assets/css/style.css", "");
         write_test_file(root.path(), "content/example/_secret.svg", "private");

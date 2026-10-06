@@ -162,7 +162,7 @@ pub fn derive_page_kind(source_path: &Path, content_dir: &Path) -> PageKind {
 }
 
 /// Returns `true` if the file is a page bundle entry point (`index.md`).
-fn is_page_bundle(path: &Path) -> bool {
+pub(crate) fn is_page_bundle(path: &Path) -> bool {
     path.file_stem().and_then(|s| s.to_str()) == Some("index")
 }
 

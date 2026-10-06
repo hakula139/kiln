@@ -213,8 +213,12 @@ fn setup_watcher<W: Watcher>(
         } else {
             RecursiveMode::NonRecursive
         };
+        let path = entry
+            .path
+            .canonicalize()
+            .with_context(|| format!("failed to resolve watch path {}", entry.path.display()))?;
         watcher
-            .watch(&entry.path.canonicalize()?, mode)
+            .watch(&path, mode)
             .with_context(|| format!("failed to watch {}", entry.path.display()))?;
     }
 

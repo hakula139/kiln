@@ -240,12 +240,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("static");
         let dest = dir.path().join("public");
-        for file in [
+        let files = [
             "_headers",
             "_redirects",
             "_custom/data.txt",
             "nested/_headers",
-        ] {
+        ];
+        for file in files {
             let path = src.join(file);
             fs::create_dir_all(path.parent().unwrap()).unwrap();
             fs::write(path, file).unwrap();
@@ -253,12 +254,7 @@ mod tests {
 
         copy_static(&src, &dest).unwrap();
 
-        for file in [
-            "_headers",
-            "_redirects",
-            "_custom/data.txt",
-            "nested/_headers",
-        ] {
+        for file in files {
             assert_eq!(fs::read_to_string(dest.join(file)).unwrap(), file);
         }
     }
