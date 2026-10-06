@@ -36,16 +36,26 @@ Any prose that should land in the changelog must come from a commit message: use
 
 7. The workflow creates the GitHub Release from the matching changelog section and uploads archives for the [supported targets](#targets), with SHA-256 checksums.
 
-Archives include the Tailwind processor under `css/`. User setup is documented in [Processor Setup](docs/assets.md#processor-setup).
+## npm Releases
 
-## Tailwind processor dependencies
-
-The private package in `packages/css/` is versioned independently of kiln. When its dependency lockfile changes, refresh `npmDepsHash` in `packages/css/default.nix` and verify the package:
+`@kiln-ssg/tailwindcss` is versioned independently of kiln. After changes to `packages/css/`, bump its version and refresh the Nix dependency hash:
 
 ```bash
+(cd packages/css && npm version X.Y.Z --no-git-tag-version)
 nix run --inputs-from . nixpkgs#prefetch-npm-deps -- packages/css/package-lock.json
-nix build .#kiln-tailwindcss
 ```
+
+Update `npmDepsHash` in `packages/css/default.nix`, verify `nix build .#kiln-tailwindcss`, then commit and tag the package release:
+
+```bash
+git tag css-vX.Y.Z
+git push origin main
+git push origin css-vX.Y.Z
+```
+
+`.github/workflows/release-npm.yml` verifies that the tag matches the npm manifest version and publishes through GitHub OIDC. Stable versions use `latest`, and prereleases use `next`. npm versions are immutable, so rerun only failed jobs and correct a published package with a new version.
+
+The [trusted publisher](https://docs.npmjs.com/trusted-publishers) for `@kiln-ssg/tailwindcss` must allow direct publishing from `hakula139/kiln` through `release-npm.yml`.
 
 ## Installing `git-cliff`
 

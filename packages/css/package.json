@@ -1,7 +1,17 @@
 {
-  "name": "@kiln/tailwindcss",
-  "version": "0.4.0-rc.4",
-  "private": true,
+  "name": "@kiln-ssg/tailwindcss",
+  "version": "0.1.0",
+  "description": "Tailwind CSS processor for kiln static sites",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hakula139/kiln.git",
+    "directory": "packages/css"
+  },
+  "homepage": "https://github.com/hakula139/kiln",
+  "bugs": {
+    "url": "https://github.com/hakula139/kiln/issues"
+  },
   "type": "module",
   "bin": {
     "kiln-tailwindcss": "compiler.mjs"
@@ -13,5 +23,11 @@
     "@tailwindcss/node": "4.3.3",
     "@tailwindcss/oxide": "4.3.3",
     "@tailwindcss/typography": "0.5.20"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

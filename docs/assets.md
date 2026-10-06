@@ -60,13 +60,13 @@ processor = "tailwind"
 
 kiln's Nix package includes everything needed for Tailwind.
 
-For other installations, install Node.js 20+ and run this once from the extracted release directory:
+For other installations, install Node.js 20+ and the published processor:
 
 ```bash
-(cd css && npm ci && npm link)
+npm install -g @kiln-ssg/tailwindcss
 ```
 
-From a source checkout, use `packages/css` as the directory. Keep that directory in place because `npm link` links to it. The command makes `kiln-tailwindcss` available on `PATH`, and subsequent builds invoke it automatically. Compiler failures fail the build.
+This provides `kiln-tailwindcss` on `PATH`. Subsequent builds invoke it automatically, and compiler failures fail the build.
 
 kiln supplies Tailwind scanning for content and site / theme templates. Page entries automatically receive the selected shared entry through `@reference`, so `@apply` and shared theme definitions work without duplicating the shared stylesheet.
 

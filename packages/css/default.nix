@@ -13,12 +13,14 @@ buildNpmPackage {
   src = lib.fileset.toSource {
     root = ./.;
     fileset = lib.fileset.unions [
+      ./LICENSE
+      ./README.md
       ./compiler.mjs
       ./package.json
       ./package-lock.json
     ];
   };
-  npmDepsHash = "sha256-eeMTqKO2xK2wCA7eZtIxrR9CdiNk7dhCe8eXEXKZHiI=";
+  npmDepsHash = "sha256-ZvB2WQFSB5OWEwjLSEMvAnFAjuppyLt+AC6nvHSBjJY=";
   dontNpmBuild = true;
 
   meta = {
