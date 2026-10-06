@@ -14,6 +14,8 @@ pub struct ContentSet {
 
 /// Walks the content directory, loading all non-draft markdown pages.
 ///
+/// Returns an empty collection when there is no content directory.
+///
 /// Excludes:
 /// - Files and directories whose names start with `_`
 /// - Non-markdown files
@@ -23,7 +25,7 @@ pub struct ContentSet {
 /// # Errors
 ///
 /// Returns an error if a content entry or markdown file cannot be read, or if frontmatter is
-/// invalid.
+/// invalid, including in draft pages.
 pub fn discover_content(root: &Path) -> Result<ContentSet> {
     let content_dir = root.join("content");
     if !content_dir.is_dir() {
