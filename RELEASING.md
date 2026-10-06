@@ -36,17 +36,6 @@ Any prose that should land in the changelog must come from a commit message: use
 
 7. The workflow creates the GitHub Release from the matching changelog section and uploads archives for the [supported targets](#targets), with SHA-256 checksums.
 
-Archives include the Tailwind processor under `css/`. User setup is documented in [Processor Setup](docs/assets.md#processor-setup).
-
-## Tailwind processor dependencies
-
-The private package in `packages/css/` is versioned independently of kiln. When its dependency lockfile changes, refresh `npmDepsHash` in `packages/css/default.nix` and verify the package:
-
-```bash
-nix run --inputs-from . nixpkgs#prefetch-npm-deps -- packages/css/package-lock.json
-nix build .#kiln-tailwindcss
-```
-
 ## Installing `git-cliff`
 
 ```bash

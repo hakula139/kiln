@@ -59,6 +59,7 @@ postprocessors = [
 conventional_commits = true
 filter_unconventional = true
 filter_commits = true
+tag_pattern = '^v[0-9]+\.'
 sort_commits = "oldest"
 
 commit_preprocessors = [
