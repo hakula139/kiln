@@ -22,7 +22,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Setup Nix
+      - &setup-readonly-nix
+        name: Setup Nix
         uses: ./.github/actions/setup-nix
         with:
           cachix_name: ${{ env.CACHIX_NAME }}
@@ -38,7 +39,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Setup Nix
+      - &setup-upload-nix
+        name: Setup Nix
         uses: ./.github/actions/setup-nix
         with:
           cachix_name: ${{ env.CACHIX_NAME }}
@@ -64,12 +66,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Setup Nix
-        uses: ./.github/actions/setup-nix
-        with:
-          cachix_name: ${{ env.CACHIX_NAME }}
-          cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
-          cachix_skip_push: ${{ !(github.ref == 'refs/heads/main' || github.actor == 'hakula139') }}
+      - *setup-upload-nix
 
       - name: Cache cargo target
         uses: Swatinem/rust-cache@v2
@@ -93,12 +90,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Setup Nix
-        uses: ./.github/actions/setup-nix
-        with:
-          cachix_name: ${{ env.CACHIX_NAME }}
-          cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
-          cachix_skip_push: ${{ !(github.ref == 'refs/heads/main' || github.actor == 'hakula139') }}
+      - *setup-upload-nix
 
       - name: Install dependencies
         run: nix develop -c pnpm install --frozen-lockfile
@@ -130,12 +122,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Setup Nix
-        uses: ./.github/actions/setup-nix
-        with:
-          cachix_name: ${{ env.CACHIX_NAME }}
-          cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
-          cachix_skip_push: ${{ !(github.ref == 'refs/heads/main' || github.actor == 'hakula139') }}
+      - *setup-upload-nix
 
       - name: Build packages
         run: |
@@ -172,11 +159,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Setup Nix
-        uses: ./.github/actions/setup-nix
-        with:
-          cachix_name: ${{ env.CACHIX_NAME }}
-          cachix_skip_push: 'true'
+      - *setup-readonly-nix
 
       - name: Restore builds from cache
         run: |
