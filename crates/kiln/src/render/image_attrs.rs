@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use super::lqip::ImageMeta;
-use crate::attrs::parse_pandoc_attrs;
+use crate::attrs::{find_attr_block_end, parse_pandoc_attrs};
 use crate::markdown::{for_each_non_code_line, scan_code_span};
 
 /// Attributes extracted from Pandoc-style `{...}` blocks after images,
@@ -73,7 +73,7 @@ fn try_extract_image(
 
     if paren_end < bytes.len()
         && bytes[paren_end] == b'{'
-        && let Some(brace_end) = find_brace_end(bytes, paren_end)
+        && let Some(brace_end) = find_brace_end(line, paren_end)
     {
         let parsed = parse_image_attrs(&line[paren_end + 1..brace_end]);
         if !parsed.is_empty() {
@@ -108,16 +108,10 @@ fn find_matching_close(bytes: &[u8], start: usize, open: u8, close: u8) -> Optio
     (depth == 0).then_some(i)
 }
 
-fn find_brace_end(bytes: &[u8], start: usize) -> Option<usize> {
-    let mut i = start + 1;
-    while i < bytes.len() {
-        match bytes[i] {
-            b'}' => return Some(i),
-            b'\n' => return None,
-            _ => i += 1,
-        }
-    }
-    None
+fn find_brace_end(s: &str, start: usize) -> Option<usize> {
+    let inner = &s[start + 1..];
+    let line = inner.split_once('\n').map_or(inner, |(line, _)| line);
+    find_attr_block_end(line).map(|end| start + 1 + end)
 }
 
 fn parse_image_attrs(attr_str: &str) -> ImageAttrs {
@@ -234,6 +228,20 @@ mod tests {
     }
 
     #[test]
+    fn extract_with_quoted_brace_in_value() {
+        for (input, width) in [
+            (r#"![alt](img.png){width="a}b" height=300} tail"#, "a}b"),
+            (r#"![alt](img.png){width="a\"}b" height=300} tail"#, "a\"}b"),
+        ] {
+            let (output, attrs) = extract_image_attrs(input);
+            assert_eq!(output, "![alt](img.png) tail");
+            let a = &attrs[&0];
+            assert_eq!(a.width.as_deref(), Some(width));
+            assert_eq!(a.height.as_deref(), Some("300"));
+        }
+    }
+
+    #[test]
     fn extract_nested_brackets() {
         let input = "![alt [nested]](img.png){width=100}";
         let (output, attrs) = extract_image_attrs(input);
@@ -333,6 +341,14 @@ mod tests {
     #[test]
     fn extract_unclosed_brace_at_eof_preserved() {
         let input = "![alt](img.png){width=500";
+        let (output, attrs) = extract_image_attrs(input);
+        assert_eq!(output, input);
+        assert!(attrs.is_empty());
+    }
+
+    #[test]
+    fn extract_unclosed_quoted_value_preserved() {
+        let input = r#"![alt](img.png){width="a}b"#;
         let (output, attrs) = extract_image_attrs(input);
         assert_eq!(output, input);
         assert!(attrs.is_empty());

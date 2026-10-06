@@ -73,6 +73,44 @@ pub(crate) fn parse_pandoc_attrs(input: &str) -> PandocAttrs<'_> {
     result
 }
 
+/// Returns the byte offset of the first `}` outside quoted positional or named values.
+///
+/// Quotes in IDs, classes, and unquoted values remain literal. Returns `None` if unclosed.
+pub(crate) fn find_attr_block_end(input: &str) -> Option<usize> {
+    let mut i = 0;
+
+    while i < input.len() {
+        let rest = input[i..].trim_start();
+        i = input.len() - rest.len();
+        if rest.starts_with('}') {
+            return Some(i);
+        }
+
+        let end = rest
+            .find(|c: char| c.is_whitespace() || c == '}')
+            .unwrap_or(rest.len());
+        let quote = if rest.starts_with('"') {
+            Some(0)
+        } else if rest.starts_with(['#', '.']) {
+            None
+        } else {
+            rest.find('=')
+                .filter(|&eq| eq < end && rest[eq + 1..].starts_with('"'))
+                .map(|eq| eq + 1)
+        };
+
+        if let Some(quote) = quote {
+            i += quote + 1;
+            let (end, _) = scan_quoted_value(&input[i..]);
+            i += end + 1;
+        } else {
+            i += end;
+        }
+    }
+
+    None
+}
+
 /// Scans a quoted value for the closing `"`, respecting `\"` and `\\` escapes.
 /// Returns `(end_offset, has_escapes)` where `end_offset` is the byte position of the closing
 /// quote (or end of string if unclosed).
@@ -122,26 +160,6 @@ mod tests {
 
     // ── parse_pandoc_attrs ──
 
-    fn kvs(input: &str) -> Vec<(&str, String)> {
-        parse_pandoc_attrs(input)
-            .kvs
-            .into_iter()
-            .map(|(k, v)| (k, v.into_owned()))
-            .collect()
-    }
-
-    fn pair<'a>(k: &'a str, v: &str) -> (&'a str, String) {
-        (k, v.to_string())
-    }
-
-    #[test]
-    fn parse_pandoc_attrs_empty() {
-        let result = parse_pandoc_attrs("");
-        assert!(result.id.is_none());
-        assert!(result.classes.is_empty());
-        assert!(result.kvs.is_empty());
-    }
-
     #[test]
     fn parse_pandoc_attrs_unquoted_value() {
         assert_eq!(kvs("key=value"), vec![pair("key", "value")]);
@@ -165,15 +183,6 @@ mod tests {
         // Unrecognized escape alone: no escapes detected, takes borrowed path.
         assert_eq!(kvs(r#"title="foo\nbar""#), vec![pair("title", r"foo\nbar")]);
         assert_eq!(kvs(r#"title="a\"b\nc""#), vec![pair("title", r#"a"b\nc"#)]);
-    }
-
-    #[test]
-    fn parse_pandoc_attrs_unclosed_quote() {
-        assert_eq!(
-            kvs(r#"key="no closing quote"#),
-            vec![pair("key", "no closing quote")]
-        );
-        assert_eq!(kvs(r#"key="a\"b\"#), vec![pair("key", r#"a"b\"#)]);
     }
 
     #[test]
@@ -206,13 +215,6 @@ mod tests {
     }
 
     #[test]
-    fn parse_pandoc_attrs_empty_hash_and_dot_ignored() {
-        let result = parse_pandoc_attrs("# . .real");
-        assert_eq!(result.id, None);
-        assert_eq!(result.classes, vec!["real"]);
-    }
-
-    #[test]
     fn parse_pandoc_attrs_collects_bare_words() {
         let result = parse_pandoc_attrs(r#"collapse title="Title" expand"#);
         assert_eq!(result.bare, vec!["collapse", "expand"]);
@@ -227,5 +229,41 @@ mod tests {
         // Words inside quoted values must not leak into `bare`.
         let result = parse_pandoc_attrs(r#"title="please collapse now""#);
         assert!(result.bare.is_empty(), "got: {:?}", result.bare);
+    }
+
+    #[test]
+    fn parse_pandoc_attrs_empty() {
+        let result = parse_pandoc_attrs("");
+        assert!(result.id.is_none());
+        assert!(result.classes.is_empty());
+        assert!(result.kvs.is_empty());
+    }
+
+    #[test]
+    fn parse_pandoc_attrs_empty_hash_and_dot_ignored() {
+        let result = parse_pandoc_attrs("# . .real");
+        assert_eq!(result.id, None);
+        assert_eq!(result.classes, vec!["real"]);
+    }
+
+    #[test]
+    fn parse_pandoc_attrs_unclosed_quote() {
+        assert_eq!(
+            kvs(r#"key="no closing quote"#),
+            vec![pair("key", "no closing quote")]
+        );
+        assert_eq!(kvs(r#"key="a\"b\"#), vec![pair("key", r#"a"b\"#)]);
+    }
+
+    fn kvs(input: &str) -> Vec<(&str, String)> {
+        parse_pandoc_attrs(input)
+            .kvs
+            .into_iter()
+            .map(|(k, v)| (k, v.into_owned()))
+            .collect()
+    }
+
+    fn pair<'a>(k: &'a str, v: &str) -> (&'a str, String) {
+        (k, v.to_string())
     }
 }

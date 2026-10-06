@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use super::{DirectiveBlock, DirectiveKind, parse_directive_args};
+use crate::attrs::find_attr_block_end;
 use crate::markdown::{detect_opening_code_fence, is_closing_code_fence};
 
 struct StackEntry {
@@ -120,12 +121,10 @@ fn parse_directive_head(text: &str) -> DirectiveHead {
         (&text[..pos], text[pos..].trim_start())
     };
 
-    // Use `rfind` instead of `strip_suffix` so trailing content after the closing brace (e.g. HTML
-    // comments like `<!-- cspell:disable-line -->`) does not silently discard all attributes.
-    if rest.starts_with('{')
-        && let Some(close) = rest.rfind('}')
+    if let Some(payload) = rest.strip_prefix('{')
+        && let Some(close) = find_attr_block_end(payload)
     {
-        let inner = &rest[1..close];
+        let inner = &payload[..close];
         let args = parse_directive_args(inner.trim());
         return DirectiveHead {
             name: name.to_string(),
@@ -935,6 +934,19 @@ mod tests {
     }
 
     #[test]
+    fn parse_directive_head_quoted_braces() {
+        let head = parse_directive_head(r#"callout {"a}b" title="a\"}b" type=warning}"#);
+        assert_eq!(head.positional_args, ["a}b"]);
+        assert_eq!(
+            head.named_args,
+            BTreeMap::from([
+                ("title".into(), "a\"}b".into()),
+                ("type".into(), "warning".into()),
+            ]),
+        );
+    }
+
+    #[test]
     fn parse_directive_head_attrs_only_yields_empty_name() {
         let head = parse_directive_head("{#section .note}");
         assert_eq!(head.name, "");
@@ -944,8 +956,9 @@ mod tests {
 
     #[test]
     fn parse_directive_head_trailing_content_after_close_brace_kept() {
-        let head = parse_directive_head(r#"embed {src="example.com"} <!-- note -->"#);
+        let head = parse_directive_head(r#"embed {src="example.com"} <!-- note } -->"#);
         assert_eq!(head.name, "embed");
+        assert!(head.positional_args.is_empty());
         assert_eq!(
             head.named_args,
             BTreeMap::from([("src".into(), "example.com".into())]),
@@ -960,6 +973,14 @@ mod tests {
         assert!(head.named_args.is_empty());
         assert_eq!(head.id, None);
         assert!(head.classes.is_empty());
+    }
+
+    #[test]
+    fn parse_directive_head_unclosed_quoted_value() {
+        let head = parse_directive_head(r#"callout {title="a}b"#);
+        assert_eq!(head.name, "callout");
+        assert!(head.positional_args.is_empty());
+        assert!(head.named_args.is_empty());
     }
 
     // ── extract_body ──
