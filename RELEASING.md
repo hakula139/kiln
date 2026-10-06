@@ -2,7 +2,9 @@
 
 Releases are produced by `.github/workflows/release.yml`, triggered when a tag matching `v[0-9]+.*` is pushed.
 
-`CHANGELOG.md` is fully auto-generated from Conventional Commits via [`git-cliff`](https://git-cliff.org) — do not hand-edit it. The `cliff.toml` config groups commits into Keep a Changelog sections (`Breaking changes`, `Added`, `Fixed`, `Changed`, `Removed`, `Dependencies`) and is the single source of truth for both the in-repo changelog and GitHub Release notes (the `taiki-e/create-gh-release-action` step extracts the matching version section).
+`CHANGELOG.md` sections are generated from Conventional Commits via [`git-cliff`](https://git-cliff.org). The `cliff.toml` config groups commits into Keep a Changelog sections (`Breaking changes`, `Added`, `Fixed`, `Changed`, `Removed`, `Dependencies`). GitHub Release notes use the matching section through `taiki-e/create-gh-release-action`.
+
+Stable releases include all changes since the previous stable tag, including prereleases. Prerelease sections contain changes since the previous tag. Existing sections remain in the changelog when a stable summary is added.
 
 Any prose that should land in the changelog must come from a commit message: use `feat!:` / `fix!:` (or `feat(scope)!:` etc.) on PRs that introduce breaking changes so they surface in the `Breaking changes` section. Inline HTML in commit subjects is auto-backticked by a `commit_preprocessors` rule, so a subject like `feat(render)!: wrap <img> in <span class="lqip">` renders correctly in the changelog without manual escaping.
 
@@ -12,17 +14,23 @@ Any prose that should land in the changelog must come from a commit message: use
 
 2. Run `cargo build` to refresh `Cargo.lock`.
 
-3. Prepend the new changelog section:
+3. Prepend the new changelog section. For a stable release:
 
    ```bash
    git cliff --unreleased --tag vX.Y.Z --prepend CHANGELOG.md
    ```
 
-   Use `--unreleased --prepend`, not `--output`. `--output` re-derives the whole file and resurfaces past pre-release tags as separate sections.
+   For a prerelease, include prerelease tags as boundaries:
 
-   Inspect the diff to confirm the new section reads well. If it doesn't, fix the underlying commits (rebase, amend, reword the squash commit subject) and regenerate — never edit the body sections of `CHANGELOG.md` directly.
+   ```bash
+   git cliff --unreleased --tag vX.Y.Z-rc.N --tag-pattern '^v[0-9]+\.' --prepend CHANGELOG.md
+   ```
 
-4. Add the compare-link footer line manually. `--prepend` does not touch the footer block, so insert this line above the previous-version line: `[X.Y.Z]: https://github.com/hakula139/kiln/compare/<prev-tag>..vX.Y.Z`.
+   `--prepend` preserves existing sections. Use it when adding a release.
+
+   Inspect the diff to confirm the new section reads well. Correct underlying commit messages and regenerate when needed. Do not hand-edit generated body sections.
+
+4. Add the compare-link footer line manually. `--prepend` does not touch the footer block. Insert `[X.Y.Z]: https://github.com/hakula139/kiln/compare/<prev-tag>..vX.Y.Z` above the previous-version line. Use the previous stable tag for a stable release and the previous tag for a prerelease.
 
 5. Commit: `chore(release): vX.Y.Z`.
 

@@ -89,7 +89,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Breaking changes
 
+- Named menu groups + literal-friendly t() (#59)
+- _(release)_ Drop x86_64-apple-darwin target
 - _(text)_ Preserve URL-safe punctuation in slugs (#67)
+
+### Added
+
+- _(release)_ 4-platform release matrix + cancel stale runs (#61)
+- _(build)_ Fingerprint static asset URLs (#63)
 
 ## [0.3.0-rc.3] - 2026-08-19
 
@@ -183,7 +190,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 [0.4.0-rc.3]: https://github.com/hakula139/kiln/compare/v0.4.0-rc.2..v0.4.0-rc.3
 [0.4.0-rc.2]: https://github.com/hakula139/kiln/compare/v0.4.0-rc.1..v0.4.0-rc.2
 [0.4.0-rc.1]: https://github.com/hakula139/kiln/compare/v0.3.0..v0.4.0-rc.1
-[0.3.0]: https://github.com/hakula139/kiln/compare/v0.3.0-rc.3..v0.3.0
+[0.3.0]: https://github.com/hakula139/kiln/compare/v0.2.0..v0.3.0
 [0.3.0-rc.3]: https://github.com/hakula139/kiln/compare/v0.3.0-rc.2..v0.3.0-rc.3
 [0.3.0-rc.2]: https://github.com/hakula139/kiln/compare/v0.3.0-rc.1..v0.3.0-rc.2
 [0.3.0-rc.1]: https://github.com/hakula139/kiln/compare/v0.2.0..v0.3.0-rc.1
