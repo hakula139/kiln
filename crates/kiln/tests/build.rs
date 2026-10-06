@@ -301,6 +301,54 @@ fn build_copies_colocated_assets() {
 }
 
 #[test]
+fn build_materializes_external_bundle_symlinks() {
+    let root = tempfile::tempdir().unwrap();
+    fs::write(root.path().join("config.toml"), "").unwrap();
+    copy_templates(&root.path().join("templates"));
+    write_page(
+        root.path(),
+        "posts/example",
+        indoc! {r#"
+            +++
+            title = "Post A"
+            +++
+            Body
+        "#},
+    );
+    let bundle = root.path().join("content/posts/example");
+    let external = tempfile::tempdir().unwrap();
+    fs::create_dir(external.path().join("nested")).unwrap();
+    fs::write(external.path().join("nested/image.svg"), "linked image").unwrap();
+    fs::write(external.path().join("caption.txt"), "linked caption").unwrap();
+    fs::write(external.path().join("notes.md"), "not a bundle asset").unwrap();
+    std::os::unix::fs::symlink(external.path(), bundle.join("shared")).unwrap();
+    std::os::unix::fs::symlink(
+        external.path().join("caption.txt"),
+        bundle.join("caption.txt"),
+    )
+    .unwrap();
+
+    build(root.path(), BuildOptions::default()).unwrap();
+
+    let output = root.path().join("public/posts/example");
+    for (path, expected) in [
+        ("caption.txt", "linked caption"),
+        ("shared/caption.txt", "linked caption"),
+        ("shared/nested/image.svg", "linked image"),
+    ] {
+        let asset = output.join(path);
+        assert_eq!(fs::read_to_string(&asset).unwrap(), expected);
+        assert!(fs::symlink_metadata(asset).unwrap().file_type().is_file());
+    }
+    assert!(
+        fs::symlink_metadata(output.join("shared"))
+            .unwrap()
+            .is_dir()
+    );
+    assert!(!output.join("shared/notes.md").exists());
+}
+
+#[test]
 fn build_cleans_stale_output() {
     let root = tempfile::tempdir().unwrap();
     fs::write(root.path().join("config.toml"), "").unwrap();

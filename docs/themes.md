@@ -430,7 +430,7 @@ Reads a file relative to the page's `source_dir`. Only available in directive te
 {% set csv = read_file(positional_args[0]) %}
 ```
 
-The return value is auto-escaped by MiniJinja. Use `| safe` if the content should be rendered as raw HTML. Path traversal (`..`) and absolute paths are rejected.
+The return value is auto-escaped by MiniJinja. Use `| safe` if the content should be rendered as raw HTML. Path traversal (`..`) and absolute paths are rejected. Symlinks inside the source directory may refer to external files.
 
 #### `parse_csv(text)`
 
