@@ -997,6 +997,26 @@ mod tests {
         );
     }
 
+    #[test]
+    fn resolved_output_dir_symlink_to_root_or_ancestor_returns_error() {
+        let outer = tempfile::tempdir().unwrap();
+        let root = outer.path().join("project");
+        fs::create_dir(&root).unwrap();
+        std::os::unix::fs::symlink(&root, root.join("root-link")).unwrap();
+        std::os::unix::fs::symlink(outer.path(), root.join("ancestor-link")).unwrap();
+
+        for output_dir in ["root-link", "ancestor-link"] {
+            let err = resolved_output_dir_for(&root, output_dir)
+                .unwrap_err()
+                .to_string();
+
+            assert!(
+                err.contains("would overwrite the project root"),
+                "should reject {output_dir}, got: {err}"
+            );
+        }
+    }
+
     // ── time_zone ──
 
     #[test]

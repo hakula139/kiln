@@ -639,25 +639,6 @@ mod tests {
         _ = shutdown_tx.send(());
     }
 
-    #[tokio::test]
-    async fn serve_until_ws_exits_on_client_disconnect() {
-        let root = tempfile::tempdir().unwrap();
-        setup_site(root.path());
-
-        let (addr, shutdown_tx) = spawn_server(root.path()).await;
-        wait_for_server(addr).await;
-
-        let url = format!("ws://{addr}{LIVE_RELOAD_PATH}");
-        let (ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
-        drop(ws);
-
-        // Give the server's ws_relay loop time to observe the disconnect via
-        // `socket.recv()` returning `None` and break out of the select loop.
-        tokio::time::sleep(Duration::from_millis(100)).await;
-
-        _ = shutdown_tx.send(());
-    }
-
     // ── setup_watcher ──
 
     #[tokio::test]
@@ -680,11 +661,10 @@ mod tests {
 
         fs::write(content.join("test.md"), "hello").unwrap();
 
-        let result = tokio::time::timeout(Duration::from_secs(5), rx.recv()).await;
-        assert!(
-            result.is_ok(),
-            "should receive event after file change within timeout"
-        );
+        let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .expect("should receive event after file change within timeout");
+        assert_eq!(event, Some(()));
     }
 
     // ── watch_paths ──
@@ -772,11 +752,10 @@ mod tests {
 
         event_tx.send(()).unwrap();
 
-        let result = tokio::time::timeout(Duration::from_secs(5), reload_rx.recv()).await;
-        assert!(
-            result.is_ok(),
-            "should receive reload after successful rebuild"
-        );
+        tokio::time::timeout(Duration::from_secs(5), reload_rx.recv())
+            .await
+            .expect("should receive reload within timeout")
+            .expect("should receive reload after successful rebuild");
     }
 
     #[tokio::test]
@@ -831,25 +810,38 @@ mod tests {
 
         drop(event_tx);
 
-        let result = tokio::time::timeout(Duration::from_secs(2), handle).await;
-        assert!(
-            result.is_ok(),
-            "watch_loop should exit when event sender is dropped"
-        );
+        tokio::time::timeout(Duration::from_secs(2), handle)
+            .await
+            .expect("watch_loop should exit when event sender is dropped")
+            .expect("watch_loop should exit without panicking");
     }
 
     // ── safe_rebuild ──
 
     #[test]
-    fn safe_rebuild_success_cleans_temp_dirs() {
+    fn safe_rebuild_replaces_output_and_cleans_temp_dirs() {
         let root = tempfile::tempdir().unwrap();
         setup_site(root.path());
 
         crate::build(root.path(), BuildOptions::default()).unwrap();
-        assert!(root.path().join("public").exists());
+        let output = root.path().join("public");
+        fs::write(output.join("stale.html"), "Stale output").unwrap();
+        fs::write(
+            root.path().join("content/posts/hello/index.md"),
+            indoc! {r#"
+                +++
+                title = "Hello"
+                +++
+                Updated body
+            "#},
+        )
+        .unwrap();
 
         safe_rebuild(root.path(), "http://localhost:0").unwrap();
-        assert!(root.path().join("public").exists());
+
+        let html = fs::read_to_string(output.join("posts/hello/index.html")).unwrap();
+        assert!(html.contains("<p>Updated body</p>"), "got: {html}");
+        assert!(!output.join("stale.html").exists());
         assert!(!root.path().join("public.staging").exists());
         assert!(!root.path().join("public.prev").exists());
     }
@@ -1136,6 +1128,15 @@ mod tests {
             "reload",
             "should relay the reload signal to the client"
         );
+
+        drop(ws);
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while reload_tx.receiver_count() != 0 {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("client disconnect should release its reload subscription");
     }
 
     // ── inject_script ──

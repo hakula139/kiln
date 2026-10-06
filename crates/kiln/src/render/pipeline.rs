@@ -441,6 +441,44 @@ mod tests {
     }
 
     #[test]
+    fn render_page_code_max_lines_reaches_code_blocks() {
+        let input = indoc! {"
+            ```
+            fenced code
+            ```
+
+                indented code
+
+            ``` text {expand}
+            expanded code
+            ```
+        "};
+        let options = RenderOptions {
+            code_max_lines: Some(3),
+            ..RenderOptions::default()
+        };
+
+        let page = render_page(
+            input,
+            &SYNTAX_SET,
+            &test_engine(),
+            &test_config(),
+            &options,
+            None,
+            &EMPTY_RESOLVER,
+        )
+        .unwrap();
+        let fragment = scraper::Html::parse_fragment(&page.content_html);
+        let selector = scraper::Selector::parse(".code-body").unwrap();
+        let max_lines: Vec<_> = fragment
+            .select(&selector)
+            .map(|body| body.value().attr("data-max-lines"))
+            .collect();
+
+        assert_eq!(max_lines, vec![Some("3"), Some("3"), None]);
+    }
+
+    #[test]
     fn render_page_replaces_shortcodes_in_directive_bodies() {
         let options = RenderOptions {
             emojis: true,

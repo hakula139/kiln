@@ -356,11 +356,40 @@ mod tests {
         .unwrap();
         fs::write(post_dir.join("image.webp"), "new-image").unwrap();
 
-        // Pre-existing files at dest with different content.
         let dest_post_dir = dest.join("content/posts/hello");
         fs::create_dir_all(&dest_post_dir).unwrap();
         fs::write(dest_post_dir.join("index.md"), "existing markdown").unwrap();
         fs::write(dest_post_dir.join("image.webp"), "existing image").unwrap();
+
+        for (source_path, dest_path, source_content, dest_content) in [
+            (
+                "categories/topic/_index.md",
+                "posts/topic/_index.md",
+                indoc! {r"
+                    ---
+                    title: Source category
+                    ---
+                "},
+                "Existing section",
+            ),
+            (
+                "tags/topic/_index.md",
+                "tags/topic/_index.md",
+                indoc! {r"
+                    ---
+                    title: Source tag
+                    ---
+                "},
+                "Existing tag",
+            ),
+        ] {
+            let source_index = content_source.join(source_path);
+            let dest_index = dest.join("content").join(dest_path);
+            fs::create_dir_all(source_index.parent().unwrap()).unwrap();
+            fs::create_dir_all(dest_index.parent().unwrap()).unwrap();
+            fs::write(source_index, source_content).unwrap();
+            fs::write(dest_index, dest_content).unwrap();
+        }
 
         convert(&source, &dest).unwrap();
 
@@ -373,6 +402,14 @@ mod tests {
             fs::read_to_string(dest.join("content/posts/hello/image.webp")).unwrap(),
             "existing image",
             "should not overwrite existing asset"
+        );
+        assert_eq!(
+            fs::read_to_string(dest.join("content/posts/topic/_index.md")).unwrap(),
+            "Existing section"
+        );
+        assert_eq!(
+            fs::read_to_string(dest.join("content/tags/topic/_index.md")).unwrap(),
+            "Existing tag"
         );
     }
 

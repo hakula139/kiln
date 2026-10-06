@@ -1083,13 +1083,14 @@ mod tests {
     // ── tpl_now ──
 
     #[test]
-    fn now_returns_iso_timestamp() {
+    fn tpl_now_returns_current_timestamp() {
         let engine = test_engine();
+        let before = jiff::Timestamp::now();
         let result = engine.env.render_str("{{ now() }}", ()).unwrap();
-        assert!(
-            result.contains('T'),
-            "should return ISO 8601 timestamp, got: {result}"
-        );
+        let after = jiff::Timestamp::now();
+
+        let timestamp = result.parse::<jiff::Zoned>().unwrap().timestamp();
+        assert!(timestamp >= before && timestamp <= after, "{result}");
     }
 
     // ── tpl_read_file ──
