@@ -14,6 +14,8 @@ pub struct ContentSet {
 
 /// Walks the content directory, loading all non-draft markdown pages.
 ///
+/// Returns an empty collection when there is no content directory.
+///
 /// Excludes:
 /// - Files and directories whose names start with `_`
 /// - Non-markdown files
@@ -22,8 +24,8 @@ pub struct ContentSet {
 ///
 /// # Errors
 ///
-/// Returns an error if the content directory cannot be read, or if any non-draft markdown file has
-/// invalid frontmatter.
+/// Returns an error if a content entry or markdown file cannot be read, or if frontmatter is
+/// invalid, including in draft pages.
 pub fn discover_content(root: &Path) -> Result<ContentSet> {
     let content_dir = root.join("content");
     if !content_dir.is_dir() {
@@ -48,8 +50,14 @@ pub fn discover_content(root: &Path) -> Result<ContentSet> {
         }
 
         let path = entry.path();
-        if path.extension().is_some_and(|ext| ext == "md") && has_frontmatter(path) {
-            let mut page = Page::from_file(path)?;
+        if path.extension().is_none_or(|ext| ext != "md") {
+            continue;
+        }
+
+        let content = std::fs::read_to_string(path)
+            .with_context(|| format!("failed to read {}", path.display()))?;
+        if has_frontmatter(&content) {
+            let mut page = Page::from_content_with_assets(&content, path)?;
             if !page.frontmatter.draft {
                 page.kind = derive_page_kind(&page.source_path, &content_dir);
                 pages.push(page);
@@ -69,13 +77,11 @@ pub fn discover_content(root: &Path) -> Result<ContentSet> {
     Ok(ContentSet { pages, content_dir })
 }
 
-/// Returns `true` if the file starts with a `+++` frontmatter delimiter (optionally preceded
+/// Returns `true` if content starts with a `+++` frontmatter delimiter (optionally preceded
 /// by a UTF-8 BOM). Files without frontmatter are skipped during discovery.
-fn has_frontmatter(path: &Path) -> bool {
-    std::fs::read_to_string(path).is_ok_and(|content| {
-        let content = content.strip_prefix('\u{feff}').unwrap_or(&content);
-        content.starts_with("+++")
-    })
+fn has_frontmatter(content: &str) -> bool {
+    let content = content.strip_prefix('\u{feff}').unwrap_or(content);
+    content.starts_with("+++")
 }
 
 /// Returns `true` for entries whose file name starts with `_`.
@@ -122,6 +128,33 @@ mod tests {
 
         let set = discover_content(root.path()).unwrap();
         assert_eq!(set.pages.len(), 2);
+    }
+
+    #[test]
+    fn discover_content_preserves_bundle_assets() {
+        let root = tempfile::tempdir().unwrap();
+        write_test_file(
+            root.path(),
+            "content/posts/example/index.md",
+            indoc! {r#"
+                +++
+                title = "Example"
+                +++
+                Body
+            "#},
+        );
+        write_test_file(
+            root.path(),
+            "content/posts/example/images/photo.png",
+            "image",
+        );
+
+        let set = discover_content(root.path()).unwrap();
+        assert_eq!(set.pages[0].frontmatter.title, "Example");
+        assert_eq!(
+            set.pages[0].assets,
+            [root.path().join("content/posts/example/images/photo.png")],
+        );
     }
 
     #[test]
@@ -225,6 +258,25 @@ mod tests {
 
         let set = discover_content(root.path()).unwrap();
         assert_eq!(set.pages.len(), 1);
+    }
+
+    #[test]
+    fn discover_content_invalid_utf8_returns_error() {
+        let root = tempfile::tempdir().unwrap();
+        let content_dir = root.path().join("content");
+        std::fs::create_dir(&content_dir).unwrap();
+        let path = content_dir.join("broken.md");
+        std::fs::write(&path, b"+++\n\xff").unwrap();
+
+        let error = discover_content(root.path()).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            format!("failed to read {}", path.display())
+        );
+        assert_eq!(
+            error.downcast_ref::<std::io::Error>().unwrap().kind(),
+            std::io::ErrorKind::InvalidData,
+        );
     }
 
     #[test]
