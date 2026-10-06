@@ -55,11 +55,12 @@ walkdir = { workspace = true }
 webp = { workspace = true }
 
 [dev-dependencies]
+criterion = { workspace = true }
 reqwest = { workspace = true }
 tempfile = "3"
 tokio-stream = { workspace = true }
 tokio-tungstenite = { workspace = true }
 
 [[bench]]
-name = "shortcodes"
+name = "performance"
 harness = false

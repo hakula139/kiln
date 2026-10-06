@@ -36,6 +36,7 @@ A static site generator written in Rust for [hakula.xyz](https://hakula.xyz), wi
 | [Content Guide](docs/content.md) | Page bundles, co-located assets, per-page CSS       |
 | [Syntax Guide](docs/syntax.md)   | Markdown extensions, frontmatter fields, directives |
 | [Theming](docs/themes.md)        | Themes, templates, navigation menus, and i18n       |
+| [Benchmarks](docs/benchmarks.md) | Performance measurements and baseline comparisons   |
 
 ## Installation
 
