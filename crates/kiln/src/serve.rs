@@ -402,9 +402,14 @@ async fn serve_request(
 ) -> Response {
     let path = request.uri().path();
     if !path.ends_with('/') && has_index_html(output_dir, path).await {
+        let location = match request.uri().query() {
+            Some(query) => format!("{path}/?{query}"),
+            None => format!("{path}/"),
+        };
+
         return Response::builder()
             .status(StatusCode::MOVED_PERMANENTLY)
-            .header(header::LOCATION, format!("{path}/"))
+            .header(header::LOCATION, location)
             .body(Body::empty())
             .expect("redirect response is valid");
     }
@@ -939,18 +944,6 @@ mod tests {
 
     // ── build_router ──
 
-    /// Creates a router backed by a directory of static files.
-    fn setup_router(dir: &Path) -> Router {
-        let (tx, _) = broadcast::channel::<()>(16);
-        build_router(dir, tx)
-    }
-
-    /// Collects a response body into a string.
-    async fn collect_body(response: Response) -> String {
-        let bytes = response.into_body().collect().await.unwrap().to_bytes();
-        String::from_utf8(bytes.to_vec()).unwrap()
-    }
-
     #[tokio::test]
     async fn build_router_redirects_directory_without_trailing_slash() {
         let dir = tempfile::tempdir().unwrap();
@@ -959,13 +952,28 @@ mod tests {
         fs::write(sub.join("index.html"), "<html><body>About</body></html>").unwrap();
 
         let app = setup_router(dir.path());
-        let response = app
-            .oneshot(Request::get("/about").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
+        for (uri, location) in [
+            ("/about", "/about/"),
+            ("/about?x=1&x=2", "/about/?x=1&x=2"),
+            (
+                "/about?next=%2F%3F%3D&text=a+b",
+                "/about/?next=%2F%3F%3D&text=a+b",
+            ),
+            ("/about?", "/about/?"),
+        ] {
+            let response = app
+                .clone()
+                .oneshot(Request::get(uri).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
 
-        assert_eq!(response.status(), StatusCode::MOVED_PERMANENTLY);
-        assert_eq!(response.headers().get(header::LOCATION).unwrap(), "/about/");
+            assert_eq!(response.status(), StatusCode::MOVED_PERMANENTLY, "{uri}");
+            assert_eq!(
+                response.headers().get(header::LOCATION).unwrap(),
+                location,
+                "{uri}"
+            );
+        }
     }
 
     #[tokio::test]
@@ -1155,6 +1163,18 @@ mod tests {
         })
         .await
         .expect("client disconnect should release its reload subscription");
+    }
+
+    /// Creates a router backed by a directory of static files.
+    fn setup_router(dir: &Path) -> Router {
+        let (tx, _) = broadcast::channel::<()>(16);
+        build_router(dir, tx)
+    }
+
+    /// Collects a response body into a string.
+    async fn collect_body(response: Response) -> String {
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        String::from_utf8(bytes.to_vec()).unwrap()
     }
 
     // ── inject_script ──
