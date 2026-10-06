@@ -3,12 +3,9 @@ description: Install Nix and configure the Cachix substituter
 
 inputs:
   cachix_name:
-    description: Cachix cache name (skips Cachix if not provided)
+    description: Cachix cache name (defaults to CACHIX_NAME, skips Cachix if neither is set)
   cachix_auth_token:
-    description: Cachix authentication token
-  cachix_skip_push:
-    description: Skip pushing to Cachix
-    default: 'false'
+    description: Upload token for main and maintainer runs (omit for read-only cache access)
 
 runs:
   using: composite
@@ -24,9 +21,9 @@ runs:
           sandbox-fallback = false
 
     - name: Setup Cachix
-      if: ${{ inputs.cachix_name }}
+      if: ${{ inputs.cachix_name || env.CACHIX_NAME }}
       uses: cachix/cachix-action@v17
       with:
-        name: ${{ inputs.cachix_name }}
+        name: ${{ inputs.cachix_name || env.CACHIX_NAME }}
         authToken: ${{ inputs.cachix_auth_token }}
-        skipPush: ${{ inputs.cachix_skip_push }}
+        skipPush: ${{ !inputs.cachix_auth_token || !(github.ref == 'refs/heads/main' || github.actor == 'hakula139') }}
