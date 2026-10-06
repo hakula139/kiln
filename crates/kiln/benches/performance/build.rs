@@ -1,3 +1,4 @@
+use std::fmt::Write;
 use std::fs;
 use std::process::{Command, Stdio};
 use std::time::Duration;
@@ -7,6 +8,7 @@ use walkdir::WalkDir;
 
 use super::fixtures::{PROSE, Site};
 
+/// Includes CLI startup and prior-output cleanup, with fixture validation outside sampling.
 pub(super) fn benchmarks(criterion: &mut Criterion) {
     let mut group = criterion.benchmark_group("build");
     group.sample_size(10);
@@ -40,12 +42,10 @@ pub(super) fn benchmarks(criterion: &mut Criterion) {
 }
 
 fn add_params(site: &Site, count: usize) {
-    use std::fmt::Write;
-
     let path = site.root().join("config.toml");
     let mut config = fs::read_to_string(&path).unwrap();
     for index in 0..count {
-        _ = writeln!(config, "setting_{index} = \"Example value {index}\"");
+        _ = writeln!(config, r#"setting_{index} = "Example value {index}""#);
     }
     fs::write(path, config).unwrap();
 }

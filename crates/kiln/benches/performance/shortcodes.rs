@@ -5,6 +5,7 @@ use criterion::{BenchmarkId, Criterion, Throughput};
 use kiln::render::emoji::replace_emojis;
 use kiln::render::icon::replace_icons;
 
+/// Measures replacement and output allocation for ordinary text and unmatched colon prefixes.
 pub(super) fn benchmarks(criterion: &mut Criterion) {
     let mut group = criterion.benchmark_group("shortcodes");
     for (name, prefix) in [

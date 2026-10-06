@@ -8,7 +8,7 @@ cargo bench --bench performance -- 'render/'
 cargo test --bench performance
 ```
 
-The test command executes each workload once and checks its fixture output without measuring performance. CI runs this smoke check. Timings run locally because host load makes CI speed thresholds unreliable.
+The test command runs the registered cases without collecting performance samples and checks fixture output. CI runs this smoke check. Timings run locally because host load makes CI speed thresholds unreliable.
 
 | Group            | Workload                                                                              | Included in the measurement                                                                       |
 | ---------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |

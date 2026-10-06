@@ -13,6 +13,7 @@ use kiln::template::TemplateEngine;
 
 use super::fixtures::{PROSE, Site};
 
+/// Measures rendering with preloaded dependencies and separately times fresh syntax loading.
 pub(super) fn benchmarks(criterion: &mut Criterion) {
     let site = Site::new(0, PROSE);
     let config = Config::load(site.root()).unwrap();

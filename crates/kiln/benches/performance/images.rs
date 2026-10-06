@@ -7,6 +7,7 @@ use image::{Rgb, RgbImage};
 
 use kiln::render::lqip::{ImageConfig, ImageResolver};
 
+/// Measures fresh and primed image caches, excluding image creation and resolver construction.
 pub(super) fn benchmarks(criterion: &mut Criterion) {
     let directory = tempfile::tempdir().unwrap();
     let image = RgbImage::from_fn(1024, 768, |x, y| {

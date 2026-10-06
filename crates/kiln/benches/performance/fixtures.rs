@@ -13,11 +13,13 @@ pub(super) const PROSE: &str = indoc! {r"
     - Second item
 "};
 
+/// Owns a temporary site whose files are removed when dropped.
 pub(super) struct Site {
     directory: TempDir,
 }
 
 impl Site {
+    /// Creates `pages` section posts using `body`, with search and Git timestamps disabled.
     pub(super) fn new(pages: usize, body: &str) -> Self {
         let directory = tempfile::tempdir().unwrap();
         let root = directory.path();
@@ -64,6 +66,7 @@ impl Site {
         Self { directory }
     }
 
+    /// Returns the site root accepted by the build CLI and configuration loader.
     pub(super) fn root(&self) -> &Path {
         self.directory.path()
     }
