@@ -26,7 +26,7 @@ use self::listing::{
 };
 use self::url::page_url;
 use crate::config::Config;
-use crate::content::discovery::discover_content;
+use crate::content::discovery::{ContentSet, discover_content};
 use crate::content::page::{Page, PageKind};
 use crate::css::Stylesheets;
 use crate::i18n::I18n;
@@ -169,13 +169,7 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
         &taxonomy_set,
     )?;
 
-    build_content_pages(
-        &ctx,
-        &content.pages,
-        &content.content_dir,
-        &output_dir,
-        &sections,
-    )?;
+    build_content_pages(&ctx, &content, &output_dir, &sections)?;
 
     let posts_title = section::load_index_title(&content.content_dir.join("posts"))
         .unwrap_or_else(|| ctx.i18n.t("all_posts").into_owned());
@@ -265,19 +259,25 @@ fn format_build_summary(
 
 fn build_content_pages(
     ctx: &BuildContext,
-    pages: &[Page],
-    content_dir: &Path,
+    content: &ContentSet,
     output_dir: &Path,
     sections: &[Section],
 ) -> Result<()> {
-    if pages.is_empty() {
+    if content.pages.is_empty() {
         return Ok(());
     }
 
     let options = RenderOptions::from_params(&ctx.config.params)?;
 
-    for page in pages {
-        build_page(ctx, &options, page, content_dir, output_dir, sections)?;
+    for page in &content.pages {
+        build_page(
+            ctx,
+            &options,
+            page,
+            &content.content_dir,
+            output_dir,
+            sections,
+        )?;
     }
 
     Ok(())
