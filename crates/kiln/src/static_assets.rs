@@ -10,7 +10,7 @@ use crate::output::copy_file;
 
 const FINGERPRINT_LENGTH: usize = 12;
 
-/// Content-addressed URLs for files in a merged static output tree.
+/// Content-addressed URLs for static assets and canonical page stylesheets.
 #[derive(Clone, Debug, Default)]
 pub struct StaticAssetManifest {
     urls: BTreeMap<String, String>,
@@ -127,7 +127,8 @@ fn validate_url(url: &str) -> std::result::Result<(), minijinja::Error> {
     Ok(())
 }
 
-fn path_to_url(path: &Path) -> Option<String> {
+/// Converts a relative asset path to a root-relative URL, or `None` for invalid components.
+pub(crate) fn path_to_url(path: &Path) -> Option<String> {
     let components = path
         .components()
         .map(|component| match component {

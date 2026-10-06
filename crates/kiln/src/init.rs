@@ -15,13 +15,16 @@ pub fn init_theme(root: &Path, name: &str) -> Result<()> {
         bail!("theme directory already exists: {}", theme_dir.display());
     }
 
+    let css_dir = theme_dir.join("assets/css/_src");
     let templates_dir = theme_dir.join("templates");
     let i18n_dir = theme_dir.join("i18n");
+    fs::create_dir_all(&css_dir).context("failed to create CSS source directory")?;
     fs::create_dir_all(&templates_dir).context("failed to create templates directory")?;
     fs::create_dir_all(theme_dir.join("static")).context("failed to create static directory")?;
     fs::create_dir_all(&i18n_dir).context("failed to create i18n directory")?;
 
     fs::write(theme_dir.join("theme.toml"), "").context("failed to write theme.toml")?;
+    fs::write(css_dir.join("style.css"), "").context("failed to write CSS entry")?;
     fs::write(
         templates_dir.join("base.html"),
         indoc! {r#"
@@ -30,6 +33,7 @@ pub fn init_theme(root: &Path, name: &str) -> Result<()> {
               <head>
                 <meta charset="utf-8">
                 {% block title %}<title>{{ config.title }}</title>{% endblock %}
+                <link rel="stylesheet" href="{{ asset_url('/assets/css/site.css') | safe }}">
                 {% block head %}{% endblock %}
               </head>
               <body>
@@ -46,6 +50,10 @@ pub fn init_theme(root: &Path, name: &str) -> Result<()> {
             {% extends "base.html" %}
 
             {% block title %}<title>{{ title }} - {{ config.title }}</title>{% endblock %}
+
+            {% block head %}
+            {% if page_css %}<link rel="stylesheet" href="{{ page_css | safe }}">{% endif %}
+            {% endblock %}
 
             {% block body %}
             <article>
@@ -162,7 +170,7 @@ mod tests {
 
         let err = init_theme(root.path(), "my-theme").unwrap_err().to_string();
         assert!(
-            err.contains("failed to create templates directory"),
+            err.contains("failed to create CSS source directory"),
             "should report directory creation failure, got: {err}"
         );
     }

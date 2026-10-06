@@ -13,7 +13,7 @@ These are the steps where mistakes are most likely:
 
 - **Cliff invocation.** Use `git cliff --unreleased --tag vX.Y.Z --prepend CHANGELOG.md`. Never `--output` — that resurfaces pre-release tags as phantom sections.
 - **Compare-link footer.** `--prepend` does not regenerate the footer block. After cliff runs, add the new line by hand above the previous-version line.
-- **Diff sanity check.** Only `Cargo.toml`, `Cargo.lock`, and `CHANGELOG.md` should change. Anything else means an unrelated edit slipped in.
+- **Diff sanity check.** Confirm the diff contains only the version and changelog updates described in `RELEASING.md`.
 - **Tag confirmation.** Pushing the tag triggers the GitHub release workflow and is hard to undo cleanly. Confirm with the user before `git push origin vX.Y.Z`, even if they already approved the version bump.
 
 After the tag is pushed, watch the workflow with `gh run watch` and report the resulting release URL.

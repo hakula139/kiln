@@ -8,6 +8,7 @@ clippy
 cmark
 deserialises
 direnv
+dontNpmBuild
 dtolnay
 ellipsed
 envrc

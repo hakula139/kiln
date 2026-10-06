@@ -45,6 +45,9 @@ pub struct Config {
     #[serde(default)]
     pub search: Search,
 
+    #[serde(default)]
+    pub css: Css,
+
     /// Named menu groups (e.g., `[[menu.main]]`, `[[menu.social]]`). Themes choose which groups
     /// to render and where. kiln has no opinion about group names.
     #[serde(default)]
@@ -62,6 +65,9 @@ pub struct Config {
 struct ThemeMeta {
     #[serde(default)]
     min_kiln_version: Option<String>,
+
+    #[serde(default)]
+    css: Css,
 
     #[serde(default)]
     params: toml::Table,
@@ -94,6 +100,22 @@ pub struct Search {
     pub binary: Option<String>,
 }
 
+/// CSS compilation settings inherited from the active theme.
+#[derive(Debug, Default, Deserialize, Serialize)]
+pub struct Css {
+    /// Unset selects plain CSS after theme defaults have been applied.
+    pub processor: Option<CssProcessor>,
+}
+
+/// Compiler used for site and page-owned stylesheets.
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CssProcessor {
+    #[default]
+    Plain,
+    Tailwind,
+}
+
 /// A single navigation menu entry.
 #[derive(Debug, Deserialize, Serialize)]
 pub struct MenuItem {
@@ -124,6 +146,7 @@ impl Default for Config {
             theme: None,
             params: toml::Table::new(),
             search: Search::default(),
+            css: Css::default(),
             menu: BTreeMap::new(),
             author: Author::default(),
             image: ImageConfig::default(),
@@ -134,8 +157,8 @@ impl Default for Config {
 impl Config {
     /// Loads site configuration from `config.toml` in the given root.
     ///
-    /// Missing `config.toml` uses defaults. A configured theme supplies default params through
-    /// its required `theme.toml`.
+    /// Missing `config.toml` uses defaults. A configured theme supplies default params and CSS
+    /// settings through its required `theme.toml`.
     ///
     /// # Errors
     ///
@@ -156,6 +179,7 @@ impl Config {
             theme.check_min_kiln_version(theme_name)?;
             tracing::info!("using theme: {theme_name}");
             merge_params(&mut config.params, &theme.params)?;
+            config.css.processor = config.css.processor.or(theme.css.processor);
         }
 
         for items in config.menu.values_mut() {
@@ -508,6 +532,17 @@ mod tests {
         assert!(config.menu["social"][0].external);
     }
 
+    #[test]
+    fn deserialize_unknown_css_processor_returns_error() {
+        assert!(
+            toml::from_str::<Config>(indoc! {r#"
+                [css]
+                processor = "unknown"
+            "#})
+            .is_err()
+        );
+    }
+
     // ── load ──
 
     #[test]
@@ -728,6 +763,37 @@ mod tests {
             links.get("twitter"),
             Some(&toml::Value::String("https://twitter.com/default".into())),
             "should fill in missing deeply nested param from theme"
+        );
+    }
+
+    #[test]
+    fn load_css_inherits_theme_and_accepts_explicit_site_override() {
+        let root = tempfile::tempdir().unwrap();
+        setup_theme(
+            root.path(),
+            indoc! {r#"
+                [css]
+                processor = "tailwind"
+            "#},
+        );
+        fs::write(root.path().join("config.toml"), r#"theme = "test-theme""#).unwrap();
+        assert_eq!(
+            Config::load(root.path()).unwrap().css.processor,
+            Some(CssProcessor::Tailwind)
+        );
+
+        fs::write(
+            root.path().join("config.toml"),
+            indoc! {r#"
+                theme = "test-theme"
+                [css]
+                processor = "plain"
+            "#},
+        )
+        .unwrap();
+        assert_eq!(
+            Config::load(root.path()).unwrap().css.processor,
+            Some(CssProcessor::Plain)
         );
     }
 

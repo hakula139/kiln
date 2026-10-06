@@ -40,7 +40,7 @@ pub fn discover_content(root: &Path) -> Result<ContentSet> {
     for entry in WalkDir::new(&content_dir)
         .follow_links(false)
         .into_iter()
-        .filter_entry(|e| !is_excluded(e))
+        .filter_entry(|entry| entry.depth() == 0 || !super::is_private(entry.file_name()))
     {
         let entry =
             entry.with_context(|| format!("failed to read entry in {}", content_dir.display()))?;
@@ -82,14 +82,6 @@ pub fn discover_content(root: &Path) -> Result<ContentSet> {
 fn has_frontmatter(content: &str) -> bool {
     let content = content.strip_prefix('\u{feff}').unwrap_or(content);
     content.starts_with("+++")
-}
-
-/// Returns `true` for entries whose file name starts with `_`.
-fn is_excluded(entry: &walkdir::DirEntry) -> bool {
-    entry
-        .file_name()
-        .to_str()
-        .is_some_and(|name| name.starts_with('_'))
 }
 
 #[cfg(test)]

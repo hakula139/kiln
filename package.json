@@ -3,15 +3,20 @@
   "scripts": {
     "format": "pnpm format:prettier && pnpm format:markdown && pnpm format:toml",
     "format:markdown": "dprint check",
-    "format:prettier": "prettier --check \"**/*.json\"",
+    "format:prettier": "prettier --check \"**/*.{json,mjs}\"",
     "format:toml": "taplo format --check",
-    "lint": "markdownlint-cli2 \"*.md\" \"docs/**/*.md\"",
+    "lint": "pnpm lint:md && pnpm lint:js",
+    "lint:js": "eslint .",
+    "lint:md": "markdownlint-cli2 \"*.md\" \"docs/**/*.md\"",
     "spellcheck": "cspell --no-progress \"**/*\""
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@taplo/cli": "^0.7.0",
     "cspell": "^10.3.4",
     "dprint": "^0.57.4",
+    "eslint": "^10.11.0",
+    "globals": "^17.12.0",
     "markdownlint-cli2": "^0.23.3",
     "prettier": "^3.9.9"
   }

@@ -2,9 +2,9 @@
 # kiln Development Flake
 # ==============================================================================
 #
-# Provides Rust toolchain, libdav1d (AVIF decode), pagefind, git-cliff, and
-# pre-commit hooks. Also exposes `packages.{kiln,pagefind}` for downstream
-# consumers (site repos importing this flake).
+# Provides Rust toolchain, libdav1d (AVIF decode), Pagefind, Tailwind CSS, git-cliff,
+# and pre-commit hooks. Exposes `packages.{kiln,kiln-tailwindcss,pagefind}` for site
+# repos importing this flake.
 #
 #   nix develop        # interactive shell for hacking on kiln
 #   nix flake check    # run pre-commit hooks
@@ -22,19 +22,15 @@
   # Inputs
   # ----------------------------------------------------------------------------
   inputs = {
-    # Nixpkgs - NixOS 26.05 stable release
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
 
-    # Per-system flake outputs
     flake-utils.url = "github:numtide/flake-utils";
 
-    # Rust toolchains
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    # Pre-commit hooks
     git-hooks-nix.url = "github:cachix/git-hooks.nix";
   };
 
@@ -64,7 +60,6 @@
 
         pkgs = import nixpkgs { inherit system overlays; };
 
-        # Stable Rust with clippy / coverage / editor extensions.
         rustToolchain = pkgs.rust-bin.stable.latest.default.override {
           extensions = [
             "llvm-tools-preview"
@@ -73,22 +68,32 @@
           ];
         };
 
-        # Source-build kiln with the rust-overlay toolchain — nixpkgs's stable
-        # rustc lags behind some workspace deps' minimum required version.
+        cssCompiler = pkgs.callPackage ./packages/css { };
+
+        # Some workspace dependencies require a newer Rust version than nixpkgs provides.
         kiln = pkgs.callPackage ./packages/kiln {
+          inherit cssCompiler;
+          cargoLock.lockFile = ./Cargo.lock;
+          version = (pkgs.lib.importTOML ./Cargo.toml).workspace.package.version;
           rustPlatform = pkgs.makeRustPlatform {
             cargo = rustToolchain;
             rustc = rustToolchain;
+          };
+          src = pkgs.lib.fileset.toSource {
+            root = ./.;
+            fileset = pkgs.lib.fileset.unions [
+              ./Cargo.toml
+              ./Cargo.lock
+              ./crates
+            ];
           };
         };
 
         # ----------------------------------------------------------------------
         # Node Hook Wrapper
         # ----------------------------------------------------------------------
-        # `pnpm exec` needs node + pnpm on PATH and the project's
-        # `node_modules` materialised. The Nix sandbox lacks the latter, so
-        # `nix flake check` skips these hooks; the equivalent checks run in
-        # CI via direct `pnpm` scripts.
+        # Node hooks need the local dependencies, which the Nix sandbox excludes.
+        # CI runs the equivalent checks directly with pnpm.
         nodeHook =
           name: cmd:
           let
@@ -127,7 +132,7 @@
             statix.enable = true;
             deadnix.enable = true;
 
-            # Clippy stays in CI — the bare hook process can't see libdav1d.
+            # Clippy needs libdav1d from the dev shell and runs in CI.
             rustfmt = {
               enable = true;
               packageOverrides = {
@@ -140,7 +145,7 @@
               enable = true;
               name = "prettier";
               entry = nodeHook "prettier-write" "prettier --write --ignore-unknown";
-              files = "\\.json$";
+              files = "\\.(json|mjs)$";
               pass_filenames = true;
             };
 
@@ -157,6 +162,14 @@
               name = "taplo";
               entry = nodeHook "taplo-write" "taplo format";
               files = "\\.toml$";
+              pass_filenames = true;
+            };
+
+            eslint = {
+              enable = true;
+              name = "eslint";
+              entry = nodeHook "eslint" "eslint --fix";
+              files = "\\.(js|mjs)$";
               pass_filenames = true;
             };
 
@@ -186,18 +199,17 @@
 
           packages =
             preCommitCheck.enabledPackages
-            ++ [ rustToolchain ]
+            ++ [
+              rustToolchain
+              cssCompiler
+            ]
             ++ (with pkgs; [
-              # Native build deps (AVIF decode via dav1d-sys).
               dav1d
-              nasm
-              pkg-config
-              # Release tooling.
               git-cliff
-              # Search backend invoked by `kiln build` when `[search] enabled`.
-              pagefind
-              # Node tooling for pre-commit hooks.
+              nasm
               nodejs_24
+              pagefind
+              pkg-config
               pnpm
             ])
             # libiconv resolves onig_sys / libwebp-sys link errors on darwin.
@@ -220,12 +232,12 @@
         # ----------------------------------------------------------------------
         # Packages (`nix build '.#<name>'`)
         # ----------------------------------------------------------------------
-        # `kiln` is source-built; `pagefind` is a vendored prebuilt. Site repos
-        # importing this flake get both via `kiln.packages.${system}.<name>`.
+        # Site repos consume these via `kiln.packages.${system}.<name>`.
         packages = {
           default = kiln;
           inherit kiln;
           inherit (pkgs) pagefind;
+          kiln-tailwindcss = cssCompiler;
         };
 
         # ----------------------------------------------------------------------

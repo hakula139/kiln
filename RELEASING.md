@@ -34,11 +34,18 @@ Any prose that should land in the changelog must come from a commit message: use
    git push origin vX.Y.Z
    ```
 
-7. The workflow creates the GitHub Release, extracting the matching `[X.Y.Z]` section from `CHANGELOG.md` as release notes, and uploads:
+7. The workflow creates the GitHub Release from the matching changelog section and uploads archives for the [supported targets](#targets), with SHA-256 checksums.
 
-   - `kiln-x86_64-unknown-linux-gnu.tar.gz` (+ `.sha256`)
-   - `kiln-aarch64-apple-darwin.tar.gz` (+ `.sha256`)
-   - `kiln-x86_64-pc-windows-msvc.zip` (+ `.sha256`)
+Archives include the Tailwind processor under `css/`. User setup is documented in [Processor Setup](docs/assets.md#processor-setup).
+
+## Tailwind processor dependencies
+
+The private package in `packages/css/` is versioned independently of kiln. When its dependency lockfile changes, refresh `npmDepsHash` in `packages/css/default.nix` and verify the package:
+
+```bash
+nix run --inputs-from . nixpkgs#prefetch-npm-deps -- packages/css/package-lock.json
+nix build .#kiln-tailwindcss
+```
 
 ## Installing `git-cliff`
 

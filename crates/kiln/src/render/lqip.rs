@@ -51,19 +51,19 @@ pub struct ImageMeta {
 /// Resolves `<img src>` strings to on-disk paths, reads dimensions, and (per [`ImageConfig`])
 /// encodes a small WebP LQIP. Memoised per canonical path for the build's lifetime.
 pub struct ImageResolver {
-    static_root: PathBuf,
+    output_root: PathBuf,
     config: ImageConfig,
     cache: Mutex<HashMap<PathBuf, Option<Arc<ImageMeta>>>>,
 }
 
 impl ImageResolver {
-    /// Constructs a resolver. `static_root` anchors `src` strings that begin with `/` (i.e.,
+    /// Constructs a resolver. `output_root` anchors `src` strings that begin with `/` (i.e.,
     /// site-absolute references). Page-bundle-relative paths resolve through the `base_dir`
     /// argument to [`Self::resolve`].
     #[must_use]
-    pub fn new(static_root: &Path, config: ImageConfig) -> Self {
+    pub fn new(output_root: &Path, config: ImageConfig) -> Self {
         Self {
-            static_root: static_root.to_path_buf(),
+            output_root: output_root.to_path_buf(),
             config,
             cache: Mutex::new(HashMap::new()),
         }
@@ -105,7 +105,7 @@ impl ImageResolver {
         }
 
         if let Some(rest) = src.strip_prefix('/') {
-            Some(self.static_root.join(rest))
+            Some(self.output_root.join(rest))
         } else {
             base_dir.map(|d| d.join(src))
         }
@@ -387,12 +387,12 @@ mod tests {
     // ── ImageResolver::resolve_path ──
 
     #[test]
-    fn resolve_path_absolute_uses_static_root() {
+    fn resolve_path_absolute_uses_output_root() {
         let dir = tempdir().unwrap();
-        let static_root = dir.path().join("static");
-        let r = ImageResolver::new(&static_root, ImageConfig::default());
+        let output_root = dir.path().join("public");
+        let r = ImageResolver::new(&output_root, ImageConfig::default());
         let resolved = r.resolve_path("/images/cover.webp", None).unwrap();
-        assert_eq!(resolved, static_root.join("images/cover.webp"));
+        assert_eq!(resolved, output_root.join("images/cover.webp"));
     }
 
     #[test]

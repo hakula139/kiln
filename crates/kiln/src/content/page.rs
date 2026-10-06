@@ -4,9 +4,9 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use itertools::Itertools;
 use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
-use walkdir::WalkDir;
 
 use super::frontmatter::{self, Frontmatter};
+use crate::output::walk_directory;
 
 /// Distinguishes blog posts (under `content/posts/`) from standalone pages.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,7 +28,7 @@ pub struct Page {
     pub slug: String,
     pub summary: Option<String>,
     pub source_path: PathBuf,
-    /// Co-located non-markdown files for page bundles (e.g., images). Empty for standalone pages.
+    /// Public co-located non-markdown files for page bundles. Empty for standalone pages.
     pub assets: Vec<PathBuf>,
 }
 
@@ -162,16 +162,16 @@ pub fn derive_page_kind(source_path: &Path, content_dir: &Path) -> PageKind {
 }
 
 /// Returns `true` if the file is a page bundle entry point (`index.md`).
-fn is_page_bundle(path: &Path) -> bool {
+pub(crate) fn is_page_bundle(path: &Path) -> bool {
     path.file_stem().and_then(|s| s.to_str()) == Some("index")
 }
 
-/// Recursively discovers co-located non-markdown files in a page bundle directory.
+/// Recursively discovers non-markdown bundle assets, excluding underscore-prefixed entries.
 ///
 /// Returns sorted absolute paths for deterministic output.
 fn discover_assets(dir: &Path) -> Result<Vec<PathBuf>> {
     let mut assets = Vec::new();
-    for entry in WalkDir::new(dir).follow_links(true) {
+    for entry in walk_directory(dir, &|name| !super::is_private(name)) {
         let entry = entry.with_context(|| format!("failed to read entry in {}", dir.display()))?;
         if !entry.file_type().is_file() {
             continue;
@@ -458,6 +458,28 @@ mod tests {
             err.contains("failed to read"),
             "should report entry read failure, got: {err}"
         );
+    }
+
+    #[test]
+    fn from_file_excludes_private_invalid_asset_symlinks() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("index.md"),
+            indoc! {r#"
+                +++
+                title = "Example"
+                +++
+            "#},
+        )
+        .unwrap();
+        let public = dir.path().join("visible.txt");
+        fs::write(&public, "published").unwrap();
+        std::os::unix::fs::symlink(dir.path().join("missing"), dir.path().join("_broken")).unwrap();
+        std::os::unix::fs::symlink(dir.path(), dir.path().join("_cycle")).unwrap();
+
+        let page = Page::from_file(&dir.path().join("index.md")).unwrap();
+
+        assert_eq!(page.assets, vec![public]);
     }
 
     #[test]

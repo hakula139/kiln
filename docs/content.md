@@ -7,19 +7,19 @@ kiln discovers content in the `content/` directory. This document describes how 
 ```text
 content/
 ├── about-me/
-│   └── index.md                          # Standalone page → /about-me/
+│   └── index.md             # Standalone page → /about-me/
 ├── posts/
-│   ├── _index.md                         # Optional: sets title for /posts/ listing
+│   ├── _index.md            # Optional: sets title for /posts/ listing
 │   ├── note/
-│   │   ├── _index.md                     # Optional: sets title for /posts/note/ listing
+│   │   ├── _index.md        # Optional: sets title for /posts/note/ listing
 │   │   └── my-post/
-│   │       ├── index.md                  # Post (sectioned) → /posts/note/my-post/
-│   │       ├── cover.webp                # Co-located asset
+│   │       ├── index.md     # Post (sectioned) → /posts/note/my-post/
+│   │       ├── cover.webp   # Co-located asset
 │   │       └── assets/
 │   │           └── diagram.svg
-│   └── standalone-post.md                # Post (orphan, no bundle) → /posts/standalone-post/
+│   └── standalone-post.md   # Post (orphan, no bundle) → /posts/standalone-post/
 └── comments/
-    └── index.md                          # Standalone page → /comments/
+    └── index.md             # Standalone page → /comments/
 ```
 
 ### Page Kinds
@@ -55,7 +55,7 @@ Without `_index.md`, the section title is derived from the directory name (title
 Pages are excluded from the build when:
 
 - `draft = true` in frontmatter
-- The filename starts with `_`, which includes the `_index.md` listing metadata files
+- A file or enclosing directory name starts with `_`, which includes the `_index.md` listing metadata files
 - The file has no TOML frontmatter (`+++` delimiters)
 
 ## Page Bundles
@@ -64,15 +64,15 @@ A **page bundle** is a directory containing an `index.md` alongside related file
 
 ```text
 content/posts/note/my-post/
-├── index.md           # Page content
-├── cover.webp         # Image (co-located asset)
-├── style.css          # Per-page CSS (auto-detected)
-└── assets/
-    ├── diagram.svg    # Nested assets work too
-    └── data.csv       # Data files for directives
+├── assets/
+│   ├── css/_src/style.css   # Private page stylesheet source
+│   ├── data.csv            # Data files for directives
+│   └── diagram.svg         # Nested assets work too
+├── cover.webp              # Image (co-located asset)
+└── index.md                # Page content
 ```
 
-All non-markdown files in the bundle directory (at any depth) are copied to the output alongside the rendered HTML. They become accessible at the same relative path:
+Non-markdown files in the bundle directory (at any depth), excluding underscore-prefixed files and directories, are copied to the output alongside the rendered HTML. They become accessible at the same relative path:
 
 | Source                                          | Output URL                               |
 | ----------------------------------------------- | ---------------------------------------- |
@@ -102,24 +102,9 @@ This resolves to `/posts/note/my-post/cover.webp` in templates and listing pages
 
 ### Per-Page CSS
 
-A page bundle may include a `style.css` file at any depth. kiln auto-detects it and exposes its URL to templates as [`page_css`](themes.md#post-templates-posthtml), which themes such as IgnIt link from the page's `<head>` after the main stylesheet.
+Put the page stylesheet at `assets/css/_src/style.css` within its bundle. See [Assets and Stylesheets](assets.md#stylesheet-sources) for compilation, processor setup, asset URLs, and template loading.
 
-```text
-content/posts/avg/impressions/
-├── index.md
-└── style.css         ← auto-detected
-```
-
-or:
-
-```text
-content/posts/avg/impressions/
-├── index.md
-└── assets/
-    └── style.css     ← also detected (nested)
-```
-
-kiln copies the file as-is without running Tailwind or any other processor. To scope styles to the page, use the `:::` directive system to create a wrapper `<div>` with a class:
+The `:::` directive can provide a wrapper class for page-specific selectors:
 
 <!-- dprint-ignore -->
 ```markdown
@@ -130,7 +115,7 @@ kiln copies the file as-is without running Tailwind or any other processor. To s
 :::
 ```
 
-Then target that class in `style.css`:
+Then target that class in `assets/css/_src/style.css`:
 
 ```css
 .rating-table td:first-child {
@@ -139,32 +124,6 @@ Then target that class in `style.css`:
 }
 ```
 
-## Static Files
+## Shared Assets
 
-Files in the site's `static/` directory are copied to the output root. Use this for files shared across all pages:
-
-```text
-static/
-├── favicon.ico       → /favicon.ico
-├── images/
-│   └── logo.png      → /images/logo.png
-└── manifest.webmanifest
-```
-
-Static files differ from co-located assets: they are global (not tied to a page) and are referenced with absolute paths (e.g., `/images/logo.png`).
-
-### Private build inputs (`_` prefix)
-
-Files and directories whose names start with `_` are skipped when `static/` is copied to the output. This lets you keep build-time inputs alongside the shipped bundle without exposing them. Typical use: colocating Tailwind sources with the compiled stylesheet.
-
-```text
-static/
-├── css/
-│   ├── _src/           # not copied to output
-│   │   ├── main.css
-│   │   └── components/
-│   └── style.css       → /css/style.css
-└── ...
-```
-
-The same convention applies to theme `static/` directories.
+Use `assets/` for shared public files and `static/` for files requiring output-root paths. See [Public Files](assets.md#public-files) for publication rules and override precedence.

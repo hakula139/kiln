@@ -1,0 +1,17 @@
+{
+  "name": "@kiln/tailwindcss",
+  "version": "0.4.0-rc.4",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "kiln-tailwindcss": "compiler.mjs"
+  },
+  "files": [
+    "compiler.mjs"
+  ],
+  "dependencies": {
+    "@tailwindcss/node": "4.3.3",
+    "@tailwindcss/oxide": "4.3.3",
+    "@tailwindcss/typography": "0.5.20"
+  }
+}
