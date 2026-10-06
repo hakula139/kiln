@@ -110,12 +110,22 @@ jobs:
         run: nix develop -c pnpm spellcheck
 
   nix-build:
-    name: Nix Build (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
+    name: Nix Build (${{ matrix.config.runner }})
+    runs-on: ${{ matrix.config.runner }}
+    strategy: &nix-platforms
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        config:
+          - runner: ubuntu-latest
+            cachix_pins:
+              kiln-main-x86_64-linux: .#kiln
+              pagefind-main-x86_64-linux: .#pagefind
+          - runner: macos-latest
+            cachix_pins:
+              kiln-main-aarch64-darwin: .#kiln
+              pagefind-main-aarch64-darwin: .#pagefind
+    env:
+      CACHIX_PINS: ${{ toJSON(matrix.config.cachix_pins) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -127,32 +137,37 @@ jobs:
           cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
           cachix_skip_push: ${{ !(github.ref == 'refs/heads/main' || github.actor == 'hakula139') }}
 
-      - name: Build kiln
-        run: nix build .#kiln --print-build-logs
+      - name: Build packages
+        run: |
+          set -euo pipefail
+          jq -r '.[]' <<< "$CACHIX_PINS" |
+            while read -r package; do
+              nix build "$package" --no-link --print-build-logs
+            done
 
-      - name: Push main kiln build
+      - name: Push main builds
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
         run: |
-          store_path=$(nix path-info .#kiln)
-          cachix push "$CACHIX_NAME" "$store_path"
-
-      - name: Build pagefind
-        run: nix build .#pagefind --print-build-logs
+          set -euo pipefail
+          jq -r '.[]' <<< "$CACHIX_PINS" |
+            while read -r package; do
+              store_path=$(nix path-info "$package")
+              cachix push "$CACHIX_NAME" "$store_path"
+            done
 
   pin-main:
-    name: Pin main kiln build (${{ matrix.os }})
+    name: Pin main builds (${{ matrix.config.runner }})
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [flake-check, nix-build, node-check, rust-check]
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.config.runner }}
+    strategy: *nix-platforms
     concurrency:
-      group: kiln-main-pin-${{ matrix.os }}
+      group: kiln-main-pin-${{ matrix.config.runner }}
       queue: max
+    env:
+      CACHIX_PINS: ${{ toJSON(matrix.config.cachix_pins) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -163,20 +178,27 @@ jobs:
           cachix_name: ${{ env.CACHIX_NAME }}
           cachix_skip_push: 'true'
 
-      - name: Restore kiln build from cache
-        run: nix build .#kiln --max-jobs 0 --print-build-logs
+      - name: Restore builds from cache
+        run: |
+          set -euo pipefail
+          jq -r '.[]' <<< "$CACHIX_PINS" |
+            while read -r package; do
+              nix build "$package" --no-link --max-jobs 0 --print-build-logs
+            done
 
-      - name: Pin current main build
+      - name: Pin current main builds
         env:
           CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
         run: |
           set -euo pipefail
-          store_path=$(nix path-info .#kiln)
-          system=$(nix eval --impure --raw --expr builtins.currentSystem)
-          main_sha=$(git ls-remote origin refs/heads/main | cut -f1)
-          test -n "$main_sha"
-          if [ "$GITHUB_SHA" != "$main_sha" ]; then
-            echo "Skipping pin for an older main commit."
-            exit 0
-          fi
-          cachix pin "$CACHIX_NAME" "kiln-main-$system" "$store_path" --keep-revisions 2
+          jq -r 'to_entries[] | [.key, .value] | @tsv' <<< "$CACHIX_PINS" |
+            while IFS=$'\t' read -r pin_name package; do
+              store_path=$(nix path-info "$package")
+              main_sha=$(git ls-remote origin refs/heads/main | cut -f1)
+              test -n "$main_sha"
+              if [ "$GITHUB_SHA" != "$main_sha" ]; then
+                echo "Skipping pins for an older main commit."
+                exit 0
+              fi
+              cachix pin "$CACHIX_NAME" "$pin_name" "$store_path" --keep-revisions 2
+            done
