@@ -135,7 +135,8 @@ fn highlight_all(syntax_set: &SyntaxSet, syntax: &SyntaxReference, code: &str) -
 
     for line in LinesWithEndings::from(code) {
         if let Err(e) = generator.parse_html_for_line_which_includes_newline(line) {
-            warn!(lang = syntax.name, error = %e, "syntax highlighting failed for line");
+            warn!(lang = syntax.name, error = %e, "syntax highlighting failed, falling back to plain text");
+            return escape(code);
         }
     }
 
@@ -330,9 +331,12 @@ fn capitalize_first(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::sync::LazyLock;
 
     use indoc::{formatdoc, indoc};
+    use syntect::parsing::syntax_definition::{Context, MatchOperation, MatchPattern, Pattern};
+    use syntect::parsing::{Scope, SyntaxDefinition, SyntaxSetBuilder};
 
     use super::*;
 
@@ -660,6 +664,95 @@ mod tests {
                     .collect::<Vec<_>>(),
                 "{code:?}"
             );
+        }
+    }
+
+    #[test]
+    fn highlight_code_preserves_source_when_syntax_dependency_is_missing() {
+        // Syntect's non-exhaustive context-reference variants require deserialization.
+        let missing_scope = serde_yaml::from_str(indoc! {"
+            !ByScope
+            scope: source.missing
+            sub_context: null
+            with_escape: false
+        "})
+        .unwrap();
+        let mut main = Context::new(true);
+        main.patterns.push(Pattern::Match(MatchPattern::new(
+            false,
+            "<missing&>".into(),
+            Vec::new(),
+            None,
+            MatchOperation::Push(vec![missing_scope]),
+            None,
+        )));
+        // Hand-built definitions need the startup context normally added by syntect's YAML loader.
+        let mut start = Context::new(false);
+        start.meta_content_scope = vec![Scope::new("source.example").unwrap()];
+        start.patterns.push(Pattern::Include(
+            serde_yaml::from_str("!Named main").unwrap(),
+        ));
+        let mut builder = SyntaxSetBuilder::new();
+        builder.add(SyntaxDefinition {
+            name: "Example".into(),
+            file_extensions: vec!["example".into()],
+            scope: Scope::new("source.example").unwrap(),
+            first_line_match: None,
+            hidden: false,
+            variables: HashMap::new(),
+            contexts: HashMap::from([("main".into(), main), ("__start".into(), start)]),
+        });
+        let syntax_set = builder.build();
+        let code = indoc! {"
+            before
+            <missing&>
+            after
+        "};
+        let crlf = code.replace('\n', "\r\n");
+
+        for highlighted in [false, true] {
+            let spec = CodeBlockSpec {
+                lang: Some("example".into()),
+                highlight: if highlighted {
+                    std::iter::once(2..=2).collect()
+                } else {
+                    Vec::new()
+                },
+                ..CodeBlockSpec::default()
+            };
+            for code in [code, code.trim_end(), &crlf] {
+                let html = highlight_code(&syntax_set, code, &spec);
+                let fragment = scraper::Html::parse_fragment(&html);
+                let selector = scraper::Selector::parse(".code code").unwrap();
+                let rendered_code = fragment.select(&selector).next().unwrap();
+
+                assert_eq!(
+                    rendered_code.text().collect::<String>(),
+                    code.replace("\r\n", "\n")
+                );
+                if highlighted {
+                    let selector = scraper::Selector::parse(".line").unwrap();
+                    let scope = scraper::Selector::parse(".source.example").unwrap();
+                    let rows: Vec<_> = rendered_code
+                        .select(&selector)
+                        .map(|row| {
+                            (
+                                row.text().collect::<String>(),
+                                row.value().classes().any(|class| class == "hl"),
+                                row.select(&scope).next().is_some(),
+                            )
+                        })
+                        .collect();
+                    assert_eq!(
+                        rows,
+                        vec![
+                            ("before".to_owned(), false, true),
+                            ("<missing&>".to_owned(), true, false),
+                            ("after".to_owned(), false, true),
+                        ]
+                    );
+                }
+            }
         }
     }
 
