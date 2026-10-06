@@ -4,6 +4,40 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0-rc.4] - 2026-10-06
+
+### Breaking changes
+
+- _(css)_ Compile shared and page-owned styles during site builds (#95)
+
+### Added
+
+- _(build)_ Report total build time and generated page counts (#88)
+- _(output)_ Materialize symlinked source assets (#98)
+- _(bench)_ Add reusable performance workloads (#105)
+
+### Fixed
+
+- _(convert)_ Handle admonitions without positional arguments (#89)
+- _(taxonomy)_ Deduplicate repeated page tags (#90)
+- _(template)_ Surface optional template loading errors (#92)
+- _(render)_ Balance highlighted code line spans (#93)
+- _(content)_ Propagate discovery read errors (#94)
+- _(taxonomy)_ Reject tags with empty slugs (#97)
+- _(serve)_ Watch site translation files (#99)
+- _(serve)_ Preserve queries in directory redirects (#100)
+- _(build)_ Normalize site URL joining (#96)
+- _(attrs)_ Detect closing braces outside quoted values (#102)
+
+### Changed
+
+- _(render)_ Avoid repeated shortcode suffix searches (#103)
+- _(build)_ Reuse render options across content pages (#106)
+
+### Dependencies
+
+- _(deps)_ Refresh project dependencies (#107)
+
 ## [0.4.0-rc.3] - 2026-10-03
 
 ### Breaking changes
@@ -145,6 +179,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - _(deps)_ Bump rand from 0.9.2 to 0.9.4 (#29)
 
+[0.4.0-rc.4]: https://github.com/hakula139/kiln/compare/v0.4.0-rc.3..v0.4.0-rc.4
 [0.4.0-rc.3]: https://github.com/hakula139/kiln/compare/v0.4.0-rc.2..v0.4.0-rc.3
 [0.4.0-rc.2]: https://github.com/hakula139/kiln/compare/v0.4.0-rc.1..v0.4.0-rc.2
 [0.4.0-rc.1]: https://github.com/hakula139/kiln/compare/v0.3.0..v0.4.0-rc.1
