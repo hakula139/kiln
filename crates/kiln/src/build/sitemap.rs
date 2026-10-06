@@ -7,6 +7,7 @@ use crate::sitemap::{self, SitemapEntry};
 
 use super::BuildContext;
 use super::listing::ListedPage;
+use super::url::join_site_url;
 
 pub(crate) fn build_sitemap_and_robots(
     ctx: &BuildContext,
@@ -20,11 +21,10 @@ pub(crate) fn build_sitemap_and_robots(
 // ── Sitemap ──
 
 fn build_sitemap(ctx: &BuildContext, listed_pages: &[ListedPage], output_dir: &Path) -> Result<()> {
-    let base = ctx.config.base_url.trim_end_matches('/');
     let mut entries = Vec::with_capacity(listed_pages.len() + 1);
 
     entries.push(SitemapEntry {
-        loc: format!("{base}/"),
+        loc: join_site_url(&ctx.config.base_url, ""),
         lastmod: None,
     });
 

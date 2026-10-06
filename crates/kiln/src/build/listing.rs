@@ -13,7 +13,7 @@ use crate::taxonomy::TaxonomySet;
 use crate::template::vars::{BucketSummary, LinkedTerm, PageGroup, PageSummary};
 use crate::text::slugify;
 
-use super::url::{page_url, resolve_relative_url};
+use super::url::{join_site_url, page_url, resolve_relative_url};
 
 // ── Listing model ──
 
@@ -125,6 +125,50 @@ pub(crate) fn build_listing_artifacts(
         listed_posts,
         section_posts,
         tag_pages,
+    })
+}
+
+fn build_listed_page(
+    page: &Page,
+    content_dir: &Path,
+    base_url: &str,
+    time_zone: Option<&TimeZone>,
+    sections: &[Section],
+    image_resolver: &ImageResolver,
+) -> Result<ListedPage> {
+    let output_path = page.output_path(content_dir)?;
+    let url = page_url(base_url, &output_path);
+    let timestamp = page.frontmatter.date;
+    let weight = page.frontmatter.weight;
+    let section = page_section(page, base_url, sections);
+    let featured_image = resolve_featured_image(
+        page.frontmatter.featured_image.as_ref(),
+        &url,
+        image_resolver,
+        page.source_path.parent(),
+    );
+
+    Ok(ListedPage {
+        summary: PageSummary {
+            title: page.frontmatter.title.clone(),
+            url,
+            date: timestamp.map(|date| format_page_date(date, time_zone)),
+            pinned: weight.is_some(),
+            description: page
+                .frontmatter
+                .description
+                .clone()
+                .or_else(|| page.summary.clone())
+                .unwrap_or_default(),
+            featured_image,
+            tags: linked_tags(&page.frontmatter.tags, base_url),
+            section,
+        },
+        timestamp,
+        weight,
+        year: timestamp
+            .map(|date| page_year(date, time_zone))
+            .unwrap_or_default(),
     })
 }
 
@@ -251,50 +295,6 @@ pub(crate) fn build_listing_buckets(
     buckets
 }
 
-fn build_listed_page(
-    page: &Page,
-    content_dir: &Path,
-    base_url: &str,
-    time_zone: Option<&TimeZone>,
-    sections: &[Section],
-    image_resolver: &ImageResolver,
-) -> Result<ListedPage> {
-    let output_path = page.output_path(content_dir)?;
-    let url = page_url(base_url, &output_path);
-    let timestamp = page.frontmatter.date;
-    let weight = page.frontmatter.weight;
-    let section = page_section(page, base_url, sections);
-    let featured_image = resolve_featured_image(
-        page.frontmatter.featured_image.as_ref(),
-        &url,
-        image_resolver,
-        page.source_path.parent(),
-    );
-
-    Ok(ListedPage {
-        summary: PageSummary {
-            title: page.frontmatter.title.clone(),
-            url,
-            date: timestamp.map(|date| format_page_date(date, time_zone)),
-            pinned: weight.is_some(),
-            description: page
-                .frontmatter
-                .description
-                .clone()
-                .or_else(|| page.summary.clone())
-                .unwrap_or_default(),
-            featured_image,
-            tags: linked_tags(&page.frontmatter.tags, base_url),
-            section,
-        },
-        timestamp,
-        weight,
-        year: timestamp
-            .map(|date| page_year(date, time_zone))
-            .unwrap_or_default(),
-    })
-}
-
 // ── Sorting and grouping ──
 
 /// Sorts listed pages by date descending (newest first, undated last).
@@ -361,14 +361,13 @@ pub(crate) fn page_section(
     else {
         return None;
     };
-    let base_url = base_url.trim_end_matches('/');
     let title = sections
         .iter()
         .find(|s| &s.slug == slug)
         .map_or(slug.as_str(), |s| s.title.as_str());
     Some(LinkedTerm {
         name: title.to_owned(),
-        url: format!("{base_url}/posts/{slug}/"),
+        url: join_site_url(base_url, &format!("posts/{slug}/")),
     })
 }
 
@@ -397,11 +396,10 @@ pub(crate) fn resolve_featured_image(
 
 /// Converts raw tag strings into `LinkedTerm`s with pre-computed URLs.
 pub(crate) fn linked_tags(tags: &[String], base_url: &str) -> Vec<LinkedTerm> {
-    let base_url = base_url.trim_end_matches('/');
     tags.iter()
         .map(|tag| LinkedTerm {
             name: tag.clone(),
-            url: format!("{base_url}/tags/{}/", slugify(tag)),
+            url: join_site_url(base_url, &format!("tags/{}/", slugify(tag))),
         })
         .collect()
 }
@@ -929,19 +927,6 @@ mod tests {
     }
 
     #[test]
-    fn resolve_featured_image_none() {
-        assert!(
-            resolve_featured_image(
-                None,
-                "https://example.com/posts/foo/",
-                &EMPTY_RESOLVER,
-                None
-            )
-            .is_none()
-        );
-    }
-
-    #[test]
     fn resolve_featured_image_stamps_dimensions_and_lqip() {
         use std::fs;
 
@@ -970,6 +955,19 @@ mod tests {
                 .lqip_uri
                 .as_deref()
                 .is_some_and(|u| u.starts_with("data:image/webp;base64,"))
+        );
+    }
+
+    #[test]
+    fn resolve_featured_image_absent_returns_none() {
+        assert!(
+            resolve_featured_image(
+                None,
+                "https://example.com/posts/foo/",
+                &EMPTY_RESOLVER,
+                None
+            )
+            .is_none()
         );
     }
 
