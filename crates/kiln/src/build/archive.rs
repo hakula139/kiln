@@ -13,7 +13,7 @@ use super::paginate::{paginate_config, write_paginated};
 /// Skipped when `archive.html` is not present in the template set.
 pub(crate) fn build_archive_pages(
     ctx: &BuildContext,
-    buckets: &[ListingBucket],
+    buckets: &[ListingBucket<'_>],
     output_dir: &Path,
 ) -> Result<usize> {
     if !ctx.template_engine.has_template("archive.html") {
@@ -43,13 +43,13 @@ pub(crate) fn build_archive_pages(
 
 fn write_archive(
     ctx: &BuildContext,
-    bucket: &ListingBucket,
+    bucket: &ListingBucket<'_>,
     per_page: usize,
     output_dir: &Path,
 ) -> Result<usize> {
     let base_path = bucket.base_path();
     write_paginated(
-        &bucket.pages,
+        bucket.pages,
         per_page,
         &base_path,
         output_dir,

@@ -134,8 +134,8 @@ impl Default for Config {
 impl Config {
     /// Loads site configuration from `config.toml` in the given root.
     ///
-    /// When a theme is configured, also loads its `theme.toml` and merges default params. Falls
-    /// back to defaults if the file does not exist.
+    /// Missing `config.toml` uses defaults. A configured theme supplies default params through
+    /// its required `theme.toml`.
     ///
     /// # Errors
     ///
@@ -177,8 +177,8 @@ impl Config {
     ///
     /// # Errors
     ///
-    /// Returns an error if `output_dir` is empty, cannot be canonicalized, or would overlap with
-    /// the project root.
+    /// Returns an error if `output_dir` is empty, cannot be canonicalized, or resolves to the
+    /// project root or one of its ancestors.
     pub fn resolved_output_dir(&self, root: &Path) -> Result<PathBuf> {
         if self.output_dir.is_empty() {
             bail!("output_dir cannot be empty");

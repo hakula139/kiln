@@ -9,7 +9,7 @@ use kiln::build::{BuildOptions, build};
 #[path = "support/fixtures.rs"]
 mod fixtures;
 
-use fixtures::{PermissionGuard, copy_templates, template_dir, write_test_file};
+use fixtures::{PermissionGuard, copy_templates, write_test_file};
 
 // ── build ──
 
@@ -963,33 +963,15 @@ fn build_home_pagination() {
 
     build(root.path(), BuildOptions::default()).unwrap();
 
-    let output_dir = root.path().join("public");
-    let page1 = output_dir.join("index.html");
-    assert!(page1.exists(), "should generate home page 1");
-    let html1 = fs::read_to_string(&page1).unwrap();
-    assert!(
-        html1.contains("Page 1 / 2"),
-        "should show pagination, html:\n{html1}"
-    );
-
-    assert_eq!(
-        listing_links(&html1),
-        [
+    assert_paginated_listing(
+        &root.path().join("public"),
+        &[
             r#"<a href="https://example.com/posts/note/post-3/">Post 3</a>"#,
             r#"<a href="https://example.com/posts/note/post-2/">Post 2</a>"#,
-        ]
+        ],
+        &[r#"<a href="https://example.com/posts/note/post-1/">Post 1</a>"#],
+        None,
     );
-
-    let page2 = output_dir.join("page").join("2").join("index.html");
-    assert!(page2.exists(), "should generate home page 2");
-
-    let html2 = fs::read_to_string(&page2).unwrap();
-    assert_eq!(
-        listing_links(&html2),
-        [r#"<a href="https://example.com/posts/note/post-1/">Post 1</a>"#]
-    );
-    assert!(html2.contains("Page 2 / 2"));
-    assert!(!output_dir.join("page/3/index.html").exists());
 }
 
 #[test]
@@ -1175,41 +1157,15 @@ fn build_posts_index_pagination() {
 
     build(root.path(), BuildOptions::default()).unwrap();
 
-    let output_dir = root.path().join("public");
-    let page1 = output_dir.join("posts").join("index.html");
-    assert!(page1.exists(), "should generate /posts/ page 1");
-    let html1 = fs::read_to_string(&page1).unwrap();
-    assert!(
-        html1.contains("Page 1 / 2"),
-        "should show pagination on /posts/, html:\n{html1}"
-    );
-
-    assert_eq!(
-        listing_links(&html1),
-        [
+    assert_paginated_listing(
+        &root.path().join("public/posts"),
+        &[
             r#"<a href="https://example.com/posts/note/post-3/">Post 3</a>"#,
             r#"<a href="https://example.com/posts/note/post-2/">Post 2</a>"#,
-        ]
+        ],
+        &[r#"<a href="https://example.com/posts/note/post-1/">Post 1</a>"#],
+        Some(("/posts/page/2/", "/posts/")),
     );
-
-    let page2 = output_dir
-        .join("posts")
-        .join("page")
-        .join("2")
-        .join("index.html");
-    assert!(page2.exists(), "should generate /posts/ page 2");
-
-    let html2 = fs::read_to_string(&page2).unwrap();
-    assert_eq!(
-        listing_links(&html2),
-        [r#"<a href="https://example.com/posts/note/post-1/">Post 1</a>"#]
-    );
-    assert!(html2.contains("Page 2 / 2"));
-    assert!(!output_dir.join("posts/page/3/index.html").exists());
-    assert!(html1.contains(r#"<a href="/posts/page/2/">Next →</a>"#));
-    assert!(html2.contains(r#"<a href="/posts/">← Prev</a>"#));
-    assert!(!html1.contains("← Prev"));
-    assert!(!html2.contains("Next →"));
 }
 
 #[test]
@@ -1369,42 +1325,15 @@ fn build_section_pagination() {
 
     build(root.path(), BuildOptions::default()).unwrap();
 
-    let output_dir = root.path().join("public");
-    let page1 = output_dir.join("posts").join("note").join("index.html");
-    assert!(page1.exists(), "should generate section page 1");
-    let html1 = fs::read_to_string(&page1).unwrap();
-    assert!(
-        html1.contains("Page 1 / 2"),
-        "should show pagination, html:\n{html1}"
-    );
-
-    assert_eq!(
-        listing_links(&html1),
-        [
+    assert_paginated_listing(
+        &root.path().join("public/posts/note"),
+        &[
             r#"<a href="https://example.com/posts/note/post-3/">Post 3</a>"#,
             r#"<a href="https://example.com/posts/note/post-2/">Post 2</a>"#,
-        ]
+        ],
+        &[r#"<a href="https://example.com/posts/note/post-1/">Post 1</a>"#],
+        Some(("/posts/note/page/2/", "/posts/note/")),
     );
-
-    let page2 = output_dir
-        .join("posts")
-        .join("note")
-        .join("page")
-        .join("2")
-        .join("index.html");
-    assert!(page2.exists(), "should generate section page 2");
-
-    let html2 = fs::read_to_string(&page2).unwrap();
-    assert_eq!(
-        listing_links(&html2),
-        [r#"<a href="https://example.com/posts/note/post-1/">Post 1</a>"#]
-    );
-    assert!(html2.contains("Page 2 / 2"));
-    assert!(!output_dir.join("posts/note/page/3/index.html").exists());
-    assert!(html1.contains(r#"<a href="/posts/note/page/2/">Next →</a>"#));
-    assert!(html2.contains(r#"<a href="/posts/note/">← Prev</a>"#));
-    assert!(!html1.contains("← Prev"));
-    assert!(!html2.contains("Next →"));
 }
 
 #[test]
@@ -1625,49 +1554,18 @@ fn build_generates_paginated_tag_archive_pages() {
 
     build(root.path(), BuildOptions::default()).unwrap();
 
-    let output_dir = root.path().join("public");
-
-    let page1 = output_dir.join("tags").join("rust").join("index.html");
-    assert!(page1.exists(), "should generate page 1");
-    let html1 = fs::read_to_string(&page1).unwrap();
-    assert!(
-        html1.contains("Page 1 / 2"),
-        "should show pagination, html:\n{html1}"
-    );
-
-    assert_eq!(
-        listing_links(&html1),
-        [
+    assert_paginated_listing(
+        &root.path().join("public/tags/rust"),
+        &[
             r#"<a href="https://example.com/posts/post-3/">Post 3</a>"#,
             r#"<a href="https://example.com/posts/post-2/">Post 2</a>"#,
-        ]
-    );
-
-    let page2 = output_dir
-        .join("tags")
-        .join("rust")
-        .join("page")
-        .join("2")
-        .join("index.html");
-    assert!(page2.exists(), "should generate page 2");
-    let html2 = fs::read_to_string(&page2).unwrap();
-    assert!(
-        html2.contains("Page 2 / 2"),
-        "should show page 2, html:\n{html2}"
-    );
-
-    assert_eq!(
-        listing_links(&html2),
-        [
+        ],
+        &[
             r#"<a href="https://example.com/posts/post-1/">Post 1</a>"#,
             r#"<a href="https://example.com/about/">About</a>"#,
-        ]
+        ],
+        Some(("/tags/rust/page/2/", "/tags/rust/")),
     );
-    assert!(!output_dir.join("tags/rust/page/3/index.html").exists());
-    assert!(html1.contains(r#"<a href="/tags/rust/page/2/">Next →</a>"#));
-    assert!(html2.contains(r#"<a href="/tags/rust/">← Prev</a>"#));
-    assert!(!html1.contains("← Prev"));
-    assert!(!html2.contains("Next →"));
 }
 
 #[test]
@@ -2111,6 +2009,8 @@ fn build_asset_copy_permission_denied_returns_error() {
     );
 }
 
+// ── Helpers ──
+
 fn assert_broken_template_fails(template_name: &str) {
     let root = tempfile::tempdir().unwrap();
     setup_site_with_page(root.path());
@@ -2219,14 +2119,9 @@ fn write_page(root: &Path, rel_path: &str, content: &str) {
 }
 
 fn copy_templates_except(dest: &Path, exclude: &[&str]) {
-    let src = template_dir();
-    fs::create_dir_all(dest).unwrap();
-    for entry in fs::read_dir(&src).unwrap() {
-        let entry = entry.unwrap();
-        let name = entry.file_name();
-        if !name.to_str().is_some_and(|n| exclude.contains(&n)) {
-            fs::copy(entry.path(), dest.join(&name)).unwrap();
-        }
+    copy_templates(dest);
+    for name in exclude {
+        fs::remove_file(dest.join(name)).unwrap();
     }
 }
 
@@ -2236,6 +2131,28 @@ fn setup_theme(root: &Path, theme_name: &str) {
     fs::create_dir_all(&tmpl_dir).unwrap();
     copy_templates(&tmpl_dir);
     fs::write(theme_dir.join("theme.toml"), "").unwrap();
+}
+
+fn assert_paginated_listing(
+    output_dir: &Path,
+    page1_links: &[&str],
+    page2_links: &[&str],
+    navigation_urls: Option<(&str, &str)>,
+) {
+    let html1 = fs::read_to_string(output_dir.join("index.html")).unwrap();
+    let html2 = fs::read_to_string(output_dir.join("page/2/index.html")).unwrap();
+
+    assert_eq!(listing_links(&html1), page1_links);
+    assert_eq!(listing_links(&html2), page2_links);
+    assert!(html1.contains("Page 1 / 2"));
+    assert!(html2.contains("Page 2 / 2"));
+    assert!(!output_dir.join("page/3/index.html").exists());
+    if let Some((next_url, prev_url)) = navigation_urls {
+        assert!(html1.contains(&format!(r#"<a href="{next_url}">Next →</a>"#)));
+        assert!(html2.contains(&format!(r#"<a href="{prev_url}">← Prev</a>"#)));
+        assert!(!html1.contains("← Prev"));
+        assert!(!html2.contains("Next →"));
+    }
 }
 
 fn listing_links(html: &str) -> Vec<&str> {

@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ImageConfig {
-    /// Source raster size (square pixels) before WebP encoding.
+    /// Maximum placeholder width and height, in pixels.
     #[serde(default = "default_lqip_size")]
     pub lqip_size: u32,
 

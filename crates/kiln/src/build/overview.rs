@@ -14,7 +14,7 @@ use super::listing::{BucketKind, ListingBucket};
 /// Skipped when `overview.html` is not present in the template set.
 pub(crate) fn build_overview_pages(
     ctx: &BuildContext,
-    buckets: &[ListingBucket],
+    buckets: &[ListingBucket<'_>],
     output_dir: &Path,
 ) -> Result<usize> {
     if !ctx.template_engine.has_template("overview.html") {

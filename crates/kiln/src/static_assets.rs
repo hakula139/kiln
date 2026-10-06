@@ -95,6 +95,7 @@ impl StaticAssetManifest {
         })
     }
 
+    /// Returns relative paths of original fingerprinted assets and their generated copies.
     pub(crate) fn fingerprinted_paths(&self) -> &BTreeSet<PathBuf> {
         &self.fingerprinted_paths
     }

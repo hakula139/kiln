@@ -4,9 +4,7 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use walkdir::WalkDir;
 
-/// Removes and recreates the output directory for a clean build.
-///
-/// Does nothing if the directory does not exist.
+/// Creates an empty output directory, removing existing contents first.
 ///
 /// # Errors
 ///

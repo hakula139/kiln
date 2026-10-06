@@ -291,8 +291,7 @@ async fn watch_loop(
     }
 }
 
-/// Builds into a staging directory, then atomically swaps it into place.
-/// On failure, the live output is untouched.
+/// Builds into a staging directory, preserving live output if the build fails, then promotes it.
 fn safe_rebuild(root: &Path, base_url: &str) -> Result<()> {
     let config = Config::load(root).context("failed to load config")?;
     let output_dir = config
@@ -318,7 +317,6 @@ fn safe_rebuild(root: &Path, base_url: &str) -> Result<()> {
         return Err(e);
     }
 
-    // Quick swap: live → backup, staging → live, remove backup.
     if backup_dir.exists() {
         _ = fs::remove_dir_all(&backup_dir);
     }
@@ -763,7 +761,6 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         setup_site(root.path());
 
-        // Break the template so rebuild fails.
         fs::write(
             root.path().join("templates").join("post.html"),
             "{% invalid %}",
@@ -774,7 +771,7 @@ mod tests {
         let (reload_tx, mut reload_rx) = broadcast::channel::<()>(16);
 
         let root_path = root.path().to_owned();
-        tokio::spawn(watch_loop(
+        let handle = tokio::spawn(watch_loop(
             root_path,
             "http://localhost:0".to_owned(),
             event_rx,
@@ -783,11 +780,15 @@ mod tests {
 
         event_tx.send(()).unwrap();
 
-        // Allow time for debounce + rebuild attempt.
-        tokio::time::sleep(Duration::from_millis(500)).await;
+        drop(event_tx);
+        tokio::time::timeout(Duration::from_secs(5), handle)
+            .await
+            .expect("watch_loop should finish the failed rebuild within timeout")
+            .expect("watch_loop should exit without panicking");
 
-        assert!(
-            reload_rx.try_recv().is_err(),
+        assert_eq!(
+            reload_rx.try_recv(),
+            Err(broadcast::error::TryRecvError::Closed),
             "should not send reload on failed rebuild"
         );
     }

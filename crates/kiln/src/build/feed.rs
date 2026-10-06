@@ -13,7 +13,7 @@ use super::listing::{ListedPage, ListingBucket};
 pub(crate) fn build_feeds(
     ctx: &BuildContext,
     listed_posts: &[ListedPage],
-    buckets: &[ListingBucket],
+    buckets: &[ListingBucket<'_>],
     output_dir: &Path,
 ) -> Result<()> {
     let base = ctx.config.base_url.trim_end_matches('/');
@@ -42,7 +42,7 @@ pub(crate) fn build_feeds(
 fn write_bucket_feed(
     ctx: &BuildContext,
     base: &str,
-    bucket: &ListingBucket,
+    bucket: &ListingBucket<'_>,
     output_dir: &Path,
 ) -> Result<()> {
     let dir_slug = bucket.base_path().trim_start_matches('/').to_owned();
@@ -52,7 +52,7 @@ fn write_bucket_feed(
         feed_url: format!("{base}/{dir_slug}/index.xml"),
         description: ctx.config.description.clone(),
         language: ctx.config.language.clone(),
-        last_build_date: newest_date(&bucket.pages),
+        last_build_date: newest_date(bucket.pages),
     };
     let items: Vec<_> = bucket.pages.iter().map(|lp| lp.summary.clone()).collect();
     let xml = feed::generate_rss(&channel, &items, DEFAULT_FEED_LIMIT);

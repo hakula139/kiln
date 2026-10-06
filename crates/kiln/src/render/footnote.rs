@@ -24,6 +24,7 @@ struct Note {
 }
 
 impl Footnotes {
+    /// Collects reachable footnotes in reference order, removing definitions from body events.
     pub(super) fn collect(events: Vec<Spanned>) -> Self {
         let mut definitions = HashMap::new();
         let mut events = events.into_iter();
@@ -61,12 +62,14 @@ impl Footnotes {
         }
     }
 
+    /// Yields body events followed by reachable footnotes in reference order.
     pub(super) fn events(&self) -> impl Iterator<Item = &Spanned> {
         self.body
             .iter()
             .chain(self.notes.iter().flat_map(|note| &note.body))
     }
 
+    /// Allocates note and backlink IDs and replaces reference events before rendering.
     pub(super) fn allocate_ids(&mut self, ids: &mut PageIds, scope: usize) {
         let mut counts = vec![0; self.notes.len()];
         for (event, _) in self.events() {
@@ -107,6 +110,7 @@ impl Footnotes {
         }
     }
 
+    /// Renders the body and endnotes with backlinks after [`Self::allocate_ids`].
     pub(super) fn render(self, mut render: impl FnMut(Vec<Spanned>, u8) -> String) -> String {
         let mut html = render(self.body, 0);
         if self.notes.is_empty() {

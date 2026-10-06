@@ -404,6 +404,8 @@ mod tests {
         assert_eq!(stats.bytes_out, 0);
     }
 
+    // ── minify_static_assets ──
+
     #[test]
     fn minify_static_assets_skips_html() {
         let dir = tempfile::tempdir().unwrap();
@@ -421,6 +423,8 @@ mod tests {
         );
         assert!(fs::read(dir.path().join("style.css")).unwrap().len() < css.len());
     }
+
+    // ── minify_output_dir_excluding ──
 
     #[test]
     fn minify_output_dir_excluding_skips_selected_paths() {

@@ -6,6 +6,11 @@ use std::sync::LazyLock;
 use indoc::indoc;
 use tempfile::TempDir;
 
+#[path = "filesystem.rs"]
+mod filesystem;
+
+pub use filesystem::write_test_file;
+
 static BASE_HTML: &str = indoc! {r#"
     <!DOCTYPE html>
     <html lang="{{ config.language }}">
@@ -197,15 +202,6 @@ pub fn copy_templates(dest: &Path) {
         let entry = entry.unwrap();
         fs::copy(entry.path(), dest.join(entry.file_name())).unwrap();
     }
-}
-
-/// Writes a file at `dir.join(rel_path)`, creating parent directories as needed.
-pub fn write_test_file(dir: &Path, rel_path: &str, content: &str) {
-    let path = dir.join(rel_path);
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).unwrap();
-    }
-    fs::write(path, content).unwrap();
 }
 
 /// RAII guard that restores filesystem permissions on drop. Prevents `TempDir::drop` failures
