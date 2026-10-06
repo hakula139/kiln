@@ -122,14 +122,6 @@ mod tests {
     // ── parse_fence_info ──
 
     #[test]
-    fn parse_fence_info_empty() {
-        let spec = parse_fence_info("", Some(40));
-        assert!(spec.lang.is_none());
-        assert!(spec.title.is_none());
-        assert_eq!(spec.max_lines, Some(40));
-    }
-
-    #[test]
     fn parse_fence_info_lang_only() {
         let spec = parse_fence_info("rust", Some(40));
         assert_eq!(spec.lang.as_deref(), Some("rust"));
@@ -144,6 +136,29 @@ mod tests {
         let spec = parse_fence_info(r#"rust {title="src/main.rs"}"#, Some(40));
         assert_eq!(spec.lang.as_deref(), Some("rust"));
         assert_eq!(spec.title.as_deref(), Some("src/main.rs"));
+    }
+
+    #[test]
+    fn parse_fence_info_all_attrs() {
+        let spec = parse_fence_info(
+            r#"rust {#my-id .special title="main.rs" highlight="1,3-5" collapse}"#,
+            Some(40),
+        );
+        assert_eq!(spec.lang.as_deref(), Some("rust"));
+        assert_eq!(spec.id.as_deref(), Some("my-id"));
+        assert_eq!(spec.classes, vec!["special"]);
+        assert_eq!(spec.title.as_deref(), Some("main.rs"));
+        assert_eq!(spec.highlight, vec![1..=1, 3..=5]);
+        assert_eq!(spec.collapse, Some(true));
+        // Explicit collapse / expand always overrides the site default.
+        assert_eq!(spec.max_lines, None);
+    }
+
+    #[test]
+    fn parse_fence_info_id_and_class_propagate() {
+        let spec = parse_fence_info("js {#snippet .wide .dark}", None);
+        assert_eq!(spec.id.as_deref(), Some("snippet"));
+        assert_eq!(spec.classes, vec!["wide", "dark"]);
     }
 
     #[test]
@@ -184,22 +199,6 @@ mod tests {
     }
 
     #[test]
-    fn parse_fence_info_all_attrs() {
-        let spec = parse_fence_info(
-            r#"rust {#my-id .special title="main.rs" highlight="1,3-5" collapse}"#,
-            Some(40),
-        );
-        assert_eq!(spec.lang.as_deref(), Some("rust"));
-        assert_eq!(spec.id.as_deref(), Some("my-id"));
-        assert_eq!(spec.classes, vec!["special"]);
-        assert_eq!(spec.title.as_deref(), Some("main.rs"));
-        assert_eq!(spec.highlight, vec![1..=1, 3..=5]);
-        assert_eq!(spec.collapse, Some(true));
-        // Explicit collapse / expand always overrides the site default.
-        assert_eq!(spec.max_lines, None);
-    }
-
-    #[test]
     fn parse_fence_info_collapse_clears_max_lines() {
         let spec = parse_fence_info("rust {collapse}", Some(40));
         assert_eq!(spec.collapse, Some(true));
@@ -211,6 +210,15 @@ mod tests {
         let spec = parse_fence_info("rust {expand}", Some(40));
         assert_eq!(spec.collapse, Some(false));
         assert_eq!(spec.max_lines, None);
+    }
+
+    #[test]
+    fn parse_fence_info_collapse_keyword_inside_quoted_value_ignored() {
+        // Bare-word extraction must respect quoting so `collapse` inside the title does not leak.
+        let spec = parse_fence_info(r#"rust {title="please collapse this"}"#, Some(40));
+        assert_eq!(spec.title.as_deref(), Some("please collapse this"));
+        assert!(spec.collapse.is_none());
+        assert_eq!(spec.max_lines, Some(40));
     }
 
     #[test]
@@ -227,13 +235,6 @@ mod tests {
     }
 
     #[test]
-    fn parse_fence_info_id_and_class_propagate() {
-        let spec = parse_fence_info("js {#snippet .wide .dark}", None);
-        assert_eq!(spec.id.as_deref(), Some("snippet"));
-        assert_eq!(spec.classes, vec!["wide", "dark"]);
-    }
-
-    #[test]
     fn parse_fence_info_unknown_attrs_discarded() {
         let spec = parse_fence_info(r#"rust {title="T" unknown="val" foo=bar}"#, None);
         assert_eq!(spec.title.as_deref(), Some("T"));
@@ -242,11 +243,10 @@ mod tests {
     }
 
     #[test]
-    fn parse_fence_info_collapse_keyword_inside_quoted_value_ignored() {
-        // Bare-word extraction must respect quoting so `collapse` inside the title does not leak.
-        let spec = parse_fence_info(r#"rust {title="please collapse this"}"#, Some(40));
-        assert_eq!(spec.title.as_deref(), Some("please collapse this"));
-        assert!(spec.collapse.is_none());
+    fn parse_fence_info_empty() {
+        let spec = parse_fence_info("", Some(40));
+        assert!(spec.lang.is_none());
+        assert!(spec.title.is_none());
         assert_eq!(spec.max_lines, Some(40));
     }
 
