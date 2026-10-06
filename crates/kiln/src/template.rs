@@ -1261,16 +1261,6 @@ mod tests {
     }
 
     #[test]
-    fn t_returns_key_literal_for_missing_key() {
-        let engine = test_engine();
-        let result = engine
-            .env
-            .render_str(r#"{{ t("not_defined_anywhere") }}"#, ())
-            .unwrap();
-        assert_eq!(result, "not_defined_anywhere");
-    }
-
-    #[test]
     fn t_interpolates_keyword_arguments() {
         let dir = tempfile::tempdir().unwrap();
         test_fs::create_dir_all(dir.path().join("i18n")).unwrap();
@@ -1284,35 +1274,23 @@ mod tests {
 
         let templates = tempfile::tempdir().unwrap();
         let engine = TemplateEngine::new(Some(templates.path()), None, &i18n).unwrap();
-        let result = engine
-            .env
-            .render_str(r#"{{ t("greeting", name="Alex") }}"#, ())
-            .unwrap();
-        assert_eq!(result, "Hi Alex!");
+        for (template, expected) in [
+            (r#"{{ t("greeting", name="Alex") }}"#, "Hi Alex!"),
+            (r#"{{ t("greeting", name=none) }}"#, "Hi !"),
+        ] {
+            let result = engine.env.render_str(template, ()).unwrap();
+            assert_eq!(result, expected, "template: {template}");
+        }
     }
 
     #[test]
-    fn t_substitutes_empty_string_for_none_kwarg() {
-        // `minijinja::Value::to_string()` renders explicit `none` as the
-        // literal text `"none"`. `tpl_t` must special-case it so templates
-        // don't leak placeholder text when optional context is missing.
-        let dir = tempfile::tempdir().unwrap();
-        test_fs::create_dir_all(dir.path().join("i18n")).unwrap();
-        test_fs::write(
-            dir.path().join("i18n").join("en.toml"),
-            r#"greeting = "Hi {name}!""#,
-        )
-        .unwrap();
-        let i18n =
-            crate::i18n::I18n::load(Path::new("/nonexistent"), Some(dir.path()), "en").unwrap();
-
-        let templates = tempfile::tempdir().unwrap();
-        let engine = TemplateEngine::new(Some(templates.path()), None, &i18n).unwrap();
+    fn t_returns_key_literal_for_missing_key() {
+        let engine = test_engine();
         let result = engine
             .env
-            .render_str(r#"{{ t("greeting", name=none) }}"#, ())
+            .render_str(r#"{{ t("not_defined_anywhere") }}"#, ())
             .unwrap();
-        assert_eq!(result, "Hi !");
+        assert_eq!(result, "not_defined_anywhere");
     }
 
     // ── tpl_asset_url ──

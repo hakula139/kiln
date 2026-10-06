@@ -2009,26 +2009,7 @@ fn build_asset_copy_permission_denied_returns_error() {
     );
 }
 
-// ── Helpers ──
-
-fn assert_broken_template_fails(template_name: &str) {
-    let root = tempfile::tempdir().unwrap();
-    setup_site_with_page(root.path());
-
-    fs::write(
-        root.path().join("templates").join(template_name),
-        "{% invalid %}",
-    )
-    .unwrap();
-
-    let err = build(root.path(), BuildOptions::default())
-        .unwrap_err()
-        .to_string();
-    assert!(
-        err.contains("failed to render"),
-        "should report render failure for {template_name}, got: {err}"
-    );
-}
+// ── Site fixtures ──
 
 fn setup_site_with_page(root: &Path) {
     fs::write(root.join("config.toml"), "").unwrap();
@@ -2043,6 +2024,14 @@ fn setup_site_with_page(root: &Path) {
             Body
         "#},
     );
+}
+
+fn setup_theme(root: &Path, theme_name: &str) {
+    let theme_dir = root.join("themes").join(theme_name);
+    let tmpl_dir = theme_dir.join("templates");
+    fs::create_dir_all(&tmpl_dir).unwrap();
+    copy_templates(&tmpl_dir);
+    fs::write(theme_dir.join("theme.toml"), "").unwrap();
 }
 
 fn write_paginated_posts(root: &Path, post_dir: &str, tag: Option<&str>) {
@@ -2125,13 +2114,7 @@ fn copy_templates_except(dest: &Path, exclude: &[&str]) {
     }
 }
 
-fn setup_theme(root: &Path, theme_name: &str) {
-    let theme_dir = root.join("themes").join(theme_name);
-    let tmpl_dir = theme_dir.join("templates");
-    fs::create_dir_all(&tmpl_dir).unwrap();
-    copy_templates(&tmpl_dir);
-    fs::write(theme_dir.join("theme.toml"), "").unwrap();
-}
+// ── Listing assertions ──
 
 fn assert_paginated_listing(
     output_dir: &Path,
@@ -2164,4 +2147,25 @@ fn listing_links(html: &str) -> Vec<&str> {
             &item[start..end]
         })
         .collect()
+}
+
+// ── Error assertions ──
+
+fn assert_broken_template_fails(template_name: &str) {
+    let root = tempfile::tempdir().unwrap();
+    setup_site_with_page(root.path());
+
+    fs::write(
+        root.path().join("templates").join(template_name),
+        "{% invalid %}",
+    )
+    .unwrap();
+
+    let err = build(root.path(), BuildOptions::default())
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("failed to render"),
+        "should report render failure for {template_name}, got: {err}"
+    );
 }

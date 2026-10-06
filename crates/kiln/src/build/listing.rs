@@ -112,6 +112,50 @@ pub(crate) fn build_listing_artifacts(
     })
 }
 
+fn build_listed_page(
+    page: &Page,
+    content_dir: &Path,
+    base_url: &str,
+    time_zone: Option<&TimeZone>,
+    sections: &[Section],
+    image_resolver: &ImageResolver,
+) -> Result<ListedPage> {
+    let output_path = page.output_path(content_dir)?;
+    let url = page_url(base_url, &output_path);
+    let timestamp = page.frontmatter.date;
+    let weight = page.frontmatter.weight;
+    let section = page_section(page, base_url, sections);
+    let featured_image = resolve_featured_image(
+        page.frontmatter.featured_image.as_ref(),
+        &url,
+        image_resolver,
+        page.source_path.parent(),
+    );
+
+    Ok(ListedPage {
+        summary: PageSummary {
+            title: page.frontmatter.title.clone(),
+            url,
+            date: timestamp.map(|date| format_page_date(date, time_zone)),
+            pinned: weight.is_some(),
+            description: page
+                .frontmatter
+                .description
+                .clone()
+                .or_else(|| page.summary.clone())
+                .unwrap_or_default(),
+            featured_image,
+            tags: linked_tags(&page.frontmatter.tags, base_url),
+            section,
+        },
+        timestamp,
+        weight,
+        year: timestamp
+            .map(|date| page_year(date, time_zone))
+            .unwrap_or_default(),
+    })
+}
+
 fn select_pages(listed_pages: &[ListedPage], indices: &[usize]) -> Vec<ListedPage> {
     let mut pages: Vec<_> = indices
         .iter()
@@ -239,50 +283,6 @@ pub(crate) fn build_listing_buckets<'a>(
     }
 
     buckets
-}
-
-fn build_listed_page(
-    page: &Page,
-    content_dir: &Path,
-    base_url: &str,
-    time_zone: Option<&TimeZone>,
-    sections: &[Section],
-    image_resolver: &ImageResolver,
-) -> Result<ListedPage> {
-    let output_path = page.output_path(content_dir)?;
-    let url = page_url(base_url, &output_path);
-    let timestamp = page.frontmatter.date;
-    let weight = page.frontmatter.weight;
-    let section = page_section(page, base_url, sections);
-    let featured_image = resolve_featured_image(
-        page.frontmatter.featured_image.as_ref(),
-        &url,
-        image_resolver,
-        page.source_path.parent(),
-    );
-
-    Ok(ListedPage {
-        summary: PageSummary {
-            title: page.frontmatter.title.clone(),
-            url,
-            date: timestamp.map(|date| format_page_date(date, time_zone)),
-            pinned: weight.is_some(),
-            description: page
-                .frontmatter
-                .description
-                .clone()
-                .or_else(|| page.summary.clone())
-                .unwrap_or_default(),
-            featured_image,
-            tags: linked_tags(&page.frontmatter.tags, base_url),
-            section,
-        },
-        timestamp,
-        weight,
-        year: timestamp
-            .map(|date| page_year(date, time_zone))
-            .unwrap_or_default(),
-    })
 }
 
 // ── Sorting and grouping ──
@@ -425,31 +425,6 @@ mod tests {
     // Stub resolver for tests with no local images: `resolve` returns `None`.
     static EMPTY_RESOLVER: LazyLock<ImageResolver> =
         LazyLock::new(|| ImageResolver::new(Path::new(""), ImageConfig::default()));
-
-    fn make_listed_page(title: &str, date: Option<&str>) -> ListedPage {
-        make_listed_page_with(title, date, None)
-    }
-
-    fn make_listed_page_with(title: &str, date: Option<&str>, weight: Option<i64>) -> ListedPage {
-        let timestamp = date.map(|date| date.parse().unwrap());
-        ListedPage {
-            summary: PageSummary {
-                title: title.into(),
-                url: format!("/{title}/"),
-                date: timestamp.map(|date: Timestamp| date.to_string()),
-                pinned: weight.is_some(),
-                description: String::new(),
-                featured_image: None,
-                tags: Vec::new(),
-                section: None,
-            },
-            timestamp,
-            weight,
-            year: timestamp
-                .map(|date| page_year(date, None))
-                .unwrap_or_default(),
-        }
-    }
 
     // ── build_listing_artifacts ──
 
@@ -676,17 +651,6 @@ mod tests {
     }
 
     #[test]
-    fn sort_by_date_desc_undated_last() {
-        let mut pages = vec![
-            make_listed_page("undated", None),
-            make_listed_page("dated", Some("2026-01-01T00:00:00Z")),
-        ];
-        sort_by_date_desc(&mut pages);
-        assert_eq!(pages[0].summary.title, "dated");
-        assert_eq!(pages[1].summary.title, "undated");
-    }
-
-    #[test]
     fn sort_by_date_desc_uses_timestamp_not_rendered_string() {
         let mut pages = vec![
             make_listed_page("older", Some("2024-11-03T01:30:00-04:00")),
@@ -708,18 +672,18 @@ mod tests {
         assert_eq!(pages[1].summary.title, "pinned-old");
     }
 
-    // ── sort_pinned_first ──
-
     #[test]
-    fn sort_pinned_first_falls_back_to_date_desc_when_no_pins() {
+    fn sort_by_date_desc_undated_last() {
         let mut pages = vec![
-            make_listed_page("old", Some("2025-01-01T00:00:00Z")),
-            make_listed_page("new", Some("2026-06-15T00:00:00Z")),
+            make_listed_page("undated", None),
+            make_listed_page("dated", Some("2026-01-01T00:00:00Z")),
         ];
-        sort_pinned_first(&mut pages);
-        assert_eq!(pages[0].summary.title, "new");
-        assert_eq!(pages[1].summary.title, "old");
+        sort_by_date_desc(&mut pages);
+        assert_eq!(pages[0].summary.title, "dated");
+        assert_eq!(pages[1].summary.title, "undated");
     }
+
+    // ── sort_pinned_first ──
 
     #[test]
     fn sort_pinned_first_pinned_come_before_unpinned() {
@@ -793,6 +757,17 @@ mod tests {
         assert!(pages[0].summary.pinned);
     }
 
+    #[test]
+    fn sort_pinned_first_falls_back_to_date_desc_when_no_pins() {
+        let mut pages = vec![
+            make_listed_page("old", Some("2025-01-01T00:00:00Z")),
+            make_listed_page("new", Some("2026-06-15T00:00:00Z")),
+        ];
+        sort_pinned_first(&mut pages);
+        assert_eq!(pages[0].summary.title, "new");
+        assert_eq!(pages[1].summary.title, "old");
+    }
+
     // ── group_by_year ──
 
     #[test]
@@ -808,18 +783,6 @@ mod tests {
         assert_eq!(groups[0].pages.len(), 2);
         assert_eq!(groups[1].key, "2025");
         assert_eq!(groups[1].pages.len(), 1);
-    }
-
-    #[test]
-    fn group_by_year_undated_pages() {
-        let pages = vec![
-            make_listed_page("a", Some("2026-01-01T00:00:00Z")),
-            make_listed_page("b", None),
-        ];
-        let groups = group_by_year(pages);
-        assert_eq!(groups.len(), 2);
-        assert_eq!(groups[0].key, "2026");
-        assert_eq!(groups[1].key, "", "undated pages should have empty key");
     }
 
     #[test]
@@ -840,19 +803,49 @@ mod tests {
     }
 
     #[test]
+    fn group_by_year_undated_pages() {
+        let pages = vec![
+            make_listed_page("a", Some("2026-01-01T00:00:00Z")),
+            make_listed_page("b", None),
+        ];
+        let groups = group_by_year(pages);
+        assert_eq!(groups.len(), 2);
+        assert_eq!(groups[0].key, "2026");
+        assert_eq!(groups[1].key, "", "undated pages should have empty key");
+    }
+
+    #[test]
     fn group_by_year_empty() {
         let groups = group_by_year(Vec::new());
         assert!(groups.is_empty());
     }
 
-    // ── resolve_featured_image ──
+    fn make_listed_page(title: &str, date: Option<&str>) -> ListedPage {
+        make_listed_page_with(title, date, None)
+    }
 
-    fn make_featured_image(src: &str) -> FeaturedImage {
-        FeaturedImage {
-            src: src.into(),
-            ..Default::default()
+    fn make_listed_page_with(title: &str, date: Option<&str>, weight: Option<i64>) -> ListedPage {
+        let timestamp = date.map(|date| date.parse().unwrap());
+        ListedPage {
+            summary: PageSummary {
+                title: title.into(),
+                url: format!("/{title}/"),
+                date: timestamp.map(|date: Timestamp| date.to_string()),
+                pinned: weight.is_some(),
+                description: String::new(),
+                featured_image: None,
+                tags: Vec::new(),
+                section: None,
+            },
+            timestamp,
+            weight,
+            year: timestamp
+                .map(|date| page_year(date, None))
+                .unwrap_or_default(),
         }
     }
+
+    // ── resolve_featured_image ──
 
     #[test]
     fn resolve_featured_image_absolute_path() {
@@ -921,19 +914,6 @@ mod tests {
     }
 
     #[test]
-    fn resolve_featured_image_none() {
-        assert!(
-            resolve_featured_image(
-                None,
-                "https://example.com/posts/foo/",
-                &EMPTY_RESOLVER,
-                None
-            )
-            .is_none()
-        );
-    }
-
-    #[test]
     fn resolve_featured_image_stamps_dimensions_and_lqip() {
         use std::fs;
 
@@ -963,6 +943,26 @@ mod tests {
                 .as_deref()
                 .is_some_and(|u| u.starts_with("data:image/webp;base64,"))
         );
+    }
+
+    #[test]
+    fn resolve_featured_image_none() {
+        assert!(
+            resolve_featured_image(
+                None,
+                "https://example.com/posts/foo/",
+                &EMPTY_RESOLVER,
+                None
+            )
+            .is_none()
+        );
+    }
+
+    fn make_featured_image(src: &str) -> FeaturedImage {
+        FeaturedImage {
+            src: src.into(),
+            ..Default::default()
+        }
     }
 
     // ── page_year ──

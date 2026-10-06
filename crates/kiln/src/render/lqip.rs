@@ -208,50 +208,7 @@ mod tests {
         );
     }
 
-    // ── ImageResolver::resolve_path ──
-
-    #[test]
-    fn resolve_path_remote_returns_none() {
-        let dir = tempdir().unwrap();
-        let r = ImageResolver::new(dir.path(), ImageConfig::default());
-        assert!(r.resolve_path("https://example.com/x.png", None).is_none());
-        assert!(r.resolve_path("//example.com/x.png", None).is_none());
-        assert!(r.resolve_path("data:image/png;base64,xx", None).is_none());
-        assert!(r.resolve_path("", None).is_none());
-    }
-
-    #[test]
-    fn resolve_path_absolute_uses_static_root() {
-        let dir = tempdir().unwrap();
-        let static_root = dir.path().join("static");
-        let r = ImageResolver::new(&static_root, ImageConfig::default());
-        let resolved = r.resolve_path("/images/cover.webp", None).unwrap();
-        assert_eq!(resolved, static_root.join("images/cover.webp"));
-    }
-
-    #[test]
-    fn resolve_path_relative_uses_base_dir() {
-        let dir = tempdir().unwrap();
-        let bundle = dir.path().join("bundle");
-        let r = ImageResolver::new(dir.path(), ImageConfig::default());
-        let resolved = r.resolve_path("assets/foo.png", Some(&bundle)).unwrap();
-        assert_eq!(resolved, bundle.join("assets/foo.png"));
-    }
-
-    #[test]
-    fn resolve_path_relative_without_base_returns_none() {
-        let dir = tempdir().unwrap();
-        let r = ImageResolver::new(dir.path(), ImageConfig::default());
-        assert!(r.resolve_path("foo.png", None).is_none());
-    }
-
     // ── ImageResolver::resolve ──
-
-    fn write_tiny_png(path: &Path) {
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        let img = image::RgbaImage::from_pixel(2, 2, image::Rgba([200, 100, 50, 255]));
-        img.save_with_format(path, image::ImageFormat::Png).unwrap();
-    }
 
     #[test]
     fn resolve_reads_dimensions() {
@@ -351,31 +308,18 @@ mod tests {
     }
 
     #[test]
-    fn resolve_missing_file_returns_none() {
+    fn resolve_caches_repeated_lookups() {
         let dir = tempdir().unwrap();
         let bundle = dir.path().join("bundle");
-        fs::create_dir_all(&bundle).unwrap();
+        write_tiny_png(&bundle.join("img.png"));
 
         let r = ImageResolver::new(dir.path(), ImageConfig::default());
-        assert!(r.resolve("missing.png", Some(&bundle)).is_none());
-    }
-
-    #[test]
-    fn resolve_remote_returns_none() {
-        let dir = tempdir().unwrap();
-        let r = ImageResolver::new(dir.path(), ImageConfig::default());
-        assert!(r.resolve("https://example.com/x.png", None).is_none());
-    }
-
-    #[test]
-    fn resolve_unrecognized_format_returns_none() {
-        let dir = tempdir().unwrap();
-        let bundle = dir.path().join("bundle");
-        fs::create_dir_all(&bundle).unwrap();
-        fs::write(bundle.join("garbage.png"), b"not actually an image").unwrap();
-
-        let r = ImageResolver::new(dir.path(), ImageConfig::default());
-        assert!(r.resolve("garbage.png", Some(&bundle)).is_none());
+        let first = r.resolve("img.png", Some(&bundle)).unwrap();
+        let second = r.resolve("img.png", Some(&bundle)).unwrap();
+        assert!(
+            Arc::ptr_eq(&first, &second),
+            "second lookup should hit the cache"
+        );
     }
 
     #[test]
@@ -407,17 +351,73 @@ mod tests {
     }
 
     #[test]
-    fn resolve_caches_repeated_lookups() {
+    fn resolve_missing_file_returns_none() {
         let dir = tempdir().unwrap();
         let bundle = dir.path().join("bundle");
-        write_tiny_png(&bundle.join("img.png"));
+        fs::create_dir_all(&bundle).unwrap();
 
         let r = ImageResolver::new(dir.path(), ImageConfig::default());
-        let first = r.resolve("img.png", Some(&bundle)).unwrap();
-        let second = r.resolve("img.png", Some(&bundle)).unwrap();
-        assert!(
-            Arc::ptr_eq(&first, &second),
-            "second lookup should hit the cache"
-        );
+        assert!(r.resolve("missing.png", Some(&bundle)).is_none());
+    }
+
+    #[test]
+    fn resolve_remote_returns_none() {
+        let dir = tempdir().unwrap();
+        let r = ImageResolver::new(dir.path(), ImageConfig::default());
+        assert!(r.resolve("https://example.com/x.png", None).is_none());
+    }
+
+    #[test]
+    fn resolve_unrecognized_format_returns_none() {
+        let dir = tempdir().unwrap();
+        let bundle = dir.path().join("bundle");
+        fs::create_dir_all(&bundle).unwrap();
+        fs::write(bundle.join("garbage.png"), b"not actually an image").unwrap();
+
+        let r = ImageResolver::new(dir.path(), ImageConfig::default());
+        assert!(r.resolve("garbage.png", Some(&bundle)).is_none());
+    }
+
+    fn write_tiny_png(path: &Path) {
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let img = image::RgbaImage::from_pixel(2, 2, image::Rgba([200, 100, 50, 255]));
+        img.save_with_format(path, image::ImageFormat::Png).unwrap();
+    }
+
+    // ── ImageResolver::resolve_path ──
+
+    #[test]
+    fn resolve_path_absolute_uses_static_root() {
+        let dir = tempdir().unwrap();
+        let static_root = dir.path().join("static");
+        let r = ImageResolver::new(&static_root, ImageConfig::default());
+        let resolved = r.resolve_path("/images/cover.webp", None).unwrap();
+        assert_eq!(resolved, static_root.join("images/cover.webp"));
+    }
+
+    #[test]
+    fn resolve_path_relative_uses_base_dir() {
+        let dir = tempdir().unwrap();
+        let bundle = dir.path().join("bundle");
+        let r = ImageResolver::new(dir.path(), ImageConfig::default());
+        let resolved = r.resolve_path("assets/foo.png", Some(&bundle)).unwrap();
+        assert_eq!(resolved, bundle.join("assets/foo.png"));
+    }
+
+    #[test]
+    fn resolve_path_remote_returns_none() {
+        let dir = tempdir().unwrap();
+        let r = ImageResolver::new(dir.path(), ImageConfig::default());
+        assert!(r.resolve_path("https://example.com/x.png", None).is_none());
+        assert!(r.resolve_path("//example.com/x.png", None).is_none());
+        assert!(r.resolve_path("data:image/png;base64,xx", None).is_none());
+        assert!(r.resolve_path("", None).is_none());
+    }
+
+    #[test]
+    fn resolve_path_relative_without_base_returns_none() {
+        let dir = tempdir().unwrap();
+        let r = ImageResolver::new(dir.path(), ImageConfig::default());
+        assert!(r.resolve_path("foo.png", None).is_none());
     }
 }
