@@ -15,14 +15,14 @@
 }:
 
 let
-  cargoToml = fromTOML (builtins.readFile (src + "/Cargo.toml"));
+  cargoToml = fromTOML (builtins.readFile "${src}/Cargo.toml");
 in
 rustPlatform.buildRustPackage {
   pname = "kiln";
   inherit (cargoToml.workspace.package) version;
 
   inherit src;
-  cargoLock.lockFile = src + "/Cargo.lock";
+  cargoLock.lockFile = "${src}/Cargo.lock";
 
   nativeBuildInputs = [
     makeWrapper
