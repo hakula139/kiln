@@ -79,7 +79,7 @@ To use kiln in another flake, add this input:
 
 ```nix
 inputs.kiln.url = "github:hakula139/kiln";
-# Outputs: packages.${system}.{default,kiln,pagefind,tailwindcss}
+# Outputs: packages.${system}.{default,kiln,kiln-tailwindcss,pagefind}
 ```
 
 `pagefind` ships alongside `kiln` so consumers don't have to pin the search backend separately.
@@ -102,7 +102,15 @@ kiln convert --source /path/to/hugo --dest /path/to/kiln  # Convert a Hugo site
 
 Keep handwritten CSS at `_assets/css/style.css` in the site, theme, or page bundle. `kiln build` and `kiln serve` compile it automatically, bundle local imports, rewrite relative asset URLs, and publish fingerprinted CSS only in the build output. Page stylesheets load only on their owning page.
 
-Plain CSS with imports and nesting works without an external compiler. For Tailwind themes, install the official `tailwindcss` standalone CLI on `PATH`. kiln's Nix package supplies it automatically. Select the processor with `[css] processor = "tailwind"` in `theme.toml` or `config.toml`. See [Stylesheets](docs/themes.md#stylesheets) for source overrides and template links.
+Plain CSS with imports and nesting works without an external compiler. Select Tailwind with `[css] processor = "tailwind"` in `theme.toml` or `config.toml`. kiln's Nix package supplies its Tailwind processor and Node.js runtime automatically. See [Stylesheets](docs/themes.md#stylesheets) for source overrides and template links.
+
+For other installations, install Node.js and set up the bundled `css/` processor once from the extracted release directory:
+
+```bash
+(cd css && npm ci && npm link)
+```
+
+From a source checkout, use `packages/css` as the directory. This installs `kiln-tailwindcss` on `PATH`. Keep the processor directory in place because `npm link` links to it. Then `kiln build` and `kiln serve` run the processor automatically.
 
 ### Static Asset URLs
 
@@ -151,7 +159,7 @@ cargo build --release  # Binary at target/release/kiln
 
 ### Reproducible dev shell (Nix)
 
-For hacking on kiln itself, the shipped `flake.nix` pins the Rust toolchain, `libdav1d`, `pagefind`, `tailwindcss`, `git-cliff`, and pre-commit hooks:
+For hacking on kiln itself, the shipped `flake.nix` pins the Rust toolchain, `libdav1d`, `pagefind`, `kiln-tailwindcss`, `git-cliff`, and pre-commit hooks:
 
 ```bash
 nix develop      # interactive shell

@@ -141,7 +141,7 @@ Plain CSS is the default. A theme can select Tailwind CSS in `theme.toml`, and a
 processor = "tailwind"
 ```
 
-Tailwind uses the official `tailwindcss` standalone CLI on `PATH`. kiln's Nix package supplies the pinned compiler. Other installations need the CLI installed separately when using a Tailwind theme. kiln runs compilation automatically and reports compiler failures as build errors. Themes provide CSS sources and configuration, without a compiler script or separate watch command.
+Tailwind uses kiln's `kiln-tailwindcss` processor, which delegates compilation and source scanning to the official Tailwind packages. kiln's Nix package supplies the processor with its Node.js runtime and pinned dependencies. For other installations, follow the [processor setup instructions](../README.md#stylesheets). kiln runs compilation automatically and reports compiler failures as build errors. Themes provide CSS sources and configuration, without a compiler script or separate watch command.
 
 kiln supplies Tailwind source scanning for content and site / theme templates. [Page stylesheets](content.md#per-page-css) receive the selected shared entry through `@reference`, so they can use its theme definitions and utilities without emitting the shared stylesheet again.
 

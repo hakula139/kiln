@@ -15,7 +15,7 @@ kiln init-theme <name> [--root]                              # Scaffold a new th
 kiln convert --source <dir> --dest <dir>                     # Convert a Hugo site root into a kiln site root
 ```
 
-`kiln build` and `kiln serve` compile site / theme / page `_assets/css/style.css` sources into the output. Plain CSS is the default, and `[css] processor = "tailwind"` selects the official standalone CLI supplied by the Nix package. Sources remain private, and `static/` copies all files verbatim.
+`kiln build` and `kiln serve` compile site / theme / page `_assets/css/style.css` sources into the output. Plain CSS is the default, and `[css] processor = "tailwind"` selects kiln's Tailwind processor supplied by the Nix package. Sources remain private, and `static/` copies all files verbatim.
 
 Both `kiln build` and `kiln serve` run Pagefind search indexing automatically when `[search] enabled = true` in `config.toml`.
 
@@ -214,7 +214,7 @@ Follows global CLAUDE.md commit / branch / PR conventions, plus:
 
 ## Nix Development
 
-`flake.nix` pins the Rust toolchain, `libdav1d` (AVIF), `pagefind`, `tailwindcss`, and `git-cliff` for the dev shell. It also exposes `packages.{default,kiln,pagefind,tailwindcss}` so site repos can consume kiln as a flake input (`inputs.kiln.url = "github:hakula139/kiln";`). `kiln` is source-built with dav1d wired in by Nix, and `pagefind` is a vendored prebuilt under `packages/pagefind/`.
+`flake.nix` pins the Rust toolchain, `libdav1d` (AVIF), `pagefind`, `kiln-tailwindcss`, and `git-cliff` for the dev shell. It also exposes `packages.{default,kiln,kiln-tailwindcss,pagefind}` so site repos can consume kiln as a flake input (`inputs.kiln.url = "github:hakula139/kiln";`). `kiln` is source-built with dav1d wired in by Nix. The packaged binary supplies the Tailwind processor from `packages/css/`, including its Node.js runtime and pinned dependencies. `pagefind` is a vendored prebuilt under `packages/pagefind/`.
 
 ```bash
 nix develop                            # interactive shell (for hacking on kiln)

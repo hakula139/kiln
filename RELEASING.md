@@ -8,7 +8,11 @@ Any prose that should land in the changelog must come from a commit message: use
 
 ## Standard release
 
-1. Bump version in `Cargo.toml` (`workspace.package.version`).
+1. Bump version in `Cargo.toml` (`workspace.package.version`). Keep the Tailwind processor package and lockfile versions aligned:
+
+   ```bash
+   (cd packages/css && npm version X.Y.Z --no-git-tag-version)
+   ```
 
 2. Run `cargo build` to refresh `Cargo.lock`.
 
@@ -39,6 +43,8 @@ Any prose that should land in the changelog must come from a commit message: use
    - `kiln-x86_64-unknown-linux-gnu.tar.gz` (+ `.sha256`)
    - `kiln-aarch64-apple-darwin.tar.gz` (+ `.sha256`)
    - `kiln-x86_64-pc-windows-msvc.zip` (+ `.sha256`)
+
+Each archive contains the kiln binary and a `css/` directory with the Tailwind processor, its package manifest, and its dependency lockfile. Tailwind users install Node.js and set up the processor as described in [Stylesheets](README.md#stylesheets). Plain CSS needs only the kiln binary.
 
 ## Installing `git-cliff`
 
