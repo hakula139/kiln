@@ -89,13 +89,13 @@ See [`RELEASING.md`](./RELEASING.md) for how releases are produced.
 ## Usage
 
 ```bash
-kiln build                                                # Build the site
-kiln build --root /path/to/site                           # Build from a specific root
-kiln build --minify                                       # Build, then minify HTML / CSS / JS
-kiln serve                                                # Dev server with live reload
-kiln serve --port 3000 --open                             # Custom port, auto-open browser
-kiln init-theme my-theme                                  # Scaffold a new theme
-kiln convert --source /path/to/hugo --dest /path/to/kiln  # Convert a Hugo site
+kiln build                                                 # Build the site
+kiln build --root /path/to/site                            # Build from a specific root
+kiln build --minify                                        # Build, then minify HTML / CSS / JS
+kiln serve                                                 # Dev server with live reload
+kiln serve --port 3000 --open                              # Custom port, auto-open browser
+kiln init-theme my-theme                                   # Scaffold a new theme
+kiln convert --source /path/to/hugo --dest /path/to/kiln   # Convert a Hugo site
 ```
 
 ### Stylesheets

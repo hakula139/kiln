@@ -143,7 +143,7 @@
               enable = true;
               name = "prettier";
               entry = nodeHook "prettier-write" "prettier --write --ignore-unknown";
-              files = "\\.json$";
+              files = "\\.(json|mjs)$";
               pass_filenames = true;
             };
 

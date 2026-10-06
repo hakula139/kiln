@@ -125,7 +125,7 @@ my-site/
 The shared stylesheet entry is `_assets/css/style.css` in the site or theme. A site entry takes precedence over the theme entry. To extend the theme's styles, import its source explicitly:
 
 ```css
-@import "../../themes/my-theme/_assets/css/style.css";
+@import '../../themes/my-theme/_assets/css/style.css';
 
 .site-banner {
   font-weight: bold;
@@ -152,7 +152,7 @@ Templates link shared CSS through `asset_url()` and include `page_css` only in p
 {% if page_css %}<link rel="stylesheet" href="{{ page_css | safe }}">{% endif %}
 ```
 
-`kiln serve` watches site and theme sources and rebuilds stylesheets with the rest of the site. Page CSS is included only on its owning page. Its selectors still share the document with theme components, so use a page wrapper when selectors need a narrower scope.
+`kiln serve` watches existing site and theme source trees and rebuilds stylesheets with the rest of the site, including imported files within those trees. Restart after creating a top-level source directory that was absent at startup, switching themes, or changing an imported file outside the watched trees. Page CSS is included only on its owning page. Its selectors still share the document with theme components, so use a page wrapper when selectors need a narrower scope.
 
 ### Parameter Merging
 
