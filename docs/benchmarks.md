@@ -10,6 +10,8 @@ cargo test --bench performance
 
 Reports and saved baselines live under `criterion/` beside the compiled profile directory, normally `target/criterion/`. Set `CRITERION_HOME` to choose another location.
 
+CI compares the PR with its common ancestor using identical workloads and the head's Nix environment. Criterion's output appears in the job summary, with raw samples and logs attached to the run for 14 days. Timings are advisory because shared runners are noisy. The `Benchmarks` workflow also supports manual runs with a baseline revision.
+
 ## Workloads
 
 | Group            | Measurement                                                                                           |
