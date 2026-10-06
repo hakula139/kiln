@@ -58,6 +58,9 @@ jobs:
       - name: Test
         run: nix develop -c cargo test
 
+      - name: Test benchmark workloads
+        run: nix develop -c cargo test --bench performance
+
   coverage:
     name: Coverage
     runs-on: ubuntu-latest
