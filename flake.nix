@@ -3,7 +3,7 @@
 # ==============================================================================
 #
 # Provides Rust toolchain, libdav1d (AVIF decode), Pagefind, Tailwind CSS, git-cliff,
-# and pre-commit hooks. Exposes `packages.{kiln,pagefind,tailwindcss}` for site
+# and pre-commit hooks. Exposes `packages.{kiln,kiln-tailwindcss,pagefind}` for site
 # repos importing this flake.
 #
 #   nix develop        # interactive shell for hacking on kiln
@@ -73,9 +73,12 @@
           ];
         };
 
+        cssCompiler = pkgs.callPackage ./packages/css { };
+
         # Source-build kiln with the rust-overlay toolchain — nixpkgs's stable
         # rustc lags behind some workspace deps' minimum required version.
         kiln = pkgs.callPackage ./packages/kiln {
+          inherit cssCompiler;
           rustPlatform = pkgs.makeRustPlatform {
             cargo = rustToolchain;
             rustc = rustToolchain;
@@ -186,7 +189,10 @@
 
           packages =
             preCommitCheck.enabledPackages
-            ++ [ rustToolchain ]
+            ++ [
+              rustToolchain
+              cssCompiler
+            ]
             ++ (with pkgs; [
               # Native build deps (AVIF decode via dav1d-sys).
               dav1d
@@ -196,7 +202,6 @@
               git-cliff
               # Optional build processors.
               pagefind
-              tailwindcss_4
               # Node tooling for pre-commit hooks.
               nodejs_24
               pnpm
@@ -226,7 +231,7 @@
           default = kiln;
           inherit kiln;
           inherit (pkgs) pagefind;
-          tailwindcss = pkgs.tailwindcss_4;
+          kiln-tailwindcss = cssCompiler;
         };
 
         # ----------------------------------------------------------------------

@@ -2,6 +2,7 @@
 # correct rpath / install_name on Linux and Darwin, no post-build patching.
 
 {
+  cssCompiler,
   dav1d,
   git,
   lib,
@@ -9,7 +10,6 @@
   nasm,
   pkg-config,
   rustPlatform,
-  tailwindcss_4,
   tzdata,
 }:
 
@@ -61,8 +61,8 @@ rustPlatform.buildRustPackage {
   # The build sandbox exposes no system zoneinfo, so jiff needs an explicit TZDIR
   # to resolve IANA zone names in the time zone tests.
   nativeCheckInputs = [
+    cssCompiler
     git
-    tailwindcss_4
     tzdata
   ];
   preCheck = ''
@@ -70,7 +70,7 @@ rustPlatform.buildRustPackage {
   '';
 
   postFixup = ''
-    wrapProgram $out/bin/kiln --prefix PATH : ${lib.makeBinPath [ tailwindcss_4 ]}
+    wrapProgram $out/bin/kiln --prefix PATH : ${lib.makeBinPath [ cssCompiler ]}
   '';
 
   meta = {

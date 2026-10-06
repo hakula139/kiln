@@ -3,7 +3,7 @@
 /public*/
 
 # Dependencies
-/node_modules/
+node_modules/
 
 # Nix
 .direnv/
