@@ -8,7 +8,7 @@ use crate::markdown::{for_each_non_code_line, scan_code_span};
 
 /// Matches icon shortcodes, e.g., `:(fas fa-link):`.
 static ICON_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r":\(([^)]+)\):").expect("icon regex should compile"));
+    LazyLock::new(|| Regex::new(r"^:\(([^)]+)\):").expect("icon regex should compile"));
 
 /// Replaces `:(class):` shortcodes with `<i>` tags.
 ///
@@ -36,7 +36,6 @@ fn replace_icons_in_line(line: &str, output: &mut String) {
 
         if bytes[i] == b':'
             && let Some(caps) = ICON_RE.captures(&line[i..])
-            && caps.get(0).unwrap().start() == 0
         {
             _ = write!(
                 output,
@@ -77,6 +76,14 @@ mod tests {
         let output = replace_icons(input);
         assert!(output.contains(r#"class="fas fa-home""#));
         assert!(output.contains(r#"class="fas fa-cog""#));
+    }
+
+    #[test]
+    fn replace_icons_preserves_nonmatching_prefix_before_shortcode() {
+        assert_eq!(
+            replace_icons(": invalid :(fas fa-link):"),
+            r#": invalid <i class="fas fa-link" aria-hidden="true"></i>"#
+        );
     }
 
     #[test]

@@ -9,7 +9,7 @@ use crate::markdown::{for_each_non_code_line, scan_code_span};
 /// Character set mirrors GitHub's shortcode names: lowercase ASCII, digits,
 /// underscores, hyphens, and `+`.
 static EMOJI_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r":([a-z0-9_+\-]+):").expect("emoji regex should compile"));
+    LazyLock::new(|| Regex::new(r"^:([a-z0-9_+\-]+):").expect("emoji regex should compile"));
 
 /// Replaces `:shortcode:` emoji shortcodes with Unicode emoji characters.
 ///
@@ -39,7 +39,6 @@ fn replace_emojis_in_line(line: &str, output: &mut String) {
 
         if bytes[i] == b':'
             && let Some(caps) = EMOJI_RE.captures(&line[i..])
-            && caps.get(0).unwrap().start() == 0
             && let Some(emoji) = gh_emoji::get(&caps[1])
         {
             output.push_str(emoji);
@@ -71,6 +70,11 @@ mod tests {
         let output = replace_emojis(":rocket: and :+1:");
         assert!(output.contains('\u{1f680}'), "output:\n{output}");
         assert!(output.contains('\u{1f44d}'), "output:\n{output}");
+    }
+
+    #[test]
+    fn replace_emojis_preserves_nonmatching_prefix_before_shortcode() {
+        assert_eq!(replace_emojis(": invalid :smile:"), ": invalid \u{1f604}");
     }
 
     #[test]
