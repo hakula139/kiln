@@ -1,5 +1,5 @@
-use syntect::html::{ClassStyle, ClassedHTMLGenerator};
-use syntect::parsing::{SyntaxReference, SyntaxSet};
+use syntect::html::{ClassStyle, ClassedHTMLGenerator, line_tokens_to_classed_spans};
+use syntect::parsing::{ParseState, ScopeStack, ScopeStackOp, SyntaxReference, SyntaxSet};
 use syntect::util::LinesWithEndings;
 
 use tracing::{debug, warn};
@@ -16,16 +16,11 @@ pub(crate) fn highlight_code(syntax_set: &SyntaxSet, code: &str, spec: &CodeBloc
     let lang = spec.lang.as_deref().unwrap_or("");
     let (syntax, effective_lang, display_label) = find_syntax(syntax_set, lang);
 
-    let mut generator =
-        ClassedHTMLGenerator::new_with_class_style(syntax, syntax_set, ClassStyle::Spaced);
-
-    for line in LinesWithEndings::from(code) {
-        if let Err(e) = generator.parse_html_for_line_which_includes_newline(line) {
-            warn!(lang, error = %e, "syntax highlighting failed for line, falling back to plain text");
-        }
-    }
-
-    let highlighted = generator.finalize();
+    let highlighted = if spec.highlight.is_empty() {
+        highlight_all(syntax_set, syntax, code)
+    } else {
+        String::new()
+    };
     let line_count = code.lines().count().max(1);
 
     let mut html =
@@ -118,8 +113,9 @@ pub(crate) fn highlight_code(syntax_set: &SyntaxSet, code: &str, spec: &CodeBloc
     } else {
         emit_highlighted_lines(
             &mut html,
-            &highlighted,
-            line_count,
+            syntax_set,
+            syntax,
+            code,
             &escaped_lang,
             &spec.highlight,
         );
@@ -133,21 +129,37 @@ pub(crate) fn highlight_code(syntax_set: &SyntaxSet, code: &str, spec: &CodeBloc
     html
 }
 
+fn highlight_all(syntax_set: &SyntaxSet, syntax: &SyntaxReference, code: &str) -> String {
+    let mut generator =
+        ClassedHTMLGenerator::new_with_class_style(syntax, syntax_set, ClassStyle::Spaced);
+
+    for line in LinesWithEndings::from(code) {
+        if let Err(e) = generator.parse_html_for_line_which_includes_newline(line) {
+            warn!(lang = syntax.name, error = %e, "syntax highlighting failed, falling back to plain text");
+            return escape(code);
+        }
+    }
+
+    generator.finalize()
+}
+
 /// Emits line-numbers and code columns with per-line `<span>` wrappers for highlight support.
 fn emit_highlighted_lines(
     html: &mut String,
-    highlighted: &str,
-    line_count: usize,
+    syntax_set: &SyntaxSet,
+    syntax: &SyntaxReference,
+    code: &str,
     escaped_lang: &str,
     ranges: &[std::ops::RangeInclusive<usize>],
 ) {
     use std::fmt::Write as _;
 
+    let lines = highlight_lines(syntax_set, syntax, code);
     let is_highlighted = |line_no: usize| ranges.iter().any(|r| r.contains(&line_no));
 
     indent(html, 5);
     _ = write!(html, r#"<td class="line-numbers"><pre>"#);
-    for i in 1..=line_count {
+    for i in 1..=lines.len() {
         if i > 1 {
             html.push('\n');
         }
@@ -161,7 +173,6 @@ fn emit_highlighted_lines(
         html,
         r#"<td class="code"><pre><code class="language-{escaped_lang}" data-lang="{escaped_lang}">"#
     );
-    let lines: Vec<&str> = highlighted.split('\n').collect();
     let last_idx = lines.len().saturating_sub(1);
     for (idx, line) in lines.iter().enumerate() {
         let line_no = idx + 1;
@@ -171,7 +182,55 @@ fn emit_highlighted_lines(
             html.push('\n');
         }
     }
+    if code.ends_with('\n') {
+        html.push('\n');
+    }
     _ = writeln!(html, "</code></pre></td>");
+}
+
+fn highlight_lines(syntax_set: &SyntaxSet, syntax: &SyntaxReference, code: &str) -> Vec<String> {
+    let mut parse_state = ParseState::new(syntax);
+    let mut scope_stack = ScopeStack::new();
+    let mut lines: Vec<_> = LinesWithEndings::from(code)
+        .map(|line| {
+            highlight_line(syntax_set, &mut parse_state, &mut scope_stack, line).unwrap_or_else(|e| {
+                warn!(lang = syntax.name, error = %e, "syntax highlighting failed for line, falling back to plain text");
+                escape(line.trim_end_matches(['\r', '\n']))
+            })
+        })
+        .collect();
+
+    if lines.is_empty() {
+        lines.push(String::new());
+    }
+
+    lines
+}
+
+fn highlight_line(
+    syntax_set: &SyntaxSet,
+    parse_state: &mut ParseState,
+    scope_stack: &mut ScopeStack,
+    line: &str,
+) -> Result<String, syntect::Error> {
+    let operations = parse_state.parse_line(line, syntax_set)?;
+    // Syntax scopes span lines, but each row needs independently balanced HTML.
+    let opening: Vec<_> = scope_stack
+        .scopes
+        .iter()
+        .map(|scope| (0, ScopeStackOp::Push(*scope)))
+        .collect();
+    let (mut html, _) =
+        line_tokens_to_classed_spans("", &opening, ClassStyle::Spaced, &mut ScopeStack::new())?;
+    let (content, _) =
+        line_tokens_to_classed_spans(line, &operations, ClassStyle::Spaced, scope_stack)?;
+    html.push_str(&content.replace("\r\n", "").replace('\n', ""));
+
+    for _ in &scope_stack.scopes {
+        html.push_str("</span>");
+    }
+
+    Ok(html)
 }
 
 /// Resolves a markdown language token to a syntect `SyntaxReference`, a canonical HTML-safe label,
@@ -272,9 +331,12 @@ fn capitalize_first(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::sync::LazyLock;
 
     use indoc::{formatdoc, indoc};
+    use syntect::parsing::syntax_definition::{Context, MatchOperation, MatchPattern, Pattern};
+    use syntect::parsing::{Scope, SyntaxDefinition, SyntaxSetBuilder};
 
     use super::*;
 
@@ -457,19 +519,49 @@ mod tests {
             highlight: std::iter::once(2..=2).collect(),
             ..CodeBlockSpec::default()
         };
-        let html = highlight_with_spec("line 1\nline 2\nline 3\n", &spec);
-        assert!(
-            html.contains(r#"<span class="line-number hl">2</span>"#),
-            "line-number 2 should have hl class, html:\n{html}"
-        );
-        assert!(
-            html.contains(r#"<span class="line hl">"#),
-            "code line 2 should have hl class, html:\n{html}"
-        );
-        assert!(
-            html.contains(r#"<span class="line-number">1</span>"#),
-            "line-number 1 should NOT have hl class, html:\n{html}"
-        );
+        let code = indoc! {"
+            first line
+            second line
+            third line
+        "};
+        let crlf = code.replace('\n', "\r\n");
+        for code in [code, code.trim_end(), &crlf] {
+            let html = highlight_with_spec(code, &spec);
+            let fragment = scraper::Html::parse_fragment(&html);
+            let selector = scraper::Selector::parse(".code .line").unwrap();
+            let code_selector = scraper::Selector::parse(".code code").unwrap();
+            let rendered_code = fragment.select(&code_selector).next().unwrap();
+            let lines: Vec<_> = fragment
+                .select(&selector)
+                .map(|line| {
+                    (
+                        line.text().collect::<String>(),
+                        line.value().classes().any(|class| class == "hl"),
+                    )
+                })
+                .collect();
+
+            assert_eq!(
+                rendered_code.text().collect::<String>(),
+                code.replace("\r\n", "\n")
+            );
+            assert_eq!(
+                lines,
+                vec![
+                    ("first line".to_owned(), false),
+                    ("second line".to_owned(), true),
+                    ("third line".to_owned(), false),
+                ]
+            );
+            assert!(
+                html.contains(r#"<span class="line-number hl">2</span>"#),
+                "line-number 2 should have hl class, html:\n{html}"
+            );
+            assert!(
+                html.contains(r#"<span class="line-number">1</span>"#),
+                "line-number 1 should NOT have hl class, html:\n{html}"
+            );
+        }
     }
 
     #[test]
@@ -483,6 +575,185 @@ mod tests {
         assert!(html.contains(r#"<span class="line-number hl">1</span>"#));
         assert!(html.contains(r#"<span class="line-number hl">2</span>"#));
         assert!(html.contains(r#"<span class="line-number">3</span>"#));
+    }
+
+    #[test]
+    fn highlight_code_preserves_multiline_syntax_scopes() {
+        let spec = CodeBlockSpec {
+            lang: Some("rust".into()),
+            highlight: std::iter::once(2..=3).collect(),
+            ..CodeBlockSpec::default()
+        };
+        let code = indoc! {"
+            /* first
+            middle <&>
+            last */
+            let value = 1;
+        "};
+        let crlf = code.replace('\n', "\r\n");
+        for code in [code, code.trim_end(), &crlf] {
+            let html = highlight_with_spec(code, &spec);
+            let fragment = scraper::Html::parse_fragment(&html);
+            let selector = scraper::Selector::parse(".code .line").unwrap();
+            let comment = scraper::Selector::parse(".comment.block").unwrap();
+            let lines: Vec<_> = fragment
+                .select(&selector)
+                .map(|line| {
+                    (
+                        line.text().collect::<String>(),
+                        line.value().classes().any(|class| class == "hl"),
+                        line.select(&comment).next().is_some(),
+                    )
+                })
+                .collect();
+
+            let code_selector = scraper::Selector::parse(".code code").unwrap();
+            let rendered_code = fragment.select(&code_selector).next().unwrap();
+            assert_eq!(
+                rendered_code.text().collect::<String>(),
+                code.replace("\r\n", "\n")
+            );
+            assert_eq!(
+                lines,
+                vec![
+                    ("/* first".to_owned(), false, true),
+                    ("middle <&>".to_owned(), true, true),
+                    ("last */".to_owned(), true, true),
+                    ("let value = 1;".to_owned(), false, false),
+                ]
+            );
+        }
+    }
+
+    #[test]
+    fn highlight_code_preserves_empty_highlighted_lines() {
+        let spec = CodeBlockSpec {
+            highlight: std::iter::once(1..=1).collect(),
+            ..CodeBlockSpec::default()
+        };
+        for (code, expected) in [
+            ("", vec![("", true)]),
+            ("\n", vec![("", true)]),
+            ("first\n\n", vec![("first", true), ("", false)]),
+            ("first\r\n\r\n", vec![("first", true), ("", false)]),
+        ] {
+            let html = highlight_with_spec(code, &spec);
+            let fragment = scraper::Html::parse_fragment(&html);
+            let selector = scraper::Selector::parse(".code .line").unwrap();
+            let lines: Vec<_> = fragment
+                .select(&selector)
+                .map(|line| {
+                    (
+                        line.text().collect::<String>(),
+                        line.value().classes().any(|class| class == "hl"),
+                    )
+                })
+                .collect();
+
+            let code_selector = scraper::Selector::parse(".code code").unwrap();
+            let rendered_code = fragment.select(&code_selector).next().unwrap();
+            assert_eq!(
+                rendered_code.text().collect::<String>(),
+                code.replace("\r\n", "\n")
+            );
+            assert_eq!(
+                lines,
+                expected
+                    .into_iter()
+                    .map(|(text, highlighted)| (text.to_owned(), highlighted))
+                    .collect::<Vec<_>>(),
+                "{code:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn highlight_code_preserves_source_when_syntax_dependency_is_missing() {
+        // Syntect's non-exhaustive context-reference variants require deserialization.
+        let missing_scope = serde_yaml::from_str(indoc! {"
+            !ByScope
+            scope: source.missing
+            sub_context: null
+            with_escape: false
+        "})
+        .unwrap();
+        let mut main = Context::new(true);
+        main.patterns.push(Pattern::Match(MatchPattern::new(
+            false,
+            "<missing&>".into(),
+            Vec::new(),
+            None,
+            MatchOperation::Push(vec![missing_scope]),
+            None,
+        )));
+        // Hand-built definitions need the startup context normally added by syntect's YAML loader.
+        let mut start = Context::new(false);
+        start.meta_content_scope = vec![Scope::new("source.example").unwrap()];
+        start.patterns.push(Pattern::Include(
+            serde_yaml::from_str("!Named main").unwrap(),
+        ));
+        let mut builder = SyntaxSetBuilder::new();
+        builder.add(SyntaxDefinition {
+            name: "Example".into(),
+            file_extensions: vec!["example".into()],
+            scope: Scope::new("source.example").unwrap(),
+            first_line_match: None,
+            hidden: false,
+            variables: HashMap::new(),
+            contexts: HashMap::from([("main".into(), main), ("__start".into(), start)]),
+        });
+        let syntax_set = builder.build();
+        let code = indoc! {"
+            before
+            <missing&>
+            after
+        "};
+        let crlf = code.replace('\n', "\r\n");
+
+        for highlighted in [false, true] {
+            let spec = CodeBlockSpec {
+                lang: Some("example".into()),
+                highlight: if highlighted {
+                    std::iter::once(2..=2).collect()
+                } else {
+                    Vec::new()
+                },
+                ..CodeBlockSpec::default()
+            };
+            for code in [code, code.trim_end(), &crlf] {
+                let html = highlight_code(&syntax_set, code, &spec);
+                let fragment = scraper::Html::parse_fragment(&html);
+                let selector = scraper::Selector::parse(".code code").unwrap();
+                let rendered_code = fragment.select(&selector).next().unwrap();
+
+                assert_eq!(
+                    rendered_code.text().collect::<String>(),
+                    code.replace("\r\n", "\n")
+                );
+                if highlighted {
+                    let selector = scraper::Selector::parse(".line").unwrap();
+                    let scope = scraper::Selector::parse(".source.example").unwrap();
+                    let rows: Vec<_> = rendered_code
+                        .select(&selector)
+                        .map(|row| {
+                            (
+                                row.text().collect::<String>(),
+                                row.value().classes().any(|class| class == "hl"),
+                                row.select(&scope).next().is_some(),
+                            )
+                        })
+                        .collect();
+                    assert_eq!(
+                        rows,
+                        vec![
+                            ("before".to_owned(), false, true),
+                            ("<missing&>".to_owned(), true, false),
+                            ("after".to_owned(), false, true),
+                        ]
+                    );
+                }
+            }
+        }
     }
 
     // ── highlight_code (collapse / expand) ──
