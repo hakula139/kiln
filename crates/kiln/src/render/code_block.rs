@@ -1,6 +1,6 @@
 use std::ops::RangeInclusive;
 
-use crate::attrs::parse_pandoc_attrs;
+use crate::attrs::{find_attr_block_end, parse_pandoc_attrs};
 
 /// Attributes extracted from a fenced code block's Pandoc-style `{...}` block.
 #[derive(Debug, Clone, Default)]
@@ -34,11 +34,11 @@ pub(crate) fn parse_fence_info(info: &str, default_max_lines: Option<usize>) -> 
     parse_code_block_attrs(Some(lang_token.to_string()), payload, default_max_lines)
 }
 
-/// Extracts the content between the first `{` and its matching `}`.
+/// Extracts the content between the first `{` and the next unquoted `}`.
 fn extract_brace_payload(s: &str) -> &str {
     let Some(open) = s.find('{') else { return "" };
     let inner = &s[open + 1..];
-    let close = inner.find('}').unwrap_or(inner.len());
+    let close = find_attr_block_end(inner).unwrap_or(inner.len());
     &inner[..close]
 }
 
@@ -147,6 +147,43 @@ mod tests {
     }
 
     #[test]
+    fn parse_fence_info_quoted_brace_in_title() {
+        let spec = parse_fence_info(r#"rust {title="a}b.rs" highlight="2"} ignored"#, None);
+        assert_eq!(spec.title.as_deref(), Some("a}b.rs"));
+        assert_eq!(spec.highlight, vec![2..=2]);
+    }
+
+    #[test]
+    fn parse_fence_info_escaped_quote_before_brace() {
+        let spec = parse_fence_info(r#"rust {title="a\"}b.rs" highlight="3"}"#, None);
+        assert_eq!(spec.title.as_deref(), Some("a\"}b.rs"));
+        assert_eq!(spec.highlight, vec![3..=3]);
+    }
+
+    #[test]
+    fn parse_fence_info_escaped_backslash_before_closing_quote() {
+        let spec = parse_fence_info(r#"rust {title="dir\\" highlight="4"} ignored"#, None);
+        assert_eq!(spec.title.as_deref(), Some(r"dir\"));
+        assert_eq!(spec.highlight, vec![4..=4]);
+    }
+
+    #[test]
+    fn parse_fence_info_quotes_in_unquoted_tokens() {
+        let spec = parse_fence_info(r#"rust {#a"b .c"d .last title=e"f highlight=2}"#, None);
+        assert_eq!(spec.id.as_deref(), Some("a\"b"));
+        assert_eq!(spec.classes, ["c\"d", "last"]);
+        assert_eq!(spec.title.as_deref(), Some("e\"f"));
+        assert_eq!(spec.highlight, vec![2..=2]);
+    }
+
+    #[test]
+    fn parse_fence_info_unicode_whitespace_before_quoted_value() {
+        let spec = parse_fence_info("rust {title=\"a}b\"　highlight=2}", None);
+        assert_eq!(spec.title.as_deref(), Some("a}b"));
+        assert_eq!(spec.highlight, vec![2..=2]);
+    }
+
+    #[test]
     fn parse_fence_info_all_attrs() {
         let spec = parse_fence_info(
             r#"rust {#my-id .special title="main.rs" highlight="1,3-5" collapse}"#,
@@ -211,6 +248,24 @@ mod tests {
         assert_eq!(spec.title.as_deref(), Some("please collapse this"));
         assert!(spec.collapse.is_none());
         assert_eq!(spec.max_lines, Some(40));
+    }
+
+    #[test]
+    fn parse_fence_info_unclosed_braces() {
+        let spec = parse_fence_info("rust {title=main.rs highlight=1", None);
+        assert_eq!(spec.title.as_deref(), Some("main.rs"));
+        assert_eq!(spec.highlight, vec![1..=1]);
+
+        let spec = parse_fence_info(r#"rust {title="a}b.rs" highlight="2""#, None);
+        assert_eq!(spec.title.as_deref(), Some("a}b.rs"));
+        assert_eq!(spec.highlight, vec![2..=2]);
+    }
+
+    #[test]
+    fn parse_fence_info_unclosed_quote() {
+        let spec = parse_fence_info(r#"rust {title="a}b.rs"#, None);
+        assert_eq!(spec.title.as_deref(), Some("a}b.rs"));
+        assert!(spec.highlight.is_empty());
     }
 
     // ── parse_highlight_ranges ──

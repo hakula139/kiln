@@ -73,6 +73,44 @@ pub(crate) fn parse_pandoc_attrs(input: &str) -> PandocAttrs<'_> {
     result
 }
 
+/// Returns the byte offset of the first `}` outside quoted positional or named values.
+///
+/// Quotes in IDs, classes, and unquoted values remain literal. Returns `None` if unclosed.
+pub(crate) fn find_attr_block_end(input: &str) -> Option<usize> {
+    let mut i = 0;
+
+    while i < input.len() {
+        let rest = input[i..].trim_start();
+        i = input.len() - rest.len();
+        if rest.starts_with('}') {
+            return Some(i);
+        }
+
+        let end = rest
+            .find(|c: char| c.is_whitespace() || c == '}')
+            .unwrap_or(rest.len());
+        let quote = if rest.starts_with('"') {
+            Some(0)
+        } else if rest.starts_with(['#', '.']) {
+            None
+        } else {
+            rest.find('=')
+                .filter(|&eq| eq < end && rest[eq + 1..].starts_with('"'))
+                .map(|eq| eq + 1)
+        };
+
+        if let Some(quote) = quote {
+            i += quote + 1;
+            let (end, _) = scan_quoted_value(&input[i..]);
+            i += end + 1;
+        } else {
+            i += end;
+        }
+    }
+
+    None
+}
+
 /// Scans a quoted value for the closing `"`, respecting `\"` and `\\` escapes.
 /// Returns `(end_offset, has_escapes)` where `end_offset` is the byte position of the closing
 /// quote (or end of string if unclosed).
