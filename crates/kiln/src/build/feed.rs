@@ -7,6 +7,7 @@ use crate::output::write_output;
 
 use super::BuildContext;
 use super::listing::{ListedPage, ListingBucket};
+use super::url::join_site_url;
 
 /// Generates the site-wide RSS feed at `index.xml` plus one per listing bucket
 /// (all-posts, per-section, per-tag).
@@ -16,12 +17,12 @@ pub(crate) fn build_feeds(
     buckets: &[ListingBucket],
     output_dir: &Path,
 ) -> Result<()> {
-    let base = ctx.config.base_url.trim_end_matches('/');
+    let base_url = &ctx.config.base_url;
 
     let main_channel = Channel {
         title: ctx.config.title.clone(),
-        link: format!("{base}/"),
-        feed_url: format!("{base}/index.xml"),
+        link: join_site_url(base_url, ""),
+        feed_url: join_site_url(base_url, "index.xml"),
         description: ctx.config.description.clone(),
         language: ctx.config.language.clone(),
         last_build_date: newest_date(listed_posts),
@@ -31,7 +32,7 @@ pub(crate) fn build_feeds(
     write_output(&output_dir.join("index.xml"), &xml).context("failed to write main RSS feed")?;
 
     for bucket in buckets {
-        write_bucket_feed(ctx, base, bucket, output_dir)?;
+        write_bucket_feed(ctx, bucket, output_dir)?;
     }
 
     Ok(())
@@ -39,17 +40,13 @@ pub(crate) fn build_feeds(
 
 // ── Helpers ──
 
-fn write_bucket_feed(
-    ctx: &BuildContext,
-    base: &str,
-    bucket: &ListingBucket,
-    output_dir: &Path,
-) -> Result<()> {
+fn write_bucket_feed(ctx: &BuildContext, bucket: &ListingBucket, output_dir: &Path) -> Result<()> {
+    let base_url = &ctx.config.base_url;
     let dir_slug = bucket.base_path().trim_start_matches('/').to_owned();
     let channel = Channel {
         title: format!("{} - {}", bucket.name, ctx.config.title),
-        link: format!("{base}/{dir_slug}/"),
-        feed_url: format!("{base}/{dir_slug}/index.xml"),
+        link: join_site_url(base_url, &format!("{dir_slug}/")),
+        feed_url: join_site_url(base_url, &format!("{dir_slug}/index.xml")),
         description: ctx.config.description.clone(),
         language: ctx.config.language.clone(),
         last_build_date: newest_date(&bucket.pages),
