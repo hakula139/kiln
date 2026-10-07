@@ -49,7 +49,7 @@ unzip kiln-x86_64-pc-windows-msvc.zip
 kiln --version
 ```
 
-The current Linux and macOS release binaries require dav1d at runtime.
+The v0.4.0 Linux and macOS binaries require dav1d at runtime.
 
 ### From source
 
