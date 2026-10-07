@@ -1,83 +1,98 @@
 # Roadmap
 
-kiln is a small static site generator built for [hakula.xyz](https://hakula.xyz) and already powering it day to day. This page is the high-level product view: what works today, what's being built next, and what is intentionally out of scope.
+kiln powers [hakula.xyz](https://hakula.xyz). This is the developer overview of implemented capabilities, current constraints and planned work. The project follows the site's publishing needs, with CJK technical writing and an understandable engine as priorities. The [README](../README.md) presents selected highlights and installation instructions.
 
-The project's shape is deliberate:
+## Implemented Capabilities
 
-- Make CJK-heavy writing, technical posts, and custom content components a pleasure to author.
-- Finish the publishing workflow before reaching for broader platform scope.
-- Keep the architecture understandable, fitting new features into the current model.
+### Authoring and Rendering
 
-## What Works Today
+- CommonMark with tables, strikethrough, task lists and TOML frontmatter.
+- CJK-aware heading IDs, explicit heading attributes, a table of contents and optional hierarchical heading numbering. Heading and footnote IDs share a page-wide namespace across nested directives.
+- Footnotes with reference-order numbering and return links for repeated references. The page body and each directive body have separate definition scopes.
+- Syntax highlighting for 200+ languages, line numbers, code titles, selected-line highlighting and native collapse / expand controls. Themes can honor a configured visible-line limit.
+- Inline and display math markup for KaTeX, plus Mermaid code fences. The page records which runtimes it needs, and the theme supplies client-side rendering.
+- Block image figures with captions, inline images, and authored IDs, classes and dimensions. Images receive lazy loading and asynchronous decoding.
+- Nested `:::` directives, built-in callouts, generic div wrappers and custom template renderers with positional / named arguments. Code blocks and code spans retain literal shortcode and directive text.
+- Optional emoji and Font Awesome shortcodes. Short table columns can receive a no-wrap class using CJK-aware text widths.
 
-### Writing
+The main table of contents includes page-body headings. Headings inside directives retain IDs and numbering but stay outside that outline. Custom directives and raw HTML are authored site content, so their output depends on the site's templates and styles. See the [Syntax Reference](syntax.md) for authoring rules.
 
-- TOML frontmatter, GitHub Flavored Markdown, and KaTeX math out of the box.
-- CJK-aware heading IDs and table of contents, so Chinese / Japanese / Korean headings stay linkable.
-- `:::` directive blocks rendered through theme templates: callouts, link cards, music embeds, anything you can template.
-- Image attributes, emoji and Font Awesome icon shortcodes, and rich code-block presentation helpers.
-- Pandoc-style code-block attributes such as ` ```rust {title="src/main.rs" highlight="1,3-5" collapse} ` for titles, line highlighting, and forced collapse / expand.
-- Mermaid diagrams via ` ```mermaid ` fences. Themes load mermaid.js only on pages that contain a diagram.
+### Content, Listings and Discovery
 
-### Publishing
+- Sectioned posts, posts without a section, and standalone pages, with pretty URLs and frontmatter slug overrides.
+- Page bundles that keep Markdown, images, data and stylesheets together. Private underscore-prefixed inputs remain unpublished, and nested bundles own their own assets.
+- Draft exclusion and listing metadata through `_index.md`. Content files without TOML frontmatter are skipped.
+- Paginated home, all-posts, section and tag archives, with year-grouped archive entries and section / tag overview pages. Tag archives include tagged standalone pages.
+- Home-page pinning through frontmatter weights. Archives and feeds retain date order.
+- Publication and update timestamps rendered in the configured time zone, with optional Git-derived updates when authored metadata omits them.
+- Shared page descriptions from frontmatter or text before `<!--more-->`, used in page and listing templates.
+- RSS feeds for the site, all posts, each section and each tag. Sitemaps include emitted HTML routes, and builds also produce `robots.txt` and an optional template-based 404 page.
+- Optional full-text search indexing through Pagefind, with the search interface supplied by the theme.
 
-- Pretty URLs, page bundles with co-located assets, and per-page CSS injection.
-- Build-time image pipeline: every local image gets natural `width` / `height` plus a base64 WebP placeholder for instant first paint.
-- Home, section, standalone, and paginated taxonomy / term pages.
-- Pinned posts on the home page via a `weight` frontmatter field, keeping hero pieces above the fold without affecting archive, tag, or RSS order.
-- Time-zone-aware publication and last update dates, with optional Git-derived updates.
-- RSS 2.0 feeds for the whole site, each section, and each taxonomy term.
-- Sitemap, `robots.txt`, and an optional template-driven 404 page.
-- Full-text search via [Pagefind](https://pagefind.app), wired in at build time.
-- Shared and page CSS compilation during build / serve, with imports, nesting, and optional Tailwind.
-- Content-hashed CSS / JS URLs for published assets and compiled stylesheets.
-- Optional HTML / CSS / JS minification with `kiln build --minify`, implemented in Rust with no Node toolchain required.
-- Page-scoped asset registry: themes load KaTeX, Mermaid, search, and other scripts only on pages that need them, no frontmatter flag required.
-- `output_dir` validation prevents writing outside the project root.
+Home, archive, overview and 404 generation depend on the corresponding templates. Non-bundle Markdown files cannot own co-located assets or page CSS. Tags are the supported taxonomy, and frontmatter dates represent absolute instants. Git-derived updates require the Git executable and full repository history. See [Content](content.md) and [Template Variables](themes.md#template-variables).
 
-### Reader Experience
+### Assets, Stylesheets and Images
 
-- Comments via [Twikoo](https://twikoo.js.org/) in the IgnIt theme, with per-post threads behind a provider switch so other backends can drop in.
+- Shared `assets/`, output-root `static/` files and bundle-local assets, with defined site / theme override precedence.
+- Shared and page-owned stylesheet entries, local imports, CSS nesting and source-relative asset URL resolution. Page CSS is linked only from its owning page.
+- Built-in plain CSS processing and optional Tailwind compilation through the external processor. Page entries can reuse shared theme definitions without duplicating the shared stylesheet.
+- Content-hashed CSS / JS URLs, including compiled stylesheets, with template helpers that account for deployment path prefixes.
+- Optional HTML / CSS / JS minification in Rust. Files already named `*.min.css` or `*.min.js` are preserved, and unsupported inputs retain their original bytes with a warning.
+- Natural dimensions for resolvable local images and small WebP loading placeholders for supported decodable formats. Featured images expose the same metadata to page and listing templates.
+- Optional native AVIF decoding for placeholders. AVIF publication and dimension reads work without that feature, and the Nix package enables it by default.
 
-### Internationalization
+Image processing does not fetch remote images or generate responsive image variants. Missing or undecodable images may have no placeholder. Fingerprints cover individual files, so ordinary public CSS / JS imports need separate bundling when their dependencies also need content-hashed URLs. Plain CSS needs no external compiler. Tailwind requires its processor and Node.js outside the supplied Nix environment. See [Assets and Stylesheets](assets.md) and [Image Rendering](themes.md#image-rendering).
 
-- Translatable theme strings via layered TOML files: site override → theme language → English fallback, so partial translations degrade gracefully.
-- `{{ t("key", name=value) }}` template helper with placeholder interpolation.
-- Navigation menu labels resolve through the same i18n tables as the rest of your strings.
-- `kiln init-theme` scaffolds starter `en.toml` and `zh-Hans.toml` files for new themes.
+### Themes, Templates and Localization
 
-### Theming
+- MiniJinja page, listing and directive templates, with site files overriding theme files at the same path.
+- Theme defaults merged recursively with site parameters, named navigation menus sorted by weight, and minimum kiln version checks for themes.
+- Shared metadata across page and listing contexts, including canonical URLs, linked tags / sections and resolved featured images.
+- Template helpers for translations, asset URLs, timestamps and CSV data. Directive templates can read page-local files and register scripts for the current page.
+- Page-scoped math / Mermaid feature detection and script registration. Identical script declarations are deduplicated, and conflicting declarations fail the build.
+- Flat TOML translation files with site active language → theme active language → theme English fallback, named placeholder interpolation and literal-label fallback for missing keys.
+- `kiln init-theme` scaffolding for templates, a stylesheet entry and English / Simplified Chinese translation files.
 
-- Layered MiniJinja templates: site files transparently override theme files.
-- Named `[[menu.<group>]]` blocks with per-group `weight` sorting. Themes pick which groups to render.
-- Deep parameter merging for nested theme config tables.
+The engine supplies content and template contracts. [IgnIt](https://github.com/hakula139/IgnIt) owns reader-facing layouts, dark mode, search interaction, comments and other presentation behavior. A theme shipping translations must include `en.toml`. Localization selects one language for theme strings and does not create separate per-language content trees. See [Themes](themes.md).
 
-The default theme [**IgnIt**](https://github.com/hakula139/IgnIt) ships with Tailwind CSS v4 and a polished feature set:
+### Builds and Development
 
-- Glassmorphism panels with a configurable background image and optional cursor-tracking glow.
-- Dark / light mode (system preference + manual toggle, flash-free).
-- Responsive layout with hover-reveal image cards on the home page.
-- Pagefind search modal, link card directives, modern favicon set.
-- Back-to-top button, mobile menu animations, print styles.
-- Keyboard focus-visible styling and `prefers-reduced-motion` support.
+- `kiln build` generates a static output directory, with optional minification and a base-URL override for preview deployments.
+- Deployment path prefixes and encoded filename components are handled consistently in generated page, listing, feed, sitemap and asset URLs.
+- Output validation protects the project root, source trees and repository metadata from being overwritten. Route planning reports collisions between content, generated pages and public files before publishing.
+- Builds prepare output separately and publish it after rendering and optional search indexing succeed, preserving the previous output when a build fails.
+- `kiln serve` provides local preview, directory redirects, a custom 404 response and browser live reload after successful rebuilds. Preview builds use the local server URL and skip minification.
+- Rust unit / integration tests cover rendering and build behavior. [Benchmarks](benchmarks.md) cover representative rendering, discovery and full-build workloads.
+- Cargo and Nix installation paths, with Nix packages for the engine, Pagefind and the Tailwind processor.
 
-### Tooling
+Pagefind is an external executable when indexing is enabled. Live reload watches the source directories that exist at startup. Creating a new top-level source directory, switching themes, changing the output directory or changing imports outside watched trees requires restarting the server. Builds currently regenerate the site as a whole. See [Usage](../README.md#usage) and [Live Reload](assets.md#live-reload).
 
-- `kiln build` for one-shot builds.
-- `kiln serve` with file watching and live reload for fast iteration.
-- `kiln convert` to migrate Hugo sites into kiln, frontmatter and shortcodes included.
+### Hugo Content Migration
+
+- `kiln convert` migrates content and static files between separate site roots while preserving existing destination files.
+- Supported YAML frontmatter becomes TOML. Category indexes become post-section indexes, and tag indexes keep their location.
+- Admonition, image and Mermaid shortcodes receive native equivalents. Other standalone shortcodes become directives for matching theme templates.
+- Unsupported metadata produces omission warnings. Malformed recognized frontmatter and unsupported content-bearing shortcodes fail conversion.
+
+Configuration, theme templates and unsupported Hugo behavior require manual migration. Files without recognized frontmatter are copied unchanged and need TOML frontmatter before kiln publishes them. Source and destination roots must not overlap. See [Hugo Content Migration](content.md#hugo-content-migration).
 
 ## Current Focus
 
-- Small authoring and tooling improvements as they surface from real publishing.
+Review and simplify the existing engine before adding features:
 
-## Later
+- Keep route construction, asset ownership and template metadata consistent across individual pages, listings, feeds and sitemaps.
+- Reduce duplicated parsing and rendering logic while preserving authoring behavior, particularly across nested directives, images and footnotes.
+- Keep publication failures actionable and preserve prior output. Exercise these boundaries with behavioral tests and real-site builds.
+- Keep public APIs, documentation and test suites proportionate to the requirements they serve.
 
-A demo site to show kiln in motion, once the core publishing workflow feels finished. Beyond that, engine work continues to be opportunistic.
+These are maintenance priorities for existing capabilities. New engine work should address a concrete publishing need.
 
-## Not the Goal Right Now
+## Planned Work
 
-- One-to-one Hugo feature parity.
-- Full multi-language site generation (separate per-language URL trees).
-- Build-system complexity ahead of a complete publishing workflow.
-- Scope expansion that outpaces real usage.
+A demo site showing the supported authoring and publishing workflow remains planned. It should make theme integration and content examples easier to evaluate. Further feature priorities will follow actual site usage.
+
+## Intentional Boundaries
+
+- Full Hugo compatibility is outside the current scope. The converter supports a defined migration subset.
+- Separate per-language site generation is outside the current plan. Theme-string localization is implemented.
+- Reader interactions belong to themes. The engine provides rendered content, metadata and asset declarations for those interfaces.

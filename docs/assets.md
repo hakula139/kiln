@@ -1,6 +1,6 @@
 # Assets and Stylesheets
 
-`kiln build` and `kiln serve` publish assets and compile stylesheets automatically. Keep handwritten sources in the site, theme, or page that owns them. Generated files belong only in the build output.
+`kiln build` and `kiln serve` publish assets and compile stylesheets automatically. Keep handwritten sources in the site, theme, or page that owns them. Generated files belong only in the build output. Failed builds preserve the previous output.
 
 ## Public Files
 
@@ -10,11 +10,11 @@
 | `static/`           | `public/`        | Files requiring root paths, such as favicons, manifests, `_headers`, and `_redirects` |
 | `content/<bundle>/` | `public/<page>/` | Co-located page assets, retaining their relative paths                                |
 
-Files and directories beginning with `_` are private within `assets/` and content bundles. This keeps stylesheet sources alongside public assets. `static/` publishes every file verbatim, including underscore-prefixed root files such as `_headers` and `_redirects`.
+Files and directories beginning with `_` are private within `assets/` and content bundles. This keeps stylesheet sources alongside public assets. `static/` publishes underscore-prefixed root files such as `_headers` and `_redirects`.
 
 Site files override theme files. Within each owner, `static/` overlays `assets/` at the output root. Page bundle assets are published next, followed by compiled stylesheets.
 
-Reference shared files with root-relative URLs, such as `/assets/images/logo.svg`. Use bundle-relative URLs in Markdown for page assets, such as `assets/diagram.svg`. See [Page Bundles](content.md#page-bundles) for frontmatter examples.
+Reference shared files through `asset_url()` in templates. Absolute Markdown URLs such as `/assets/images/logo.svg` must include any deployment path prefix. Use bundle-relative URLs in Markdown for page assets, such as `assets/diagram.svg`. See [Page Bundles](content.md#page-bundles) for frontmatter examples.
 
 ## Stylesheet Sources
 
@@ -51,7 +51,7 @@ Local `@import` rules are bundled and CSS nesting is supported. Relative `url(..
 
 ### Processor Setup
 
-Plain CSS needs no external compiler. A theme selects Tailwind in `theme.toml`, and a site can override the same setting in `config.toml`:
+The accepted processors are `"plain"` and `"tailwind"`. An unset value inherits the theme setting, otherwise it uses plain CSS. Set `processor = "plain"` to override a Tailwind theme. Plain CSS needs no external compiler. A theme selects Tailwind in `theme.toml`, and a site can override the same setting in `config.toml`:
 
 ```toml
 [css]
@@ -83,11 +83,11 @@ Only the owning page receives `page_css`. Its selectors still share a document w
 
 ## Fingerprints and Minification
 
-`asset_url(path)` resolves a published root-relative path. CSS and JavaScript receive a content-hashed filename, such as `/assets/css/site.a1b2c3d4e5f6.css`. Other files keep their original URLs. Missing paths, queries, fragments, and traversal components fail the build. `page_css` already contains the fingerprinted page stylesheet URL.
+`asset_url(path)` resolves a published site-root-relative path and includes the configured deployment prefix. Encode filename components in the input URL, such as `%20` for a space or `%25` for a literal percent sign. CSS and JavaScript receive a content-hashed filename, such as `/assets/css/site.a1b2c3d4e5f6.css`. Other files keep their original URLs. Missing paths, queries, fragments, and traversal components fail the build. `page_css` already contains the fingerprinted page stylesheet URL.
 
 Original CSS / JS files remain available for relative imports and direct references. Each digest covers one file. Stylesheet source imports are bundled, while ordinary public CSS and JavaScript retain their import URLs. Bundle those entries separately when imported dependencies also need fingerprinted URLs.
 
-`kiln build --minify` minifies published CSS / JS before computing fingerprints, then minifies generated HTML. Files named `*.min.css` or `*.min.js` pass through unchanged. Inputs that cannot be minified log a warning and keep their original bytes.
+`kiln build --minify` minifies published CSS / JS before computing fingerprints, then minifies HTML. Files named `*.min.css` or `*.min.js` pass through unchanged. Inputs that cannot be minified log a warning and keep their original bytes.
 
 ## Live Reload
 
