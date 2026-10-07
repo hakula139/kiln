@@ -4,6 +4,53 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-10-07
+
+### Breaking changes
+
+- _(render)_ Collect scoped endnotes with unique anchors and backlinks (#71)
+- _(render)_ Use native code block disclosures (#82)
+- _(css)_ Compile shared and page-owned styles during site builds (#95)
+
+### Added
+
+- _(render)_ Mark short table columns as nowrap (#74)
+- _(build)_ Expose post tags and last update metadata (#78)
+- _(render)_ Add per-page hierarchical heading numbering (#83)
+- _(render)_ Support numbering starts on headings (#87)
+- _(build)_ Report total build time and generated page counts (#88)
+- _(output)_ Materialize symlinked source assets (#98)
+- _(bench)_ Add reusable performance workloads (#105)
+
+### Fixed
+
+- _(render)_ Keep rendered directive HTML out of the markdown pass (#77)
+- _(directive)_ Render stable callout body structure (#79)
+- _(render)_ Escape custom code block classes (#85)
+- _(convert)_ Handle admonitions without positional arguments (#89)
+- _(taxonomy)_ Deduplicate repeated page tags (#90)
+- _(template)_ Surface optional template loading errors (#92)
+- _(render)_ Balance highlighted code line spans (#93)
+- _(content)_ Propagate discovery read errors (#94)
+- _(taxonomy)_ Reject tags with empty slugs (#97)
+- _(serve)_ Watch site translation files (#99)
+- _(serve)_ Preserve queries in directory redirects (#100)
+- _(build)_ Normalize site URL joining (#96)
+- _(attrs)_ Detect closing braces outside quoted values (#102)
+- _(release)_ Include prerelease changes in stable notes (#111)
+- _(bench)_ Run each revision with its own harness (#113)
+
+### Changed
+
+- _(render)_ Speed up LQIP thumbnail generation (#72)
+- _(render)_ Avoid repeated shortcode suffix searches (#103)
+- _(build)_ Reuse render options across content pages (#106)
+
+### Dependencies
+
+- _(deps)_ Refresh project dependencies (#70)
+- _(deps)_ Refresh project dependencies (#107)
+
 ## [0.4.0-rc.4] - 2026-10-06
 
 ### Breaking changes
@@ -186,6 +233,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - _(deps)_ Bump rand from 0.9.2 to 0.9.4 (#29)
 
+[0.4.0]: https://github.com/hakula139/kiln/compare/v0.3.0..v0.4.0
 [0.4.0-rc.4]: https://github.com/hakula139/kiln/compare/v0.4.0-rc.3..v0.4.0-rc.4
 [0.4.0-rc.3]: https://github.com/hakula139/kiln/compare/v0.4.0-rc.2..v0.4.0-rc.3
 [0.4.0-rc.2]: https://github.com/hakula139/kiln/compare/v0.4.0-rc.1..v0.4.0-rc.2
