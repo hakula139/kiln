@@ -7,8 +7,6 @@ use image::{Rgb, RgbImage};
 
 use kiln::render::lqip::{ImageConfig, ImageResolver};
 
-use super::workloads;
-
 /// Measures fresh and primed image caches, excluding image creation and resolver construction.
 pub(super) fn benchmarks(criterion: &mut Criterion) {
     let directory = tempfile::tempdir().unwrap();
@@ -33,19 +31,6 @@ pub(super) fn benchmarks(criterion: &mut Criterion) {
     assert_eq!((placeholder.width(), placeholder.height()), (16, 12));
     assert_eq!(resolver.resolve("/example.png", None).unwrap(), expected);
 
-    for (name, contract) in [
-        ("cold", "resolve-with-fresh-cache-excluding-construction/v1"),
-        ("cached", "resolve-with-primed-cache/v1"),
-    ] {
-        workloads::record(
-            &format!("images/{name}"),
-            contract,
-            &[
-                &std::fs::read(directory.path().join("example.png")).unwrap(),
-                toml::to_string(&ImageConfig::default()).unwrap().as_bytes(),
-            ],
-        );
-    }
     let mut group = criterion.benchmark_group("images");
     group.bench_function("cold", |bencher| {
         bencher.iter_batched(

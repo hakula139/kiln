@@ -94,9 +94,6 @@ jobs:
         with:
           cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
-      - name: Test benchmark reporting
-        run: python3 -m unittest discover -s .github/scripts -v
-
       - name: Install dependencies
         run: nix develop -c pnpm install --frozen-lockfile
 

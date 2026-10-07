@@ -5,7 +5,6 @@ on:
     paths:
       - .github/actions/setup-nix/**
       - .github/workflows/benchmarks.yml
-      - .github/scripts/benchmark_report.py
       - Cargo.lock
       - Cargo.toml
       - crates/**
@@ -102,7 +101,6 @@ jobs:
             (
               cd "$revision"
               CRITERION_HOME="$GITHUB_WORKSPACE/results/$revision/criterion" \
-              KILN_BENCH_MANIFEST="$GITHUB_WORKSPACE/results/$revision/workloads.toml" \
               CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target/$revision" \
                 nix develop "$GITHUB_WORKSPACE/head" -c \
                 cargo bench --locked --bench performance -- \
@@ -110,8 +108,13 @@ jobs:
             ) 2>&1 | tee "results/measure-$revision.log"
           done
 
-      - name: Show compatible comparisons
-        run: python3 head/.github/scripts/benchmark_report.py results
+      - name: Summarize benchmark results
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          Both revisions ran their own benchmark harness. The benchmark-results artifact contains separate Criterion reports, raw samples, measurement logs, and environment details.
+
+          Review workload inputs and timing boundaries before comparing results. Shared-runner timings are advisory.
+          EOF
 
       - name: Upload benchmark results
         if: always()
