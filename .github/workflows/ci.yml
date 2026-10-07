@@ -47,10 +47,10 @@ jobs:
         run: nix develop -c cargo fmt --all --check
 
       - name: Clippy
-        run: nix develop -c cargo clippy --all-targets -- -D warnings
+        run: nix develop -c cargo clippy --all-targets --all-features -- -D warnings
 
       - name: Test
-        run: nix develop -c cargo test
+        run: nix develop -c cargo test --all-features
 
       - name: Test benchmark workloads
         run: nix develop -c cargo test --bench performance
@@ -75,8 +75,8 @@ jobs:
       - name: Build without the AVIF decoder
         run: cargo build --locked
 
-      - name: Test core library
-        run: cargo test --locked --lib
+      - name: Test default features
+        run: cargo test --locked --lib --test image_features
 
   windows-test:
     name: Windows Rust Test
@@ -126,7 +126,7 @@ jobs:
         uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Generate coverage
-        run: nix develop -c cargo llvm-cov --ignore-filename-regex 'main\.rs' --lcov --output-path lcov.info
+        run: nix develop -c cargo llvm-cov --all-features --ignore-filename-regex 'main\.rs' --lcov --output-path lcov.info
 
       - name: Upload to Codecov
         uses: codecov/codecov-action@v7
