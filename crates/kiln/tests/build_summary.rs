@@ -6,10 +6,40 @@ use indoc::{formatdoc, indoc};
 #[path = "support/cli.rs"]
 mod support;
 
-use support::{kiln, write_executable_file, write_test_file};
+#[cfg(unix)]
+use support::write_executable_file;
+use support::{kiln, write_test_file};
 
 // ── build ──
 
+#[test]
+fn build_summary_skips_missing_templates_and_disabled_search_with_minify() {
+    let root = tempfile::tempdir().unwrap();
+    write_site(root.path());
+
+    let output = kiln()
+        .args(["build", "--minify", "--root"])
+        .arg(root.path())
+        .output()
+        .unwrap();
+
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(output.status.success(), "{stderr}");
+    assert!(stderr.contains("Built 3 pages (3 content) in "), "{stderr}");
+    assert!(!stderr.contains("Search indexing:"), "{stderr}");
+    assert!(
+        stderr
+            .lines()
+            .any(|line| line.starts_with("minified 4 files,")),
+        "{stderr}"
+    );
+
+    assert!(!root.path().join("public/index.html").exists());
+    assert!(!root.path().join("public/404.html").exists());
+    assert!(root.path().join("public/posts/topic/a/index.html").exists());
+}
+
+#[cfg(unix)]
 #[test]
 fn build_summary_counts_generated_pages_and_includes_search_time() {
     let root = tempfile::tempdir().unwrap();
@@ -100,33 +130,6 @@ fn build_summary_counts_generated_pages_and_includes_search_time() {
             "{stdout}"
         );
     }
-}
-
-#[test]
-fn build_summary_skips_missing_templates_and_disabled_search_with_minify() {
-    let root = tempfile::tempdir().unwrap();
-    write_site(root.path());
-
-    let output = kiln()
-        .args(["build", "--minify", "--root"])
-        .arg(root.path())
-        .output()
-        .unwrap();
-
-    let stderr = String::from_utf8(output.stderr).unwrap();
-    assert!(output.status.success(), "{stderr}");
-    assert!(stderr.contains("Built 3 pages (3 content) in "), "{stderr}");
-    assert!(!stderr.contains("Search indexing:"), "{stderr}");
-    assert!(
-        stderr
-            .lines()
-            .any(|line| line.starts_with("minified 4 files,")),
-        "{stderr}"
-    );
-
-    assert!(!root.path().join("public/index.html").exists());
-    assert!(!root.path().join("public/404.html").exists());
-    assert!(root.path().join("public/posts/topic/a/index.html").exists());
 }
 
 fn write_site(root: &Path) {

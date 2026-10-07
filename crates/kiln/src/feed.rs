@@ -3,7 +3,15 @@ use jiff::Timestamp;
 use jiff::tz::TimeZone;
 
 use crate::html::{self, writeln_indented};
-use crate::template::vars::PageSummary;
+
+/// Borrowed RSS item metadata with an unformatted publication timestamp.
+#[derive(Debug)]
+pub struct FeedItem<'a> {
+    pub title: &'a str,
+    pub url: &'a str,
+    pub description: &'a str,
+    pub published: Option<Timestamp>,
+}
 
 /// RSS channel metadata.
 #[derive(Debug)]
@@ -23,7 +31,11 @@ pub const DEFAULT_FEED_LIMIT: usize = 20;
 /// Items are included in the order given (callers pre-sort by date descending). Output is
 /// limited to `limit` items.
 #[must_use]
-pub fn generate_rss(channel: &Channel, items: &[PageSummary], limit: usize) -> String {
+pub fn generate_rss<'a>(
+    channel: &Channel,
+    items: impl IntoIterator<Item = FeedItem<'a>>,
+    limit: usize,
+) -> String {
     let mut xml = String::from(indoc! {r#"
         <?xml version="1.0" encoding="utf-8" standalone="yes"?>
         <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
@@ -45,18 +57,17 @@ pub fn generate_rss(channel: &Channel, items: &[PageSummary], limit: usize) -> S
         write_escaped_element(&mut xml, 2, "lastBuildDate", date);
     }
 
-    for item in items.iter().take(limit) {
+    for item in items.into_iter().take(limit) {
         writeln_indented!(&mut xml, 2, "<item>");
-        write_escaped_element(&mut xml, 3, "title", &item.title);
-        write_escaped_element(&mut xml, 3, "link", &item.url);
+        write_escaped_element(&mut xml, 3, "title", item.title);
+        write_escaped_element(&mut xml, 3, "link", item.url);
 
         if !item.description.is_empty() {
-            write_escaped_element(&mut xml, 3, "description", &item.description);
+            write_escaped_element(&mut xml, 3, "description", item.description);
         }
 
-        if let Some(ref date) = item.date
-            && let Some(rfc2822) = iso_to_rfc2822(date)
-        {
+        if let Some(date) = item.published {
+            let rfc2822 = format_rfc2822(date);
             write_escaped_element(&mut xml, 3, "pubDate", &rfc2822);
         }
 
@@ -64,7 +75,7 @@ pub fn generate_rss(channel: &Channel, items: &[PageSummary], limit: usize) -> S
             &mut xml,
             3,
             r#"<guid isPermaLink="true">{}</guid>"#,
-            html::escape(&item.url),
+            html::escape(item.url),
         );
         writeln_indented!(&mut xml, 2, "</item>");
     }
@@ -90,17 +101,23 @@ fn write_escaped_element(xml: &mut String, level: u8, tag: &str, content: &str) 
     writeln_indented!(xml, level, "<{tag}>{}</{tag}>", html::escape(content));
 }
 
-/// Converts an ISO 8601 date string to RFC 2822 format for RSS `<pubDate>`.
-///
-/// Returns `None` if the input cannot be parsed.
-fn iso_to_rfc2822(iso: &str) -> Option<String> {
-    let ts: Timestamp = iso.parse().ok()?;
-    Some(format_rfc2822(ts))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::template::vars::PageSummary;
+
+    fn generate_rss(channel: &Channel, items: &[PageSummary], limit: usize) -> String {
+        super::generate_rss(
+            channel,
+            items.iter().map(|item| FeedItem {
+                title: &item.title,
+                url: &item.url,
+                description: &item.description,
+                published: item.date.as_ref().map(|date| date.parse().unwrap()),
+            }),
+            limit,
+        )
+    }
 
     /// Extracts the inner content of the first `<item>...</item>` block in `xml`.
     fn first_item(xml: &str) -> &str {
@@ -324,35 +341,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn generate_rss_omits_pub_date_with_invalid_date() {
-        let channel = Channel {
-            title: "Site".into(),
-            link: "https://example.com/".into(),
-            feed_url: "https://example.com/index.xml".into(),
-            description: String::new(),
-            language: "en".into(),
-            last_build_date: None,
-        };
-        let items = vec![make_summary(
-            "Post",
-            "https://example.com/post/",
-            Some("not-a-date"),
-        )];
-
-        let xml = generate_rss(&channel, &items, DEFAULT_FEED_LIMIT);
-
-        let item = first_item(&xml);
-        assert!(
-            item.contains("<title>Post</title>"),
-            "item should contain its title, xml:\n{xml}"
-        );
-        assert!(
-            !item.contains("<pubDate>"),
-            "should omit pubDate for unparsable date, xml:\n{xml}"
-        );
-    }
-
     // ── format_rfc2822 ──
 
     #[test]
@@ -360,30 +348,5 @@ mod tests {
         let ts: Timestamp = "2026-03-15T10:30:00Z".parse().unwrap();
         let formatted = format_rfc2822(ts);
         assert_eq!(formatted, "Sun, 15 Mar 2026 10:30:00 +0000");
-    }
-
-    // ── iso_to_rfc2822 ──
-
-    #[test]
-    fn iso_to_rfc2822_valid() {
-        assert_eq!(
-            iso_to_rfc2822("2026-01-02T15:04:05Z"),
-            Some("Fri, 02 Jan 2026 15:04:05 +0000".into()),
-        );
-    }
-
-    #[test]
-    fn iso_to_rfc2822_with_offset() {
-        let result = iso_to_rfc2822("2026-01-02T23:04:05+08:00");
-        assert_eq!(
-            result,
-            Some("Fri, 02 Jan 2026 15:04:05 +0000".into()),
-            "should convert to UTC"
-        );
-    }
-
-    #[test]
-    fn iso_to_rfc2822_invalid_returns_none() {
-        assert!(iso_to_rfc2822("not-a-date").is_none());
     }
 }

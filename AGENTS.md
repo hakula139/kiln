@@ -4,15 +4,15 @@
 
 kiln is a custom static site generator (SSG) written in Rust, replacing a Hugo + LoveIt theme stack for [hakula.xyz](https://hakula.xyz).
 
-User-facing feature positioning belongs in `README.md`. The canonical in-repo roadmap / status summary lives in `docs/roadmap.md`. Do not duplicate long feature checklists in this file.
+`README.md` presents selected user-facing highlights. `docs/roadmap.md` documents detailed capabilities, limits, and plans for developers. Do not duplicate long feature checklists in this file.
 
 ### CLI
 
 ```bash
-kiln build [--root <dir>] [--minify]                         # Build the site (default root: cwd)
-kiln serve [--root <dir>] [--port 5456] [--open]             # Dev server with live reload
-kiln init-theme <name> [--root]                              # Scaffold a new theme under themes/<name>/
-kiln convert --source <dir> --dest <dir>                     # Convert a Hugo site root into a kiln site root
+kiln build [--root <dir>] [--base-url <url>] [--minify]   # Build the site (default root: cwd)
+kiln serve [--root <dir>] [--port 5456] [--open]          # Dev server with live reload
+kiln init-theme <name> [--root <dir>]                     # Scaffold a new theme under themes/<name>/
+kiln convert --source <dir> --dest <dir>                  # Convert a Hugo site root into a kiln site root
 ```
 
 Asset publication and CSS contracts belong in [docs/assets.md](docs/assets.md). Update that document when changing the pipeline.
@@ -43,21 +43,21 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 ├── build.rs             # BuildContext, build orchestration, per-page rendering, static / asset copying
 ├── build/               # Listing pipeline and output generator submodules
 │   ├── archive.rs       # Paginated year-grouped archive pages (/posts/, /posts/<section>/, /tags/<slug>/)
-│   ├── assets.rs        # Static / bundle asset publication and source → output paths
 │   ├── error.rs         # 404 error page generation
 │   ├── feed.rs          # RSS feed orchestration (main + per-section + per-term feeds)
 │   ├── git.rs           # Optional content-file commit timestamps for post templates
 │   ├── home.rs          # Paginated home page generation
-│   ├── listing.rs       # ListedPage model, single-pass ListingArtifacts construction, sorting / grouping helpers
+│   ├── listing.rs       # Prepared page metadata and borrowed listing collections
 │   ├── overview.rs      # Bucket overview index pages (/sections/, /tags/)
 │   ├── paginate.rs      # Generic write_paginated, paginate_config
-│   ├── sitemap.rs       # sitemap.xml + robots.txt generation
-│   └── url.rs           # page_url, resolve_relative_url: build-time URL resolution helpers
+│   ├── routes.rs        # Enabled route planning, collision validation and sitemap entries
+│   └── sitemap.rs       # sitemap.xml + robots.txt generation
 ├── config.rs            # TOML site configuration loading, theme resolution, param merging
 ├── content.rs           # Content submodule declarations and shared private-name predicate
 ├── content/             # Content model submodules
 │   ├── discovery.rs     # Recursive content walking with draft / _-prefix / no-frontmatter exclusion
 │   ├── frontmatter.rs   # TOML frontmatter parsing (+++), Frontmatter / FeaturedImage / ImageCredit
+│   ├── index.rs         # Shared section / taxonomy index metadata loading
 │   └── page.rs          # Page struct, PageKind, slug derivation, summary, output paths, co-located assets
 ├── convert.rs           # Hugo → kiln content converter orchestrator
 ├── convert/             # Hugo → kiln converter submodules
@@ -68,14 +68,14 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 ├── directive/           # :::-fenced directive parsing + rendering submodules
 │   ├── callout.rs       # 12 callout types (<details> with id / class propagation)
 │   ├── div.rs           # Fenced divs and unknown directives (<div> with id / class propagation)
-│   └── parser.rs        # Line-based stack parser, nesting, single-pass arg + Pandoc attr parsing
+│   └── parser.rs        # Nested directive tree with source ranges and parsed attributes
 ├── feed.rs              # RSS 2.0 XML generation (Channel, generate_rss, RFC 2822 date formatting)
 ├── html.rs              # Shared HTML utilities (escape, indent, writeln_indented)
 ├── i18n.rs              # Layered i18n resolver (site → theme lang → theme English), t() with placeholder interpolation
 ├── init.rs              # Theme scaffolding (kiln init-theme)
 ├── lib.rs               # Library module declarations
 ├── main.rs              # CLI argument parsing and command dispatch
-├── markdown.rs          # Shared raw-markdown text utilities (code fence detection, code span scanning)
+├── markdown.rs          # Shared parser options, protected code ranges and shortcode scanning
 ├── minify.rs            # Post-build HTML / CSS / JS minification (lightningcss, oxc_minifier, minify-html)
 ├── output.rs            # Owned build transactions, file output and static file copying
 ├── pagination.rs        # Paginator for windowed views over slices, page URL computation
@@ -102,13 +102,16 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 ├── serve.rs             # Dev server with file watching, WebSocket live reload, script injection
 ├── sitemap.rs           # Sitemap XML + robots.txt generation
 ├── static_assets.rs     # Published asset manifest + content-hashed CSS / JS URLs
+├── static_assets/
+│   └── publication.rs   # Static / bundle asset publication and source → output paths
 ├── taxonomy.rs          # TaxonomyKind, Taxonomy, Term, TaxonomySet, build_taxonomies()
 ├── template.rs          # MiniJinja layered template engine, directive / archive / overview / error rendering
 ├── template/            # Template submodules
 │   ├── functions.rs     # MiniJinja template functions (now, read_file, parse_csv, t, register_script)
 │   └── vars.rs          # Template variables structs (PostTemplateVars, PageSummary, etc.)
 ├── test_utils.rs        # Shared test infrastructure (templates, helpers, Page factory)
-└── text.rs              # Shared format-agnostic text utilities (slugify, titlecase)
+├── text.rs              # Shared format-agnostic text utilities (slugify, titlecase)
+└── url.rs               # Encoded filesystem paths, canonical page URLs and deployment prefixes
 ````
 
 ## Coding Conventions

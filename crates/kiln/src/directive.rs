@@ -1,6 +1,6 @@
-pub mod callout;
-pub mod div;
-pub mod parser;
+pub(crate) mod callout;
+pub(crate) mod div;
+pub(crate) mod parser;
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -9,7 +9,7 @@ use std::ops::Range;
 use serde::Serialize;
 use strum::{AsRefStr, EnumIter, EnumString};
 
-use crate::attrs::{scan_quoted_value, unescape_quoted};
+use crate::attrs::{AttrToken, AttrTokens};
 
 /// Known callout types.
 ///
@@ -112,78 +112,25 @@ pub(crate) fn parse_directive_args(input: &str) -> DirectiveArgs {
         id: None,
         classes: Vec::new(),
     };
-    let mut rest = input.trim();
-
-    while !rest.is_empty() {
-        if let Some(after) = rest.strip_prefix('#') {
-            let end = after.find(char::is_whitespace).unwrap_or(after.len());
-            if result.id.is_none() && end > 0 {
-                result.id = Some(after[..end].to_string());
+    for token in AttrTokens::new(input) {
+        match token {
+            AttrToken::Id(id) if result.id.is_none() => result.id = Some(id.to_owned()),
+            AttrToken::Class(class) => result.classes.push(class.to_owned()),
+            AttrToken::Named(key, value) => {
+                result.named.insert(key.to_owned(), value.into_owned());
             }
-            rest = after[end..].trim_start();
-            continue;
+            AttrToken::Bare(value) => result.positional.push(value.to_owned()),
+            AttrToken::Quoted(value) => result.positional.push(value.into_owned()),
+            AttrToken::Id(_) => {}
         }
-
-        if let Some(after) = rest.strip_prefix('.') {
-            let end = after.find(char::is_whitespace).unwrap_or(after.len());
-            if end > 0 {
-                result.classes.push(after[..end].to_string());
-            }
-            rest = after[end..].trim_start();
-            continue;
-        }
-
-        if let Some(after_quote) = rest.strip_prefix('"') {
-            let (end, has_escapes) = scan_quoted_value(after_quote);
-            let raw = &after_quote[..end];
-            let value = if has_escapes {
-                unescape_quoted(raw)
-            } else {
-                raw.to_string()
-            };
-            result.positional.push(value);
-            rest = after_quote.get(end + 1..).unwrap_or("").trim_start();
-            continue;
-        }
-
-        let next_ws = rest.find(char::is_whitespace).unwrap_or(rest.len());
-        let next_eq = rest.find('=');
-
-        // An empty key makes `=value` fall through as a bare word.
-        if let Some(eq) = next_eq.filter(|&p| p > 0 && p < next_ws) {
-            let key = &rest[..eq];
-            let after_eq = &rest[eq + 1..];
-
-            if let Some(after_q) = after_eq.strip_prefix('"') {
-                let (end, has_escapes) = scan_quoted_value(after_q);
-                let raw = &after_q[..end];
-                let value = if has_escapes {
-                    unescape_quoted(raw)
-                } else {
-                    raw.to_string()
-                };
-                result.named.insert(key.to_string(), value);
-                rest = after_q.get(end + 1..).unwrap_or("").trim_start();
-            } else {
-                let end = after_eq.find(char::is_whitespace).unwrap_or(after_eq.len());
-                result
-                    .named
-                    .insert(key.to_string(), after_eq[..end].to_string());
-                rest = after_eq[end..].trim_start();
-            }
-            continue;
-        }
-
-        result.positional.push(rest[..next_ws].to_string());
-        rest = rest[next_ws..].trim_start();
     }
 
     result
 }
 
 /// A single `:::`-fenced directive block extracted from content.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DirectiveBlock {
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct DirectiveBlock {
     pub kind: DirectiveKind,
     /// Pandoc `#id` attribute (first one wins if multiple specified).
     pub id: Option<String>,

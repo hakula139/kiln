@@ -5,6 +5,7 @@ use minijinja::value::Kwargs;
 use crate::i18n::I18n;
 use crate::render::assets::{AssetsHandle, LoadStrategy, ScriptTag};
 use crate::static_assets::StaticAssetManifest;
+use crate::url::join_site_url;
 
 // ── Date / Time ──
 
@@ -121,9 +122,12 @@ pub(super) fn tpl_t(
 
 pub(super) fn tpl_asset_url(
     manifest: &StaticAssetManifest,
+    deployment_prefix: &str,
     url: &str,
 ) -> std::result::Result<String, minijinja::Error> {
-    manifest.asset_url(url)
+    manifest
+        .asset_url(url)
+        .map(|url| join_site_url(deployment_prefix, &url))
 }
 
 // ── Asset Registration ──
@@ -132,7 +136,7 @@ pub(super) fn tpl_asset_url(
 /// empty string so the call can be used as a statement.
 ///
 /// Accepts `load="defer"` (default), `"async"`, or `"sync"`, and `module=true` for
-/// `type="module"`. Re-registering the same `(url, load, module)` is a no-op, while
+/// `type="module"`. Modules reject `load="sync"`. Re-registering the same tag is a no-op, while
 /// re-registering the same URL with different attributes is an error.
 pub(super) fn tpl_register_script(
     state: &minijinja::State,
@@ -145,7 +149,7 @@ pub(super) fn tpl_register_script(
         .ok_or_else(|| {
             minijinja::Error::new(
                 minijinja::ErrorKind::InvalidOperation,
-                "register_script requires page asset context — \
+                "register_script requires page asset context: \
                  only callable from directive templates",
             )
         })?;

@@ -71,13 +71,13 @@ pub struct FeaturedImage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub credit: Option<ImageCredit>,
 
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_deserializing, skip_serializing_if = "Option::is_none")]
     pub width: Option<u32>,
 
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_deserializing, skip_serializing_if = "Option::is_none")]
     pub height: Option<u32>,
 
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_deserializing, skip_serializing_if = "Option::is_none")]
     pub lqip_uri: Option<String>,
 }
 
@@ -245,7 +245,6 @@ pub(crate) fn split_delimited_frontmatter<'a>(
         .strip_prefix(delimiter)
         .ok_or_else(|| anyhow::anyhow!("missing opening `{delimiter}` delimiter"))?;
 
-    // The opening delimiter must be followed by a newline (or be the entire file).
     let rest = rest
         .strip_prefix('\n')
         .or_else(|| rest.strip_prefix("\r\n"))
@@ -479,6 +478,26 @@ mod tests {
         assert_eq!(fi.src, "/images/cover.webp");
         assert!(fi.position.is_none());
         assert!(fi.credit.is_none());
+    }
+
+    #[test]
+    fn parse_featured_image_ignores_derived_metadata() {
+        let (frontmatter, _) = parse(indoc! {r#"
+            +++
+            [featured_image]
+            src = "photo.webp"
+            width = 800
+            height = 600
+            lqip_uri = "authored-placeholder"
+            +++
+        "#})
+        .unwrap();
+        let image = frontmatter.featured_image.unwrap();
+        assert_eq!(image.src, "photo.webp");
+        assert_eq!(
+            (image.width, image.height, image.lqip_uri),
+            (None, None, None)
+        );
     }
 
     #[test]

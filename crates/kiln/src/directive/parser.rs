@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use super::{DirectiveBlock, DirectiveKind, parse_directive_args};
 use crate::attrs::find_attr_block_end;
-use crate::markdown::{detect_opening_code_fence, is_closing_code_fence};
+use crate::markdown::code_ranges;
 
 struct StackEntry {
     colon_count: usize,
@@ -13,6 +13,14 @@ struct StackEntry {
     body_start: usize,
     /// Byte offset of the opening fence line.
     range_start: usize,
+    children: Vec<DirectiveNode>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct DirectiveNode {
+    pub(crate) block: DirectiveBlock,
+    pub(crate) body_start: usize,
+    pub(crate) children: Vec<Self>,
 }
 
 /// Parsed result from the text after the opening colon fence.
@@ -24,14 +32,12 @@ struct DirectiveHead {
     classes: Vec<String>,
 }
 
-/// Scans content for `:::`-fenced directive blocks.
-///
-/// Returns blocks sorted by ascending byte offset. Unclosed directives are silently skipped.
-#[must_use]
-pub fn parse_directives(content: &str) -> Vec<DirectiveBlock> {
+/// Parses nested `:::` directives in source order, retaining children of unclosed fences.
+pub(crate) fn parse_directives(content: &str) -> Vec<DirectiveNode> {
     let mut blocks = Vec::new();
     let mut stack = Vec::new();
-    let mut code_fence = None;
+    let protected = code_ranges(content);
+    let mut protected = protected.iter().peekable();
     let mut offset = 0;
 
     for raw_line in content.split('\n') {
@@ -40,16 +46,10 @@ pub fn parse_directives(content: &str) -> Vec<DirectiveBlock> {
         let next_offset = (offset + raw_line.len() + 1).min(content.len());
         let line = raw_line.strip_suffix('\r').unwrap_or(raw_line);
 
-        if let Some((fence_char, fence_count)) = code_fence {
-            if is_closing_code_fence(line, fence_char, fence_count) {
-                code_fence = None;
-            }
-            offset = next_offset;
-            continue;
+        while protected.peek().is_some_and(|range| range.end <= offset) {
+            protected.next();
         }
-
-        if let Some(fence) = detect_opening_code_fence(line) {
-            code_fence = Some(fence);
+        if protected.peek().is_some_and(|range| range.start <= offset) {
             offset = next_offset;
             continue;
         }
@@ -67,13 +67,22 @@ pub fn parse_directives(content: &str) -> Vec<DirectiveBlock> {
                     && let Some(entry) = stack.pop()
                 {
                     let body = extract_body(content, entry.body_start, offset);
-                    blocks.push(DirectiveBlock {
-                        kind: entry.kind,
-                        id: entry.id,
-                        classes: entry.classes,
-                        body,
-                        range: entry.range_start..next_offset,
-                    });
+                    let node = DirectiveNode {
+                        block: DirectiveBlock {
+                            kind: entry.kind,
+                            id: entry.id,
+                            classes: entry.classes,
+                            body,
+                            range: entry.range_start..next_offset,
+                        },
+                        body_start: entry.body_start,
+                        children: entry.children,
+                    };
+                    if let Some(parent) = stack.last_mut() {
+                        parent.children.push(node);
+                    } else {
+                        blocks.push(node);
+                    }
                 }
             } else {
                 let head = parse_directive_head(after_colons);
@@ -88,6 +97,7 @@ pub fn parse_directives(content: &str) -> Vec<DirectiveBlock> {
                     classes: head.classes,
                     body_start: next_offset,
                     range_start: offset,
+                    children: Vec::new(),
                 });
             }
         }
@@ -95,7 +105,10 @@ pub fn parse_directives(content: &str) -> Vec<DirectiveBlock> {
         offset = next_offset;
     }
 
-    blocks.sort_by_key(|b| b.range.start);
+    for entry in stack {
+        blocks.extend(entry.children);
+    }
+    blocks.sort_by_key(|node| node.block.range.start);
     blocks
 }
 
@@ -166,6 +179,33 @@ mod tests {
     use super::*;
     use crate::directive::CalloutKind;
 
+    // ── parse_directives ──
+
+    #[test]
+    fn parse_directives_distinguishes_literal_fences_from_code_in_arguments() {
+        let input = indoc! {r#"
+            `literal
+            ::: ignored
+            :::
+            `
+
+            ::: callout {title="Use `code`"}
+            Body
+            :::
+        "#};
+        let blocks = parse_directives(input);
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(
+            blocks[0].block.kind,
+            DirectiveKind::Callout {
+                kind: CalloutKind::Note,
+                title: Some("Use `code`".into()),
+                open: true,
+            }
+        );
+        assert_eq!(blocks[0].block.body, "Body");
+    }
+
     // ── parse_directives: callout ──
 
     #[test]
@@ -178,17 +218,17 @@ mod tests {
         let blocks = parse_directives(input);
         assert_eq!(blocks.len(), 1);
         assert_eq!(
-            blocks[0].kind,
+            blocks[0].block.kind,
             DirectiveKind::Callout {
                 kind: CalloutKind::Note,
                 title: None,
                 open: true,
             }
         );
-        assert_eq!(blocks[0].id, None);
-        assert_eq!(blocks[0].classes, Vec::<String>::new());
-        assert_eq!(blocks[0].body, "Hello world");
-        assert_eq!(blocks[0].range, 0..input.len());
+        assert_eq!(blocks[0].block.id, None);
+        assert_eq!(blocks[0].block.classes, Vec::<String>::new());
+        assert_eq!(blocks[0].block.body, "Hello world");
+        assert_eq!(blocks[0].block.range, 0..input.len());
     }
 
     #[test]
@@ -201,7 +241,7 @@ mod tests {
         let blocks = parse_directives(input);
         assert_eq!(blocks.len(), 1);
         assert_eq!(
-            blocks[0].kind,
+            blocks[0].block.kind,
             DirectiveKind::Callout {
                 kind: CalloutKind::Note,
                 title: None,
@@ -220,7 +260,7 @@ mod tests {
         let blocks = parse_directives(input);
         assert_eq!(blocks.len(), 1);
         assert_eq!(
-            blocks[0].kind,
+            blocks[0].block.kind,
             DirectiveKind::Callout {
                 kind: CalloutKind::Warning,
                 title: Some("Careful".into()),
@@ -242,8 +282,8 @@ mod tests {
         "};
         let blocks = parse_directives(input);
         assert_eq!(blocks.len(), 2);
-        assert_eq!(blocks[0].body, "First");
-        assert_eq!(blocks[1].body, "Second");
+        assert_eq!(blocks[0].block.body, "First");
+        assert_eq!(blocks[1].block.body, "Second");
     }
 
     #[test]
@@ -258,7 +298,7 @@ mod tests {
         let blocks = parse_directives(input);
         assert_eq!(blocks.len(), 1);
         assert_eq!(
-            blocks[0].body,
+            blocks[0].block.body,
             indoc! {"
                 First paragraph.
 
@@ -275,7 +315,7 @@ mod tests {
         "};
         let blocks = parse_directives(input);
         assert_eq!(blocks.len(), 1);
-        assert_eq!(blocks[0].body, "");
+        assert_eq!(blocks[0].block.body, "");
     }
 
     // ── parse_directives: unknown ──
@@ -290,7 +330,7 @@ mod tests {
         let blocks = parse_directives(input);
         assert_eq!(blocks.len(), 1);
         assert_eq!(
-            blocks[0].kind,
+            blocks[0].block.kind,
             DirectiveKind::Unknown {
                 name: "custom".into(),
                 positional_args: Vec::new(),
@@ -309,14 +349,14 @@ mod tests {
         let blocks = parse_directives(input);
         assert_eq!(blocks.len(), 1);
         assert_eq!(
-            blocks[0].kind,
+            blocks[0].block.kind,
             DirectiveKind::Unknown {
                 name: "table".into(),
                 positional_args: Vec::new(),
                 named_args: BTreeMap::from([("cols".into(), "3".into())]),
             }
         );
-        assert_eq!(blocks[0].body, "Body");
+        assert_eq!(blocks[0].block.body, "Body");
     }
 
     // ── parse_directives: pandoc attributes ──
@@ -331,15 +371,15 @@ mod tests {
         let blocks = parse_directives(input);
         assert_eq!(blocks.len(), 1);
         assert_eq!(
-            blocks[0].kind,
+            blocks[0].block.kind,
             DirectiveKind::Callout {
                 kind: CalloutKind::Note,
                 title: None,
                 open: true,
             }
         );
-        assert_eq!(blocks[0].id.as_deref(), Some("my-id"));
-        assert_eq!(blocks[0].classes, Vec::<String>::new());
+        assert_eq!(blocks[0].block.id.as_deref(), Some("my-id"));
+        assert_eq!(blocks[0].block.classes, Vec::<String>::new());
     }
 
     #[test]
@@ -351,8 +391,8 @@ mod tests {
         "};
         let blocks = parse_directives(input);
         assert_eq!(blocks.len(), 1);
-        assert_eq!(blocks[0].id, None);
-        assert_eq!(blocks[0].classes, ["highlight", "compact"]);
+        assert_eq!(blocks[0].block.id, None);
+        assert_eq!(blocks[0].block.classes, ["highlight", "compact"]);
     }
 
     #[test]
@@ -365,15 +405,15 @@ mod tests {
         let blocks = parse_directives(input);
         assert_eq!(blocks.len(), 1);
         assert_eq!(
-            blocks[0].kind,
+            blocks[0].block.kind,
             DirectiveKind::Callout {
                 kind: CalloutKind::Warning,
                 title: Some("Careful".into()),
                 open: true,
             }
         );
-        assert_eq!(blocks[0].id.as_deref(), Some("box"));
-        assert_eq!(blocks[0].classes, ["wide"]);
+        assert_eq!(blocks[0].block.id.as_deref(), Some("box"));
+        assert_eq!(blocks[0].block.classes, ["wide"]);
     }
 
     #[test]
@@ -385,8 +425,8 @@ mod tests {
         "};
         let blocks = parse_directives(input);
         assert_eq!(blocks.len(), 1);
-        assert_eq!(blocks[0].id.as_deref(), Some("late-id"));
-        assert_eq!(blocks[0].classes, ["extra"]);
+        assert_eq!(blocks[0].block.id.as_deref(), Some("late-id"));
+        assert_eq!(blocks[0].block.classes, ["extra"]);
     }
 
     #[test]
@@ -399,15 +439,15 @@ mod tests {
         let blocks = parse_directives(input);
         assert_eq!(blocks.len(), 1);
         assert_eq!(
-            blocks[0].kind,
+            blocks[0].block.kind,
             DirectiveKind::Callout {
                 kind: CalloutKind::Tip,
                 title: None,
                 open: true,
             }
         );
-        assert_eq!(blocks[0].id.as_deref(), Some("my-id"));
-        assert_eq!(blocks[0].classes, ["highlight", "wide"]);
+        assert_eq!(blocks[0].block.id.as_deref(), Some("my-id"));
+        assert_eq!(blocks[0].block.classes, ["highlight", "wide"]);
     }
 
     #[test]
@@ -421,14 +461,14 @@ mod tests {
         let blocks = parse_directives(input);
         assert_eq!(blocks.len(), 1);
         assert_eq!(
-            blocks[0].kind,
+            blocks[0].block.kind,
             DirectiveKind::Unknown {
                 name: String::new(),
                 positional_args: Vec::new(),
                 named_args: BTreeMap::new(),
             }
         );
-        assert_eq!(blocks[0].classes, ["note"]);
+        assert_eq!(blocks[0].block.classes, ["note"]);
     }
 
     #[test]
@@ -442,15 +482,15 @@ mod tests {
         let blocks = parse_directives(input);
         assert_eq!(blocks.len(), 1);
         assert_eq!(
-            blocks[0].kind,
+            blocks[0].block.kind,
             DirectiveKind::Unknown {
                 name: String::new(),
                 positional_args: Vec::new(),
                 named_args: BTreeMap::new(),
             }
         );
-        assert_eq!(blocks[0].id.as_deref(), Some("section"));
-        assert_eq!(blocks[0].classes, Vec::<String>::new());
+        assert_eq!(blocks[0].block.id.as_deref(), Some("section"));
+        assert_eq!(blocks[0].block.classes, Vec::<String>::new());
     }
 
     #[test]
@@ -463,7 +503,7 @@ mod tests {
         let blocks = parse_directives(input);
         assert_eq!(blocks.len(), 1);
         assert_eq!(
-            blocks[0].kind,
+            blocks[0].block.kind,
             DirectiveKind::Unknown {
                 name: String::new(),
                 positional_args: vec!["note".into()],
@@ -481,8 +521,8 @@ mod tests {
         "};
         let blocks = parse_directives(input);
         assert_eq!(blocks.len(), 1);
-        assert_eq!(blocks[0].id.as_deref(), Some("first"));
-        assert_eq!(blocks[0].classes, ["extra"]);
+        assert_eq!(blocks[0].block.id.as_deref(), Some("first"));
+        assert_eq!(blocks[0].block.classes, ["extra"]);
     }
 
     #[test]
@@ -494,8 +534,8 @@ mod tests {
         "};
         let blocks = parse_directives(input);
         assert_eq!(blocks.len(), 1);
-        assert_eq!(blocks[0].id, None);
-        assert_eq!(blocks[0].classes, ["real"]);
+        assert_eq!(blocks[0].block.id, None);
+        assert_eq!(blocks[0].block.classes, ["real"]);
     }
 
     #[test]
@@ -508,15 +548,15 @@ mod tests {
         let blocks = parse_directives(input);
         assert_eq!(blocks.len(), 1);
         assert_eq!(
-            blocks[0].kind,
+            blocks[0].block.kind,
             DirectiveKind::Callout {
                 kind: CalloutKind::Note,
                 title: Some("Hello #world .bold".into()),
                 open: true,
             }
         );
-        assert_eq!(blocks[0].id.as_deref(), Some("real-id"));
-        assert_eq!(blocks[0].classes, ["real-class"]);
+        assert_eq!(blocks[0].block.id.as_deref(), Some("real-id"));
+        assert_eq!(blocks[0].block.classes, ["real-class"]);
     }
 
     // ── parse_directives: nesting ──
@@ -532,10 +572,10 @@ mod tests {
             ::::
         "};
         let blocks = parse_directives(input);
-        assert_eq!(blocks.len(), 2, "should find two blocks");
+        assert_eq!(blocks.len(), 1);
 
         assert_eq!(
-            blocks[0].kind,
+            blocks[0].block.kind,
             DirectiveKind::Callout {
                 kind: CalloutKind::Warning,
                 title: None,
@@ -543,23 +583,23 @@ mod tests {
             }
         );
         assert!(
-            blocks[0].body.contains("::: callout"),
+            blocks[0].block.body.contains("::: callout"),
             "outer body should contain inner raw text"
         );
         assert!(
-            blocks[0].body.contains("Outer"),
+            blocks[0].block.body.contains("Outer"),
             "outer body should contain text after inner block"
         );
 
         assert_eq!(
-            blocks[1].kind,
+            blocks[0].children[0].block.kind,
             DirectiveKind::Callout {
                 kind: CalloutKind::Note,
                 title: None,
                 open: true,
             }
         );
-        assert_eq!(blocks[1].body, "Inner");
+        assert_eq!(blocks[0].children[0].block.body, "Inner");
     }
 
     #[test]
@@ -575,11 +615,11 @@ mod tests {
             :::::
         "};
         let blocks = parse_directives(input);
-        assert_eq!(blocks.len(), 3, "should find outer + two inner blocks");
+        assert_eq!(blocks.len(), 1);
 
-        assert_eq!(blocks[0].body.matches(":::").count(), 4);
-        assert_eq!(blocks[1].body, "First");
-        assert_eq!(blocks[2].body, "Second");
+        assert_eq!(blocks[0].block.body.matches(":::").count(), 4);
+        assert_eq!(blocks[0].children[0].block.body, "First");
+        assert_eq!(blocks[0].children[1].block.body, "Second");
     }
 
     // ── parse_directives: closing fence ──
@@ -593,7 +633,7 @@ mod tests {
         "};
         let blocks = parse_directives(input);
         assert_eq!(blocks.len(), 1, ":::: should close ::: (4 >= 3)");
-        assert_eq!(blocks[0].body, "Body");
+        assert_eq!(blocks[0].block.body, "Body");
 
         let input = indoc! {"
             :::: callout
@@ -614,20 +654,10 @@ mod tests {
             ::::
         "};
         let blocks = parse_directives(input);
-        assert_eq!(
-            blocks.len(),
-            2,
-            "should find two closed blocks, blocks:\n{blocks:?}"
-        );
-
-        assert!(
-            blocks.iter().any(|b| b.body.is_empty()),
-            "inner-b should have empty body"
-        );
-        assert!(
-            blocks.iter().any(|b| b.body.contains("::: inner-b")),
-            "inner-a body should contain the inner-b fence, blocks:\n{blocks:?}"
-        );
+        assert_eq!(blocks.len(), 1);
+        assert!(blocks[0].block.body.contains("::: inner-b"));
+        assert_eq!(blocks[0].children.len(), 1);
+        assert_eq!(blocks[0].children[0].block.body, "");
     }
 
     #[test]
@@ -651,7 +681,7 @@ mod tests {
             :::
             ```
         "};
-        assert_eq!(parse_directives(input), Vec::<DirectiveBlock>::new());
+        assert_eq!(parse_directives(input), Vec::<DirectiveNode>::new());
 
         let input = indoc! {"
             ~~~
@@ -660,7 +690,7 @@ mod tests {
             :::
             ~~~
         "};
-        assert_eq!(parse_directives(input), Vec::<DirectiveBlock>::new());
+        assert_eq!(parse_directives(input), Vec::<DirectiveNode>::new());
     }
 
     #[test]
@@ -677,7 +707,7 @@ mod tests {
         let blocks = parse_directives(input);
         assert_eq!(blocks.len(), 1);
         assert_eq!(
-            blocks[0].kind,
+            blocks[0].block.kind,
             DirectiveKind::Callout {
                 kind: CalloutKind::Note,
                 title: None,
@@ -685,7 +715,7 @@ mod tests {
             }
         );
         assert!(
-            blocks[0].body.contains("```"),
+            blocks[0].block.body.contains("```"),
             "body should contain the code fence"
         );
     }
@@ -797,7 +827,7 @@ mod tests {
         let input = concat!("::: callout   \n", "Body\n", ":::   \n",);
         let blocks = parse_directives(input);
         assert_eq!(blocks.len(), 1);
-        assert_eq!(blocks[0].body, "Body");
+        assert_eq!(blocks[0].block.body, "Body");
     }
 
     #[test]
@@ -809,7 +839,7 @@ mod tests {
         let blocks = parse_directives(input);
         assert_eq!(blocks.len(), 1);
         assert_eq!(
-            blocks[0].kind,
+            blocks[0].block.kind,
             DirectiveKind::Unknown {
                 name: "embed".into(),
                 positional_args: Vec::new(),
@@ -832,9 +862,9 @@ mod tests {
         let input = format!("{prefix}{directive}");
         let blocks = parse_directives(&input);
         assert_eq!(blocks.len(), 1);
-        assert_eq!(blocks[0].body, "你好世界");
+        assert_eq!(blocks[0].block.body, "你好世界");
         assert_eq!(
-            blocks[0].range,
+            blocks[0].block.range,
             prefix.len()..input.len(),
             "range should account for multi-byte prefix"
         );
@@ -847,7 +877,7 @@ mod tests {
 
             No directives here.
         "};
-        assert_eq!(parse_directives(input), Vec::<DirectiveBlock>::new());
+        assert_eq!(parse_directives(input), Vec::<DirectiveNode>::new());
     }
 
     #[test]
@@ -859,9 +889,9 @@ mod tests {
         };
         let blocks = parse_directives(input);
         assert_eq!(blocks.len(), 1);
-        assert_eq!(blocks[0].body, "Body");
+        assert_eq!(blocks[0].block.body, "Body");
         assert_eq!(
-            blocks[0].range,
+            blocks[0].block.range,
             0..input.len(),
             "range should span entire input"
         );
@@ -876,9 +906,9 @@ mod tests {
         "};
         let blocks = parse_directives(input);
         assert_eq!(blocks.len(), 1);
-        assert_eq!(blocks[0].body, "Hello");
+        assert_eq!(blocks[0].block.body, "Hello");
         assert_eq!(
-            blocks[0].range,
+            blocks[0].block.range,
             0..input.len(),
             "range should span entire input"
         );

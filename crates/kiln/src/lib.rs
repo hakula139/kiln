@@ -9,7 +9,7 @@ pub mod feed;
 pub mod html;
 pub mod i18n;
 pub mod init;
-pub mod markdown;
+mod markdown;
 pub mod minify;
 pub mod output;
 pub mod pagination;
@@ -22,6 +22,7 @@ pub mod static_assets;
 pub mod taxonomy;
 pub mod template;
 pub mod text;
+pub(crate) mod url;
 
 pub use build::{BuildOptions, build};
 pub use convert::convert;

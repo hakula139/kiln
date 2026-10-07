@@ -1,14 +1,42 @@
 use std::path::Path;
 
+use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
+
+const COMPONENT_ENCODE_SET: &AsciiSet = &NON_ALPHANUMERIC
+    .remove(b'.')
+    .remove(b'-')
+    .remove(b'_')
+    .remove(b'~');
+
+/// Encodes a filesystem name as one URL path component.
+pub(crate) fn encode_component(component: &str) -> String {
+    utf8_percent_encode(component, COMPONENT_ENCODE_SET).to_string()
+}
+
+/// Converts a relative filesystem path to an encoded URL path using forward slashes.
+pub(crate) fn path_url(path: &Path) -> String {
+    path.components()
+        .map(|component| encode_component(&component.as_os_str().to_string_lossy()))
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
 /// Computes the canonical URL for a page from its output path.
 ///
 /// For `index.html` pages (page bundles), returns the directory path with a
 /// trailing slash. For other files, returns the file path as-is.
 #[must_use]
 pub(crate) fn page_url(base_url: &str, output_path: &Path) -> String {
-    let rel = output_path.to_string_lossy();
-    let path = rel.strip_suffix("index.html").unwrap_or(&rel);
-    join_site_url(base_url, path)
+    if output_path
+        .file_name()
+        .is_some_and(|name| name == "index.html")
+    {
+        let directory = path_url(output_path.parent().unwrap_or(Path::new("")));
+        let url = join_site_url(base_url, &directory);
+        format!("{}/", url.trim_end_matches('/'))
+    } else {
+        join_site_url(base_url, &path_url(output_path))
+    }
 }
 
 /// Joins a site-relative path to a base URL, preserving any configured base path.
@@ -25,12 +53,12 @@ pub(crate) fn join_site_url(base_url: &str, path: &str) -> String {
 
 /// Resolves a relative path against a page's output URL.
 ///
-/// Absolute paths (starting with `/`) and external URLs (containing `://`) are returned as-is.
+/// Absolute paths and URLs are returned unchanged.
 /// Relative paths are resolved against the page's directory URL (must end with `/`) so that
 /// co-located assets like `assets/cover.webp` become `/posts/section/slug/assets/cover.webp`.
 #[must_use]
 pub(crate) fn resolve_relative_url(src: &str, page_url: &str) -> String {
-    if src.starts_with('/') || src.contains("://") {
+    if src.starts_with('/') || url::Url::parse(src).is_ok() {
         return src.to_owned();
     }
     let path = if let Some(scheme_end) = page_url.find("://") {
@@ -48,6 +76,18 @@ pub(crate) fn resolve_relative_url(src: &str, page_url: &str) -> String {
 mod tests {
     use super::*;
 
+    // ── path_url ──
+
+    #[test]
+    fn path_url_encodes_components_and_preserves_separators() {
+        let path = Path::new("中文").join("hash#query? 100%.html");
+        assert_eq!(
+            path_url(&path),
+            "%E4%B8%AD%E6%96%87/hash%23query%3F%20100%25.html"
+        );
+        assert_eq!(path_url(Path::new("../image.webp")), "../image.webp");
+    }
+
     // ── page_url ──
 
     #[test]
@@ -60,10 +100,25 @@ mod tests {
 
     #[test]
     fn page_url_non_index() {
-        assert_eq!(
-            page_url("https://example.com", Path::new("standalone.html")),
-            "https://example.com/standalone.html"
-        );
+        for (base, path, expected) in [
+            (
+                "https://example.com",
+                "standalone.html",
+                "https://example.com/standalone.html",
+            ),
+            (
+                "https://example.com",
+                "myindex.html",
+                "https://example.com/myindex.html",
+            ),
+            (
+                "https://example.com/blog/",
+                "中文/hash#query? 100%.html",
+                "https://example.com/blog/%E4%B8%AD%E6%96%87/hash%23query%3F%20100%25.html",
+            ),
+        ] {
+            assert_eq!(page_url(base, Path::new(path)), expected);
+        }
     }
 
     #[test]
@@ -157,12 +212,14 @@ mod tests {
 
     #[test]
     fn resolve_relative_url_external_url() {
-        assert_eq!(
-            resolve_relative_url(
-                "https://cdn.example.com/img.jpg",
-                "https://example.com/posts/foo/"
-            ),
-            "https://cdn.example.com/img.jpg"
-        );
+        for src in [
+            "https://cdn.example.com/img.jpg",
+            "data:image/png;base64,example",
+        ] {
+            assert_eq!(
+                resolve_relative_url(src, "https://example.com/posts/foo/"),
+                src
+            );
+        }
     }
 }

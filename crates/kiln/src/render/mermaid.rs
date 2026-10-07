@@ -11,7 +11,7 @@ use crate::html::escape;
 ///
 /// Both copies are HTML-escaped for safety in inner-text and attribute-value contexts.
 #[must_use]
-pub(crate) fn render_mermaid(source: &str) -> String {
+pub(super) fn render_mermaid(source: &str) -> String {
     let escaped = escape(source);
     let mut html = format!(r#"<pre class="mermaid" data-source="{escaped}">{escaped}</pre>"#);
     html.push('\n');

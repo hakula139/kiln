@@ -4,12 +4,15 @@ use std::path::Path;
 use anyhow::{Context, Result, bail};
 use indoc::indoc;
 
+use crate::config::validate_theme_name;
+
 /// Scaffolds a new theme directory under `themes/<name>/`. Fails if the directory already exists.
 ///
 /// # Errors
 ///
 /// Returns an error if the theme directory already exists or if any file operation fails.
 pub fn init_theme(root: &Path, name: &str) -> Result<()> {
+    validate_theme_name(name)?;
     let theme_dir = root.join("themes").join(name);
     if theme_dir.exists() {
         bail!("theme directory already exists: {}", theme_dir.display());
@@ -76,18 +79,6 @@ pub fn init_theme(root: &Path, name: &str) -> Result<()> {
 
 /// Default English i18n table written to new themes.
 const DEFAULT_I18N_EN: &str = indoc! {r#"
-    # English strings for this theme.
-    #
-    # The i18n system resolves each key by merging, in order of
-    # decreasing precedence:
-    #
-    #   1. <site>/i18n/<language>.toml  (site override)
-    #   2. <theme>/i18n/<language>.toml (active language)
-    #   3. <theme>/i18n/en.toml         (this file — ultimate fallback)
-    #
-    # Keys are flat string values. Templates call `{{ t("key") }}`, or
-    # `{{ t("key", name=value) }}` to substitute `{name}` placeholders.
-
     all_posts = "All Posts"
     back_to_top = "Back to Top"
     table_of_contents = "Table of Contents"
@@ -95,9 +86,6 @@ const DEFAULT_I18N_EN: &str = indoc! {r#"
 
 /// Default Simplified Chinese i18n table written to new themes.
 const DEFAULT_I18N_ZH_HANS: &str = indoc! {r#"
-    # Simplified Chinese strings for this theme.
-    # See i18n/en.toml for a description of the resolution order.
-
     all_posts = "全部文章"
     back_to_top = "回到顶部"
     table_of_contents = "目录"
@@ -152,7 +140,6 @@ mod tests {
             "zh-Hans.toml should include localized example keys, got:\n{zh}"
         );
 
-        // Loader must accept the scaffold as-is in both languages.
         let theme_dir = root.path().join("themes").join("my-theme");
         let site = tempfile::tempdir().unwrap();
         let en_i18n = crate::i18n::I18n::load(site.path(), Some(&theme_dir), "en").unwrap();
@@ -162,17 +149,25 @@ mod tests {
     }
 
     #[test]
-    fn init_theme_unwritable_root_returns_error() {
-        use crate::test_utils::PermissionGuard;
-
+    fn init_theme_invalid_name_returns_error() {
         let root = tempfile::tempdir().unwrap();
-        let _guard = PermissionGuard::restrict(root.path(), 0o555);
-
-        let err = init_theme(root.path(), "my-theme").unwrap_err().to_string();
-        assert!(
-            err.contains("failed to create CSS source directory"),
-            "should report directory creation failure, got: {err}"
-        );
+        for name in [
+            "",
+            ".",
+            "..",
+            "../escape",
+            "nested/theme",
+            "nested\\theme",
+            "/absolute",
+            "C:theme",
+        ] {
+            let error = init_theme(root.path(), name).unwrap_err();
+            assert!(
+                error.to_string().contains("single directory name"),
+                "{error}"
+            );
+        }
+        assert!(!root.path().join("themes").exists());
     }
 
     #[test]
@@ -184,6 +179,21 @@ mod tests {
         assert!(
             err.contains("already exists"),
             "should report existing directory, got: {err}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn init_theme_unwritable_root_returns_error() {
+        use crate::test_utils::PermissionGuard;
+
+        let root = tempfile::tempdir().unwrap();
+        let _guard = PermissionGuard::restrict(root.path(), 0o555);
+
+        let err = init_theme(root.path(), "my-theme").unwrap_err().to_string();
+        assert!(
+            err.contains("failed to create CSS source directory"),
+            "should report directory creation failure, got: {err}"
         );
     }
 }

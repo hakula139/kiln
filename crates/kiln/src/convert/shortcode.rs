@@ -1,494 +1,434 @@
-use std::sync::LazyLock;
+use std::borrow::Cow;
+use std::fmt::Write as _;
 
-use regex::Regex;
+use anyhow::{Result, bail, ensure};
+use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
 
-use crate::markdown::for_each_non_code_line;
+use crate::attrs::{AttrToken, AttrTokens, scan_quoted_value};
+use crate::directive::CalloutKind;
+use crate::markdown::code_ranges;
 
-// ── Shortcode parsing ──
-
-/// Matches an opening or self-closing Hugo shortcode: `{{< name args >}}`.
-static SHORTCODE_OPEN_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\{\{<\s*([\w-]+)\s*(.*?)\s*>\}\}").expect("shortcode open regex should compile")
-});
-
-/// Matches a closing Hugo shortcode: `{{< /name >}}`.
-static SHORTCODE_CLOSE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\{\{<\s*/\s*([\w-]+)\s*>\}\}").expect("shortcode close regex should compile")
-});
-
-/// Parsed shortcode arguments: positional values and named `key="value"` pairs.
+#[derive(Default)]
 struct ShortcodeArgs<'a> {
-    positional: Vec<&'a str>,
-    named: Vec<(&'a str, &'a str)>,
+    positional: Vec<Cow<'a, str>>,
+    named: Vec<(&'a str, Cow<'a, str>)>,
 }
 
-impl<'a> ShortcodeArgs<'a> {
-    fn get(&self, key: &str) -> Option<&'a str> {
-        self.named.iter().find(|(k, _)| *k == key).map(|(_, v)| *v)
+impl ShortcodeArgs<'_> {
+    fn get(&self, key: &str) -> Option<&str> {
+        self.named
+            .iter()
+            .find(|(k, _)| *k == key)
+            .map(|(_, v)| v.as_ref())
     }
 }
 
-/// Tokenizes a shortcode argument string into positional and named args.
-///
-/// Handles `"quoted"` and bare-word positional args, plus `key="value"` and
-/// `key=value` named params. Unclosed quotes consume the rest of the input.
-fn parse_shortcode_args(input: &str) -> ShortcodeArgs<'_> {
-    let mut positional = Vec::new();
-    let mut named = Vec::new();
-    let mut rest = input.trim();
-
-    while !rest.is_empty() {
-        if let Some(after_quote) = rest.strip_prefix('"') {
-            let end = after_quote.find('"').unwrap_or(after_quote.len());
-            positional.push(&after_quote[..end]);
-            rest = after_quote.get(end + 1..).unwrap_or("").trim_start();
-            continue;
-        }
-
-        let next_eq = rest.find('=');
-        let next_ws = rest.find(char::is_whitespace).unwrap_or(rest.len());
-
-        if let Some(eq) = next_eq.filter(|&p| p < next_ws) {
-            let key = &rest[..eq];
-            let after_eq = &rest[eq + 1..];
-
-            if let Some(after_quote) = after_eq.strip_prefix('"') {
-                let end = after_quote.find('"').unwrap_or(after_quote.len());
-                named.push((key, &after_quote[..end]));
-                rest = after_quote.get(end + 1..).unwrap_or("").trim_start();
-            } else {
-                let end = after_eq.find(char::is_whitespace).unwrap_or(after_eq.len());
-                named.push((key, &after_eq[..end]));
-                rest = after_eq[end..].trim_start();
-            }
-            continue;
-        }
-
-        positional.push(&rest[..next_ws]);
-        rest = rest[next_ws..].trim_start();
-    }
-
-    ShortcodeArgs { positional, named }
-}
-
-// ── Conversion ──
-
-/// Converts all shortcodes in the body text, skipping code blocks.
-pub(crate) fn convert_shortcodes(content: &str) -> String {
+/// Converts supported Hugo shortcodes while preserving prose and literal code.
+pub(crate) fn convert_shortcodes(content: &str) -> Result<String> {
     let mut output = String::with_capacity(content.len());
+    let mut stack = Vec::new();
+    convert_body(content, &mut output, &mut stack)?;
+    if let Some(name) = stack.last() {
+        bail!("unclosed Hugo shortcode `{name}`");
+    }
+    Ok(output)
+}
 
-    for_each_non_code_line(content, &mut output, |line, out| {
-        convert_line(line, out);
-    });
+fn convert_body(mut input: &str, out: &mut String, stack: &mut Vec<String>) -> Result<()> {
+    let source_len = input.len();
+    let protected = code_ranges(input);
+    while let Some(start) = [input.find("{{<"), input.find("{{%")]
+        .into_iter()
+        .flatten()
+        .min()
+    {
+        let offset = source_len - input.len();
+        let candidate = offset + start;
+        let protected_index = protected.partition_point(|range| range.end <= candidate);
+        if let Some(range) = protected
+            .get(protected_index)
+            .filter(|range| range.contains(&candidate))
+        {
+            let end = range.end - offset;
+            out.push_str(&input[..end]);
+            input = &input[end..];
+            continue;
+        }
+        out.push_str(&input[..start]);
+        let marker = &input[start + 2..start + 3];
+        let rest = &input[start + 3..];
+        let end = shortcode_end(rest, marker)?;
+        let shortcode = rest[..end].trim();
+        input = &rest[end + 3..];
+        let (name, arguments) = shortcode
+            .split_once(char::is_whitespace)
+            .unwrap_or((shortcode, ""));
+        let identifier = name.strip_prefix('/').unwrap_or(name);
+        ensure!(
+            !identifier.is_empty()
+                && identifier
+                    .chars()
+                    .all(|ch| ch.is_alphanumeric() || matches!(ch, '-' | '_')),
+            "invalid Hugo shortcode name `{name}`"
+        );
+        let block = name != "image";
+        if block && !out.is_empty() && !out.ends_with('\n') {
+            out.push('\n');
+        }
 
+        if let Some(name) = name.strip_prefix('/') {
+            ensure!(
+                arguments.is_empty(),
+                "closing shortcode `{name}` cannot have arguments"
+            );
+            ensure!(
+                stack.pop().as_deref() == Some(name),
+                "unmatched closing shortcode `{name}`"
+            );
+            out.push_str(if name == "mermaid" { "```" } else { ":::" });
+        } else {
+            let args = parse_shortcode_args(arguments)?;
+            match name {
+                "admonition" => {
+                    emit_callout(&args, out)?;
+                    stack.push(name.to_owned());
+                }
+                "mermaid" => {
+                    ensure!(
+                        arguments.is_empty(),
+                        "mermaid shortcode arguments are unsupported"
+                    );
+                    out.push_str("```mermaid");
+                    stack.push(name.to_owned());
+                }
+                "style" => bail!("style shortcode requires manual conversion to page CSS"),
+                "image" => out.push_str(&emit_image(&args)?),
+                _ => out.push_str(&emit_directive(name, &args)),
+            }
+        }
+        if block {
+            out.push('\n');
+            input = input
+                .strip_prefix("\r\n")
+                .or_else(|| input.strip_prefix('\n'))
+                .unwrap_or(input);
+        }
+    }
+    out.push_str(input);
+    Ok(())
+}
+
+fn shortcode_end(input: &str, marker: &str) -> Result<usize> {
+    let closing = format!("{}{}", if marker == "<" { ">" } else { "%" }, "}}");
+    let mut offset = 0;
+    while offset < input.len() {
+        let rest = &input[offset..];
+        if rest.starts_with(&closing) {
+            return Ok(offset);
+        }
+        if let Some(quoted) = rest.strip_prefix('"') {
+            let (end, _) = scan_quoted_value(quoted);
+            ensure!(end < quoted.len(), "unclosed quote in Hugo shortcode");
+            offset += end + 2;
+        } else {
+            offset += rest.chars().next().map_or(0, char::len_utf8);
+        }
+    }
+    bail!("unclosed Hugo shortcode")
+}
+
+fn parse_shortcode_args(input: &str) -> Result<ShortcodeArgs<'_>> {
+    let mut args = ShortcodeArgs::default();
+    for token in AttrTokens::values(input) {
+        match token {
+            AttrToken::Named(key, value) => {
+                ensure!(
+                    args.get(key).is_none(),
+                    "duplicate shortcode argument `{key}`"
+                );
+                args.named.push((key, value));
+            }
+            AttrToken::Quoted(value) => args.positional.push(value),
+            AttrToken::Bare(value) => args.positional.push(Cow::Borrowed(value)),
+            AttrToken::Id(value) => args.positional.push(Cow::Owned(format!("#{value}"))),
+            AttrToken::Class(value) => args.positional.push(Cow::Owned(format!(".{value}"))),
+        }
+    }
+    ensure!(
+        args.positional
+            .iter()
+            .chain(args.named.iter().map(|(_, value)| value))
+            .all(|value| !value.contains(['\r', '\n'])),
+        "multiline shortcode values require manual conversion"
+    );
+    ensure!(
+        args.named.is_empty() || args.positional.is_empty(),
+        "cannot mix named and positional Hugo shortcode arguments"
+    );
+    Ok(args)
+}
+
+fn emit_callout(args: &ShortcodeArgs, out: &mut String) -> Result<()> {
+    ensure!(
+        args.positional.len() <= 3,
+        "admonition accepts type, title and open arguments"
+    );
+    for (name, _) in &args.named {
+        ensure!(
+            ["type", "title", "open"].contains(name),
+            "unsupported admonition argument `{name}`"
+        );
+    }
+    let positional = |index| args.positional.get(index).map(AsRef::as_ref);
+    let kind = args.get("type").or_else(|| positional(0)).unwrap_or("note");
+    ensure!(
+        kind.parse::<CalloutKind>().is_ok(),
+        "unsupported admonition type `{kind}`"
+    );
+    let title = args.get("title").or_else(|| positional(1));
+    let open = args.get("open").or_else(|| positional(2)).unwrap_or("true");
+    ensure!(
+        ["true", "false"].contains(&open),
+        "admonition open must be true or false"
+    );
+
+    _ = write!(out, "::: callout {{type={kind}");
+    if let Some(title) = title {
+        _ = write!(out, " title={}", quote(title));
+    }
+    if open == "false" {
+        out.push_str(" open=false");
+    }
+    out.push('}');
+    Ok(())
+}
+
+fn emit_image(args: &ShortcodeArgs) -> Result<String> {
+    const DESTINATION_ESCAPE: &AsciiSet = &CONTROLS
+        .add(b' ')
+        .add(b'<')
+        .add(b'>')
+        .add(b'(')
+        .add(b')')
+        .add(b'"')
+        .add(b'\\');
+
+    ensure!(
+        args.positional.is_empty(),
+        "image shortcode requires named arguments"
+    );
+    for (name, _) in &args.named {
+        ensure!(
+            ["src", "alt", "caption", "width", "height"].contains(name),
+            "unsupported image argument `{name}`"
+        );
+    }
+    let src = args
+        .get("src")
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("image shortcode requires src"))?;
+    let alt = args
+        .get("alt")
+        .or_else(|| args.get("caption"))
+        .unwrap_or("");
+    if let (Some(alt), Some(caption)) = (args.get("alt"), args.get("caption"))
+        && alt != caption
+    {
+        tracing::warn!(
+            argument = "caption",
+            "image caption differs from alt and requires manual migration"
+        );
+    }
+    let mut escaped_alt = String::new();
+    for ch in alt.chars() {
+        if ch.is_ascii_punctuation() {
+            escaped_alt.push('\\');
+        }
+        escaped_alt.push(ch);
+    }
+    let src = utf8_percent_encode(src, DESTINATION_ESCAPE)
+        .to_string()
+        .replace('&', "&amp;");
+    let mut output = format!("![{escaped_alt}]({src})");
+    let mut attributes = Vec::new();
+    for key in ["width", "height"] {
+        if let Some(value) = args.get(key) {
+            ensure!(
+                value.parse::<u32>().is_ok(),
+                "image {key} must be an unsigned integer"
+            );
+            attributes.push(format!("{key}={value}"));
+        }
+    }
+    if !attributes.is_empty() {
+        _ = write!(output, "{{{}}}", attributes.join(" "));
+    }
+    Ok(output)
+}
+
+fn emit_directive(name: &str, args: &ShortcodeArgs) -> String {
+    let mut output = format!("::: {name}");
+    let arguments: Vec<_> = args
+        .positional
+        .iter()
+        .map(|value| quote(value))
+        .chain(
+            args.named
+                .iter()
+                .map(|(key, value)| format!("{key}={}", quote(value))),
+        )
+        .collect();
+    if !arguments.is_empty() {
+        _ = write!(output, " {{{}}}", arguments.join(" "));
+    }
+    output.push_str("\n:::");
     output
 }
 
-fn convert_line(line: &str, out: &mut String) {
-    if let Some(caps) = SHORTCODE_CLOSE_RE.captures(line) {
-        emit_closing(&caps[1], out);
-        return;
-    }
-
-    let Some(caps) = SHORTCODE_OPEN_RE.captures(line) else {
-        out.push_str(line);
-        return;
-    };
-
-    let name = &caps[1];
-    let sc = parse_shortcode_args(&caps[2]);
-
-    // Paired shortcodes always occupy their own line.
-    match name {
-        "admonition" => {
-            emit_callout(&sc, out);
-            return;
-        }
-        "style" => {
-            out.push_str("<!-- TODO: style shortcode not yet supported: ");
-            out.push_str(line.trim());
-            out.push_str(" -->\n");
-            return;
-        }
-        "mermaid" => {
-            out.push_str("```mermaid\n");
-            return;
-        }
-        _ => {}
-    }
-
-    // Self-closing shortcodes may appear inline, so replace in place.
-    out.push_str(
-        &SHORTCODE_OPEN_RE.replace_all(line, |caps: &regex::Captures| {
-            let sc = parse_shortcode_args(&caps[2]);
-            emit_self_closing(&caps[1], &sc)
-        }),
-    );
-}
-
-// ── Paired shortcodes ──
-
-fn emit_closing(name: &str, out: &mut String) {
-    match name {
-        "admonition" => out.push_str(":::\n"),
-        "style" => out.push_str("<!-- /style -->\n"),
-        "mermaid" => out.push_str("```\n"),
-        _ => {}
-    }
-}
-
-fn emit_callout(sc: &ShortcodeArgs, out: &mut String) {
-    let (type_name, remaining) = sc.positional.split_first().unwrap_or((&"", &[]));
-
-    let (title, open) = match remaining {
-        [.., "false"] => (remaining[..remaining.len() - 1].first().copied(), false),
-        _ => (remaining.first().copied(), true),
-    };
-
-    let mut attrs = vec![format!("type={type_name}")];
-    if let Some(title) = title {
-        attrs.push(format!(r#"title="{title}""#));
-    }
-    if !open {
-        attrs.push("open=false".to_string());
-    }
-    out.push_str("::: callout {");
-    out.push_str(&attrs.join(" "));
-    out.push_str("}\n");
-}
-
-// ── Self-closing shortcodes ──
-
-fn emit_self_closing(name: &str, sc: &ShortcodeArgs) -> String {
-    match name {
-        "image" => emit_image(sc),
-        _ => emit_directive(name, sc),
-    }
-}
-
-fn emit_image(sc: &ShortcodeArgs) -> String {
-    let src = sc.get("src").unwrap_or("");
-    let alt = sc.get("alt").or_else(|| sc.get("caption")).unwrap_or("");
-    let width = sc.get("width");
-    let height = sc.get("height");
-
-    let mut out = format!("![{alt}]({src})");
-    let attrs: Vec<String> = [("width", width), ("height", height)]
-        .into_iter()
-        .filter_map(|(k, v)| v.map(|v| format!("{k}={v}")))
-        .collect();
-    if !attrs.is_empty() {
-        out.push('{');
-        out.push_str(&attrs.join(" "));
-        out.push('}');
-    }
-    out
-}
-
-/// Emits a generic kiln directive for self-closing shortcodes.
-fn emit_directive(name: &str, sc: &ShortcodeArgs) -> String {
-    let mut out = format!("::: {name}");
-    if !sc.positional.is_empty() || !sc.named.is_empty() {
-        let mut args: Vec<String> = Vec::new();
-        for arg in &sc.positional {
-            args.push(format!(r#""{arg}""#));
-        }
-        for (key, value) in &sc.named {
-            args.push(format!(r#"{key}="{value}""#));
-        }
-        out.push_str(" {");
-        out.push_str(&args.join(" "));
-        out.push('}');
-    }
-    out.push_str("\n:::");
-    out
+fn quote(value: &str) -> String {
+    format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
 #[cfg(test)]
 mod tests {
-    use indoc::{formatdoc, indoc};
+    use indoc::indoc;
 
     use super::*;
 
-    // ── parse_shortcode_args ──
+    // ── convert_shortcodes ──
 
     #[test]
-    fn parse_positional() {
-        let sc = parse_shortcode_args(r#"info "Title" false"#);
-        assert_eq!(sc.positional, vec!["info", "Title", "false"]);
-        assert_eq!(sc.named, Vec::<(&str, &str)>::new());
+    fn convert_shortcodes_preserves_inline_body_and_surrounding_prose() {
+        assert_eq!(
+            convert_shortcodes(r#"Before{{< admonition type="warning" title="A \"quote\"" open=false >}}Keep **this**.{{< /admonition >}}After"#).unwrap(),
+            indoc! {r#"
+                Before
+                ::: callout {type=warning title="A \"quote\"" open=false}
+                Keep **this**.
+                :::
+                After"#},
+        );
     }
 
     #[test]
-    fn parse_named() {
-        let sc = parse_shortcode_args(r#"src="test.webp" width="500""#);
-        assert_eq!(sc.positional, Vec::<&str>::new());
-        assert_eq!(sc.named, vec![("src", "test.webp"), ("width", "500")]);
-    }
-
-    #[test]
-    fn parse_unquoted_value() {
-        let sc = parse_shortcode_args(r#"src="icon.svg" linked=false"#);
-        assert_eq!(sc.positional, Vec::<&str>::new());
-        assert_eq!(sc.named, vec![("src", "icon.svg"), ("linked", "false")]);
-    }
-
-    #[test]
-    fn parse_unquoted_cjk() {
-        let sc = parse_shortcode_args("info 封面出处 false");
-        assert_eq!(sc.positional, vec!["info", "封面出处", "false"]);
-        assert_eq!(sc.named, Vec::<(&str, &str)>::new());
-    }
-
-    // ── callout (from admonition) ──
-
-    #[test]
-    fn callout_basic() {
+    fn convert_shortcodes_defaults_and_nested_blocks() {
         let input = indoc! {r#"
-            {{< admonition info "Title" >}}
-            Body content
+            {{< admonition >}}
+            Outer
+            {{< admonition info "A \"quoted\" title" false >}}
+            Inner
+            {{< /admonition >}}
             {{< /admonition >}}
         "#};
-        let result = convert_shortcodes(input);
         assert_eq!(
-            result,
+            convert_shortcodes(input).unwrap(),
             indoc! {r#"
-                ::: callout {type=info title="Title"}
-                Body content
+                ::: callout {type=note}
+                Outer
+                ::: callout {type=info title="A \"quoted\" title" open=false}
+                Inner
+                :::
                 :::
             "#}
         );
     }
 
     #[test]
-    fn callout_no_title() {
-        let input = indoc! {"
-            {{< admonition warning >}}
-            Content
-            {{< /admonition >}}
-        "};
-        let result = convert_shortcodes(input);
-        assert_eq!(
-            result,
-            indoc! {"
-                ::: callout {type=warning}
-                Content
-                :::
-            "}
-        );
-    }
+    fn convert_shortcodes_preserves_image_link_dimensions_and_alt() {
+        assert_eq!(convert_shortcodes(r#"[{{< image src="a b.svg" alt="[Icon]" width=50 height=30 >}}](https://example.com)"#).unwrap(),
+            r"[![\[Icon\]](a%20b.svg){width=50 height=30}](https://example.com)");
 
-    #[test]
-    fn callout_unquoted_title() {
-        let input = indoc! {"
-            {{< admonition info 封面出处 >}}
-            Body
-            {{< /admonition >}}
-        "};
-        let result = convert_shortcodes(input);
-        assert_eq!(
-            result,
-            indoc! {r#"
-                ::: callout {type=info title="封面出处"}
-                Body
-                :::
-            "#}
-        );
-    }
-
-    #[test]
-    fn callout_collapsed() {
-        let input = indoc! {r#"
-            {{< admonition abstract "Collapsed Block" false >}}
-            Hidden content
-            {{< /admonition >}}
-        "#};
-        let result = convert_shortcodes(input);
-        assert_eq!(
-            result,
-            indoc! {r#"
-                ::: callout {type=abstract title="Collapsed Block" open=false}
-                Hidden content
-                :::
-            "#}
-        );
-    }
-
-    #[test]
-    fn callout_without_positional_args() {
-        for args in ["", r#"title="Title""#] {
-            let input = formatdoc! {"
-                {{{{< admonition {args} >}}}}
-                Body
-                {{{{< /admonition >}}}}
-            "};
+        for (arguments, expected_alt) in [
+            (r#"alt="Authored" caption="Caption""#, "Authored"),
+            (r#"caption="Caption""#, "Caption"),
+        ] {
             assert_eq!(
-                convert_shortcodes(&input),
-                indoc! {"
-                    ::: callout {type=}
-                    Body
-                    :::
-                "}
+                convert_shortcodes(&format!("{{{{< image src=x {arguments} >}}}}")).unwrap(),
+                format!("![{expected_alt}](x)"),
             );
         }
     }
 
-    // ── image ──
-
     #[test]
-    fn image_minimal() {
-        let input = indoc! {r#"
-            {{< image src="assets/test.webp" >}}
-        "#};
-        let result = convert_shortcodes(input);
-        assert_eq!(result, "![](assets/test.webp)\n");
-    }
-
-    #[test]
-    fn image_with_caption() {
-        let input = indoc! {r#"
-            {{< image src="assets/test.webp" caption="My Image" >}}
-        "#};
-        let result = convert_shortcodes(input);
-        assert_eq!(result, "![My Image](assets/test.webp)\n");
-    }
-
-    #[test]
-    fn image_prefers_alt_over_caption() {
-        let input = indoc! {r#"
-            {{< image src="icon.svg" alt="C++" caption="Ignored" >}}
-        "#};
-        let result = convert_shortcodes(input);
-        assert_eq!(result, "![C++](icon.svg)\n");
-    }
-
-    #[test]
-    fn image_with_width() {
-        let input = indoc! {r#"
-            {{< image src="assets/test.webp" caption="My Image" width="500" >}}
-        "#};
-        let result = convert_shortcodes(input);
-        assert_eq!(result, "![My Image](assets/test.webp){width=500}\n");
-    }
-
-    #[test]
-    fn image_with_width_and_height() {
-        let input = indoc! {r#"
-            {{< image src="icon.svg" alt="C++" width="50" height="50" >}}
-        "#};
-        let result = convert_shortcodes(input);
-        assert_eq!(result, "![C++](icon.svg){width=50 height=50}\n");
-    }
-
-    #[test]
-    fn image_inline() {
-        let input = indoc! {r#"
-            [{{< image src="icon.svg" alt="Rust" width="50" height="50" >}}](https://rust-lang.org)
-        "#};
-        let result = convert_shortcodes(input);
+    fn convert_shortcodes_preserves_mermaid_and_generic_arguments() {
         assert_eq!(
-            result,
-            "[![Rust](icon.svg){width=50 height=50}](https://rust-lang.org)\n"
-        );
-    }
-
-    // ── style ──
-
-    #[test]
-    fn style_leaves_todo() {
-        let input = indoc! {r#"
-            {{< style "table { min-width: initial; }" >}}
-            | A | B |
-            {{< /style >}}
-        "#};
-        let result = convert_shortcodes(input);
-        assert!(
-            result.contains("<!-- TODO: style shortcode not yet supported:"),
-            "got:\n{result}"
-        );
-        assert!(result.contains("| A | B |"), "got:\n{result}");
-        assert!(result.contains("<!-- /style -->"), "got:\n{result}");
-    }
-
-    // ── mermaid ──
-
-    #[test]
-    fn mermaid_block() {
-        let input = indoc! {"
-            {{< mermaid >}}
-            graph TB
-              A --> B
-            {{< /mermaid >}}
-        "};
-        let result = convert_shortcodes(input);
-        assert_eq!(
-            result,
-            indoc! {"
+            convert_shortcodes(indoc! {r#"
+                {{< mermaid >}}
+                graph TB
+                  A --> B
+                {{< /mermaid >}}
+                {{< widget title="A \"quote\" >}} B" >}}
+            "#})
+            .unwrap(),
+            indoc! {r#"
                 ```mermaid
                 graph TB
                   A --> B
                 ```
-            "}
-        );
-    }
-
-    // ── self-closing directives ──
-
-    #[test]
-    fn directive_with_positional_args() {
-        let input = indoc! {r#"
-            {{< my-widget "Title" "https://example.com" "Description" >}}
-        "#};
-        let result = convert_shortcodes(input);
-        assert_eq!(
-            result,
-            indoc! {r#"
-                ::: my-widget {"Title" "https://example.com" "Description"}
+                ::: widget {title="A \"quote\" >}} B"}
                 :::
             "#}
         );
     }
 
     #[test]
-    fn directive_with_named_args() {
-        let input = indoc! {r#"
-            {{< music server="abc" type="song" id="123" >}}
-        "#};
-        let result = convert_shortcodes(input);
-        assert_eq!(
-            result,
-            indoc! {r#"
-                ::: music {server="abc" type="song" id="123"}
-                :::
-            "#}
-        );
-    }
-
-    // ── unknown closing tag ──
-
-    #[test]
-    fn unknown_closing_tag_dropped() {
-        let input = "{{< /unknown >}}\n";
-        let result = convert_shortcodes(input);
-        assert_eq!(
-            result, "",
-            "unknown closing tags should be silently dropped"
-        );
-    }
-
-    // ── code block skipping ──
-
-    #[test]
-    fn shortcode_inside_code_block_skipped() {
-        let input = indoc! {r#"
+    fn convert_shortcodes_literal_code_is_unchanged() {
+        let input = indoc! {r"
             ```markdown
-            {{< admonition info "Title" >}}
+            {{< admonition >}}
             ```
-        "#};
-        let result = convert_shortcodes(input);
+        "};
+        assert_eq!(convert_shortcodes(input).unwrap(), input);
+    }
+
+    #[test]
+    fn convert_shortcodes_multiline_arguments_preserve_backticks() {
         assert_eq!(
-            result, input,
-            "shortcodes inside code blocks should be preserved"
+            convert_shortcodes(indoc! {r#"
+                {{< admonition
+                    type="note"
+                    title="Use `code`"
+                >}}
+                Body
+                {{< /admonition >}}
+            "#})
+            .unwrap(),
+            indoc! {r#"
+                ::: callout {type=note title="Use `code`"}
+                Body
+                :::
+            "#}
         );
+    }
+
+    #[test]
+    fn convert_shortcodes_malformed_or_lossy_inputs_returns_error() {
+        for input in [
+            "{{< /unknown >}}",
+            "{{< admonition >}}body",
+            "{{< image src=x",
+            "{{< style >}}body{{< /style >}}",
+            "{{< admonition >}}body{{< /mermaid >}}",
+            "{{< image src=\"unfinished >}}",
+            "{{< image src=x linked=false >}}",
+            "{{< admonition open=maybe >}}",
+            "{{< image src=x src=y >}}",
+            "{{< >}}",
+            indoc! {r#"
+                {{< admonition title="multiple
+                lines" >}}
+            "#},
+        ] {
+            assert!(convert_shortcodes(input).is_err(), "{input}");
+        }
+    }
+
+    // ── parse_shortcode_args ──
+
+    #[test]
+    fn parse_shortcode_args_decodes_escaped_values() {
+        let args = parse_shortcode_args(r#"title="A \"quoted\" title" path="C:\\docs""#).unwrap();
+        assert_eq!(args.get("title"), Some(r#"A "quoted" title"#));
+        assert_eq!(args.get("path"), Some(r"C:\docs"));
     }
 }

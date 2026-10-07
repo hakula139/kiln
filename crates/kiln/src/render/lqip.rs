@@ -2,10 +2,12 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use anyhow::{Result, ensure};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use image::imageops::FilterType;
 use image::{DynamicImage, ImageReader};
+use percent_encoding::percent_decode_str;
 use serde::{Deserialize, Serialize};
 
 /// Image-pipeline configuration loaded from the `[image]` section of `config.toml`.
@@ -28,6 +30,20 @@ const fn default_lqip_size() -> u32 {
 
 const fn default_lqip_quality() -> u8 {
     25
+}
+
+impl ImageConfig {
+    pub(crate) fn validate(&self) -> Result<()> {
+        ensure!(
+            self.lqip_size > 0,
+            "image.lqip_size must be greater than zero"
+        );
+        ensure!(
+            (1..=100).contains(&self.lqip_quality),
+            "image.lqip_quality must be between 1 and 100"
+        );
+        Ok(())
+    }
 }
 
 impl Default for ImageConfig {
@@ -95,19 +111,15 @@ impl ImageResolver {
     /// Maps a `src` reference to a filesystem path under one of the known roots. Returns `None`
     /// for remote URLs and `data:` schemes.
     fn resolve_path(&self, src: &str, base_dir: Option<&Path>) -> Option<PathBuf> {
-        if src.is_empty()
-            || src.starts_with("http://")
-            || src.starts_with("https://")
-            || src.starts_with("//")
-            || src.starts_with("data:")
-        {
+        let path = src.split(['?', '#']).next()?;
+        if path.is_empty() || path.starts_with("//") || path.split('/').next()?.contains(':') {
             return None;
         }
-
-        if let Some(rest) = src.strip_prefix('/') {
+        let path = percent_decode_str(path).decode_utf8().ok()?;
+        if let Some(rest) = path.strip_prefix('/') {
             Some(self.output_root.join(rest))
         } else {
-            base_dir.map(|d| d.join(src))
+            base_dir.map(|dir| dir.join(path.as_ref()))
         }
     }
 
@@ -157,7 +169,8 @@ fn encode_lqip(path: &Path, size: u32, quality: u8) -> Option<String> {
     let rgba = resized.into_rgba8();
 
     let webp_bytes = webp::Encoder::from_rgba(rgba.as_raw(), rgba.width(), rgba.height())
-        .encode(f32::from(quality))
+        .encode_simple(false, f32::from(quality))
+        .ok()?
         .to_vec();
 
     let mut uri = String::with_capacity(webp_bytes.len() * 4 / 3 + 32);
@@ -208,7 +221,57 @@ mod tests {
         );
     }
 
+    // ── ImageConfig::validate ──
+
+    #[test]
+    fn validate_rejects_invalid_encoder_settings() {
+        for quality in [0, 101, 255] {
+            assert!(
+                ImageConfig {
+                    lqip_quality: quality,
+                    ..ImageConfig::default()
+                }
+                .validate()
+                .is_err()
+            );
+        }
+        assert!(
+            ImageConfig {
+                lqip_size: 0,
+                ..ImageConfig::default()
+            }
+            .validate()
+            .is_err()
+        );
+        for quality in [1, 100] {
+            ImageConfig {
+                lqip_quality: quality,
+                ..ImageConfig::default()
+            }
+            .validate()
+            .unwrap();
+        }
+    }
+
     // ── ImageResolver::resolve ──
+
+    #[test]
+    fn resolve_decodes_local_urls_and_retains_metadata_on_encoding_failure() {
+        let dir = tempdir().unwrap();
+        write_tiny_png(&dir.path().join("photo one.png"));
+        let resolver = ImageResolver::new(
+            dir.path(),
+            ImageConfig {
+                lqip_quality: 101,
+                ..ImageConfig::default()
+            },
+        );
+        for src in ["photo%20one.png?v=1#image", "/photo%20one.png#image"] {
+            let meta = resolver.resolve(src, Some(dir.path())).unwrap();
+            assert_eq!((meta.width, meta.height), (2, 2));
+            assert!(meta.lqip_uri.is_none());
+        }
+    }
 
     #[test]
     fn resolve_reads_dimensions() {

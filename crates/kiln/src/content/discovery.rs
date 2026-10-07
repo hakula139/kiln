@@ -50,7 +50,7 @@ pub fn discover_content(root: &Path) -> Result<ContentSet> {
         }
 
         let path = entry.path();
-        if path.extension().is_none_or(|ext| ext != "md") {
+        if !super::is_markdown(path) {
             continue;
         }
 

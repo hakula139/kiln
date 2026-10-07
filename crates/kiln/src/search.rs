@@ -6,16 +6,12 @@ use indoc::formatdoc;
 
 const DEFAULT_BINARY: &str = "pagefind";
 
-/// Runs the Pagefind indexer on the given output directory.
-///
-/// Expects `output_dir` to contain the fully built site HTML. Pagefind writes
-/// its search index and client assets to `{output_dir}/pagefind/`. Successful stdout uses debug
-/// logging, stderr remains visible, and failures include both streams.
+/// Indexes built site HTML in `output_dir`, writing search assets to `output_dir/pagefind/`.
 ///
 /// # Errors
 ///
 /// Returns an error if the output path is not UTF-8, the binary cannot be executed, or it exits
-/// with a non-zero status.
+/// with a non-zero status. Exit failures include stdout and stderr.
 pub fn run_pagefind(output_dir: &Path, binary: Option<&str>) -> Result<()> {
     let binary = binary.unwrap_or(DEFAULT_BINARY);
     let site_arg = output_dir
@@ -27,7 +23,7 @@ pub fn run_pagefind(output_dir: &Path, binary: Option<&str>) -> Result<()> {
         .output()
         .with_context(|| {
             formatdoc! {"
-                failed to run `{binary}` — is Pagefind installed?
+                failed to run `{binary}`. Is Pagefind installed?
 
                 Install with one of:
 
@@ -73,21 +69,13 @@ mod tests {
     // ── run_pagefind ──
 
     #[test]
-    fn run_pagefind_succeeds_with_and_without_output() {
-        let dir = tempfile::tempdir().unwrap();
-        for binary in ["echo", "true"] {
-            run_pagefind(dir.path(), Some(binary)).unwrap();
-        }
-    }
-
-    #[test]
     fn run_pagefind_missing_binary_returns_error() {
         let dir = tempfile::tempdir().unwrap();
         let err = run_pagefind(dir.path(), Some("nonexistent-pagefind-binary-xyz"))
             .unwrap_err()
             .to_string();
         assert!(
-            err.contains("is Pagefind installed?"),
+            err.contains("Is Pagefind installed?"),
             "should mention installation, got: {err}"
         );
         assert!(
@@ -96,6 +84,16 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn run_pagefind_succeeds_with_and_without_output() {
+        let dir = tempfile::tempdir().unwrap();
+        for binary in ["echo", "true"] {
+            run_pagefind(dir.path(), Some(binary)).unwrap();
+        }
+    }
+
+    #[cfg(unix)]
     #[test]
     fn run_pagefind_non_zero_exit_returns_error() {
         let dir = tempfile::tempdir().unwrap();

@@ -3,7 +3,7 @@ use std::path::Path;
 
 use anyhow::{Result, bail, ensure};
 
-use crate::content::frontmatter;
+use crate::content::index::load_index_title;
 use crate::content::page::Page;
 use crate::text::slugify;
 
@@ -25,6 +25,8 @@ pub struct TaxonomySet {
     pub tags: Vec<Term>,
     /// Maps `tag_slug → page indices` (in input order) into the original page slice.
     pub tag_pages: HashMap<String, Vec<usize>>,
+    /// Indices into `tags` for each input page, preserving authored order.
+    pub page_tags: Vec<Vec<usize>>,
 }
 
 /// Pages carrying one taxonomy slug, keyed by case-folded term with the first-seen spelling as
@@ -34,7 +36,7 @@ type SlugGroup = BTreeMap<String, (String, Vec<usize>)>;
 /// Builds the taxonomy set from the given page collection.
 ///
 /// Groups pages by tag, deduplicates terms by slug, and sorts by page count descending (then
-/// name ascending). Page indices are in input order (newest first). When `content_dir` is
+/// name ascending). Page indices are in input order. When `content_dir` is
 /// provided, looks for `tags/<slug>/_index.md` to override the display name.
 ///
 /// # Errors
@@ -44,9 +46,11 @@ type SlugGroup = BTreeMap<String, (String, Vec<usize>)>;
 pub fn build_taxonomies(pages: &[Page], content_dir: Option<&Path>) -> Result<TaxonomySet> {
     let mut grouped: HashMap<String, SlugGroup> = HashMap::new();
 
-    for (idx, page) in pages.iter().enumerate() {
-        collect_terms(&page.frontmatter.tags, idx, &mut grouped)?;
-    }
+    let page_slugs = pages
+        .iter()
+        .enumerate()
+        .map(|(index, page)| collect_terms(&page.frontmatter.tags, index, &mut grouped))
+        .collect::<Result<Vec<_>>>()?;
 
     let mut tag_pages = HashMap::with_capacity(grouped.len());
     let mut tags: Vec<Term> = Vec::with_capacity(grouped.len());
@@ -54,7 +58,9 @@ pub fn build_taxonomies(pages: &[Page], content_dir: Option<&Path>) -> Result<Ta
     for (slug, terms) in grouped {
         let (name, indices) = sole_term(&slug, terms)?;
         let display_name = content_dir
-            .and_then(|dir| load_term_title(dir, &slug))
+            .map(|dir| load_index_title(&dir.join("tags").join(&slug)))
+            .transpose()?
+            .flatten()
             .unwrap_or(name);
         let page_count = indices.len();
         tags.push(Term {
@@ -65,9 +71,33 @@ pub fn build_taxonomies(pages: &[Page], content_dir: Option<&Path>) -> Result<Ta
         tag_pages.insert(slug, indices);
     }
 
-    tags.sort_by(|a, b| b.page_count.cmp(&a.page_count).then(a.name.cmp(&b.name)));
+    tags.sort_by(|a, b| {
+        b.page_count
+            .cmp(&a.page_count)
+            .then(a.name.cmp(&b.name))
+            .then(a.slug.cmp(&b.slug))
+    });
 
-    Ok(TaxonomySet { tags, tag_pages })
+    let term_indices: HashMap<_, _> = tags
+        .iter()
+        .enumerate()
+        .map(|(index, term)| (term.slug.as_str(), index))
+        .collect();
+    let page_tags = page_slugs
+        .into_iter()
+        .map(|slugs| {
+            slugs
+                .iter()
+                .map(|slug| term_indices[slug.as_str()])
+                .collect()
+        })
+        .collect();
+
+    Ok(TaxonomySet {
+        tags,
+        tag_pages,
+        page_tags,
+    })
 }
 
 /// Unwraps the single term behind a tag slug, reporting a collision when several terms share it.
@@ -88,26 +118,13 @@ fn sole_term(slug: &str, terms: SlugGroup) -> Result<(String, Vec<usize>)> {
     Ok((name, indices))
 }
 
-/// Loads the display title from `<content_dir>/tags/<slug>/_index.md`.
-///
-/// Returns `None` if the file doesn't exist, has invalid frontmatter, or an empty title.
-fn load_term_title(content_dir: &Path, slug: &str) -> Option<String> {
-    let path = content_dir.join("tags").join(slug).join("_index.md");
-    let content = std::fs::read_to_string(&path).ok()?;
-    let (fm, _) = frontmatter::parse(&content).ok()?;
-    if fm.title.is_empty() {
-        None
-    } else {
-        Some(fm.title)
-    }
-}
-
 /// Collects terms from a frontmatter field into the grouped map.
 fn collect_terms(
     values: &[String],
     page_idx: usize,
     grouped: &mut HashMap<String, SlugGroup>,
-) -> Result<()> {
+) -> Result<Vec<String>> {
+    let mut slugs = Vec::new();
     for value in values {
         let trimmed = value.trim();
         if trimmed.is_empty() {
@@ -119,19 +136,18 @@ fn collect_terms(
             r#"tag "{trimmed}" must contain at least one letter or number"#,
         );
 
-        grouped
-            .entry(slug)
+        let (_, indices) = grouped
+            .entry(slug.clone())
             .or_default()
             .entry(trimmed.to_lowercase())
-            .and_modify(|(_, indices)| {
-                if indices.last() != Some(&page_idx) {
-                    indices.push(page_idx);
-                }
-            })
-            .or_insert_with(|| (trimmed.to_owned(), vec![page_idx]));
+            .or_insert_with(|| (trimmed.to_owned(), Vec::new()));
+        if indices.last() != Some(&page_idx) {
+            indices.push(page_idx);
+            slugs.push(slug);
+        }
     }
 
-    Ok(())
+    Ok(slugs)
 }
 
 #[cfg(test)]
@@ -203,7 +219,7 @@ mod tests {
     #[test]
     fn build_taxonomies_deduplicates_page_membership() {
         let pages = [
-            make_page("Post A", &["Rust", "rust", " Rust ", "web"]),
+            make_page("Post A", &["web", "Rust", "rust", " Rust ", "", "Web"]),
             make_page("Post B", &["rust"]),
         ];
         let set = build_taxonomies(&pages, None).unwrap();
@@ -217,6 +233,7 @@ mod tests {
         assert_eq!(set.tags[1].slug, "web");
         assert_eq!(set.tags[1].page_count, 1);
         assert_eq!(set.tag_pages["web"], [0]);
+        assert_eq!(set.page_tags, [vec![1, 0], vec![0]]);
     }
 
     #[test]
@@ -309,10 +326,8 @@ mod tests {
         );
     }
 
-    // ── load_term_title ──
-
     #[test]
-    fn load_term_title_uses_index_title() {
+    fn build_taxonomies_uses_index_title() {
         let dir = tempfile::tempdir().unwrap();
         let content_dir = dir.path().join("content");
 
@@ -339,7 +354,7 @@ mod tests {
     }
 
     #[test]
-    fn load_term_title_falls_back_without_index() {
+    fn build_taxonomies_falls_back_without_index() {
         let dir = tempfile::tempdir().unwrap();
         let content_dir = dir.path().join("content");
         std::fs::create_dir_all(&content_dir).unwrap();
@@ -354,7 +369,7 @@ mod tests {
     }
 
     #[test]
-    fn load_term_title_ignores_empty_index_title() {
+    fn build_taxonomies_ignores_empty_index_title() {
         let dir = tempfile::tempdir().unwrap();
         let content_dir = dir.path().join("content");
 

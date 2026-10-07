@@ -16,7 +16,7 @@ use strum::{AsRefStr, EnumString};
 pub struct PageAssets {
     /// Scripts in registration order. Order matters for dependency chains (e.g., a library script
     /// must be registered before its consumer).
-    pub scripts: Vec<ScriptTag>,
+    scripts: Vec<ScriptTag>,
 
     /// Features auto-detected during render (math expressions, mermaid fences).
     /// Themes use these to conditionally load CSS / JS for the feature.
@@ -30,10 +30,12 @@ impl PageAssets {
     ///
     /// # Errors
     ///
-    /// Returns an error if a script with the same URL has already been registered with a different
-    /// `load` strategy or `module` flag, since the browser would otherwise see two `<script>` tags
-    /// fighting for the same source.
+    /// Returns an error for synchronous modules or conflicting attributes for an existing URL.
     pub fn register_script(&mut self, tag: ScriptTag) -> Result<()> {
+        if tag.module && tag.load == LoadStrategy::Sync {
+            bail!("module script {:?} cannot use synchronous loading", tag.url);
+        }
+
         if let Some(existing) = self.scripts.iter().find(|s| s.url == tag.url) {
             if existing == &tag {
                 return Ok(());
@@ -53,17 +55,21 @@ impl PageAssets {
         Ok(())
     }
 
+    /// Scripts in registration order.
+    #[must_use]
+    pub fn scripts(&self) -> &[ScriptTag] {
+        &self.scripts
+    }
+
     /// Marks a feature as needed by the current page.
     pub fn add_feature(&mut self, feature: Feature) {
         self.features.insert(feature);
     }
 }
 
-/// Mutable handle to a [`PageAssets`] that templates can update via `register_script(...)`. Cheap
-/// to clone (internally `Arc<Mutex<_>>`).
+/// Shared asset registry for directive templates.
 ///
-/// The mutex satisfies `MiniJinja`'s `Object: Send + Sync` requirement. The build pipeline is
-/// single-threaded so it never contends.
+/// The mutex satisfies `MiniJinja`'s `Object: Send + Sync` requirement.
 #[derive(Debug, Default, Clone)]
 pub struct AssetsHandle {
     inner: Arc<Mutex<PageAssets>>,
@@ -88,10 +94,7 @@ impl AssetsHandle {
 
 impl Object for AssetsHandle {}
 
-/// A `<script>` tag declaration.
-///
-/// Equality compares all fields, so re-registering the same URL with different `load` or `module`
-/// is a conflict, not a duplicate.
+/// A script declaration validated by [`PageAssets::register_script`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ScriptTag {
     pub url: String,
@@ -111,8 +114,7 @@ impl ScriptTag {
     }
 }
 
-/// How a `<script>` tag is loaded. `defer` and `async` are mutually exclusive in HTML, so they
-/// share an enum rather than two `bool` fields.
+/// Script execution strategy. Modules support deferred or asynchronous execution only.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, AsRefStr, EnumString)]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
@@ -160,6 +162,43 @@ mod tests {
         assets.register_script(tag.clone()).unwrap();
         assets.register_script(tag).unwrap();
         assert_eq!(assets.scripts.len(), 1, "same tag should dedup");
+    }
+
+    #[test]
+    fn register_script_supported_strategies() {
+        for (load, module) in [
+            (LoadStrategy::Defer, false),
+            (LoadStrategy::Async, false),
+            (LoadStrategy::Sync, false),
+            (LoadStrategy::Defer, true),
+            (LoadStrategy::Async, true),
+        ] {
+            let mut assets = PageAssets::default();
+            let tag = ScriptTag {
+                url: "/module.js".into(),
+                load,
+                module,
+            };
+            assets.register_script(tag.clone()).unwrap();
+            assert_eq!(assets.scripts(), &[tag]);
+        }
+    }
+
+    #[test]
+    fn register_script_synchronous_module_returns_error() {
+        let mut assets = PageAssets::default();
+        let error = assets
+            .register_script(ScriptTag {
+                url: "/module.js".into(),
+                load: LoadStrategy::Sync,
+                module: true,
+            })
+            .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            r#"module script "/module.js" cannot use synchronous loading"#
+        );
+        assert_eq!(assets.scripts(), []);
     }
 
     #[test]

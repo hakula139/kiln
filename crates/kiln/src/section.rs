@@ -1,7 +1,9 @@
-use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::path::Path;
 
-use crate::content::frontmatter;
+use anyhow::Result;
+
+use crate::content::index::load_index_title;
 use crate::content::page::{Page, PageKind};
 use crate::text::titlecase;
 
@@ -10,7 +12,6 @@ use crate::text::titlecase;
 pub struct Section {
     pub slug: String,
     pub title: String,
-    pub page_count: usize,
 }
 
 /// Collects sections from discovered pages. Returns sections sorted alphabetically by slug.
@@ -18,43 +19,29 @@ pub struct Section {
 /// A section is the first subdirectory under `content/posts/` for pages with
 /// `PageKind::Post { section: Some(_) }`. Display title is loaded from
 /// `content/posts/<section>/_index.md` if present, falling back to the titlecased slug.
-#[must_use]
-pub fn collect_sections(pages: &[Page], content_dir: &Path) -> Vec<Section> {
-    let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+///
+/// # Errors
+///
+/// Returns an error if section metadata cannot be read or parsed.
+pub fn collect_sections(pages: &[Page], content_dir: &Path) -> Result<Vec<Section>> {
+    let mut slugs = BTreeSet::new();
     for page in pages {
         if let PageKind::Post {
             section: Some(ref s),
         } = page.kind
         {
-            *counts.entry(s.clone()).or_default() += 1;
+            slugs.insert(s.clone());
         }
     }
 
-    counts
+    slugs
         .into_iter()
-        .map(|(slug, page_count)| {
+        .map(|slug| {
             let section_dir = content_dir.join("posts").join(&slug);
-            let title = load_index_title(&section_dir).unwrap_or_else(|| titlecase(&slug));
-            Section {
-                slug,
-                title,
-                page_count,
-            }
+            let title = load_index_title(&section_dir)?.unwrap_or_else(|| titlecase(&slug));
+            Ok(Section { slug, title })
         })
         .collect()
-}
-
-/// Loads the display title from `_index.md` in the given directory.
-///
-/// Returns `None` if the file is missing, has invalid frontmatter, or an empty title.
-pub(crate) fn load_index_title(dir: &Path) -> Option<String> {
-    let content = std::fs::read_to_string(dir.join("_index.md")).ok()?;
-    let (fm, _) = frontmatter::parse(&content).ok()?;
-    if fm.title.is_empty() {
-        None
-    } else {
-        Some(fm.title)
-    }
 }
 
 #[cfg(test)]
@@ -66,19 +53,6 @@ mod tests {
 
     use super::*;
     use crate::test_utils::test_page;
-
-    fn make_page(title: &str, section: Option<&str>) -> Page {
-        let mut page = test_page(title);
-        page.kind = PageKind::Post {
-            section: section.map(String::from),
-        };
-        page.source_path = PathBuf::from(format!("content/posts/{title}/index.md"));
-        page
-    }
-
-    fn make_standalone(title: &str) -> Page {
-        test_page(title)
-    }
 
     // ── collect_sections ──
 
@@ -93,14 +67,12 @@ mod tests {
         let content_dir = dir.path().join("content");
         fs::create_dir_all(&content_dir).unwrap();
 
-        let sections = collect_sections(&pages, &content_dir);
+        let sections = collect_sections(&pages, &content_dir).unwrap();
         assert_eq!(sections.len(), 2);
         assert_eq!(sections[0].slug, "essay");
         assert_eq!(sections[0].title, "Essay");
-        assert_eq!(sections[0].page_count, 1);
         assert_eq!(sections[1].slug, "note");
         assert_eq!(sections[1].title, "Note");
-        assert_eq!(sections[1].page_count, 2);
     }
 
     #[test]
@@ -120,7 +92,7 @@ mod tests {
         .unwrap();
 
         let pages = vec![make_page("Post 1", Some("note"))];
-        let sections = collect_sections(&pages, &content_dir);
+        let sections = collect_sections(&pages, &content_dir).unwrap();
 
         assert_eq!(sections.len(), 1);
         assert_eq!(sections[0].title, "笔记");
@@ -134,7 +106,7 @@ mod tests {
         fs::create_dir_all(&content_dir).unwrap();
 
         let pages = vec![make_page("Post 1", Some("hello-world"))];
-        let sections = collect_sections(&pages, &content_dir);
+        let sections = collect_sections(&pages, &content_dir).unwrap();
 
         assert_eq!(sections[0].title, "Hello World");
     }
@@ -155,7 +127,7 @@ mod tests {
         .unwrap();
 
         let pages = vec![make_page("Post 1", Some("note"))];
-        let sections = collect_sections(&pages, &content_dir);
+        let sections = collect_sections(&pages, &content_dir).unwrap();
 
         assert_eq!(sections[0].title, "Note");
     }
@@ -170,7 +142,7 @@ mod tests {
         let content_dir = dir.path().join("content");
         fs::create_dir_all(&content_dir).unwrap();
 
-        let sections = collect_sections(&pages, &content_dir);
+        let sections = collect_sections(&pages, &content_dir).unwrap();
         assert_eq!(sections.len(), 1);
         assert_eq!(sections[0].slug, "note");
     }
@@ -182,7 +154,7 @@ mod tests {
         let content_dir = dir.path().join("content");
         fs::create_dir_all(&content_dir).unwrap();
 
-        let sections = collect_sections(&pages, &content_dir);
+        let sections = collect_sections(&pages, &content_dir).unwrap();
         assert_eq!(sections.len(), 1);
         assert_eq!(sections[0].slug, "note");
     }
@@ -190,7 +162,20 @@ mod tests {
     #[test]
     fn collect_sections_empty() {
         let dir = tempfile::tempdir().unwrap();
-        let sections = collect_sections(&[], dir.path());
+        let sections = collect_sections(&[], dir.path()).unwrap();
         assert!(sections.is_empty());
+    }
+
+    fn make_page(title: &str, section: Option<&str>) -> Page {
+        let mut page = test_page(title);
+        page.kind = PageKind::Post {
+            section: section.map(String::from),
+        };
+        page.source_path = PathBuf::from(format!("content/posts/{title}/index.md"));
+        page
+    }
+
+    fn make_standalone(title: &str) -> Page {
+        test_page(title)
     }
 }

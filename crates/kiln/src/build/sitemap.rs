@@ -2,40 +2,25 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
-use crate::output::write_output;
-use crate::sitemap::{self, SitemapEntry};
-
 use super::BuildContext;
-use super::listing::ListedPage;
-use super::url::join_site_url;
+use super::routes::RoutePlan;
+use crate::output::write_output;
+use crate::sitemap;
 
-pub(crate) fn build_sitemap_and_robots(
+pub(super) fn build_sitemap_and_robots(
     ctx: &BuildContext,
-    listed_pages: &[ListedPage],
+    plan: &RoutePlan,
     output_dir: &Path,
 ) -> Result<()> {
-    build_sitemap(ctx, listed_pages, output_dir)?;
+    build_sitemap(plan, output_dir)?;
     build_robots_txt(ctx, output_dir)
 }
 
 // ── Sitemap ──
 
-fn build_sitemap(ctx: &BuildContext, listed_pages: &[ListedPage], output_dir: &Path) -> Result<()> {
-    let mut entries = Vec::with_capacity(listed_pages.len() + 1);
-
-    entries.push(SitemapEntry {
-        loc: join_site_url(&ctx.config.base_url, ""),
-        lastmod: None,
-    });
-
-    for lp in listed_pages {
-        entries.push(SitemapEntry {
-            loc: lp.summary.url.clone(),
-            lastmod: lp.timestamp.map(|ts| ts.to_string()),
-        });
-    }
-
-    let xml = sitemap::generate_sitemap(&entries);
+fn build_sitemap(plan: &RoutePlan, output_dir: &Path) -> Result<()> {
+    let entries = plan.sitemap_entries();
+    let xml = sitemap::generate_sitemap(entries);
     write_output(&output_dir.join("sitemap.xml"), &xml).context("failed to write sitemap.xml")
 }
 

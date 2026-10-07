@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, ensure};
 use walkdir::WalkDir;
 
+use crate::content::is_markdown;
+
 /// Converts a Hugo site root to kiln format.
 ///
 /// Converts `source/content` into `dest/content` and copies any `source/static` to `dest/static`.
@@ -30,79 +32,84 @@ pub fn convert(source: &Path, dest: &Path) -> Result<()> {
         source.display()
     );
 
-    for entry in WalkDir::new(&content_source) {
+    let source = fs::canonicalize(source).context("failed to resolve conversion source")?;
+    let dest = resolve_destination(dest)?;
+    ensure!(
+        !source.starts_with(&dest) && !dest.starts_with(&source),
+        "conversion source and destination must not overlap: {} and {}",
+        source.display(),
+        dest.display()
+    );
+
+    for directory in ["content", "static"] {
+        ensure!(
+            resolve_destination(&dest.join(directory))?.starts_with(&dest),
+            "conversion destination escapes its root: {}",
+            dest.join(directory).display()
+        );
+    }
+
+    convert_tree(&content_source, &content_dest, true)?;
+    let static_source = source.join("static");
+    if static_source.is_dir() {
+        convert_tree(&static_source, &dest.join("static"), false)?;
+    }
+    Ok(())
+}
+
+fn resolve_destination(path: &Path) -> Result<PathBuf> {
+    if fs::symlink_metadata(path).is_ok() {
+        return fs::canonicalize(path)
+            .with_context(|| format!("failed to resolve {}", path.display()));
+    }
+
+    let absolute = std::path::absolute(path)?;
+    let parent = absolute.parent().context("destination has no parent")?;
+    let name = absolute
+        .file_name()
+        .context("destination has no file name")?;
+    Ok(resolve_destination(parent)?.join(name))
+}
+
+fn convert_tree(source: &Path, dest: &Path, markdown: bool) -> Result<()> {
+    for entry in WalkDir::new(source).follow_links(false) {
         let entry = entry?;
         if entry.file_type().is_dir() {
             continue;
         }
 
-        let rel_path = entry
-            .path()
-            .strip_prefix(&content_source)
-            .context("failed to compute relative path")?;
-
-        let file_name = rel_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-
-        let dest_path = if file_name == "_index.md" {
-            let Some(path) = index_dest_path(rel_path, &content_dest) else {
+        let relative = entry.path().strip_prefix(source)?;
+        let destination = if markdown
+            && is_markdown(relative)
+            && relative.file_stem().is_some_and(|stem| stem == "_index")
+        {
+            let Some(path) = index_dest_path(relative, dest) else {
+                tracing::warn!(path = %entry.path().display(), "section index requires manual migration and was omitted");
                 continue;
             };
             path
         } else {
-            content_dest.join(rel_path)
+            dest.join(relative)
         };
-
-        if dest_path.exists() {
+        if fs::symlink_metadata(&destination).is_ok() {
             continue;
         }
-
-        if let Some(parent) = dest_path.parent() {
+        let resolved = resolve_destination(&destination)?;
+        ensure!(
+            resolved.starts_with(resolve_destination(dest)?),
+            "conversion destination escapes its root: {}",
+            destination.display()
+        );
+        if let Some(parent) = destination.parent() {
             fs::create_dir_all(parent)?;
         }
 
-        if Path::new(file_name)
-            .extension()
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("md"))
-        {
-            convert_or_copy_markdown(entry.path(), &dest_path)?;
+        if markdown && is_markdown(relative) {
+            convert_or_copy_markdown(entry.path(), &destination)?;
         } else {
-            fs::copy(entry.path(), &dest_path)?;
+            fs::copy(entry.path(), &destination)?;
         }
     }
-
-    let static_source = source.join("static");
-    if static_source.is_dir() {
-        copy_dir(&static_source, &dest.join("static"))?;
-    }
-
-    Ok(())
-}
-
-/// Copies a `static/` tree without overwriting existing destination files.
-fn copy_dir(source: &Path, dest: &Path) -> Result<()> {
-    for entry in WalkDir::new(source) {
-        let entry = entry?;
-        if entry.file_type().is_dir() {
-            continue;
-        }
-
-        let rel_path = entry
-            .path()
-            .strip_prefix(source)
-            .context("failed to compute relative path")?;
-        let dest_path = dest.join(rel_path);
-
-        if dest_path.exists() {
-            continue;
-        }
-
-        if let Some(parent) = dest_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-
-        fs::copy(entry.path(), &dest_path)?;
-    }
-
     Ok(())
 }
 
@@ -113,7 +120,6 @@ fn copy_dir(source: &Path, dest: &Path) -> Result<()> {
 /// - Everything else → `None` (skipped)
 fn index_dest_path(rel_path: &Path, dest: &Path) -> Option<PathBuf> {
     let components: Vec<_> = rel_path.components().collect();
-    // Expect exactly: <kind>/<slug>/_index.md (3 components).
     if components.len() != 3 {
         return None;
     }
@@ -121,7 +127,7 @@ fn index_dest_path(rel_path: &Path, dest: &Path) -> Option<PathBuf> {
     let slug = components[1].as_os_str();
     match kind {
         "categories" => Some(dest.join("posts").join(slug).join("_index.md")),
-        "tags" => Some(dest.join(rel_path)),
+        "tags" => Some(dest.join("tags").join(slug).join("_index.md")),
         _ => None,
     }
 }
@@ -132,7 +138,9 @@ fn convert_or_copy_markdown(src: &Path, dest: &Path) -> Result<()> {
     let content =
         fs::read_to_string(src).with_context(|| format!("failed to read {}", src.display()))?;
 
-    if let Ok((yaml_fm, body)) = frontmatter::split_yaml_frontmatter(&content) {
+    if content.trim_start_matches('\u{feff}').starts_with("---") {
+        let (yaml_fm, body) = frontmatter::split_yaml_frontmatter(&content)
+            .with_context(|| format!("malformed YAML frontmatter in {}", src.display()))?;
         convert_markdown_file(yaml_fm, body, dest)
     } else {
         fs::copy(src, dest)?;
@@ -141,10 +149,15 @@ fn convert_or_copy_markdown(src: &Path, dest: &Path) -> Result<()> {
 }
 
 fn convert_markdown_file(yaml_fm: &str, body: &str, dest: &Path) -> Result<()> {
-    let toml_fm = frontmatter::convert_frontmatter(yaml_fm)
+    let (toml_fm, unsupported) = frontmatter::convert_frontmatter(yaml_fm)
         .with_context(|| format!("failed to convert frontmatter for {}", dest.display()))?;
 
-    let converted_body = shortcode::convert_shortcodes(body);
+    for field in unsupported {
+        tracing::warn!(path = %dest.display(), field, "frontmatter field requires manual migration and was omitted");
+    }
+
+    let converted_body = shortcode::convert_shortcodes(body)
+        .with_context(|| format!("failed to convert shortcodes for {}", dest.display()))?;
 
     let mut output = String::with_capacity(toml_fm.len() + converted_body.len() + 10);
     output.push_str("+++\n");
@@ -445,10 +458,10 @@ mod tests {
         );
     }
 
-    // ── copy_dir ──
+    // ── convert_tree ──
 
     #[test]
-    fn copy_dir_copies_files() {
+    fn convert_tree_copies_files() {
         let dir = tempfile::tempdir().unwrap();
         let source = dir.path().join("source");
         let dest = dir.path().join("dest");
@@ -456,7 +469,7 @@ mod tests {
         fs::create_dir_all(source.join("images/icons")).unwrap();
         fs::write(source.join("images/icons/logo.webp"), "site-image").unwrap();
 
-        copy_dir(&source, &dest).unwrap();
+        convert_tree(&source, &dest, false).unwrap();
 
         assert_eq!(
             fs::read_to_string(dest.join("images/icons/logo.webp")).unwrap(),
@@ -465,7 +478,7 @@ mod tests {
     }
 
     #[test]
-    fn copy_dir_does_not_overwrite_existing_files() {
+    fn convert_tree_does_not_overwrite_existing_files() {
         let dir = tempfile::tempdir().unwrap();
         let source = dir.path().join("source");
         let dest = dir.path().join("dest");
@@ -475,7 +488,7 @@ mod tests {
         fs::write(source.join("images/logo.webp"), "new static").unwrap();
         fs::write(dest.join("images/logo.webp"), "existing static").unwrap();
 
-        copy_dir(&source, &dest).unwrap();
+        convert_tree(&source, &dest, false).unwrap();
 
         assert_eq!(
             fs::read_to_string(dest.join("images/logo.webp")).unwrap(),

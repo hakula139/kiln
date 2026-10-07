@@ -1,7 +1,7 @@
 use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 
-use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Parser, Tag, TagEnd};
 use syntect::parsing::SyntaxSet;
 
 use super::Spanned;
@@ -17,6 +17,7 @@ use super::mermaid::render_mermaid;
 use super::table::TableNowrap;
 use super::toc::TocEntry;
 use crate::html::escape;
+use crate::markdown::markdown_options;
 use crate::text::slugify;
 
 pub(super) struct MarkdownDocument {
@@ -39,13 +40,10 @@ impl MarkdownDocument {
     }
 }
 
-/// The result of rendering markdown content.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MarkdownOutput {
-    /// The rendered HTML string.
-    pub html: String,
-    /// Table of contents entries collected from headings.
-    pub headings: Vec<TocEntry>,
+pub(super) struct MarkdownOutput {
+    pub(super) html: String,
+    pub(super) headings: Vec<TocEntry>,
 }
 
 /// Site-level settings applied while rendering markdown.
@@ -123,95 +121,54 @@ impl MarkdownRenderer<'_> {
     fn render_events(&mut self, events: Vec<Spanned>) -> String {
         let mut output_events: Vec<Event<'_>> = Vec::new();
 
-        let mut in_code_block = false;
-        let mut code_spec = CodeBlockSpec::default();
-        let mut code_buf = String::new();
-        let mut is_mermaid_block = false;
-        let mut para_buf: Vec<Spanned> = Vec::new();
-        let mut in_para = false;
         let mut table_nowrap = self.settings.table_nowrap_width.map(TableNowrap::new);
 
-        for (event, range) in events {
+        let events = self.promote_block_images(events);
+        let mut events = events.into_iter();
+        while let Some((event, range)) = events.next() {
             match event {
                 // ── Headings ──
-                Event::Start(Tag::Heading { .. }) => {
+                Event::Start(Tag::Heading {
+                    level,
+                    classes,
+                    mut attrs,
+                    ..
+                }) => {
                     let entry = &self.headings[self.heading_index];
                     self.heading_index += 1;
-                    output_events.push(Event::Html(
-                        format!(r#"<{} id="{}">"#, entry.level, escape(&entry.id)).into(),
-                    ));
+                    attrs.retain(|(key, _)| key.as_ref() != "numbering-start");
+                    output_events.push(Event::Start(Tag::Heading {
+                        level,
+                        id: Some(entry.id.clone().into()),
+                        classes,
+                        attrs,
+                    }));
                     output_events.push(Event::Html(render_number(entry.number.as_deref()).into()));
                 }
-                Event::End(TagEnd::Heading(level)) => {
-                    output_events.push(Event::Html(format!("</{level}>\n").into()));
-                }
 
-                // ── Code blocks: buffer content, emit on End ──
+                // ── Code blocks ──
                 Event::Start(Tag::CodeBlock(kind)) => {
-                    in_code_block = true;
-                    code_spec = match kind {
-                        CodeBlockKind::Fenced(lang) => {
-                            parse_fence_info(&lang, self.settings.code_max_lines)
-                        }
-                        CodeBlockKind::Indented => CodeBlockSpec {
-                            max_lines: self.settings.code_max_lines,
-                            ..CodeBlockSpec::default()
-                        },
-                    };
-                    is_mermaid_block = code_spec
-                        .lang
-                        .as_deref()
-                        .is_some_and(|l| l.eq_ignore_ascii_case("mermaid"));
-                    if is_mermaid_block {
-                        self.features.insert(Feature::Mermaid);
-                    }
-                    code_buf.clear();
-                }
-                Event::End(TagEnd::CodeBlock) => {
-                    in_code_block = false;
-                    let html = if is_mermaid_block {
-                        render_mermaid(&code_buf)
-                    } else {
-                        highlight_code(self.syntax_set, &code_buf, &code_spec)
-                    };
-                    output_events.push(Event::Html(html.into()));
-                    code_buf.clear();
-                    is_mermaid_block = false;
-                }
-                Event::Text(ref t) if in_code_block => {
-                    code_buf.push_str(t);
+                    output_events.push(Event::Html(
+                        self.render_code_block(kind, &mut events).into(),
+                    ));
                 }
 
-                // ── Paragraphs: buffer to detect sole-image blocks ──
-                Event::Start(Tag::Paragraph) => {
-                    in_para = true;
-                    para_buf.clear();
-                }
-                Event::End(TagEnd::Paragraph) => {
-                    in_para = false;
-                    if let Some(html) = try_render_block_image(
-                        &para_buf,
-                        self.image_attrs,
-                        self.image_resolver,
-                        self.base_dir,
-                    ) {
-                        output_events.push(Event::Html(html.into()));
-                    } else {
-                        output_events.push(Event::Html("<p>".into()));
-                        flush_paragraph(
-                            &para_buf,
-                            self.image_attrs,
-                            self.image_resolver,
-                            self.base_dir,
-                            &mut output_events,
-                            self.features,
-                        );
-                        output_events.push(Event::Html("</p>\n".into()));
-                    }
-                    para_buf.clear();
-                }
-                _ if in_para => {
-                    para_buf.push((event, range));
+                Event::Start(Tag::Image {
+                    dest_url, title, ..
+                }) => {
+                    let mut depth = 1;
+                    let inner: Vec<_> = events
+                        .by_ref()
+                        .take_while(|(event, _)| {
+                            match event {
+                                Event::Start(Tag::Image { .. }) => depth += 1,
+                                Event::End(TagEnd::Image) => depth -= 1,
+                                _ => {}
+                            }
+                            depth > 0
+                        })
+                        .collect();
+                    output_events.push(self.inline_image(&dest_url, &title, range.start, &inner));
                 }
 
                 // ── Everything else (tables, math, etc.) ──
@@ -228,6 +185,77 @@ impl MarkdownRenderer<'_> {
         pulldown_cmark::html::push_html(&mut html, output_events.into_iter());
 
         html
+    }
+
+    fn render_code_block(
+        &mut self,
+        kind: CodeBlockKind<'_>,
+        events: &mut impl Iterator<Item = Spanned>,
+    ) -> String {
+        let spec = match kind {
+            CodeBlockKind::Fenced(info) => parse_fence_info(&info, self.settings.code_max_lines),
+            CodeBlockKind::Indented => CodeBlockSpec {
+                max_lines: self.settings.code_max_lines,
+                ..CodeBlockSpec::default()
+            },
+        };
+        let mut code = String::new();
+        while let Some((Event::Text(text), _)) = events.next() {
+            code.push_str(&text);
+        }
+
+        if spec
+            .lang
+            .as_deref()
+            .is_some_and(|lang| lang.eq_ignore_ascii_case("mermaid"))
+        {
+            self.features.insert(Feature::Mermaid);
+            render_mermaid(&code)
+        } else {
+            highlight_code(self.syntax_set, &code, &spec)
+        }
+    }
+
+    fn promote_block_images(&self, events: Vec<Spanned>) -> Vec<Spanned> {
+        let mut output = Vec::with_capacity(events.len());
+        let mut events = events.into_iter();
+        while let Some((event, range)) = events.next() {
+            if !matches!(event, Event::Start(Tag::Paragraph)) {
+                output.push((event, range));
+                continue;
+            }
+            let body: Vec<_> = events
+                .by_ref()
+                .take_while(|(event, _)| !matches!(event, Event::End(TagEnd::Paragraph)))
+                .collect();
+            if let Some(html) =
+                try_render_block_image(&body, self.image_attrs, self.image_resolver, self.base_dir)
+            {
+                output.push((Event::Html(html.into()), range));
+            } else {
+                output.push((event, range.clone()));
+                output.extend(body);
+                output.push((Event::End(TagEnd::Paragraph), range));
+            }
+        }
+        output
+    }
+
+    fn inline_image(
+        &self,
+        src: &str,
+        title: &str,
+        offset: usize,
+        inner: &[Spanned],
+    ) -> Event<'static> {
+        let alt = extract_alt_text(inner);
+        let attrs = enrich_image_attrs(
+            self.image_attrs.get(&offset),
+            src,
+            self.image_resolver,
+            self.base_dir,
+        );
+        Event::Html(render_inline_image(src, &alt, title, attrs.as_ref()).into())
     }
 }
 
@@ -275,53 +303,6 @@ fn try_render_block_image(
     Some(render_block_image(&src, &alt, &title, enriched.as_ref()))
 }
 
-/// Flushes buffered paragraph events, replacing inline image sequences with `render_inline_image`
-/// output while passing other events through.
-fn flush_paragraph(
-    events: &[Spanned],
-    image_attrs: &HashMap<usize, ImageAttrs>,
-    image_resolver: &ImageResolver,
-    base_dir: Option<&Path>,
-    output: &mut Vec<Event<'static>>,
-    features: &mut BTreeSet<Feature>,
-) {
-    let mut i = 0;
-    while i < events.len() {
-        if let Event::Start(Tag::Image {
-            dest_url, title, ..
-        }) = &events[i].0
-        {
-            let src = dest_url.to_string();
-            let title = title.to_string();
-            let byte_offset = events[i].1.start;
-
-            // Collect inner events up to End(Image) for alt text extraction.
-            let inner_start = i + 1;
-            i = inner_start;
-            while i < events.len() && !matches!(events[i].0, Event::End(TagEnd::Image)) {
-                i += 1;
-            }
-            let alt = extract_alt_text(&events[inner_start..i]);
-            if i < events.len() {
-                i += 1; // skip End(Image)
-            }
-
-            let enriched = enrich_image_attrs(
-                image_attrs.get(&byte_offset),
-                &src,
-                image_resolver,
-                base_dir,
-            );
-            output.push(Event::Html(
-                render_inline_image(&src, &alt, &title, enriched.as_ref()).into(),
-            ));
-        } else {
-            output.push(transform_math(events[i].0.clone(), features));
-            i += 1;
-        }
-    }
-}
-
 /// Merges authored `{...}` attrs with resolver-supplied on-disk metadata.
 /// Returns `None` only when neither side has anything to contribute.
 fn enrich_image_attrs(
@@ -348,15 +329,6 @@ fn extract_alt_text(events: &[Spanned]) -> String {
         push_plain_text(&mut alt, ev);
     }
     alt
-}
-
-fn markdown_options() -> Options {
-    Options::ENABLE_TABLES
-        | Options::ENABLE_FOOTNOTES
-        | Options::ENABLE_STRIKETHROUGH
-        | Options::ENABLE_TASKLISTS
-        | Options::ENABLE_HEADING_ATTRIBUTES
-        | Options::ENABLE_MATH
 }
 
 /// Collects heading metadata with authored or slugified candidate IDs.
@@ -1089,6 +1061,18 @@ mod tests {
             out.html.contains(r#"alt="icon""#),
             "should have alt attribute, html:\n{}",
             out.html
+        );
+    }
+
+    #[test]
+    fn render_markdown_inline_image_with_nested_alt_preserves_surrounding_text() {
+        let out = render("Before ![outer ![inner](inner.png)](outer.png) after.");
+
+        assert_eq!(
+            out.html,
+            indoc! {r#"
+                <p>Before <img src="outer.png" alt="outer inner" loading="lazy" decoding="async" /> after.</p>
+            "#},
         );
     }
 

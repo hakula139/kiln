@@ -173,7 +173,13 @@ impl Config {
             Self::default()
         };
 
+        config
+            .image
+            .validate()
+            .context("invalid image configuration")?;
+
         if let Some(ref theme_name) = config.theme {
+            validate_theme_name(theme_name)?;
             let theme_toml = root.join("themes").join(theme_name).join("theme.toml");
             let theme = ThemeMeta::load(&theme_toml)?;
             theme.check_min_kiln_version(theme_name)?;
@@ -284,23 +290,47 @@ impl ThemeMeta {
     }
 }
 
+pub(crate) fn validate_theme_name(name: &str) -> Result<()> {
+    let mut components = Path::new(name).components();
+    if name.is_empty()
+        || name.contains(['/', '\\', ':'])
+        || !matches!(components.next(), Some(std::path::Component::Normal(_)))
+        || components.next().is_some()
+    {
+        bail!("theme must be a single directory name: `{name}`");
+    }
+    Ok(())
+}
+
 /// Merges theme default params into site params. Site values take precedence.
 /// Nested tables are merged recursively. Returns an error on type mismatch.
 fn merge_params(site: &mut toml::Table, theme_defaults: &toml::Table) -> Result<()> {
+    merge_params_at(site, theme_defaults, "")
+}
+
+fn merge_params_at(
+    site: &mut toml::Table,
+    theme_defaults: &toml::Table,
+    prefix: &str,
+) -> Result<()> {
     for (key, theme_val) in theme_defaults {
+        let path = if prefix.is_empty() {
+            key.clone()
+        } else {
+            format!("{prefix}.{key}")
+        };
         if let Some(site_val) = site.get_mut(key) {
             match (site_val, theme_val) {
                 (toml::Value::Table(st), toml::Value::Table(tt)) => {
-                    merge_params(st, tt)?;
+                    merge_params_at(st, tt, &path)?;
                 }
                 (s, t) if s.type_str() != t.type_str() => {
                     bail!(
-                        "param `{key}` has type `{}` in site config but `{}` in theme",
+                        "param `{path}` has type `{}` in site config but `{}` in theme",
                         s.type_str(),
                         t.type_str(),
                     );
                 }
-                // Same scalar type: site wins silently.
                 _ => {}
             }
         } else {
@@ -459,7 +489,7 @@ mod tests {
             timezone = "Asia/Shanghai"
             enable_git_info = true
             output_dir = "dist"
-            theme = "IgnIt"
+            theme = "example-theme"
 
             [params]
             fontawesome = true
@@ -477,7 +507,7 @@ mod tests {
         assert_eq!(config.timezone.as_deref(), Some("Asia/Shanghai"));
         assert!(config.enable_git_info);
         assert_eq!(config.output_dir, "dist");
-        assert_eq!(config.theme.as_deref(), Some("IgnIt"));
+        assert_eq!(config.theme.as_deref(), Some("example-theme"));
         assert_eq!(
             config.params.get("fontawesome"),
             Some(&toml::Value::Boolean(true)),
@@ -617,14 +647,14 @@ mod tests {
         fs::write(
             &config_path,
             indoc! {r#"
-                base_url = "https://hakula.xyz"
+                base_url = "https://example.com"
                 title = "HAKULA†CHANNEL"
             "#},
         )
         .unwrap();
 
         let config = Config::load(dir.path()).unwrap();
-        assert_eq!(config.base_url, "https://hakula.xyz");
+        assert_eq!(config.base_url, "https://example.com");
         assert_eq!(config.title, "HAKULA†CHANNEL");
     }
 
@@ -901,6 +931,17 @@ mod tests {
     }
 
     #[test]
+    fn load_theme_invalid_name_returns_error() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("config.toml"), r#"theme = "../outside""#).unwrap();
+        let error = Config::load(root.path()).unwrap_err();
+        assert!(
+            error.to_string().contains("single directory name"),
+            "{error}"
+        );
+    }
+
+    #[test]
     fn load_theme_missing_theme_toml_returns_error() {
         let dir = tempfile::tempdir().unwrap();
         fs::write(
@@ -978,11 +1019,11 @@ mod tests {
 
     #[test]
     fn theme_dir_returns_path_when_configured() {
-        let config: Config = toml::from_str(r#"theme = "IgnIt""#).unwrap();
+        let config: Config = toml::from_str(r#"theme = "example-theme""#).unwrap();
         let root = Path::new("/project");
         assert_eq!(
             config.theme_dir(root),
-            Some(root.join("themes").join("IgnIt"))
+            Some(root.join("themes").join("example-theme"))
         );
     }
 
@@ -1097,13 +1138,14 @@ mod tests {
     fn resolved_output_dir_filesystem_root_returns_error() {
         let dir = tempfile::tempdir().unwrap();
 
-        let err = resolved_output_dir_for(dir.path(), "/")
+        let root = dir.path().ancestors().last().unwrap();
+        let err = resolved_output_dir_for(dir.path(), &root.to_string_lossy())
             .unwrap_err()
             .to_string();
 
         assert!(
             err.contains("would overwrite the project root"),
-            "should reject `/`, got: {err}"
+            "should reject the filesystem root, got: {err}"
         );
     }
 
@@ -1321,6 +1363,17 @@ mod tests {
         let theme: toml::Table = toml::from_str(r#"key = "theme""#).unwrap();
         merge_params(&mut site, &theme).unwrap();
         assert_eq!(site.get("key"), Some(&toml::Value::String("site".into())));
+    }
+
+    #[test]
+    fn merge_params_nested_type_mismatch_returns_error() {
+        let mut site: toml::Table = toml::from_str("comments.provider.enabled = true").unwrap();
+        let theme: toml::Table = toml::from_str(r#"comments.provider.enabled = "yes""#).unwrap();
+        let error = merge_params(&mut site, &theme).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "param `comments.provider.enabled` has type `boolean` in site config but `string` in theme"
+        );
     }
 
     #[test]

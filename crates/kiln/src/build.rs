@@ -1,5 +1,4 @@
 mod archive;
-pub(crate) mod assets;
 mod error;
 mod feed;
 mod git;
@@ -7,26 +6,25 @@ mod home;
 mod listing;
 mod overview;
 mod paginate;
+mod routes;
 mod sitemap;
-pub(crate) mod url;
 
 use std::fmt::Write;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, ensure};
 use jiff::tz::TimeZone;
 use syntect::parsing::SyntaxSet;
 
-use self::assets::PublishedAssets;
-use self::git::{GitInfo, updated_timestamp};
+use self::git::GitInfo;
 use self::listing::{
-    build_listing_artifacts, build_listing_buckets, format_page_date, linked_tags, page_section,
-    resolve_featured_image,
+    PreparedPage, build_listing_artifacts, build_listing_buckets, format_page_date,
 };
-use self::url::page_url;
+use self::routes::RoutePlan;
 use crate::config::Config;
 use crate::content::discovery::{ContentSet, discover_content};
+use crate::content::index::load_index_title;
 use crate::content::page::{Page, PageKind};
 use crate::css::Stylesheets;
 use crate::i18n::I18n;
@@ -36,15 +34,17 @@ use crate::render::RenderOptions;
 use crate::render::lqip::ImageResolver;
 use crate::render::pipeline::render_page;
 use crate::search;
-use crate::section::{self, Section, collect_sections};
+use crate::section::collect_sections;
 use crate::static_assets::StaticAssetManifest;
+use crate::static_assets::publication::PublishedAssets;
 use crate::taxonomy::build_taxonomies;
 use crate::template::TemplateEngine;
-use crate::template::vars::PostTemplateVars;
+use crate::template::vars::{PageMetadata, PostTemplateVars};
 
 /// Shared build state, created once per build invocation.
 struct BuildContext {
     config: Config,
+    deployment_prefix: String,
     i18n: I18n,
     time_zone: Option<TimeZone>,
     syntax_set: SyntaxSet,
@@ -84,10 +84,7 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
         minify,
     } = options;
 
-    let mut config = Config::load(root).context("failed to load config")?;
-    if let Some(base_url) = base_url_override {
-        base_url.clone_into(&mut config.base_url);
-    }
+    let (config, deployment_prefix) = load_build_config(root, base_url_override)?;
     let time_zone = config
         .time_zone()
         .context("failed to resolve configured time zone")?;
@@ -139,6 +136,7 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
         Some(&site_templates),
         theme_templates.as_deref(),
         &i18n,
+        &deployment_prefix,
         &static_assets,
     )
     .context("failed to initialize template engine")?;
@@ -146,6 +144,7 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
     let git_info = GitInfo::new(root, config.enable_git_info);
     let ctx = BuildContext {
         config,
+        deployment_prefix,
         i18n,
         time_zone,
         syntax_set,
@@ -156,32 +155,31 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
         git_info,
     };
 
-    let sections = collect_sections(&content.pages, &content.content_dir);
+    let sections = collect_sections(&content.pages, &content.content_dir)?;
     let taxonomy_set = build_taxonomies(&content.pages, Some(&content.content_dir))?;
 
     let artifacts = build_listing_artifacts(
+        &ctx,
         &content.pages,
         &content.content_dir,
-        &ctx.config.base_url,
-        ctx.time_zone.as_ref(),
         &sections,
-        &ctx.image_resolver,
         &taxonomy_set,
     )?;
 
-    build_content_pages(&ctx, &content, &output_dir, &sections)?;
-
-    let posts_title = section::load_index_title(&content.content_dir.join("posts"))
+    let posts_title = load_index_title(&content.content_dir.join("posts"))?
         .unwrap_or_else(|| ctx.i18n.t("all_posts").into_owned());
     let buckets = build_listing_buckets(&artifacts, &sections, &taxonomy_set, posts_title);
 
+    let plan = RoutePlan::new(&ctx, &content.pages, &artifacts, &buckets, &output_dir)?;
+    build_content_pages(&ctx, &content, &output_dir, &artifacts.pages)?;
+    let posts = artifacts.posts();
     let mut page_count = content.pages.len();
-    page_count += home::build_home_pages(&ctx, &artifacts.listed_posts, &output_dir)?;
+    page_count += home::build_home_pages(&ctx, &posts, &output_dir)?;
     page_count += archive::build_archive_pages(&ctx, &buckets, &output_dir)?;
     page_count += overview::build_overview_pages(&ctx, &buckets, &output_dir)?;
 
-    feed::build_feeds(&ctx, &artifacts.listed_posts, &buckets, &output_dir)?;
-    sitemap::build_sitemap_and_robots(&ctx, &artifacts.listed_pages, &output_dir)?;
+    feed::build_feeds(&ctx, &posts, &buckets, &output_dir)?;
+    sitemap::build_sitemap_and_robots(&ctx, &plan, &output_dir)?;
     page_count += error::build_404(&ctx, &output_dir)?;
 
     finish_build(
@@ -192,6 +190,29 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
         content.pages.len(),
         started,
     )
+}
+
+fn load_build_config(root: &Path, base_url_override: Option<&str>) -> Result<(Config, String)> {
+    let mut config = Config::load(root).context("failed to load config")?;
+    if let Some(base_url) = base_url_override {
+        base_url.clone_into(&mut config.base_url);
+    }
+    let base_url = url::Url::parse(&config.base_url).context("invalid base_url")?;
+    ensure!(
+        !base_url.cannot_be_a_base() && base_url.has_host(),
+        "base_url must be an absolute URL with a host"
+    );
+    ensure!(
+        base_url.query().is_none() && base_url.fragment().is_none(),
+        "base_url must not contain a query or fragment"
+    );
+    let deployment_prefix = base_url.path().to_owned();
+    base_url
+        .as_str()
+        .trim_end_matches('/')
+        .clone_into(&mut config.base_url);
+
+    Ok((config, deployment_prefix))
 }
 
 fn finish_build(
@@ -264,7 +285,7 @@ fn build_content_pages(
     ctx: &BuildContext,
     content: &ContentSet,
     output_dir: &Path,
-    sections: &[Section],
+    prepared: &[PreparedPage],
 ) -> Result<()> {
     if content.pages.is_empty() {
         return Ok(());
@@ -272,15 +293,8 @@ fn build_content_pages(
 
     let options = RenderOptions::from_params(&ctx.config.params)?;
 
-    for page in &content.pages {
-        build_page(
-            ctx,
-            &options,
-            page,
-            &content.content_dir,
-            output_dir,
-            sections,
-        )?;
+    for (page, prepared) in content.pages.iter().zip(prepared) {
+        build_page(ctx, &options, page, output_dir, prepared)?;
     }
 
     Ok(())
@@ -290,9 +304,8 @@ fn build_page(
     ctx: &BuildContext,
     options: &RenderOptions,
     page: &Page,
-    content_dir: &Path,
     output_dir: &Path,
-    sections: &[Section],
+    prepared: &PreparedPage,
 ) -> Result<()> {
     let mut options = options.clone();
     options.heading_numbering = page.frontmatter.heading_numbering;
@@ -308,41 +321,24 @@ fn build_page(
     )
     .with_context(|| format!("failed to render {}", page.source_path.display()))?;
 
-    let output_path = page.output_path(content_dir)?;
-    let url = page_url(&ctx.config.base_url, &output_path);
-
-    let featured_image = resolve_featured_image(
-        page.frontmatter.featured_image.as_ref(),
-        &url,
-        &ctx.image_resolver,
-        page.source_path.parent(),
-    );
     let page_css = ctx
         .stylesheets
-        .page_url(&ctx.config.base_url, &ctx.static_assets, page)?;
+        .page_url(&ctx.deployment_prefix, &ctx.static_assets, page)?;
     let vars = PostTemplateVars {
-        title: &page.frontmatter.title,
-        description: page
-            .frontmatter
-            .description
-            .as_deref()
-            .or(page.summary.as_deref())
-            .unwrap_or(""),
-        url: &url,
-        featured_image,
+        metadata: PageMetadata {
+            title: &prepared.summary.title,
+            description: &prepared.summary.description,
+            url: prepared.summary.url.as_str().into(),
+        },
+        featured_image: prepared.summary.featured_image.as_ref(),
+        license: page.frontmatter.license.as_deref(),
         page_css,
-        date: page
-            .frontmatter
-            .date
+        date: prepared.summary.date.as_deref(),
+        updated: prepared
+            .updated
             .map(|date| format_page_date(date, ctx.time_zone.as_ref())),
-        updated: updated_timestamp(
-            page.frontmatter.updated,
-            &page.source_path,
-            ctx.git_info.as_ref(),
-        )
-        .map(|date| format_page_date(date, ctx.time_zone.as_ref())),
-        tags: linked_tags(&page.frontmatter.tags, &ctx.config.base_url),
-        section: page_section(page, &ctx.config.base_url, sections),
+        tags: &prepared.summary.tags,
+        section: prepared.summary.section.as_ref(),
         assets: rendered.assets,
         content: &rendered.content_html,
         toc: &rendered.toc_html,
@@ -357,7 +353,7 @@ fn build_page(
     }
     .with_context(|| format!("failed to render {}", page.source_path.display()))?;
 
-    let dest = output_dir.join(&output_path);
+    let dest = output_dir.join(&prepared.output_path);
     write_output(&dest, &html).with_context(|| format!("failed to write {}", dest.display()))?;
 
     Ok(())

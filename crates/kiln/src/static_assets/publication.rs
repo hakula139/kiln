@@ -135,7 +135,7 @@ impl PublishedFiles {
 }
 
 fn normalize_source(source: &Path) -> Result<PathBuf> {
-    // Canonicalization would erase the names under which symlinked assets are published.
+    let canonical = source.canonicalize()?;
     let mut normalized = PathBuf::new();
     for component in std::path::absolute(source)?.components() {
         if component == Component::ParentDir {
@@ -144,18 +144,129 @@ fn normalize_source(source: &Path) -> Result<PathBuf> {
             normalized.push(component);
         }
     }
-    Ok(normalized)
+
+    // Preserve the published alias only when lexical parent traversal keeps the same source.
+    if normalized
+        .canonicalize()
+        .is_ok_and(|path| path == canonical)
+    {
+        Ok(normalized)
+    } else {
+        Ok(canonical)
+    }
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests {
     use std::fs;
+    #[cfg(unix)]
     use std::os::unix::fs::symlink;
 
     use indoc::indoc;
 
     use super::*;
 
+    // ── PublishedAssets::publish ──
+
+    #[test]
+    fn publish_preserves_site_static_and_page_precedence() {
+        let root = tempfile::tempdir().unwrap();
+        let theme = root.path().join("themes/example");
+        let content = root.path().join("content");
+        let output = root.path().join("public");
+        for (path, value) in [
+            (theme.join("assets/image.svg"), "theme asset"),
+            (theme.join("static/assets/image.svg"), "theme static"),
+            (root.path().join("assets/image.svg"), "site asset"),
+            (root.path().join("static/assets/image.svg"), "site static"),
+            (theme.join("assets/theme.svg"), "theme asset"),
+            (theme.join("static/assets/theme.svg"), "theme static"),
+            (theme.join("static/assets/site.svg"), "theme static"),
+            (root.path().join("assets/site.svg"), "site asset"),
+            (
+                root.path().join("static/example/image.svg"),
+                "site page image",
+            ),
+            (content.join("example/image.svg"), "page image"),
+        ] {
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, value).unwrap();
+        }
+        let source = content.join("example/index.md");
+        fs::write(
+            &source,
+            indoc! {r#"
+                +++
+                title = "Example"
+                +++
+            "#},
+        )
+        .unwrap();
+        let page = Page::from_file(&source).unwrap();
+        PublishedAssets::publish(root.path(), Some(&theme), &content, &[page], &output).unwrap();
+
+        for (path, value) in [
+            ("assets/image.svg", "site static"),
+            ("assets/theme.svg", "theme static"),
+            ("assets/site.svg", "site asset"),
+            ("example/image.svg", "page image"),
+        ] {
+            assert_eq!(
+                fs::read_to_string(output.join(path)).unwrap(),
+                value,
+                "{path}"
+            );
+        }
+    }
+
+    // ── PublishedAssets::resolve ──
+
+    #[cfg(unix)]
+    #[test]
+    fn resolve_respects_filesystem_parent_traversal_through_symlinks() {
+        let root = tempfile::tempdir().unwrap();
+        let static_dir = root.path().join("static");
+        let physical = root.path().join("external/nested");
+        fs::create_dir_all(&static_dir).unwrap();
+        fs::create_dir_all(&physical).unwrap();
+        fs::write(static_dir.join("image.svg"), "logical sibling").unwrap();
+        fs::write(
+            physical.parent().unwrap().join("image.svg"),
+            "physical sibling",
+        )
+        .unwrap();
+        symlink(&physical, static_dir.join("linked")).unwrap();
+        symlink(
+            physical.parent().unwrap().join("image.svg"),
+            static_dir.join("physical.svg"),
+        )
+        .unwrap();
+        let output = root.path().join("public");
+        let assets = PublishedAssets::publish(
+            root.path(),
+            None,
+            &root.path().join("content"),
+            &[],
+            &output,
+        )
+        .unwrap();
+
+        let destination = assets
+            .resolve(None, &static_dir.join("linked/../image.svg"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(destination, Path::new("physical.svg"));
+        assert_eq!(
+            fs::read_to_string(output.join(destination)).unwrap(),
+            "physical sibling"
+        );
+        assert_eq!(
+            assets.resolve(None, &static_dir.join("image.svg")).unwrap(),
+            Some(Path::new("image.svg"))
+        );
+    }
+
+    #[cfg(unix)]
     #[test]
     fn resolve_preserves_aliases_and_owning_page_scope() {
         let root = tempfile::tempdir().unwrap();
