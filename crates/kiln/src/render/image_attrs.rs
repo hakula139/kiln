@@ -1,13 +1,15 @@
 use std::collections::HashMap;
 
+use pulldown_cmark::{Event, Parser, Tag};
+
 use super::lqip::ImageMeta;
 use crate::attrs::{find_attr_block_end, parse_pandoc_attrs};
-use crate::markdown::{for_each_non_code_line, scan_code_span};
+use crate::markdown::markdown_options;
 
 /// Attributes extracted from Pandoc-style `{...}` blocks after images,
 /// merged with auto-detected dimensions and an optional LQIP placeholder.
 #[derive(Debug, Clone, Default)]
-pub struct ImageAttrs {
+pub(super) struct ImageAttrs {
     pub id: Option<String>,
     pub classes: Vec<String>,
     pub width: Option<String>,
@@ -17,95 +19,33 @@ pub struct ImageAttrs {
     pub lqip_uri: Option<String>,
 }
 
-/// Extracts `![alt](url){...}` attribute blocks from markdown.
-///
-/// Returns the cleaned markdown (with `{...}` stripped) and a map from the image's byte position
-/// (start of `![`) in the **cleaned** output to its attributes.
-///
-/// Skips images inside fenced code blocks (` ``` ` / `~~~`) and inline code spans (`` ` ``).
+/// Removes image attribute blocks, keyed by image offset in the cleaned Markdown.
 #[must_use]
-pub fn extract_image_attrs(input: &str) -> (String, HashMap<usize, ImageAttrs>) {
+pub(super) fn extract_image_attrs(input: &str) -> (String, HashMap<usize, ImageAttrs>) {
     let mut output = String::with_capacity(input.len());
-    let mut attrs_map: HashMap<usize, ImageAttrs> = HashMap::new();
-    for_each_non_code_line(input, &mut output, |line, out| {
-        extract_image_attrs_in_line(line, out, &mut attrs_map);
-    });
+    let mut attrs_map = HashMap::new();
+    let mut copied = 0;
+    for (event, range) in Parser::new_ext(input, markdown_options()).into_offset_iter() {
+        if !matches!(event, Event::Start(Tag::Image { .. })) || range.start < copied {
+            continue;
+        }
+        let Some(brace_end) = input[range.end..]
+            .starts_with('{')
+            .then(|| find_brace_end(input, range.end))
+            .flatten()
+        else {
+            continue;
+        };
+        let image_offset = output.len() + range.start - copied;
+        output.push_str(&input[copied..range.end]);
+        let attrs = parse_image_attrs(&input[range.end + 1..brace_end]);
+        if !attrs.is_empty() {
+            attrs_map.insert(image_offset, attrs);
+        }
+        copied = brace_end + 1;
+    }
+    output.push_str(&input[copied..]);
     (output, attrs_map)
-}
-
-fn extract_image_attrs_in_line(
-    line: &str,
-    output: &mut String,
-    attrs_map: &mut HashMap<usize, ImageAttrs>,
-) {
-    let bytes = line.as_bytes();
-    let mut i = 0;
-
-    while i < bytes.len() {
-        if bytes[i] == b'`' {
-            let (end, span) = scan_code_span(line, i);
-            output.push_str(span);
-            i = end;
-        } else if bytes[i] == b'!' && i + 1 < bytes.len() && bytes[i + 1] == b'[' {
-            i = try_extract_image(line, i, output, attrs_map);
-        } else {
-            let ch = line[i..].chars().next().unwrap();
-            output.push(ch);
-            i += ch.len_utf8();
-        }
-    }
-}
-
-fn try_extract_image(
-    line: &str,
-    start: usize,
-    output: &mut String,
-    attrs_map: &mut HashMap<usize, ImageAttrs>,
-) -> usize {
-    let bytes = line.as_bytes();
-    let Some(paren_end) = find_image_end(bytes, start) else {
-        output.push('!');
-        return start + 1;
-    };
-
-    let img_pos = output.len();
-    output.push_str(&line[start..paren_end]);
-
-    if paren_end < bytes.len()
-        && bytes[paren_end] == b'{'
-        && let Some(brace_end) = find_brace_end(line, paren_end)
-    {
-        let parsed = parse_image_attrs(&line[paren_end + 1..brace_end]);
-        if !parsed.is_empty() {
-            attrs_map.insert(img_pos, parsed);
-        }
-        return brace_end + 1;
-    }
-
-    paren_end
-}
-
-fn find_image_end(bytes: &[u8], start: usize) -> Option<usize> {
-    let i = find_matching_close(bytes, start + 2, b'[', b']')?;
-    if i >= bytes.len() || bytes[i] != b'(' {
-        return None;
-    }
-    find_matching_close(bytes, i + 1, b'(', b')')
-}
-
-fn find_matching_close(bytes: &[u8], start: usize, open: u8, close: u8) -> Option<usize> {
-    let mut depth: usize = 1;
-    let mut i = start;
-    while i < bytes.len() && depth > 0 {
-        match bytes[i] {
-            b'\\' => i += 1,
-            b if b == open => depth += 1,
-            b if b == close => depth -= 1,
-            _ => {}
-        }
-        i += 1;
-    }
-    (depth == 0).then_some(i)
 }
 
 fn find_brace_end(s: &str, start: usize) -> Option<usize> {
@@ -136,7 +76,7 @@ fn parse_image_attrs(attr_str: &str) -> ImageAttrs {
 
 impl ImageAttrs {
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    fn is_empty(&self) -> bool {
         self.id.is_none()
             && self.classes.is_empty()
             && self.width.is_none()
@@ -148,7 +88,7 @@ impl ImageAttrs {
 
     /// Stamps auto-detected dimensions and LQIP onto the attributes from a
     /// resolver lookup. Manual fields are untouched.
-    pub fn fill_from_meta(&mut self, meta: &ImageMeta) {
+    pub(super) fn fill_from_meta(&mut self, meta: &ImageMeta) {
         self.auto_width = Some(meta.width);
         self.auto_height = Some(meta.height);
         self.lqip_uri.clone_from(&meta.lqip_uri);
@@ -164,7 +104,42 @@ mod tests {
     // ── extract_image_attrs ──
 
     #[test]
-    fn extract_no_attrs_passthrough() {
+    fn extract_image_attrs_uses_markdown_image_boundaries() {
+        for image in [
+            r#"![Alt](photo.png "A ) B")"#,
+            r#"![Alt](photo.png "A ( B")"#,
+            indoc! {"
+                ![Alt
+                text](photo.png)"},
+        ] {
+            let (cleaned, attrs) = extract_image_attrs(&format!("{image}{{width=80}}"));
+            assert_eq!(cleaned, image);
+            assert_eq!(attrs[&0].width.as_deref(), Some("80"));
+        }
+    }
+
+    #[test]
+    fn extract_image_attrs_preserves_code_contexts() {
+        for input in [
+            indoc! {"
+                `first
+                ![Alt](photo.png){width=80}`
+            "},
+            "    ![Alt](photo.png){width=80}",
+            indoc! {"
+                > ```
+                > ![Alt](photo.png){width=80}
+                > ```
+            "},
+        ] {
+            let (cleaned, attrs) = extract_image_attrs(input);
+            assert_eq!(cleaned, input);
+            assert!(attrs.is_empty());
+        }
+    }
+
+    #[test]
+    fn extract_image_attrs_no_attrs_passthrough() {
         let input = "![alt](img.png)";
         let (output, attrs) = extract_image_attrs(input);
         assert_eq!(output, input);
@@ -172,40 +147,19 @@ mod tests {
     }
 
     #[test]
-    fn extract_id_and_class() {
-        let input = "![alt](img.png){#photo .hero}";
-        let (output, attrs) = extract_image_attrs(input);
+    fn extract_image_attrs_authored_fields() {
+        let (output, attrs) =
+            extract_image_attrs("![alt](img.png){#photo .hero width=500 height=300}");
         assert_eq!(output, "![alt](img.png)");
-        assert_eq!(attrs.len(), 1);
-        let a = &attrs[&0];
-        assert_eq!(a.id.as_deref(), Some("photo"));
-        assert_eq!(a.classes, vec!["hero"]);
+        let attrs = &attrs[&0];
+        assert_eq!(attrs.id.as_deref(), Some("photo"));
+        assert_eq!(attrs.classes, vec!["hero"]);
+        assert_eq!(attrs.width.as_deref(), Some("500"));
+        assert_eq!(attrs.height.as_deref(), Some("300"));
     }
 
     #[test]
-    fn extract_width_and_height() {
-        let input = "![alt](img.png){width=500 height=300}";
-        let (output, attrs) = extract_image_attrs(input);
-        assert_eq!(output, "![alt](img.png)");
-        assert_eq!(attrs.len(), 1);
-        let a = &attrs[&0];
-        assert_eq!(a.width.as_deref(), Some("500"));
-        assert_eq!(a.height.as_deref(), Some("300"));
-    }
-
-    #[test]
-    fn extract_class_and_width() {
-        let input = "![alt](img.png){.hero width=800}";
-        let (output, attrs) = extract_image_attrs(input);
-        assert_eq!(output, "![alt](img.png)");
-        assert_eq!(attrs.len(), 1);
-        let a = &attrs[&0];
-        assert_eq!(a.classes, vec!["hero"]);
-        assert_eq!(a.width.as_deref(), Some("800"));
-    }
-
-    #[test]
-    fn extract_skips_dot_inside_quoted_value() {
+    fn extract_image_attrs_skips_dot_inside_quoted_value() {
         // Dots inside quoted values must not be misidentified as classes.
         let input = r#"![alt](img.png){.real width="my .fake class"}"#;
         let (output, attrs) = extract_image_attrs(input);
@@ -217,7 +171,7 @@ mod tests {
     }
 
     #[test]
-    fn extract_with_escaped_quote_in_value() {
+    fn extract_image_attrs_with_escaped_quote_in_value() {
         let input = r#"![alt](img.png){.hero width="val\"ue"}"#;
         let (output, attrs) = extract_image_attrs(input);
         assert_eq!(output, "![alt](img.png)");
@@ -228,7 +182,7 @@ mod tests {
     }
 
     #[test]
-    fn extract_with_quoted_brace_in_value() {
+    fn extract_image_attrs_with_quoted_brace_in_value() {
         for (input, width) in [
             (r#"![alt](img.png){width="a}b" height=300} tail"#, "a}b"),
             (r#"![alt](img.png){width="a\"}b" height=300} tail"#, "a\"}b"),
@@ -242,7 +196,7 @@ mod tests {
     }
 
     #[test]
-    fn extract_nested_brackets() {
+    fn extract_image_attrs_nested_brackets() {
         let input = "![alt [nested]](img.png){width=100}";
         let (output, attrs) = extract_image_attrs(input);
         assert_eq!(output, "![alt [nested]](img.png)");
@@ -252,7 +206,7 @@ mod tests {
     }
 
     #[test]
-    fn extract_with_title() {
+    fn extract_image_attrs_with_title() {
         let input = r#"![alt](img.png "title"){width=100}"#;
         let (output, attrs) = extract_image_attrs(input);
         assert_eq!(output, r#"![alt](img.png "title")"#);
@@ -262,7 +216,7 @@ mod tests {
     }
 
     #[test]
-    fn extract_escaped_bracket() {
+    fn extract_image_attrs_escaped_bracket() {
         let input = r"![alt\]text](img.png){width=100}";
         let (output, attrs) = extract_image_attrs(input);
         assert_eq!(output, r"![alt\]text](img.png)");
@@ -272,7 +226,7 @@ mod tests {
     }
 
     #[test]
-    fn extract_multiple_images() {
+    fn extract_image_attrs_multiple_images() {
         let input = "![a](a.png){width=100} text ![b](b.png){width=200}";
         let (output, attrs) = extract_image_attrs(input);
         assert_eq!(output, "![a](a.png) text ![b](b.png)");
@@ -284,7 +238,7 @@ mod tests {
     }
 
     #[test]
-    fn extract_non_ascii() {
+    fn extract_image_attrs_non_ascii() {
         let input = "图片说明 ![描述](图片.png){width=200} 后续文本";
         let (output, attrs) = extract_image_attrs(input);
         assert_eq!(output, "图片说明 ![描述](图片.png) 后续文本");
@@ -294,7 +248,7 @@ mod tests {
     }
 
     #[test]
-    fn extract_unknown_key_ignored() {
+    fn extract_image_attrs_unknown_key_ignored() {
         let input = "![alt](img.png){foo=bar width=100}";
         let (output, attrs) = extract_image_attrs(input);
         assert_eq!(output, "![alt](img.png)");
@@ -304,7 +258,7 @@ mod tests {
     }
 
     #[test]
-    fn extract_bang_without_bracket_preserved() {
+    fn extract_image_attrs_bang_without_bracket_preserved() {
         let input = "!{width=500}";
         let (output, attrs) = extract_image_attrs(input);
         assert_eq!(output, input);
@@ -312,7 +266,7 @@ mod tests {
     }
 
     #[test]
-    fn extract_alt_without_paren_preserved() {
+    fn extract_image_attrs_alt_without_paren_preserved() {
         let input = "![alt]{width=500}";
         let (output, attrs) = extract_image_attrs(input);
         assert_eq!(output, input);
@@ -320,7 +274,7 @@ mod tests {
     }
 
     #[test]
-    fn extract_no_image_braces_preserved() {
+    fn extract_image_attrs_no_image_braces_preserved() {
         let input = "text {width=500} more";
         let (output, attrs) = extract_image_attrs(input);
         assert_eq!(output, input);
@@ -328,7 +282,7 @@ mod tests {
     }
 
     #[test]
-    fn extract_unclosed_brace_preserved() {
+    fn extract_image_attrs_unclosed_brace_preserved() {
         let input = indoc! {"
             ![alt](img.png){width=500
             next line
@@ -339,7 +293,7 @@ mod tests {
     }
 
     #[test]
-    fn extract_unclosed_brace_at_eof_preserved() {
+    fn extract_image_attrs_unclosed_brace_at_eof_preserved() {
         let input = "![alt](img.png){width=500";
         let (output, attrs) = extract_image_attrs(input);
         assert_eq!(output, input);
@@ -347,7 +301,7 @@ mod tests {
     }
 
     #[test]
-    fn extract_unclosed_quoted_value_preserved() {
+    fn extract_image_attrs_unclosed_quoted_value_preserved() {
         let input = r#"![alt](img.png){width="a}b"#;
         let (output, attrs) = extract_image_attrs(input);
         assert_eq!(output, input);
@@ -355,7 +309,7 @@ mod tests {
     }
 
     #[test]
-    fn extract_empty_brace_block_drops_attrs_entry() {
+    fn extract_image_attrs_empty_brace_block_drops_attrs_entry() {
         let input = "![alt](img.png){}";
         let (output, attrs) = extract_image_attrs(input);
         assert_eq!(output, "![alt](img.png)");
@@ -363,7 +317,7 @@ mod tests {
     }
 
     #[test]
-    fn extract_unmatched_open_bracket_passes_bang_through() {
+    fn extract_image_attrs_unmatched_open_bracket_passes_bang_through() {
         let input = "![no close paren or bracket";
         let (output, attrs) = extract_image_attrs(input);
         assert_eq!(output, input);
@@ -373,7 +327,7 @@ mod tests {
     // ── extract_image_attrs (code awareness) ──
 
     #[test]
-    fn extract_skips_inline_code() {
+    fn extract_image_attrs_skips_inline_code() {
         let input = "`![alt](img.png){width=500}` rest";
         let (output, attrs) = extract_image_attrs(input);
         assert_eq!(output, input);
@@ -381,7 +335,7 @@ mod tests {
     }
 
     #[test]
-    fn extract_skips_fenced_code() {
+    fn extract_image_attrs_skips_fenced_code() {
         let input = indoc! {"
             ```
             ![alt](img.png){width=500}
@@ -402,7 +356,7 @@ mod tests {
     }
 
     #[test]
-    fn extract_after_fenced_code() {
+    fn extract_image_attrs_after_fenced_code() {
         let input = indoc! {"
             ```
             code

@@ -72,6 +72,7 @@ mod tests {
 
     // ── run_pagefind ──
 
+    #[cfg(unix)]
     #[test]
     fn run_pagefind_succeeds_with_and_without_output() {
         let dir = tempfile::tempdir().unwrap();
@@ -96,6 +97,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn run_pagefind_non_zero_exit_returns_error() {
         let dir = tempfile::tempdir().unwrap();

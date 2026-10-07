@@ -23,7 +23,7 @@ impl<'a, T> Paginator<'a, T> {
 
     #[must_use]
     pub fn total_pages(&self) -> usize {
-        self.items.len().div_ceil(self.per_page)
+        self.items.len().div_ceil(self.per_page).max(1)
     }
 
     /// Returns the items on the given page (1-indexed).
@@ -35,7 +35,7 @@ impl<'a, T> Paginator<'a, T> {
             return &[];
         }
         let start = (page_num - 1) * self.per_page;
-        let end = (start + self.per_page).min(self.items.len());
+        let end = start.saturating_add(self.per_page).min(self.items.len());
         &self.items[start..end]
     }
 }
@@ -85,8 +85,17 @@ pub struct PaginationItem {
 }
 
 impl PaginationVars {
+    /// Creates metadata for a page in `1..=total_pages`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the page is outside that range.
     #[must_use]
     pub fn new(base_path: &str, current_page: usize, total_pages: usize) -> Self {
+        assert!(
+            (1..=total_pages).contains(&current_page),
+            "invalid page number"
+        );
         let base_url = base_path.trim_end_matches('/').to_owned();
         let prev_url = (current_page > 1).then(|| paginated_url(base_path, current_page - 1));
         let next_url =
@@ -113,28 +122,30 @@ fn build_pagination_items(
     current_page: usize,
     total_pages: usize,
 ) -> Vec<PaginationItem> {
-    let mut items = Vec::new();
-    let mut ellipsed = false;
+    let start = current_page.saturating_sub(2).max(1);
+    let end = current_page.saturating_add(2).min(total_pages);
+    let mut numbers = vec![1];
+    numbers.extend(start..=end);
+    numbers.push(total_pages);
+    numbers.sort_unstable();
+    numbers.dedup();
 
-    for n in 1..=total_pages {
-        let right = total_pages - n;
-        let show = n <= 1 || right == 0 || (n + 2 >= current_page && n <= current_page + 2);
-
-        if show {
-            ellipsed = false;
-            items.push(PaginationItem {
-                number: Some(n),
-                url: Some(paginated_url(base_path, n)),
-                is_current: n == current_page,
-            });
-        } else if !ellipsed {
-            ellipsed = true;
+    let mut items = Vec::with_capacity(9);
+    let mut previous = 0;
+    for number in numbers {
+        if number > previous + 1 {
             items.push(PaginationItem {
                 number: None,
                 url: None,
                 is_current: false,
             });
         }
+        items.push(PaginationItem {
+            number: Some(number),
+            url: Some(paginated_url(base_path, number)),
+            is_current: number == current_page,
+        });
+        previous = number;
     }
 
     items
@@ -176,7 +187,8 @@ mod tests {
     fn paginator_empty() {
         let items: Vec<i32> = Vec::new();
         let p = Paginator::new(&items, 10);
-        assert_eq!(p.total_pages(), 0);
+        assert_eq!(p.total_pages(), 1);
+        assert_eq!(p.page_items(1), items.as_slice());
     }
 
     // ── paginated_url ──

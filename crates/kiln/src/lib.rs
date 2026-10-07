@@ -22,6 +22,7 @@ pub mod static_assets;
 pub mod taxonomy;
 pub mod template;
 pub mod text;
+pub(crate) mod url;
 
 pub use build::{BuildOptions, build};
 pub use convert::convert;

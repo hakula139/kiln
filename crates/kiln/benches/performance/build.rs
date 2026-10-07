@@ -134,7 +134,10 @@ fn verify_listings(output: &Path, pages: usize) {
     let document = Html::parse_document(&html);
     let sections: Vec<_> = document.select(&selector).collect();
     assert_eq!(sections.len(), 1);
-    assert_eq!(sections[0].value().attr("href"), Some("/posts/notes/"));
+    assert_eq!(
+        sections[0].value().attr("href"),
+        Some("https://example.com/posts/notes/")
+    );
 }
 
 fn run_build(site: &Site, minify: bool) {

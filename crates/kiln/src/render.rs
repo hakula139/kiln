@@ -1,19 +1,19 @@
 pub mod assets;
-pub(crate) mod code_block;
+mod code_block;
 pub mod emoji;
-pub(crate) mod footnote;
+mod footnote;
 mod heading;
-pub mod highlight;
+mod highlight;
 pub mod icon;
-pub mod image;
-pub mod image_attrs;
+mod image;
+mod image_attrs;
 pub mod lqip;
-pub mod markdown;
-pub mod mermaid;
+mod markdown;
+mod mermaid;
 mod page_ids;
 pub mod pipeline;
 mod table;
-pub mod toc;
+mod toc;
 
 use std::ops::Range;
 

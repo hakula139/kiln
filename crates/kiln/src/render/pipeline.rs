@@ -3,11 +3,12 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use anyhow::Result;
-use pulldown_cmark::{Event, Tag, TagEnd};
+use pulldown_cmark::{CodeBlockKind, Event, Tag, TagEnd};
 use syntect::parsing::SyntaxSet;
 
 use super::RenderOptions;
 use super::assets::{AssetsHandle, PageAssets};
+use super::code_block::parse_fence_info;
 use super::emoji::replace_emojis;
 use super::heading::HeadingNumbers;
 use super::icon::replace_icons;
@@ -19,7 +20,7 @@ use super::toc::render_toc_html;
 use crate::config::Config;
 use crate::directive::callout::render_callout;
 use crate::directive::div::render_div;
-use crate::directive::parser::parse_directives;
+use crate::directive::parser::{DirectiveNode, parse_directives};
 use crate::directive::{DirectiveBlock, DirectiveContext, DirectiveKind};
 use crate::template::TemplateEngine;
 
@@ -115,6 +116,17 @@ impl PreparedDocument {
                     image_depth += 1;
                 }
                 Event::End(TagEnd::Image) => image_depth -= 1,
+                Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(info))) => {
+                    let spec = parse_fence_info(info, None);
+                    if !spec
+                        .lang
+                        .as_deref()
+                        .is_some_and(|lang| lang.eq_ignore_ascii_case("mermaid"))
+                        && let Some(id) = spec.id
+                    {
+                        ids.reserve(&id);
+                    }
+                }
                 Event::Html(html) | Event::InlineHtml(html) if image_depth == 0 => {
                     if let Some(index) = placeholder_index(html, prefix) {
                         let (block, document) = &self.directives[index];
@@ -174,26 +186,44 @@ impl PageRenderer<'_> {
     fn prepare_document(&self, content: &str, next_scope: &mut usize) -> PreparedDocument {
         let scope = *next_scope;
         *next_scope += 1;
-        let all_blocks = parse_directives(content);
-        let top_level = top_level_blocks(&all_blocks);
+        self.prepare_fragment(content, parse_directives(content), 0, scope, next_scope)
+    }
+
+    fn prepare_fragment(
+        &self,
+        content: &str,
+        nodes: Vec<DirectiveNode>,
+        source_offset: usize,
+        scope: usize,
+        next_scope: &mut usize,
+    ) -> PreparedDocument {
         let mut processed = content.to_owned();
-        let directives = top_level
-            .iter()
-            .map(|block| {
-                (
-                    (*block).clone(),
-                    self.prepare_document(&block.body, next_scope),
-                )
-            })
-            .collect();
-        for (index, block) in top_level.into_iter().enumerate().rev() {
+        for (index, node) in nodes.iter().enumerate().rev() {
             // A standalone comment keeps rendered directive HTML out of the surrounding parser.
             let placeholder = format!(
                 "\n{}",
                 directive_placeholder(self.placeholder_prefix, index)
             );
-            processed.replace_range(block.range.clone(), &placeholder);
+            // The raw directive body omits its final line ending.
+            let end = (node.block.range.end - source_offset).min(content.len());
+            let range = node.block.range.start - source_offset..end;
+            processed.replace_range(range, &placeholder);
         }
+        let directives = nodes
+            .into_iter()
+            .map(|node| {
+                let child_scope = *next_scope;
+                *next_scope += 1;
+                let inner = self.prepare_fragment(
+                    &node.block.body,
+                    node.children,
+                    node.body_start,
+                    child_scope,
+                    next_scope,
+                );
+                (node.block, inner)
+            })
+            .collect();
         let mut content = Cow::Borrowed(processed.as_str());
         if self.options.emojis {
             content = Cow::Owned(replace_emojis(&content));
@@ -278,23 +308,6 @@ fn directive_placeholder(prefix: &str, index: usize) -> String {
     format!("{prefix}{index}-->\n")
 }
 
-/// Filters to only top-level directive blocks (those not nested inside another).
-///
-/// Assumes `blocks` are sorted by ascending `range.start`.
-fn top_level_blocks(blocks: &[DirectiveBlock]) -> Vec<&DirectiveBlock> {
-    let mut result = Vec::new();
-    let mut outer_end: usize = 0;
-
-    for block in blocks {
-        if block.range.start >= outer_end {
-            result.push(block);
-            outer_end = block.range.end;
-        }
-    }
-
-    result
-}
-
 /// Dispatches a directive block to its renderer.
 ///
 /// For `Unknown` directives, checks the template engine for a `directives/<name>.html` template.
@@ -352,7 +365,7 @@ mod tests {
     use super::*;
     use crate::render::assets::Feature;
     use crate::render::lqip::ImageConfig;
-    use crate::test_utils::{test_config, test_engine, test_i18n};
+    use crate::test_utils::{test_engine, test_i18n};
 
     static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(two_face::syntax::extra_newlines);
 
@@ -369,7 +382,7 @@ mod tests {
             input,
             &SYNTAX_SET,
             engine,
-            &test_config(),
+            &Config::default(),
             &RenderOptions::default(),
             None,
             &EMPTY_RESOLVER,
@@ -382,7 +395,7 @@ mod tests {
             input,
             &SYNTAX_SET,
             &test_engine(),
-            &test_config(),
+            &Config::default(),
             &RenderOptions {
                 heading_numbering: true,
                 ..Default::default()
@@ -393,6 +406,61 @@ mod tests {
     }
 
     // ── render_page ──
+
+    #[test]
+    fn render_page_enriches_images_in_inline_containers() {
+        for input in [
+            "- ![Alt](photo.png){width=80 #photo}",
+            "## ![Alt](photo.png){width=80 #photo}",
+            indoc! {"
+                | Image |
+                | --- |
+                | ![Alt](photo.png){width=80 #photo} |
+            "},
+        ] {
+            let html = render(input).content_html;
+            assert!(html.contains(r#"id="photo""#), "{html}");
+            assert!(html.contains(r#"width="80""#), "{html}");
+            assert!(html.contains(r#"loading="lazy""#), "{html}");
+            assert!(!html.contains("<figure"), "{html}");
+        }
+    }
+
+    #[test]
+    fn render_page_preserves_heading_attributes() {
+        let html = render("## Title {.wide data-x=yes numbering-start=3}").content_html;
+        assert!(html.contains(r#"class="wide""#), "{html}");
+        assert!(html.contains(r#"data-x="yes""#), "{html}");
+        assert!(!html.contains("numbering-start"), "{html}");
+    }
+
+    #[test]
+    fn render_page_reserves_fence_ids_across_directive_scopes() {
+        let fence = indoc! {"
+            ::: wrapper
+            ```rust {#sample}
+            let value = 1;
+            ```
+            ```text {#fn-a}
+            footnote id
+            ```
+            :::
+        "};
+        let prose = indoc! {"
+            ## Sample
+
+            Text[^a]
+
+            [^a]: Note
+        "};
+        for input in [format!("{fence}\n{prose}"), format!("{prose}\n{fence}")] {
+            let html = render(&input).content_html;
+            assert_eq!(html.matches(r#"id="sample""#).count(), 1, "{html}");
+            assert!(html.contains(r#"id="sample-1""#), "{html}");
+            assert_eq!(html.matches(r#"id="fn-a""#).count(), 1, "{html}");
+            assert!(html.contains(r#"id="fn-a-1""#), "{html}");
+        }
+    }
 
     #[test]
     fn render_page_no_directives() {
@@ -423,7 +491,7 @@ mod tests {
             input,
             &SYNTAX_SET,
             &engine,
-            &test_config(),
+            &Config::default(),
             &options,
             None,
             &EMPTY_RESOLVER,
@@ -463,7 +531,7 @@ mod tests {
             input,
             &SYNTAX_SET,
             &test_engine(),
-            &test_config(),
+            &Config::default(),
             &options,
             None,
             &EMPTY_RESOLVER,
@@ -496,7 +564,7 @@ mod tests {
             "},
             &SYNTAX_SET,
             &test_engine(),
-            &test_config(),
+            &Config::default(),
             &options,
             None,
             &EMPTY_RESOLVER,
@@ -540,7 +608,7 @@ mod tests {
             input,
             &SYNTAX_SET,
             &test_engine(),
-            &test_config(),
+            &Config::default(),
             &options,
             None,
             &EMPTY_RESOLVER,
@@ -1116,24 +1184,6 @@ mod tests {
         );
     }
 
-    // ── top_level_blocks ──
-
-    #[test]
-    fn top_level_blocks_filters_nested() {
-        let input = indoc! {"
-            :::: outer
-            ::: inner
-            Body
-            :::
-            ::::
-        "};
-        let all = parse_directives(input);
-        assert_eq!(all.len(), 2, "parser should find both blocks");
-
-        let top = top_level_blocks(&all);
-        assert_eq!(top, vec![&all[0]]);
-    }
-
     // ── render_directive_block ──
 
     #[test]
@@ -1261,7 +1311,7 @@ mod tests {
             "#},
             &SYNTAX_SET,
             &engine,
-            &test_config(),
+            &Config::default(),
             &RenderOptions::default(),
             Some(source.path()),
             &EMPTY_RESOLVER,

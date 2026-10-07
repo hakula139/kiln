@@ -1,3 +1,5 @@
+pub(crate) mod publication;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
@@ -7,6 +9,7 @@ use sha2::{Digest, Sha256};
 use walkdir::WalkDir;
 
 use crate::output::copy_file;
+use crate::url::path_url;
 
 const FINGERPRINT_LENGTH: usize = 12;
 
@@ -51,9 +54,7 @@ impl StaticAssetManifest {
                     output_dir.display()
                 )
             })?;
-            let Some(url) = path_to_url(relative) else {
-                continue;
-            };
+            let url = format!("/{}", path_url(relative));
             if !is_fingerprintable(relative) {
                 manifest.urls.insert(url.clone(), url);
                 continue;
@@ -72,12 +73,7 @@ impl StaticAssetManifest {
             }
             copy_file(&path, &target)?;
 
-            let fingerprinted_url = path_to_url(&fingerprinted).with_context(|| {
-                format!(
-                    "fingerprinted static asset path is not valid UTF-8: {}",
-                    fingerprinted.display()
-                )
-            })?;
+            let fingerprinted_url = format!("/{}", path_url(&fingerprinted));
             manifest.urls.insert(url, fingerprinted_url);
             manifest.fingerprinted_paths.insert(fingerprinted);
         }
@@ -125,18 +121,6 @@ fn validate_url(url: &str) -> std::result::Result<(), minijinja::Error> {
     }
 
     Ok(())
-}
-
-/// Converts a relative asset path to a root-relative URL, or `None` for invalid components.
-pub(crate) fn path_to_url(path: &Path) -> Option<String> {
-    let components = path
-        .components()
-        .map(|component| match component {
-            Component::Normal(value) => value.to_str(),
-            _ => None,
-        })
-        .collect::<Option<Vec<_>>>()?;
-    Some(format!("/{}", components.join("/")))
 }
 
 fn is_fingerprintable(path: &Path) -> bool {
@@ -249,6 +233,33 @@ mod tests {
             manifest.asset_url("/images/logo.webp").unwrap(),
             "/images/logo.webp"
         );
+    }
+
+    #[test]
+    fn build_encodes_filename_components() {
+        for (name, encoded) in [
+            (
+                "space % # 世界.js",
+                "space%20%25%20%23%20%E4%B8%96%E7%95%8C",
+            ),
+            ("literal%20name.js", "literal%2520name"),
+            #[cfg(unix)]
+            ("question?.js", "question%3F"),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let output = dir.path();
+            fs::write(output.join(name), "abc").unwrap();
+            let manifest = StaticAssetManifest::build(output).unwrap();
+            assert_eq!(
+                manifest.asset_url(&format!("/{encoded}.js")).unwrap(),
+                format!("/{encoded}.ba7816bf8f01.js"),
+            );
+            assert_eq!(
+                fs::read(output.join(fingerprinted_path(Path::new(name), b"abc").unwrap()))
+                    .unwrap(),
+                b"abc",
+            );
+        }
     }
 
     #[test]

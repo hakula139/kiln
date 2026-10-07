@@ -11,7 +11,7 @@ pub struct SitemapEntry {
 
 /// Generates an XML sitemap from a list of URL entries.
 #[must_use]
-pub fn generate_sitemap(entries: &[SitemapEntry]) -> String {
+pub fn generate_sitemap<'a>(entries: impl IntoIterator<Item = &'a SitemapEntry>) -> String {
     let mut xml = String::from(indoc! {r#"
         <?xml version="1.0" encoding="utf-8" standalone="yes"?>
         <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">

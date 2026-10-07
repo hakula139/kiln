@@ -3,16 +3,16 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use strum::IntoEnumIterator;
 
-use crate::output::write_output;
-use crate::template::vars::{BucketSummary, OverviewPageVars};
-
 use super::BuildContext;
 use super::listing::{BucketKind, ListingBucket};
+use crate::output::write_output;
+use crate::template::vars::{BucketSummary, OverviewPageVars, PageMetadata};
+use crate::url::page_url;
 
 /// Generates `/sections/` and `/tags/` overview pages and returns the number written.
 ///
 /// Skipped when `overview.html` is not present in the template set.
-pub(crate) fn build_overview_pages(
+pub(super) fn build_overview_pages(
     ctx: &BuildContext,
     buckets: &[ListingBucket<'_>],
     output_dir: &Path,
@@ -26,7 +26,7 @@ pub(crate) fn build_overview_pages(
         let summaries: Vec<BucketSummary> = buckets
             .iter()
             .filter(|b| b.kind == kind)
-            .map(BucketSummary::from)
+            .map(|bucket| bucket.summary(&ctx.config.base_url))
             .collect();
         write_overview(ctx, kind, summaries, output_dir)?;
         page_count += 1;
@@ -40,11 +40,21 @@ pub(crate) fn build_overview_pages(
 fn write_overview(
     ctx: &BuildContext,
     kind: BucketKind,
-    buckets: Vec<BucketSummary>,
+    buckets: Vec<BucketSummary<'_>>,
     output_dir: &Path,
 ) -> Result<()> {
+    let title = ctx.i18n.t(&format!("all_{}", kind.plural()));
     let vars = OverviewPageVars {
-        kind: kind.plural(),
+        metadata: PageMetadata {
+            title: &title,
+            description: &ctx.config.description,
+            url: page_url(
+                &ctx.config.base_url,
+                &Path::new(&kind.plural()).join("index.html"),
+            )
+            .into(),
+        },
+        kind: &kind.plural(),
         singular: kind.singular(),
         buckets,
         config: &ctx.config,

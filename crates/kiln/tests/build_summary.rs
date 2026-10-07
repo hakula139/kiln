@@ -6,10 +6,13 @@ use indoc::{formatdoc, indoc};
 #[path = "support/cli.rs"]
 mod support;
 
-use support::{kiln, write_executable_file, write_test_file};
+#[cfg(unix)]
+use support::write_executable_file;
+use support::{kiln, write_test_file};
 
 // ── build ──
 
+#[cfg(unix)]
 #[test]
 fn build_summary_counts_generated_pages_and_includes_search_time() {
     let root = tempfile::tempdir().unwrap();

@@ -18,97 +18,117 @@ pub(crate) struct PandocAttrs<'a> {
 #[must_use]
 pub(crate) fn parse_pandoc_attrs(input: &str) -> PandocAttrs<'_> {
     let mut result = PandocAttrs::default();
-    let mut rest = input.trim();
-
-    while !rest.is_empty() {
-        if let Some(after) = rest.strip_prefix('#') {
-            let end = after.find(char::is_whitespace).unwrap_or(after.len());
-            if result.id.is_none() && end > 0 {
-                result.id = Some(&after[..end]);
-            }
-            rest = after[end..].trim_start();
-            continue;
-        }
-
-        if let Some(after) = rest.strip_prefix('.') {
-            let end = after.find(char::is_whitespace).unwrap_or(after.len());
-            if end > 0 {
-                result.classes.push(&after[..end]);
-            }
-            rest = after[end..].trim_start();
-            continue;
-        }
-
-        let next_eq = rest.find('=');
-        let next_ws = rest.find(char::is_whitespace).unwrap_or(rest.len());
-
-        let Some(eq) = next_eq.filter(|&p| p < next_ws) else {
-            if next_ws > 0 {
-                result.bare.push(&rest[..next_ws]);
-            }
-            rest = rest[next_ws..].trim_start();
-            continue;
-        };
-
-        let key = &rest[..eq];
-        let after_eq = &rest[eq + 1..];
-
-        if let Some(after_quote) = after_eq.strip_prefix('"') {
-            let (end, has_escapes) = scan_quoted_value(after_quote);
-            let raw = &after_quote[..end];
-            let value = if has_escapes {
-                Cow::Owned(unescape_quoted(raw))
-            } else {
-                Cow::Borrowed(raw)
-            };
-            result.kvs.push((key, value));
-            rest = after_quote.get(end + 1..).unwrap_or("").trim_start();
-        } else {
-            let end = after_eq.find(char::is_whitespace).unwrap_or(after_eq.len());
-            result.kvs.push((key, Cow::Borrowed(&after_eq[..end])));
-            rest = after_eq[end..].trim_start();
+    for token in AttrTokens::new(input) {
+        match token {
+            AttrToken::Id(id) if result.id.is_none() => result.id = Some(id),
+            AttrToken::Class(class) => result.classes.push(class),
+            AttrToken::Named(key, value) => result.kvs.push((key, value)),
+            AttrToken::Bare(value) => result.bare.push(value),
+            AttrToken::Id(_) | AttrToken::Quoted(_) => {}
         }
     }
 
     result
 }
 
-/// Returns the byte offset of the first `}` outside quoted positional or named values.
-///
-/// Quotes in IDs, classes, and unquoted values remain literal. Returns `None` if unclosed.
-pub(crate) fn find_attr_block_end(input: &str) -> Option<usize> {
-    let mut i = 0;
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum AttrToken<'a> {
+    Id(&'a str),
+    Class(&'a str),
+    Named(&'a str, Cow<'a, str>),
+    Bare(&'a str),
+    Quoted(Cow<'a, str>),
+}
 
-    while i < input.len() {
-        let rest = input[i..].trim_start();
-        i = input.len() - rest.len();
-        if rest.starts_with('}') {
-            return Some(i);
-        }
+pub(crate) struct AttrTokens<'a> {
+    rest: &'a str,
+    pandoc: bool,
+}
 
-        let end = rest
-            .find(|c: char| c.is_whitespace() || c == '}')
-            .unwrap_or(rest.len());
-        let quote = if rest.starts_with('"') {
-            Some(0)
-        } else if rest.starts_with(['#', '.']) {
-            None
-        } else {
-            rest.find('=')
-                .filter(|&eq| eq < end && rest[eq + 1..].starts_with('"'))
-                .map(|eq| eq + 1)
-        };
-
-        if let Some(quote) = quote {
-            i += quote + 1;
-            let (end, _) = scan_quoted_value(&input[i..]);
-            i += end + 1;
-        } else {
-            i += end;
+impl<'a> AttrTokens<'a> {
+    pub(crate) fn new(input: &'a str) -> Self {
+        Self {
+            rest: input,
+            pandoc: true,
         }
     }
 
-    None
+    pub(crate) fn values(input: &'a str) -> Self {
+        Self {
+            rest: input,
+            pandoc: false,
+        }
+    }
+
+    fn value(&mut self) -> Cow<'a, str> {
+        if let Some(after_quote) = self.rest.strip_prefix('"') {
+            let (end, escaped) = scan_quoted_value(after_quote);
+            let value = &after_quote[..end];
+            self.rest = after_quote.get(end + 1..).unwrap_or("");
+            if escaped {
+                Cow::Owned(unescape_quoted(value))
+            } else {
+                Cow::Borrowed(value)
+            }
+        } else {
+            Cow::Borrowed(self.word())
+        }
+    }
+
+    fn word(&mut self) -> &'a str {
+        let end = self
+            .rest
+            .find(|c: char| c.is_whitespace() || (self.pandoc && c == '}'))
+            .unwrap_or(self.rest.len());
+        let word = &self.rest[..end];
+        self.rest = &self.rest[end..];
+        word
+    }
+}
+
+impl<'a> Iterator for AttrTokens<'a> {
+    type Item = AttrToken<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            self.rest = self.rest.trim_start();
+            if self.rest.is_empty() || (self.pandoc && self.rest.starts_with('}')) {
+                return None;
+            }
+            if self.rest.starts_with('"') {
+                return Some(AttrToken::Quoted(self.value()));
+            }
+            if self.pandoc && self.rest.starts_with(['#', '.']) {
+                let word = self.word();
+                if word.len() == 1 {
+                    continue;
+                }
+                return Some(if let Some(id) = word.strip_prefix('#') {
+                    AttrToken::Id(id)
+                } else {
+                    AttrToken::Class(&word[1..])
+                });
+            }
+            let end = self
+                .rest
+                .find(|c: char| c.is_whitespace() || (self.pandoc && c == '}'))
+                .unwrap_or(self.rest.len());
+            if let Some(eq) = self.rest.find('=').filter(|&eq| eq > 0 && eq < end) {
+                let key = &self.rest[..eq];
+                self.rest = &self.rest[eq + 1..];
+                return Some(AttrToken::Named(key, self.value()));
+            }
+            return Some(AttrToken::Bare(self.word()));
+        }
+    }
+}
+
+/// Returns the byte offset of the first `}` outside quoted positional or named values.
+pub(crate) fn find_attr_block_end(input: &str) -> Option<usize> {
+    let mut tokens = AttrTokens::new(input);
+    for _ in tokens.by_ref() {}
+    let rest = tokens.rest.trim_start();
+    rest.starts_with('}').then_some(input.len() - rest.len())
 }
 
 /// Scans a quoted value for the closing `"`, respecting `\"` and `\\` escapes.
@@ -253,6 +273,33 @@ mod tests {
             vec![pair("key", "no closing quote")]
         );
         assert_eq!(kvs(r#"key="a\"b\"#), vec![pair("key", r#"a"b\"#)]);
+    }
+
+    // ── AttrTokens ──
+
+    #[test]
+    fn attr_tokens_share_quoted_values_and_preserve_consumer_syntax() {
+        assert_eq!(
+            AttrTokens::values(r#"# . a}b title="A \"quote\"" "two words""#).collect::<Vec<_>>(),
+            vec![
+                AttrToken::Bare("#"),
+                AttrToken::Bare("."),
+                AttrToken::Bare("a}b"),
+                AttrToken::Named("title", Cow::Borrowed(r#"A "quote""#)),
+                AttrToken::Quoted(Cow::Borrowed("two words")),
+            ],
+        );
+        let input = r#"#id .class =value title="a}b"} trailing"#;
+        assert_eq!(find_attr_block_end(input), input.find("} trailing"));
+        assert_eq!(
+            AttrTokens::new(input).collect::<Vec<_>>(),
+            vec![
+                AttrToken::Id("id"),
+                AttrToken::Class("class"),
+                AttrToken::Bare("=value"),
+                AttrToken::Named("title", Cow::Borrowed("a}b")),
+            ],
+        );
     }
 
     fn kvs(input: &str) -> Vec<(&str, String)> {

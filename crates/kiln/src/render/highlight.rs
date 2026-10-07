@@ -12,7 +12,7 @@ use crate::html::{escape, indent, writeln_indented};
 /// Empty and unrecognized fence tags normalize to `plaintext`. The display label is derived from
 /// the author's input by [`display_label`], not from syntect's internal name.
 #[must_use]
-pub(crate) fn highlight_code(syntax_set: &SyntaxSet, code: &str, spec: &CodeBlockSpec) -> String {
+pub(super) fn highlight_code(syntax_set: &SyntaxSet, code: &str, spec: &CodeBlockSpec) -> String {
     let lang = spec.lang.as_deref().unwrap_or("");
     let (syntax, effective_lang, display_label) = find_syntax(syntax_set, lang);
 
@@ -85,7 +85,8 @@ pub(crate) fn highlight_code(syntax_set: &SyntaxSet, code: &str, spec: &CodeBloc
 
     let max_lines_attr = spec
         .max_lines
-        .map(|n| format!(r#" data-max-lines="{n}""#))
+        .filter(|&n| n > 0)
+        .map(|n| format!(r#" data-max-lines="{n}" style="--max-lines: {n}""#))
         .unwrap_or_default();
     writeln_indented!(&mut html, 1, r#"<div class="code-body"{max_lines_attr}>"#);
 
@@ -804,16 +805,21 @@ mod tests {
 
     #[test]
     fn highlight_code_max_lines() {
-        let spec = CodeBlockSpec {
-            lang: Some("rs".into()),
-            max_lines: Some(40),
-            ..CodeBlockSpec::default()
-        };
-        let html = highlight_with_spec("fn main() {}\n", &spec);
-        assert!(
-            html.contains(r#"<div class="code-body" data-max-lines="40">"#),
-            "should have data-max-lines attribute, html:\n{html}"
-        );
+        for limit in [0, 10, 40] {
+            let spec = CodeBlockSpec {
+                max_lines: Some(limit),
+                ..CodeBlockSpec::default()
+            };
+            let html = highlight_code(&SYNTAX_SET, "code", &spec);
+            if limit == 0 {
+                assert!(!html.contains("data-max-lines"));
+                assert!(!html.contains("--max-lines"));
+            } else {
+                assert!(html.contains(&format!(
+                    r#"data-max-lines="{limit}" style="--max-lines: {limit}""#
+                )));
+            }
+        }
     }
 
     #[test]

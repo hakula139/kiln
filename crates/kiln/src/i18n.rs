@@ -71,13 +71,7 @@ impl I18n {
             let theme_i18n_dir = theme_dir.join("i18n");
             if theme_i18n_dir.is_dir() {
                 let en_path = theme_i18n_dir.join("en.toml");
-                let has_other = theme_has_non_english_toml(&theme_i18n_dir)?;
-                ensure!(
-                    en_path.exists() || !has_other,
-                    "theme i18n directory {} is missing required en.toml fallback",
-                    theme_i18n_dir.display(),
-                );
-                if en_path.exists() {
+                if theme_has_english_fallback(&theme_i18n_dir)? {
                     merge_from_file(&mut strings, &en_path)?;
                 }
 
@@ -163,30 +157,28 @@ impl I18n {
 
 // ── Loading helpers ──
 
-fn theme_has_non_english_toml(dir: &Path) -> Result<bool> {
+fn theme_has_english_fallback(dir: &Path) -> Result<bool> {
+    let mut has_locales = false;
+    let mut has_english = false;
     for entry in fs::read_dir(dir)
         .with_context(|| format!("failed to read i18n directory {}", dir.display()))?
     {
         let entry = entry.with_context(|| format!("failed to read entry in {}", dir.display()))?;
         let path = entry.path();
-        let is_toml = path
+        if path
             .extension()
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("toml"));
-        if !is_toml {
-            continue;
-        }
-        // Compare the stem (not the full filename) case-insensitively so a
-        // theme shipping `En.toml` on a case-insensitive filesystem isn't
-        // spuriously flagged as missing the `en.toml` fallback.
-        let is_en = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .is_some_and(|s| s.eq_ignore_ascii_case("en"));
-        if !is_en {
-            return Ok(true);
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("toml"))
+        {
+            has_locales = true;
+            has_english |= entry.file_name() == "en.toml";
         }
     }
-    Ok(false)
+    ensure!(
+        !has_locales || has_english,
+        "theme i18n directory {} is missing required en.toml fallback",
+        dir.display(),
+    );
+    Ok(has_english)
 }
 
 fn merge_from_file(strings: &mut HashMap<String, String>, path: &Path) -> Result<()> {
@@ -454,22 +446,27 @@ mod tests {
     }
 
     #[test]
-    fn load_theme_en_file_with_different_case_is_still_recognized() {
-        // `En.toml` and `en.toml` are distinct files on a case-sensitive filesystem and collide on
-        // a case-insensitive one. Either way `En.toml` must count as the English fallback.
+    fn load_theme_english_filename_case_returns_error() {
         let site = tempfile::tempdir().unwrap();
         let theme = tempfile::tempdir().unwrap();
-        write_file(
-            &theme.path().join("i18n/En.toml"),
-            indoc! {r#"
-                greeting = "Hello"
-            "#},
-        );
+        write_file(&theme.path().join("i18n/En.toml"), r#"greeting = "Hello""#);
 
-        // On a case-insensitive FS, opening `en.toml` reads `En.toml`. On a case-sensitive FS
-        // neither file is read, so only the fallback presence check sees `En.toml`.
-        let result = I18n::load(site.path(), Some(theme.path()), "en");
-        assert!(result.is_ok(), "got error: {:?}", result.err());
+        let error = I18n::load(site.path(), Some(theme.path()), "fr").unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("missing required en.toml fallback")
+        );
+    }
+
+    #[test]
+    fn load_missing_language_uses_english_fallback() {
+        let site = tempfile::tempdir().unwrap();
+        let theme = tempfile::tempdir().unwrap();
+        write_file(&theme.path().join("i18n/en.toml"), r#"greeting = "Hello""#);
+
+        let i18n = I18n::load(site.path(), Some(theme.path()), "fr").unwrap();
+        assert_eq!(i18n.t("greeting"), "Hello");
     }
 
     #[test]

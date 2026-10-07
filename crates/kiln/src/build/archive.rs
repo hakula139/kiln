@@ -2,16 +2,17 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
-use crate::template::vars::ArchivePageVars;
-
 use super::BuildContext;
 use super::listing::{BucketKind, ListingBucket, group_by_year};
+use super::paginate::paginated_path;
 use super::paginate::{paginate_config, write_paginated};
+use crate::template::vars::{ArchivePageVars, PageMetadata};
+use crate::url::page_url;
 
 /// Generates `/posts/`, section, and tag archives and returns the number of pages written.
 ///
 /// Skipped when `archive.html` is not present in the template set.
-pub(crate) fn build_archive_pages(
+pub(super) fn build_archive_pages(
     ctx: &BuildContext,
     buckets: &[ListingBucket<'_>],
     output_dir: &Path,
@@ -20,19 +21,9 @@ pub(crate) fn build_archive_pages(
         return Ok(0);
     }
 
-    let section_per_page = paginate_config(
-        &ctx.config.params,
-        &[&["section", "paginate"], &["paginate"]],
-        10,
-    );
-    let tag_per_page = paginate_config(&ctx.config.params, &[&["paginate"]], 10);
-
     let mut page_count = 0;
     for bucket in buckets {
-        let per_page = match bucket.kind {
-            BucketKind::Tag => tag_per_page,
-            BucketKind::Posts | BucketKind::Section => section_per_page,
-        };
+        let per_page = page_size(ctx, bucket.kind);
         page_count += write_archive(ctx, bucket, per_page, output_dir)?;
     }
 
@@ -49,14 +40,24 @@ fn write_archive(
 ) -> Result<usize> {
     let base_path = bucket.base_path();
     write_paginated(
-        bucket.pages,
+        &bucket.pages,
         per_page,
         &base_path,
+        &ctx.deployment_prefix,
         output_dir,
         |pages, pagination| {
             let page_groups = group_by_year(pages);
             let vars = ArchivePageVars {
-                kind: bucket.kind.plural(),
+                metadata: PageMetadata {
+                    title: &bucket.name,
+                    description: &ctx.config.description,
+                    url: page_url(
+                        &ctx.config.base_url,
+                        &paginated_path(&base_path, pagination.current_page),
+                    )
+                    .into(),
+                },
+                kind: &bucket.kind.plural(),
                 singular: bucket.kind.singular(),
                 name: &bucket.name,
                 slug: &bucket.slug,
@@ -73,4 +74,12 @@ fn write_archive(
             })
         },
     )
+}
+
+pub(super) fn page_size(ctx: &BuildContext, kind: BucketKind) -> usize {
+    let paths: &[&[&str]] = match kind {
+        BucketKind::Tag => &[&["paginate"]],
+        BucketKind::Posts | BucketKind::Section => &[&["section", "paginate"], &["paginate"]],
+    };
+    paginate_config(&ctx.config.params, paths, 10)
 }

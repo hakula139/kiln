@@ -43,7 +43,6 @@ impl AddAssign for MinifyStats {
     }
 }
 
-/// Which minifier to use for a given file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AssetKind {
     Html,
@@ -205,9 +204,15 @@ fn minify_css_bytes(input: &[u8], path: &Path) -> Option<Vec<u8>> {
 fn minify_js_bytes(input: &[u8], path: &Path) -> Option<Vec<u8>> {
     let source = decode_utf8(input, path, "JS")?;
 
-    // Parse as module by default since modules are a near-superset of scripts
-    // and modern theme JS routinely uses `import` / `export`.
-    let source_type = SourceType::from_path(path).unwrap_or_else(|_| SourceType::mjs());
+    let source_type = if path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("mjs"))
+    {
+        SourceType::mjs()
+    } else {
+        SourceType::unambiguous()
+    };
     let allocator = Allocator::default();
     let parsed = Parser::new(&allocator, source, source_type).parse();
     if let Some(first) = parsed.diagnostics.first() {
@@ -562,6 +567,36 @@ mod tests {
             text.contains("console.log"),
             "should preserve runtime calls, got: {text}",
         );
+    }
+
+    #[test]
+    fn minify_js_preserves_classic_globals_for_mixed_case_extensions() {
+        let input = indoc! {r"
+            var sharedValue = 1 + 2;
+            function readSharedValue() {
+                return sharedValue;
+            }
+        "};
+        for name in ["app.js", "App.JS", "App.Js"] {
+            let output = minify_js_bytes(input.as_bytes(), Path::new(name)).unwrap();
+            assert_eq!(
+                String::from_utf8(output).unwrap(),
+                "var sharedValue=3;function readSharedValue(){return sharedValue}",
+                "{name}",
+            );
+        }
+    }
+
+    #[test]
+    fn minify_js_recognizes_modules_for_mixed_case_extensions() {
+        for name in ["App.JS", "App.MJS", "App.mJs"] {
+            let output = minify_js_bytes(b"export const value = 1 + 2;", Path::new(name)).unwrap();
+            assert_eq!(
+                String::from_utf8(output).unwrap(),
+                "export const value=3;",
+                "{name}"
+            );
+        }
     }
 
     #[test]

@@ -1,143 +1,123 @@
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use jiff::{Timestamp, tz::TimeZone};
-use strum::EnumIter;
+use strum::{EnumIter, IntoStaticStr};
 
+use super::BuildContext;
+use super::git::updated_timestamp;
 use crate::content::frontmatter::FeaturedImage;
 use crate::content::page::{Page, PageKind};
 use crate::render::lqip::ImageResolver;
 use crate::section::Section;
 use crate::taxonomy::TaxonomySet;
 use crate::template::vars::{BucketSummary, LinkedTerm, PageGroup, PageSummary};
-use crate::text::slugify;
+use crate::url::{encode_component, join_site_url, page_url, resolve_relative_url};
 
-use super::url::{join_site_url, page_url, resolve_relative_url};
+// ── Prepared pages ──
 
-// ── Listing model ──
-
-/// Internal listing model for build-time sorting and grouping.
-#[derive(Debug, Clone)]
-pub(crate) struct ListedPage {
-    pub(crate) summary: PageSummary,
-    pub(crate) timestamp: Option<Timestamp>,
-    pub(crate) weight: Option<i64>,
-    pub(crate) year: String,
+/// Resolved content metadata shared by every output generator.
+#[derive(Debug)]
+pub(super) struct PreparedPage {
+    pub(super) output_path: PathBuf,
+    pub(super) summary: PageSummary,
+    pub(super) published: Option<Timestamp>,
+    pub(super) updated: Option<Timestamp>,
+    pub(super) weight: Option<i64>,
+    pub(super) year: String,
 }
 
-impl ListedPage {
-    #[must_use]
-    pub(crate) fn into_summary(self) -> PageSummary {
-        self.summary
+pub(super) struct ListingArtifacts {
+    pub(super) pages: Vec<PreparedPage>,
+    post_indices: Vec<usize>,
+    section_posts: HashMap<String, Vec<usize>>,
+    tag_pages: HashMap<String, Vec<usize>>,
+}
+
+impl ListingArtifacts {
+    pub(super) fn posts(&self) -> Vec<&PreparedPage> {
+        self.select(&self.post_indices)
+    }
+
+    fn select(&self, indices: &[usize]) -> Vec<&PreparedPage> {
+        indices.iter().map(|&index| &self.pages[index]).collect()
     }
 }
 
-/// Precomputed listing data for all output generators.
-pub(crate) struct ListingArtifacts {
-    /// All listable pages, indexed to match `TaxonomySet::tag_pages`.
-    pub(crate) listed_pages: Vec<ListedPage>,
-    /// Posts only, sorted by date descending.
-    pub(crate) listed_posts: Vec<ListedPage>,
-    /// Posts grouped by section slug, each bucket sorted by date descending.
-    section_posts: HashMap<String, Vec<ListedPage>>,
-    /// Pages grouped by tag slug, each bucket sorted by date descending.
-    tag_pages: HashMap<String, Vec<ListedPage>>,
-}
-
-// ── Listing construction ──
-
-/// Builds listing artifacts from discovered pages in a single pass.
-///
-/// Index alignment with the input slice is maintained (required by `TaxonomySet::tag_pages`). Post
-/// and tag lists are pre-sorted by date descending.
-pub(crate) fn build_listing_artifacts(
+pub(super) fn build_listing_artifacts(
+    ctx: &BuildContext,
     pages: &[Page],
     content_dir: &Path,
-    base_url: &str,
-    time_zone: Option<&TimeZone>,
     sections: &[Section],
-    image_resolver: &ImageResolver,
     taxonomy_set: &TaxonomySet,
 ) -> Result<ListingArtifacts> {
-    let mut listed_pages = Vec::with_capacity(pages.len());
-    let mut post_indices: Vec<usize> = Vec::new();
-    let mut section_post_indices: HashMap<String, Vec<usize>> = HashMap::new();
-
-    for page in pages {
-        let lp = build_listed_page(
-            page,
-            content_dir,
-            base_url,
-            time_zone,
-            sections,
-            image_resolver,
-        )
-        .with_context(|| {
-            format!(
-                "failed to build listing entry for {}",
-                page.source_path.display()
-            )
-        })?;
-
-        let idx = listed_pages.len();
+    let mut prepared = Vec::with_capacity(pages.len());
+    let mut post_indices = Vec::new();
+    let mut section_posts: HashMap<String, Vec<usize>> = HashMap::new();
+    for (index, page) in pages.iter().enumerate() {
+        let tags = linked_tags(taxonomy_set, index, &ctx.config.base_url);
+        prepared.push(
+            prepare_page(ctx, page, content_dir, sections, tags)
+                .with_context(|| format!("failed to prepare {}", page.source_path.display()))?,
+        );
         if let PageKind::Post { section } = &page.kind {
+            post_indices.push(index);
             if let Some(slug) = section {
-                section_post_indices
-                    .entry(slug.clone())
-                    .or_default()
-                    .push(idx);
+                section_posts.entry(slug.clone()).or_default().push(index);
             }
-            post_indices.push(idx);
         }
-        listed_pages.push(lp);
     }
-
-    let listed_posts = select_pages(&listed_pages, &post_indices);
-    let section_posts = section_post_indices
-        .into_iter()
-        .map(|(slug, indices)| (slug, select_pages(&listed_pages, &indices)))
-        .collect();
-    let tag_pages = taxonomy_set
-        .tag_pages
-        .iter()
-        .map(|(slug, indices)| (slug.clone(), select_pages(&listed_pages, indices)))
-        .collect();
-
+    let mut tag_pages = taxonomy_set.tag_pages.clone();
+    for indices in std::iter::once(&mut post_indices)
+        .chain(section_posts.values_mut())
+        .chain(tag_pages.values_mut())
+    {
+        indices.sort_by(|&left, &right| {
+            let left = &prepared[left];
+            let right = &prepared[right];
+            right
+                .published
+                .cmp(&left.published)
+                .then(left.summary.url.cmp(&right.summary.url))
+        });
+    }
     Ok(ListingArtifacts {
-        listed_pages,
-        listed_posts,
+        pages: prepared,
+        post_indices,
         section_posts,
         tag_pages,
     })
 }
 
-fn build_listed_page(
+fn prepare_page(
+    ctx: &BuildContext,
     page: &Page,
     content_dir: &Path,
-    base_url: &str,
-    time_zone: Option<&TimeZone>,
     sections: &[Section],
-    image_resolver: &ImageResolver,
-) -> Result<ListedPage> {
+    tags: Vec<LinkedTerm>,
+) -> Result<PreparedPage> {
     let output_path = page.output_path(content_dir)?;
-    let url = page_url(base_url, &output_path);
-    let timestamp = page.frontmatter.date;
-    let weight = page.frontmatter.weight;
-    let section = page_section(page, base_url, sections);
+    let url = page_url(&ctx.config.base_url, &output_path);
+    let published = page.frontmatter.date;
+    let updated = updated_timestamp(
+        page.frontmatter.updated,
+        &page.source_path,
+        ctx.git_info.as_ref(),
+    );
     let featured_image = resolve_featured_image(
         page.frontmatter.featured_image.as_ref(),
         &url,
-        image_resolver,
+        &ctx.image_resolver,
         page.source_path.parent(),
     );
-
-    Ok(ListedPage {
+    Ok(PreparedPage {
+        output_path,
         summary: PageSummary {
             title: page.frontmatter.title.clone(),
             url,
-            date: timestamp.map(|date| format_page_date(date, time_zone)),
-            pinned: weight.is_some(),
+            date: published.map(|date| format_page_date(date, ctx.time_zone.as_ref())),
+            pinned: page.frontmatter.weight.is_some(),
             description: page
                 .frontmatter
                 .description
@@ -145,202 +125,134 @@ fn build_listed_page(
                 .or_else(|| page.summary.clone())
                 .unwrap_or_default(),
             featured_image,
-            tags: linked_tags(&page.frontmatter.tags, base_url),
-            section,
+            tags,
+            section: page_section(page, &ctx.config.base_url, sections),
         },
-        timestamp,
-        weight,
-        year: timestamp
-            .map(|date| page_year(date, time_zone))
+        published,
+        updated,
+        weight: page.frontmatter.weight,
+        year: published
+            .map(|date| page_year(date, ctx.time_zone.as_ref()))
             .unwrap_or_default(),
     })
 }
 
-fn select_pages(listed_pages: &[ListedPage], indices: &[usize]) -> Vec<ListedPage> {
-    let mut pages: Vec<_> = indices
-        .iter()
-        .map(|&idx| listed_pages[idx].clone())
-        .collect();
-    sort_by_date_desc(&mut pages);
-    pages
-}
-
 // ── Listing buckets ──
 
-/// Identifies the flavor of a `ListingBucket`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter)]
-pub(crate) enum BucketKind {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter, IntoStaticStr)]
+#[strum(serialize_all = "lowercase")]
+pub(super) enum BucketKind {
+    #[strum(serialize = "post")]
     Posts,
     Section,
     Tag,
 }
 
 impl BucketKind {
-    /// Plural form, used as the `kind` template variable and in URL roots.
-    #[must_use]
-    pub(crate) fn plural(self) -> &'static str {
-        match self {
-            Self::Posts => "posts",
-            Self::Section => "sections",
-            Self::Tag => "tags",
-        }
+    pub(super) fn plural(self) -> String {
+        format!("{}s", self.singular())
     }
 
-    /// Singular form, used as the `singular` template variable.
-    #[must_use]
-    pub(crate) fn singular(self) -> &'static str {
-        match self {
-            Self::Posts => "post",
-            Self::Section => "section",
-            Self::Tag => "tag",
-        }
+    pub(super) fn singular(self) -> &'static str {
+        self.into()
     }
 
-    /// Whether buckets of this kind appear on overview index pages (`/sections/`, `/tags/`).
-    #[must_use]
-    pub(crate) fn has_overview(self) -> bool {
+    pub(super) fn has_overview(self) -> bool {
         matches!(self, Self::Section | Self::Tag)
     }
 }
 
-/// A named collection of pages shared by the archive, feed, and overview output generators.
-#[derive(Debug, Clone)]
-pub(crate) struct ListingBucket<'a> {
-    pub(crate) kind: BucketKind,
-    /// Display name (localized "Posts", section title, tag name).
-    pub(crate) name: String,
-    /// URL-safe slug. For `BucketKind::Posts` echoes the plural (`"posts"`).
-    pub(crate) slug: String,
-    /// Pages in this bucket, sorted by date descending.
-    pub(crate) pages: &'a [ListedPage],
+#[derive(Debug)]
+pub(super) struct ListingBucket<'a> {
+    pub(super) kind: BucketKind,
+    pub(super) name: String,
+    pub(super) slug: String,
+    pub(super) pages: Vec<&'a PreparedPage>,
 }
 
-impl ListingBucket<'_> {
-    /// URL path with a leading slash and no trailing slash (e.g., `/posts`, `/posts/note`,
-    /// `/tags/rust`). Sections live under `/posts/` to match the existing site URL contract.
-    #[must_use]
-    pub(crate) fn base_path(&self) -> String {
+impl<'a> ListingBucket<'a> {
+    pub(super) fn base_path(&self) -> PathBuf {
         match self.kind {
-            BucketKind::Posts => "/posts".into(),
-            BucketKind::Section => format!("/posts/{}", self.slug),
-            BucketKind::Tag => format!("/tags/{}", self.slug),
+            BucketKind::Posts => PathBuf::from("posts"),
+            BucketKind::Section => Path::new("posts").join(&self.slug),
+            BucketKind::Tag => Path::new("tags").join(&self.slug),
+        }
+    }
+
+    pub(super) fn summary(&self, base_url: &str) -> BucketSummary<'a> {
+        BucketSummary {
+            name: self.name.clone(),
+            slug: self.slug.clone(),
+            url: page_url(base_url, &self.base_path().join("index.html")),
+            pages: self.pages.iter().map(|page| &page.summary).collect(),
         }
     }
 }
 
-impl From<&ListingBucket<'_>> for BucketSummary {
-    fn from(bucket: &ListingBucket<'_>) -> Self {
-        Self {
-            name: bucket.name.clone(),
-            slug: bucket.slug.clone(),
-            url: format!("{}/", bucket.base_path()),
-            pages: bucket.pages.iter().map(|lp| lp.summary.clone()).collect(),
-        }
-    }
-}
-
-/// Assembles every listing bucket: the all-posts aggregate, one per section, and one per tag.
-#[must_use]
-pub(crate) fn build_listing_buckets<'a>(
+pub(super) fn build_listing_buckets<'a>(
     artifacts: &'a ListingArtifacts,
     sections: &[Section],
     taxonomy_set: &TaxonomySet,
     posts_title: String,
 ) -> Vec<ListingBucket<'a>> {
-    let mut buckets = Vec::with_capacity(1 + sections.len() + taxonomy_set.tags.len());
-
-    buckets.push(ListingBucket {
+    let mut buckets = vec![ListingBucket {
         kind: BucketKind::Posts,
         name: posts_title,
         slug: "posts".into(),
-        pages: &artifacts.listed_posts,
-    });
-
-    for section in sections {
-        let pages = artifacts
-            .section_posts
-            .get(section.slug.as_str())
-            .map_or(&[][..], Vec::as_slice);
-        buckets.push(ListingBucket {
-            kind: BucketKind::Section,
-            name: section.title.clone(),
-            slug: section.slug.clone(),
-            pages,
-        });
-    }
-
-    for term in &taxonomy_set.tags {
-        let pages = artifacts
-            .tag_pages
-            .get(&term.slug)
-            .map_or(&[][..], Vec::as_slice);
-        buckets.push(ListingBucket {
-            kind: BucketKind::Tag,
-            name: term.name.clone(),
-            slug: term.slug.clone(),
-            pages,
-        });
-    }
-
+        pages: artifacts.posts(),
+    }];
+    buckets.extend(sections.iter().map(|section| ListingBucket {
+        kind: BucketKind::Section,
+        name: section.title.clone(),
+        slug: section.slug.clone(),
+        pages: artifacts.select(&artifacts.section_posts[&section.slug]),
+    }));
+    buckets.extend(taxonomy_set.tags.iter().map(|term| ListingBucket {
+        kind: BucketKind::Tag,
+        name: term.name.clone(),
+        slug: term.slug.clone(),
+        pages: artifacts.select(&artifacts.tag_pages[&term.slug]),
+    }));
     buckets
 }
 
 // ── Sorting and grouping ──
 
-/// Sorts listed pages by date descending (newest first, undated last).
-pub(crate) fn sort_by_date_desc(pages: &mut [ListedPage]) {
-    pages.sort_by_key(|page| std::cmp::Reverse(page.timestamp));
-}
-
-/// Sorts pinned posts first (by `weight` ascending), then by date descending.
-///
-/// Any `weight` value marks a post as pinned, and lower values sort higher.
-pub(crate) fn sort_pinned_first(pages: &mut [ListedPage]) {
-    pages.sort_by_key(|page| {
+pub(super) fn sort_pinned_first(pages: &mut [&PreparedPage]) {
+    pages.sort_by(|left, right| {
         (
-            page.weight.is_none(),
-            page.weight.unwrap_or(0),
-            std::cmp::Reverse(page.timestamp),
+            left.weight.is_none(),
+            left.weight,
+            std::cmp::Reverse(left.published),
+            &left.summary.url,
         )
+            .cmp(&(
+                right.weight.is_none(),
+                right.weight,
+                std::cmp::Reverse(right.published),
+                &right.summary.url,
+            ))
     });
 }
 
-/// Groups pages into year-based sections. Consecutive pages with the same year are grouped
-/// together (assumes input is pre-sorted by date descending).
-#[must_use]
-pub(crate) fn group_by_year(pages: Vec<ListedPage>) -> Vec<PageGroup> {
-    let mut groups: Vec<PageGroup> = Vec::new();
-
+pub(super) fn group_by_year<'a>(pages: &[&'a PreparedPage]) -> Vec<PageGroup<'a>> {
+    let mut groups: Vec<PageGroup<'a>> = Vec::new();
     for page in pages {
-        let ListedPage { summary, year, .. } = page;
-
         match groups.last_mut() {
-            Some(group) if group.key == year => group.pages.push(summary),
+            Some(group) if group.key == page.year => group.pages.push(&page.summary),
             _ => groups.push(PageGroup {
-                key: year,
-                pages: vec![summary],
+                key: page.year.clone(),
+                pages: vec![&page.summary],
             }),
         }
     }
-
     groups
-}
-
-#[must_use]
-pub(crate) fn collect_page_summaries<I>(listed_pages: I) -> Vec<PageSummary>
-where
-    I: IntoIterator<Item = ListedPage>,
-{
-    listed_pages
-        .into_iter()
-        .map(ListedPage::into_summary)
-        .collect()
 }
 
 // ── Page metadata helpers ──
 
 #[must_use]
-pub(crate) fn page_section(
+pub(super) fn page_section(
     page: &Page,
     base_url: &str,
     sections: &[Section],
@@ -357,14 +269,14 @@ pub(crate) fn page_section(
         .map_or(slug.as_str(), |s| s.title.as_str());
     Some(LinkedTerm {
         name: title.to_owned(),
-        url: join_site_url(base_url, &format!("posts/{slug}/")),
+        url: join_site_url(base_url, &format!("posts/{}/", encode_component(slug))),
     })
 }
 
 /// Resolves a `FeaturedImage`'s `src` path against the page's output URL and stamps on
 /// dimensions plus an LQIP placeholder when the image is local and decodable.
 #[must_use]
-pub(crate) fn resolve_featured_image(
+pub(super) fn resolve_featured_image(
     featured_image: Option<&FeaturedImage>,
     page_url: &str,
     image_resolver: &ImageResolver,
@@ -384,19 +296,22 @@ pub(crate) fn resolve_featured_image(
     Some(out)
 }
 
-/// Converts raw tag strings into `LinkedTerm`s with pre-computed URLs.
-pub(crate) fn linked_tags(tags: &[String], base_url: &str) -> Vec<LinkedTerm> {
-    tags.iter()
-        .map(|tag| LinkedTerm {
-            name: tag.clone(),
-            url: join_site_url(base_url, &format!("tags/{}/", slugify(tag))),
+fn linked_tags(taxonomy: &TaxonomySet, page_index: usize, base_url: &str) -> Vec<LinkedTerm> {
+    taxonomy.page_tags[page_index]
+        .iter()
+        .map(|&index| {
+            let term = &taxonomy.tags[index];
+            LinkedTerm {
+                name: term.name.clone(),
+                url: join_site_url(base_url, &format!("tags/{}/", encode_component(&term.slug))),
+            }
         })
         .collect()
 }
 
 /// Formats a page date for templates using the configured site time zone (falls back to UTC).
 #[must_use]
-pub(crate) fn format_page_date(date: Timestamp, time_zone: Option<&TimeZone>) -> String {
+pub(super) fn format_page_date(date: Timestamp, time_zone: Option<&TimeZone>) -> String {
     let Some(time_zone) = time_zone else {
         return date.to_string();
     };
@@ -406,7 +321,7 @@ pub(crate) fn format_page_date(date: Timestamp, time_zone: Option<&TimeZone>) ->
 
 /// Returns the grouping year for a page date in the configured site time zone.
 #[must_use]
-pub(crate) fn page_year(date: Timestamp, time_zone: Option<&TimeZone>) -> String {
+pub(super) fn page_year(date: Timestamp, time_zone: Option<&TimeZone>) -> String {
     date.to_zoned(time_zone.cloned().unwrap_or(TimeZone::UTC))
         .year()
         .to_string()
@@ -416,433 +331,95 @@ pub(crate) fn page_year(date: Timestamp, time_zone: Option<&TimeZone>) -> String
 mod tests {
     use std::sync::LazyLock;
 
-    use jiff::Timestamp;
-
     use super::*;
     use crate::content::frontmatter::ImageCredit;
     use crate::render::lqip::ImageConfig;
 
-    // Stub resolver for tests with no local images: `resolve` returns `None`.
     static EMPTY_RESOLVER: LazyLock<ImageResolver> =
         LazyLock::new(|| ImageResolver::new(Path::new(""), ImageConfig::default()));
 
-    // ── build_listing_artifacts ──
-
-    #[test]
-    fn build_listing_artifacts_propagates_output_path_error() {
-        use std::path::PathBuf;
-
-        use crate::taxonomy::build_taxonomies;
-        use crate::test_utils::test_page;
-
-        let mut page = test_page("Stray");
-        // `output_path` errors when the source isn't under `content_dir`.
-        page.source_path = PathBuf::from("/elsewhere/stray.md");
-        let pages = vec![page];
-        let sections: Vec<Section> = Vec::new();
-        let taxonomy_set = build_taxonomies(&pages, None).unwrap();
-
-        let result = build_listing_artifacts(
-            &pages,
-            Path::new("content"),
-            "https://example.com/",
-            None,
-            &sections,
-            &EMPTY_RESOLVER,
-            &taxonomy_set,
-        );
-        let Err(err) = result else {
-            panic!("expected an error from build_listing_artifacts");
-        };
-        let chain = format!("{err:#}");
-        assert!(
-            chain.contains("failed to build listing entry"),
-            "expected with_context wrapper, got: {chain}"
-        );
-    }
-
-    // ── BucketKind ──
-
-    #[test]
-    fn bucket_kind_plural() {
-        assert_eq!(BucketKind::Posts.plural(), "posts");
-        assert_eq!(BucketKind::Section.plural(), "sections");
-        assert_eq!(BucketKind::Tag.plural(), "tags");
-    }
-
-    #[test]
-    fn bucket_kind_singular() {
-        assert_eq!(BucketKind::Posts.singular(), "post");
-        assert_eq!(BucketKind::Section.singular(), "section");
-        assert_eq!(BucketKind::Tag.singular(), "tag");
-    }
-
-    #[test]
-    fn bucket_kind_has_overview() {
-        assert!(!BucketKind::Posts.has_overview());
-        assert!(BucketKind::Section.has_overview());
-        assert!(BucketKind::Tag.has_overview());
-    }
-
-    // ── ListingBucket::base_path ──
-
-    #[test]
-    fn base_path_posts() {
-        let bucket = ListingBucket {
-            kind: BucketKind::Posts,
-            name: "Posts".into(),
-            slug: "posts".into(),
-            pages: &[],
-        };
-        assert_eq!(bucket.base_path(), "/posts");
-    }
-
-    #[test]
-    fn base_path_section() {
-        let bucket = ListingBucket {
-            kind: BucketKind::Section,
-            name: "Note".into(),
-            slug: "note".into(),
-            pages: &[],
-        };
-        assert_eq!(bucket.base_path(), "/posts/note");
-    }
-
-    #[test]
-    fn base_path_tag() {
-        let bucket = ListingBucket {
-            kind: BucketKind::Tag,
-            name: "Rust".into(),
-            slug: "rust".into(),
-            pages: &[],
-        };
-        assert_eq!(bucket.base_path(), "/tags/rust");
-    }
-
-    // ── build_listing_buckets ──
-
-    #[test]
-    fn build_listing_buckets_ordering() {
-        use crate::taxonomy::TaxonomySet;
-
-        let posts = vec![
-            make_listed_page("Post A", Some("2026-01-03T00:00:00Z")),
-            make_listed_page("Post B", Some("2026-01-02T00:00:00Z")),
-            make_listed_page("Post C", Some("2026-01-01T00:00:00Z")),
-        ];
-        let artifacts = ListingArtifacts {
-            listed_pages: posts.clone(),
-            listed_posts: posts.clone(),
-            section_posts: HashMap::from([("note".into(), vec![posts[1].clone()])]),
-            tag_pages: HashMap::from([("rust".into(), vec![posts[0].clone(), posts[2].clone()])]),
-        };
-        let sections = vec![Section {
-            slug: "note".into(),
-            title: "Note".into(),
-            page_count: 1,
-        }];
-        let taxonomy_set = TaxonomySet {
-            tags: vec![crate::taxonomy::Term {
-                name: "Rust".into(),
-                slug: "rust".into(),
-                page_count: 2,
-            }],
-            tag_pages: HashMap::from([("rust".into(), vec![0, 2])]),
-        };
-
-        let buckets = build_listing_buckets(&artifacts, &sections, &taxonomy_set, "Posts".into());
-
-        let summaries: Vec<_> = buckets
-            .iter()
-            .map(|bucket| {
-                (
-                    bucket.kind,
-                    bucket.name.as_str(),
-                    bucket.slug.as_str(),
-                    bucket
-                        .pages
-                        .iter()
-                        .map(|page| page.summary.title.as_str())
-                        .collect::<Vec<_>>(),
-                )
-            })
-            .collect();
-        assert_eq!(
-            summaries,
-            [
-                (
-                    BucketKind::Posts,
-                    "Posts",
-                    "posts",
-                    vec!["Post A", "Post B", "Post C"]
-                ),
-                (BucketKind::Section, "Note", "note", vec!["Post B"]),
-                (BucketKind::Tag, "Rust", "rust", vec!["Post A", "Post C"]),
-            ]
-        );
-    }
-
-    #[test]
-    fn build_listing_buckets_empty_inputs() {
-        use crate::taxonomy::TaxonomySet;
-
-        let artifacts = ListingArtifacts {
-            listed_pages: Vec::new(),
-            listed_posts: Vec::new(),
-            section_posts: HashMap::new(),
-            tag_pages: HashMap::new(),
-        };
-        let taxonomy_set = TaxonomySet {
-            tags: Vec::new(),
-            tag_pages: HashMap::new(),
-        };
-
-        let buckets = build_listing_buckets(&artifacts, &[], &taxonomy_set, "Posts".into());
-
-        assert_eq!(
-            buckets.len(),
-            1,
-            "only the Posts bucket when no sections/tags"
-        );
-        assert_eq!(buckets[0].kind, BucketKind::Posts);
-        assert!(buckets[0].pages.is_empty());
-    }
-
-    #[test]
-    fn build_listing_buckets_missing_section_gives_empty_pages() {
-        use crate::taxonomy::TaxonomySet;
-
-        let artifacts = ListingArtifacts {
-            listed_pages: Vec::new(),
-            listed_posts: Vec::new(),
-            section_posts: HashMap::new(),
-            tag_pages: HashMap::new(),
-        };
-        let sections = vec![Section {
-            slug: "orphan".into(),
-            title: "Orphan".into(),
-            page_count: 0,
-        }];
-        let taxonomy_set = TaxonomySet {
-            tags: Vec::new(),
-            tag_pages: HashMap::new(),
-        };
-
-        let buckets = build_listing_buckets(&artifacts, &sections, &taxonomy_set, "Posts".into());
-
-        assert_eq!(buckets[1].kind, BucketKind::Section);
-        assert_eq!(buckets[1].slug, "orphan");
-        assert!(buckets[1].pages.is_empty());
-    }
-
-    // ── sort_by_date_desc ──
-
-    #[test]
-    fn sort_by_date_desc_basic() {
-        let mut pages = vec![
-            make_listed_page("old", Some("2025-01-01T00:00:00Z")),
-            make_listed_page("new", Some("2026-06-15T00:00:00Z")),
-            make_listed_page("mid", Some("2026-01-01T00:00:00Z")),
-        ];
-        sort_by_date_desc(&mut pages);
-        assert_eq!(pages[0].summary.title, "new");
-        assert_eq!(pages[1].summary.title, "mid");
-        assert_eq!(pages[2].summary.title, "old");
-    }
-
-    #[test]
-    fn sort_by_date_desc_uses_timestamp_not_rendered_string() {
-        let mut pages = vec![
-            make_listed_page("older", Some("2024-11-03T01:30:00-04:00")),
-            make_listed_page("newer", Some("2024-11-03T01:15:00-05:00")),
-        ];
-        sort_by_date_desc(&mut pages);
-        assert_eq!(pages[0].summary.title, "newer");
-        assert_eq!(pages[1].summary.title, "older");
-    }
-
-    #[test]
-    fn sort_by_date_desc_ignores_weight() {
-        let mut pages = vec![
-            make_listed_page_with("pinned-old", Some("2020-01-01T00:00:00Z"), Some(1)),
-            make_listed_page_with("recent", Some("2026-06-01T00:00:00Z"), None),
-        ];
-        sort_by_date_desc(&mut pages);
-        assert_eq!(pages[0].summary.title, "recent");
-        assert_eq!(pages[1].summary.title, "pinned-old");
-    }
-
-    #[test]
-    fn sort_by_date_desc_undated_last() {
-        let mut pages = vec![
-            make_listed_page("undated", None),
-            make_listed_page("dated", Some("2026-01-01T00:00:00Z")),
-        ];
-        sort_by_date_desc(&mut pages);
-        assert_eq!(pages[0].summary.title, "dated");
-        assert_eq!(pages[1].summary.title, "undated");
-    }
-
-    // ── sort_pinned_first ──
-
-    #[test]
-    fn sort_pinned_first_pinned_come_before_unpinned() {
-        let mut pages = vec![
-            make_listed_page_with("recent", Some("2026-06-01T00:00:00Z"), None),
-            make_listed_page_with("pinned-old", Some("2020-01-01T00:00:00Z"), Some(1)),
-        ];
-        sort_pinned_first(&mut pages);
-        assert_eq!(pages[0].summary.title, "pinned-old");
-        assert!(pages[0].summary.pinned);
-        assert_eq!(pages[1].summary.title, "recent");
-        assert!(!pages[1].summary.pinned);
-    }
-
-    #[test]
-    fn sort_pinned_first_pinned_ordered_by_weight_ascending() {
-        let mut pages = vec![
-            make_listed_page_with("third", Some("2026-01-01T00:00:00Z"), Some(3)),
-            make_listed_page_with("first", Some("2026-01-01T00:00:00Z"), Some(1)),
-            make_listed_page_with("second", Some("2026-01-01T00:00:00Z"), Some(2)),
-        ];
-        sort_pinned_first(&mut pages);
-        assert_eq!(pages[0].summary.title, "first");
-        assert_eq!(pages[1].summary.title, "second");
-        assert_eq!(pages[2].summary.title, "third");
-    }
-
-    #[test]
-    fn sort_pinned_first_negative_weight_sorts_above_positive() {
-        let mut pages = vec![
-            make_listed_page_with("positive", Some("2026-01-01T00:00:00Z"), Some(1)),
-            make_listed_page_with("negative", Some("2025-01-01T00:00:00Z"), Some(-5)),
-        ];
-        sort_pinned_first(&mut pages);
-        assert_eq!(pages[0].summary.title, "negative");
-        assert_eq!(pages[1].summary.title, "positive");
-    }
-
-    #[test]
-    fn sort_pinned_first_pinned_ties_break_by_date_desc() {
-        let mut pages = vec![
-            make_listed_page_with("pin-old", Some("2025-01-01T00:00:00Z"), Some(1)),
-            make_listed_page_with("pin-new", Some("2026-01-01T00:00:00Z"), Some(1)),
-        ];
-        sort_pinned_first(&mut pages);
-        assert_eq!(pages[0].summary.title, "pin-new");
-        assert_eq!(pages[1].summary.title, "pin-old");
-    }
-
-    #[test]
-    fn sort_pinned_first_mixed_pinned_and_unpinned_full_order() {
-        let mut pages = vec![
-            make_listed_page_with("unpin-old", Some("2024-01-01T00:00:00Z"), None),
-            make_listed_page_with("pin-2", Some("2020-01-01T00:00:00Z"), Some(2)),
-            make_listed_page_with("unpin-new", Some("2026-01-01T00:00:00Z"), None),
-            make_listed_page_with("pin-1", Some("2018-01-01T00:00:00Z"), Some(1)),
-        ];
-        sort_pinned_first(&mut pages);
-        let order: Vec<&str> = pages.iter().map(|p| p.summary.title.as_str()).collect();
-        assert_eq!(order, ["pin-1", "pin-2", "unpin-new", "unpin-old"]);
-    }
-
-    #[test]
-    fn sort_pinned_first_zero_weight_is_pinned() {
-        let mut pages = vec![
-            make_listed_page_with("recent", Some("2026-06-01T00:00:00Z"), None),
-            make_listed_page_with("pin-zero", Some("2020-01-01T00:00:00Z"), Some(0)),
-        ];
-        sort_pinned_first(&mut pages);
-        assert_eq!(pages[0].summary.title, "pin-zero");
-        assert!(pages[0].summary.pinned);
-    }
-
-    #[test]
-    fn sort_pinned_first_falls_back_to_date_desc_when_no_pins() {
-        let mut pages = vec![
-            make_listed_page("old", Some("2025-01-01T00:00:00Z")),
-            make_listed_page("new", Some("2026-06-15T00:00:00Z")),
-        ];
-        sort_pinned_first(&mut pages);
-        assert_eq!(pages[0].summary.title, "new");
-        assert_eq!(pages[1].summary.title, "old");
-    }
-
-    // ── group_by_year ──
-
-    #[test]
-    fn group_by_year_basic() {
-        let pages = vec![
-            make_listed_page("a", Some("2026-03-01T00:00:00Z")),
-            make_listed_page("b", Some("2026-01-15T00:00:00Z")),
-            make_listed_page("c", Some("2025-12-01T00:00:00Z")),
-        ];
-        let groups = group_by_year(pages);
-        assert_eq!(groups.len(), 2);
-        assert_eq!(groups[0].key, "2026");
-        assert_eq!(groups[0].pages.len(), 2);
-        assert_eq!(groups[1].key, "2025");
-        assert_eq!(groups[1].pages.len(), 1);
-    }
-
-    #[test]
-    fn group_by_year_non_consecutive_same_year() {
-        let pages = vec![
-            make_listed_page("a", Some("2026-03-01T00:00:00Z")),
-            make_listed_page("b", Some("2025-06-01T00:00:00Z")),
-            make_listed_page("c", Some("2026-01-01T00:00:00Z")),
-        ];
-        let groups = group_by_year(pages);
-        assert_eq!(groups.len(), 3, "groups consecutively, not globally");
-        assert_eq!(groups[0].key, "2026");
-        assert_eq!(groups[0].pages.len(), 1);
-        assert_eq!(groups[1].key, "2025");
-        assert_eq!(groups[1].pages.len(), 1);
-        assert_eq!(groups[2].key, "2026");
-        assert_eq!(groups[2].pages.len(), 1);
-    }
-
-    #[test]
-    fn group_by_year_undated_pages() {
-        let pages = vec![
-            make_listed_page("a", Some("2026-01-01T00:00:00Z")),
-            make_listed_page("b", None),
-        ];
-        let groups = group_by_year(pages);
-        assert_eq!(groups.len(), 2);
-        assert_eq!(groups[0].key, "2026");
-        assert_eq!(groups[1].key, "", "undated pages should have empty key");
-    }
-
-    #[test]
-    fn group_by_year_empty() {
-        let groups = group_by_year(Vec::new());
-        assert!(groups.is_empty());
-    }
-
-    fn make_listed_page(title: &str, date: Option<&str>) -> ListedPage {
-        make_listed_page_with(title, date, None)
-    }
-
-    fn make_listed_page_with(title: &str, date: Option<&str>, weight: Option<i64>) -> ListedPage {
-        let timestamp = date.map(|date| date.parse().unwrap());
-        ListedPage {
+    fn prepared(title: &str, date: Option<&str>, weight: Option<i64>) -> PreparedPage {
+        let published = date.map(|date| date.parse().unwrap());
+        PreparedPage {
+            output_path: PathBuf::from(title).join("index.html"),
             summary: PageSummary {
                 title: title.into(),
                 url: format!("/{title}/"),
-                date: timestamp.map(|date: Timestamp| date.to_string()),
+                date: date.map(str::to_owned),
                 pinned: weight.is_some(),
                 description: String::new(),
                 featured_image: None,
                 tags: Vec::new(),
                 section: None,
             },
-            timestamp,
+            published,
+            updated: None,
             weight,
-            year: timestamp
+            year: published
                 .map(|date| page_year(date, None))
                 .unwrap_or_default(),
         }
+    }
+
+    // ── sort_pinned_first ──
+
+    #[test]
+    fn sort_pinned_first_orders_weights_timestamps_and_tied_urls() {
+        let pages = [
+            prepared("undated", None, None),
+            prepared("old", Some("2024-01-01T00:00:00Z"), None),
+            prepared("negative", None, Some(-1)),
+            prepared("z", Some("2024-11-03T01:30:00-04:00"), Some(0)),
+            prepared("a", Some("2024-11-03T01:30:00-04:00"), Some(0)),
+            prepared("new", Some("2024-11-03T01:15:00-05:00"), Some(0)),
+            prepared("positive", Some("2025-01-01T00:00:00Z"), Some(1)),
+        ];
+        let mut sorted: Vec<_> = pages.iter().collect();
+        sort_pinned_first(&mut sorted);
+        assert_eq!(
+            sorted
+                .iter()
+                .map(|page| page.summary.title.as_str())
+                .collect::<Vec<_>>(),
+            ["negative", "new", "a", "z", "positive", "old", "undated"]
+        );
+    }
+
+    // ── group_by_year ──
+
+    #[test]
+    fn group_by_year_preserves_members_and_separates_consecutive_groups() {
+        let pages = [
+            prepared("a", Some("2025-01-01T00:00:00Z"), None),
+            prepared("b", Some("2025-06-01T00:00:00Z"), None),
+            prepared("c", None, None),
+            prepared("d", Some("2025-02-01T00:00:00Z"), None),
+        ];
+        let refs: Vec<_> = pages.iter().collect();
+        let grouped = group_by_year(&refs);
+        assert_eq!(
+            grouped
+                .iter()
+                .map(|group| (
+                    group.key.as_str(),
+                    group
+                        .pages
+                        .iter()
+                        .map(|page| page.title.as_str())
+                        .collect::<Vec<_>>()
+                ))
+                .collect::<Vec<_>>(),
+            [
+                ("2025", vec!["a", "b"]),
+                ("", vec!["c"]),
+                ("2025", vec!["d"])
+            ]
+        );
+        assert!(std::ptr::eq(
+            grouped[0].pages[0],
+            &raw const pages[0].summary
+        ));
+        assert!(group_by_year(&[]).is_empty());
     }
 
     // ── page_section ──
@@ -992,7 +569,10 @@ mod tests {
     fn linked_tags_base_url_trailing_slashes() {
         let tags = ["Rust".into(), "Web Tools".into()];
         for base_url in ["https://example.com/blog", "https://example.com/blog/"] {
-            let linked = linked_tags(&tags, base_url);
+            let mut page = crate::test_utils::test_page("Example");
+            page.frontmatter.tags = tags.to_vec();
+            let taxonomy = crate::taxonomy::build_taxonomies(&[page], None).unwrap();
+            let linked = linked_tags(&taxonomy, 0, base_url);
             assert_eq!(linked[0].name, "Rust");
             assert_eq!(linked[0].url, "https://example.com/blog/tags/rust/");
             assert_eq!(linked[1].name, "Web Tools");

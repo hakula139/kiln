@@ -10,23 +10,16 @@ use lightningcss::dependencies::{Dependency, DependencyOptions};
 use lightningcss::stylesheet::{ParserOptions, PrinterOptions, StyleSheet};
 use lightningcss::traits::ToCss;
 use lightningcss::values::string::CSSString;
-use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, percent_decode_str, utf8_percent_encode};
+use percent_encoding::percent_decode_str;
 
-use crate::build::assets::PublishedAssets;
-use crate::build::url::{page_url, resolve_relative_url};
 use crate::config::{Config, CssProcessor};
 use crate::content::page::{Page, is_page_bundle};
 use crate::output::write_output;
-use crate::static_assets::{StaticAssetManifest, path_to_url};
+use crate::static_assets::StaticAssetManifest;
+use crate::static_assets::publication::PublishedAssets;
+use crate::url::{join_site_url, path_url};
 
 const ENTRY: &str = "assets/css/_src/style.css";
-const URL_PATH_ENCODE_SET: &AsciiSet = &NON_ALPHANUMERIC
-    .remove(b'/')
-    .remove(b'.')
-    .remove(b'-')
-    .remove(b'_')
-    .remove(b'~');
-
 struct Stylesheet {
     source: PathBuf,
     page: Option<PathBuf>,
@@ -122,21 +115,19 @@ impl Stylesheets {
     ///
     /// # Errors
     ///
-    /// Returns an error for an invalid UTF-8 output path or a missing compiled stylesheet.
+    /// Returns an error for a missing compiled stylesheet.
     pub(crate) fn page_url(
         &self,
-        base_url: &str,
+        deployment_prefix: &str,
         manifest: &StaticAssetManifest,
         page: &Page,
     ) -> Result<Option<String>> {
         self.pages
             .get(&page.source_path)
             .map(|style| {
-                let path =
-                    path_to_url(&style.output).context("stylesheet output is not valid UTF-8")?;
+                let path = format!("/{}", path_url(&style.output));
                 let hashed = manifest.asset_url(&path)?;
-                let base = page_url(base_url, Path::new("index.html"));
-                Ok(resolve_relative_url(hashed.trim_start_matches('/'), &base))
+                Ok(join_site_url(deployment_prefix, &hashed))
             })
             .transpose()
     }
@@ -295,12 +286,7 @@ fn published_url(
         style.output.parent().context("CSS output has no parent")?,
     )
     .context("cannot resolve published CSS asset path")?;
-    let path = relative
-        .to_str()
-        .context("published CSS asset path is not valid UTF-8")?
-        .replace('\\', "/");
-    let encoded = utf8_percent_encode(&path, URL_PATH_ENCODE_SET);
-    Ok(format!("{encoded}{suffix}"))
+    Ok(format!("{}{suffix}", path_url(&relative)))
 }
 
 fn is_external(url: &str) -> bool {
@@ -319,6 +305,53 @@ mod tests {
 
     use super::*;
     use crate::test_utils::write_test_file;
+
+    // ── Stylesheets::page_url ──
+
+    #[test]
+    fn page_url_preserves_base_path_and_encoded_output() {
+        let root = tempfile::tempdir().unwrap();
+        write_test_file(
+            root.path(),
+            "content/a % # 世界/index.md",
+            indoc! {r#"
+                +++
+                title = "Example"
+                +++
+            "#},
+        );
+        write_test_file(
+            root.path(),
+            "content/a % # 世界/assets/css/_src/style.css",
+            ".page { color: red; }",
+        );
+        let page = Page::from_file(&root.path().join("content/a % # 世界/index.md")).unwrap();
+        let config = Config::default();
+        let pages = [page];
+        let stylesheets =
+            Stylesheets::discover(root.path(), &config, &root.path().join("content"), &pages)
+                .unwrap();
+        let output = root.path().join("public");
+        let assets = PublishedAssets::publish(
+            root.path(),
+            None,
+            &root.path().join("content"),
+            &pages,
+            &output,
+        )
+        .unwrap();
+        stylesheets
+            .compile(root.path(), &config, &assets, &output)
+            .unwrap();
+        let manifest = StaticAssetManifest::build(&output).unwrap();
+        let encoded = "/a%20%25%20%23%20%E4%B8%96%E7%95%8C/assets/css/page.css";
+        assert_eq!(
+            stylesheets
+                .page_url("/blog/", &manifest, &pages[0])
+                .unwrap(),
+            Some(format!("/blog{}", manifest.asset_url(encoded).unwrap())),
+        );
+    }
 
     // ── compile_plain ──
 
@@ -359,6 +392,38 @@ mod tests {
         }
     }
 
+    #[test]
+    fn compile_plain_encodes_published_paths_and_preserves_url_suffixes() {
+        let root = tempfile::tempdir().unwrap();
+        write_test_file(
+            root.path(),
+            ENTRY,
+            indoc! {r#"
+            .image { background: url("../../../static/a%20%25%20%23%20%E4%B8%96%E7%95%8C.svg?v=1#icon"); }
+        "#},
+        );
+        write_test_file(root.path(), "static/a % # 世界.svg", "image");
+        let output = root.path().join("public");
+        let assets = PublishedAssets::publish(
+            root.path(),
+            None,
+            &root.path().join("content"),
+            &[],
+            &output,
+        )
+        .unwrap();
+        let style = Stylesheet {
+            source: root.path().join(ENTRY),
+            page: None,
+            output: PathBuf::from("assets/css/site.css"),
+        };
+        let css = compile_plain(&assets, &style).unwrap();
+        assert!(
+            css.contains("../../a%20%25%20%23%20%E4%B8%96%E7%95%8C.svg?v=1#icon"),
+            "{css}"
+        );
+    }
+
     #[cfg(unix)]
     #[test]
     fn compile_plain_preserves_static_symlink_paths() {
@@ -369,11 +434,11 @@ mod tests {
             indoc! {r"
                 .icon { background: url(../../../static/alias.svg); }
                 .nested { background: url(../../../static/shared/image.svg); }
-                .parent { background: url(../../../static/shared/../alias.svg); }
+                .parent { background: url(../../../static/local/../alias.svg); }
             "},
         );
         write_test_file(root.path(), "original.svg", "image");
-        fs::create_dir(root.path().join("static")).unwrap();
+        fs::create_dir_all(root.path().join("static/local")).unwrap();
         std::os::unix::fs::symlink(
             root.path().join("original.svg"),
             root.path().join("static/alias.svg"),
