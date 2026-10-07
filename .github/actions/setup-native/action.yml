@@ -37,5 +37,5 @@ runs:
       run: python -m pip install meson==1.10.2 ninja==1.13.0
 
     - name: Build dav1d
-      shell: bash
-      run: python "$GITHUB_ACTION_PATH/../../scripts/build-dav1d.py"
+      shell: ${{ runner.os == 'Windows' && 'pwsh' || 'bash' }}
+      run: python "${{ github.action_path }}/../../scripts/build-dav1d.py"
