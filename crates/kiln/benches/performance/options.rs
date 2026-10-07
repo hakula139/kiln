@@ -5,6 +5,7 @@ use criterion::{BenchmarkId, Criterion};
 use kiln::render::RenderOptions;
 
 use super::fixtures::extra_params;
+use super::workloads;
 
 /// Measures option extraction from prebuilt params tables with unrelated settings.
 pub(super) fn benchmarks(criterion: &mut Criterion) {
@@ -13,6 +14,11 @@ pub(super) fn benchmarks(criterion: &mut Criterion) {
         let mut params = toml::Table::new();
         params.insert("emojis".to_owned(), toml::Value::Boolean(true));
         params.extend(extra_params(count));
+        workloads::record(
+            &format!("render_options/{count}"),
+            "extract-from-prebuilt-params/v1",
+            &[toml::to_string(&params).unwrap().as_bytes()],
+        );
         let expected = RenderOptions::from_params(&params).unwrap();
         assert!(expected.code_max_lines.is_none());
         assert!(expected.emojis);

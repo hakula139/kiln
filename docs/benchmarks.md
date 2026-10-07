@@ -10,7 +10,7 @@ cargo test --bench performance
 
 Reports and saved baselines live under `criterion/` beside the compiled profile directory, normally `target/criterion/`. Set `CRITERION_HOME` to choose another location.
 
-CI compares the PR with its common ancestor using identical workloads and the head's Nix environment. Criterion's output appears in the job summary, with raw samples and logs attached to the run for 14 days. Timings are advisory because shared runners are noisy. The `Benchmarks` workflow also supports manual runs with a baseline revision.
+CI builds each revision's own harness against its APIs, using the PR's common ancestor and the head's Nix environment. The job summary shows independent Criterion means and 95% confidence intervals. Mean changes are reported only for workload IDs with matching runtime input fingerprints and measurement contracts. New, removed, changed, and older workloads without manifests remain visible without a comparison. Raw samples, manifests, and logs are attached for 14 days. Timings are advisory because shared runners are noisy. The `Benchmarks` workflow also supports manual runs with a baseline revision.
 
 ## Workloads
 
@@ -27,7 +27,7 @@ Cold-image samples exclude image creation and resolver construction, but include
 
 ## Comparing revisions
 
-Keep the workload source and toolchain identical, run sequentially on an idle host, and repeat noisy comparisons.
+Keep measured inputs, timing boundaries, and the toolchain consistent. Run sequentially on an idle host and repeat noisy comparisons. For a local change that preserves these contracts:
 
 ```bash
 cargo bench --bench performance -- --save-baseline before
@@ -35,8 +35,8 @@ cargo bench --bench performance -- --save-baseline before
 cargo bench --bench performance -- --baseline before
 ```
 
-For separate worktrees, use separate Cargo target directories and copy the baseline's `criterion/` directory into the second target directory. Include the revision, command, compiler, profile, fixture parameters, host conditions, and Criterion confidence intervals in performance PRs. Keep raw samples and logs local.
+For API changes or separate worktrees, use the `Benchmarks` workflow so each revision compiles its own harness and records compatibility per workload. Include the revisions, command, compiler, profile, fixture parameters, host conditions, and Criterion confidence intervals in performance PRs.
 
 ## Adding workloads
 
-Add a module under `crates/kiln/benches/performance/` and register it in `performance.rs`. Reuse fixtures and public APIs, validate behavior before timing, and keep setup outside the timed closure. Separate cold initialization from cached work. Use the build group's flat sampling for expensive cases.
+Add a module under `crates/kiln/benches/performance/` and register it in `performance.rs`. Reuse fixtures and public APIs, validate behavior before timing, and keep setup outside the timed closure. Separate cold initialization from cached work. Use the build group's flat sampling for expensive cases. Record each workload's actual inputs with `workloads::record` before sampling, using the Criterion ID and a measurement-contract version. Update that version when the timed operation or excluded setup changes. CI sets `KILN_BENCH_MANIFEST` to collect these records.

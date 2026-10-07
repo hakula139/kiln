@@ -5,6 +5,7 @@ on:
     paths:
       - .github/actions/setup-nix/**
       - .github/workflows/benchmarks.yml
+      - .github/scripts/benchmark_report.py
       - Cargo.lock
       - Cargo.toml
       - crates/**
@@ -28,7 +29,6 @@ concurrency:
 env:
   CACHIX_NAME: hakula
   CARGO_TERM_COLOR: never
-  CRITERION_HOME: ${{ github.workspace }}/results/criterion
 
 defaults:
   run:
@@ -74,9 +74,8 @@ jobs:
           key: ${{ hashFiles('head/flake.nix', 'head/flake.lock') }}
           cmd-format: nix develop "${{ github.workspace }}/head" -c {0}
 
-      - name: Prepare identical workloads
+      - name: Record benchmark environment
         run: |
-          cp -R head/crates/kiln/benches/. base/crates/kiln/benches/
           mkdir -p results
           {
             git -C base show -s --format='Base: %H'
@@ -99,33 +98,20 @@ jobs:
       - name: Measure base and head
         run: |
           for revision in base head; do
-            if [ "$revision" = base ]; then
-              baseline=(--save-baseline base)
-            else
-              baseline=(--baseline-lenient base)
-            fi
+            mkdir -p "results/$revision"
             (
               cd "$revision"
+              CRITERION_HOME="$GITHUB_WORKSPACE/results/$revision/criterion" \
+              KILN_BENCH_MANIFEST="$GITHUB_WORKSPACE/results/$revision/workloads.toml" \
               CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target/$revision" \
                 nix develop "$GITHUB_WORKSPACE/head" -c \
                 cargo bench --locked --bench performance -- \
-                --color never --confidence-level 0.95 "${baseline[@]}"
+                --color never --confidence-level 0.95 --save-baseline measured
             ) 2>&1 | tee "results/measure-$revision.log"
           done
 
-      - name: Show Criterion comparison
-        run: |
-          {
-            cat <<'MARKDOWN'
-          ## Benchmark comparison
-
-          Criterion compares the head revision with the selected baseline. Timings on shared runners are advisory. Download the artifact for revisions, environment details, and raw samples.
-
-          ```text
-          MARKDOWN
-            cat results/measure-head.log
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Show compatible comparisons
+        run: python3 head/.github/scripts/benchmark_report.py results
 
       - name: Upload benchmark results
         if: always()

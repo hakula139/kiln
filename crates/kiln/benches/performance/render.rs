@@ -12,6 +12,7 @@ use kiln::render::pipeline::render_page;
 use kiln::template::TemplateEngine;
 
 use super::fixtures::{PROSE, Site};
+use super::workloads;
 
 /// Measures rendering with preloaded dependencies and separately times fresh syntax loading.
 pub(super) fn benchmarks(criterion: &mut Criterion) {
@@ -32,6 +33,15 @@ pub(super) fn benchmarks(criterion: &mut Criterion) {
     .repeat(20);
     let mut group = criterion.benchmark_group("render");
     for (name, input) in [("prose", PROSE.repeat(20)), ("highlighted_code", code)] {
+        workloads::record(
+            &format!("render/{name}"),
+            "render-with-preloaded-syntax-and-resolver/v1",
+            &[
+                input.as_bytes(),
+                workloads::site_inputs(site.root()).as_bytes(),
+                format!("{options:?}").as_bytes(),
+            ],
+        );
         let expected = render_page(
             &input,
             &syntax_set,
@@ -65,6 +75,7 @@ pub(super) fn benchmarks(criterion: &mut Criterion) {
     }
     group.finish();
 
+    workloads::record("syntax/load", "load-default-syntax-set/v1", &[]);
     criterion.bench_function("syntax/load", |bencher| {
         bencher.iter(two_face::syntax::extra_newlines);
     });

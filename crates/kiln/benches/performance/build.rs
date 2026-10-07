@@ -11,6 +11,7 @@ use walkdir::WalkDir;
 use kiln::feed::DEFAULT_FEED_LIMIT;
 
 use super::fixtures::{PROSE, Site, extra_params};
+use super::workloads;
 
 /// Includes CLI startup and prior-output cleanup, with fixture validation outside sampling.
 pub(super) fn benchmarks(criterion: &mut Criterion) {
@@ -29,6 +30,7 @@ pub(super) fn benchmarks(criterion: &mut Criterion) {
         if extra_params > 0 {
             add_params(&site, extra_params);
         }
+        let inputs = workloads::site_inputs(site.root());
         verify_build(&site, pages, minify);
         let mode = if minify {
             "minified"
@@ -37,6 +39,11 @@ pub(super) fn benchmarks(criterion: &mut Criterion) {
         } else {
             "default"
         };
+        workloads::record(
+            &format!("build/{mode}/{pages}"),
+            "cli-build-including-startup-and-prior-output/v1",
+            &[inputs.as_bytes(), &[u8::from(minify)]],
+        );
         group.throughput(Throughput::Elements(pages.try_into().unwrap()));
         group.bench_with_input(BenchmarkId::new(mode, pages), &site, |bencher, site| {
             bencher.iter(|| run_build(site, minify));

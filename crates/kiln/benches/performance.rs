@@ -11,6 +11,9 @@ mod render;
 #[path = "performance/shortcodes.rs"]
 mod shortcodes;
 
+#[path = "performance/workloads.rs"]
+mod workloads;
+
 use criterion::{Criterion, criterion_group, criterion_main};
 
 criterion_group! {
@@ -26,6 +29,10 @@ criterion_group! {
 criterion_main!(benches);
 
 fn benchmark_configuration() -> Criterion {
+    if let Some(path) = std::env::var_os("KILN_BENCH_MANIFEST") {
+        std::fs::write(path, "").unwrap();
+    }
+
     let criterion = Criterion::default();
     if std::env::var_os("CRITERION_HOME").is_some() {
         return criterion;
