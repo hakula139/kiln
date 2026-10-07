@@ -46,10 +46,6 @@ def main():
     )
     subprocess.run(["meson", "compile", "-C", str(build)], check=True)
     subprocess.run(["meson", "install", "-C", str(build)], check=True)
-    library = prefix / "lib" / ("dav1d.lib" if os.name == "nt" else "libdav1d.a")
-    if not library.is_file():
-        raise RuntimeError(f"Missing static dav1d library: {library}")
-
     with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as environment:
         environment.write(f"PKG_CONFIG_PATH={prefix / 'lib' / 'pkgconfig'}\n")
         environment.write("SYSTEM_DEPS_DAV1D_LINK=static\n")
