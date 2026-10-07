@@ -215,7 +215,10 @@ fn build_compiles_page_styles_with_private_sources_and_final_hashes() {
 
 #[test]
 fn build_compiles_tailwind_with_shared_context_and_fresh_candidates() {
-    let root = tempfile::tempdir().unwrap();
+    let root = tempfile::Builder::new()
+        .prefix("site with spaces 世界 ")
+        .tempdir()
+        .unwrap();
     write_test_file(root.path(), "config.toml", r#"theme = "example""#);
     write_test_file(
         root.path(),
@@ -307,7 +310,8 @@ fn build_compiles_tailwind_with_shared_context_and_fresh_candidates() {
     let content = root.path().join("content/example/index.md");
     let markdown = fs::read_to_string(&content).unwrap();
     fs::write(content, markdown.replace(".bg-brand", ".text-brand")).unwrap();
-    build(root.path(), BuildOptions::default()).unwrap();
+    let canonical_root = root.path().canonicalize().unwrap();
+    build(&canonical_root, BuildOptions::default()).unwrap();
     let rebuilt = fs::read_to_string(public.join("assets/css/site.css")).unwrap();
     assert!(!rebuilt.contains(".bg-brand"), "{rebuilt}");
 }

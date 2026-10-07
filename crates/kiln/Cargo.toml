@@ -15,6 +15,7 @@ axum = { workspace = true }
 base64 = { workspace = true }
 clap = { workspace = true }
 csv = { workspace = true }
+dunce = { workspace = true }
 gh-emoji = { workspace = true }
 hex = { workspace = true }
 http-body-util = { workspace = true }

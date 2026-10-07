@@ -23,6 +23,7 @@ criterion = { version = "0.8", default-features = false, features = [
   "cargo_bench_support",
 ] }
 csv = "1"
+dunce = "1"
 gh-emoji = "1"
 hex = "0.4"
 http-body-util = "0.1"

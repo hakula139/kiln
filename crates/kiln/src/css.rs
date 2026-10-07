@@ -150,33 +150,21 @@ fn compile_tailwind(
     style: &Stylesheet,
 ) -> Result<String> {
     let temp = tempfile::tempdir().context("failed to create CSS compiler workspace")?;
-    let workspace = temp.path().canonicalize()?;
+    let workspace = dunce::canonicalize(temp.path())?;
     let input = workspace.join("input.css");
     let mut source = String::new();
     if style.page.is_some()
         && let Some(shared) = shared
     {
-        _ = writeln!(
-            source,
-            "@reference {};",
-            css_string(&shared.source.canonicalize()?.to_string_lossy())?
-        );
+        _ = writeln!(source, "@reference {};", tailwind_path(&shared.source)?);
     }
-    _ = writeln!(
-        source,
-        "@import {};",
-        css_string(&style.source.canonicalize()?.to_string_lossy())?
-    );
+    _ = writeln!(source, "@import {};", tailwind_path(&style.source)?);
     for dir in std::iter::once(root.join("content"))
         .chain(std::iter::once(root.join("templates")))
         .chain(config.theme_dir(root).map(|dir| dir.join("templates")))
         .filter(|dir| dir.is_dir())
     {
-        _ = writeln!(
-            source,
-            "@source {};",
-            css_string(&dir.canonicalize()?.to_string_lossy())?
-        );
+        _ = writeln!(source, "@source {};", tailwind_path(&dir)?);
     }
     fs::write(&input, source)?;
     let binary = if cfg!(windows) {
@@ -206,6 +194,14 @@ fn compile_tailwind(
     )
     .map_err(|error| anyhow::anyhow!("{error}"))?;
     publish_urls(assets, style, &stylesheet)
+}
+
+fn tailwind_path(path: &Path) -> Result<String> {
+    let path = dunce::canonicalize(path)?;
+    let path = path.to_string_lossy();
+    #[cfg(windows)]
+    let path = path.replace('\\', "/");
+    css_string(&path)
 }
 
 struct CssProvider(FileProvider);
