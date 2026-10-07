@@ -1,12 +1,17 @@
 use std::fs;
+#[cfg(unix)]
 use std::path::Path;
 
-use indoc::{formatdoc, indoc};
+#[cfg(unix)]
+use indoc::formatdoc;
+use indoc::indoc;
 
 #[path = "support/cli.rs"]
 mod support;
 
-use support::{kiln, write_executable_file, write_test_file};
+#[cfg(unix)]
+use support::write_executable_file;
+use support::{kiln, write_test_file};
 
 // ── build ──
 
@@ -69,6 +74,7 @@ fn build_base_url_argument_and_environment_precedence() {
     }
 }
 
+#[cfg(unix)]
 #[test]
 fn build_search_passes_output_dir_as_single_argument() {
     let root = tempfile::Builder::new()
@@ -79,8 +85,20 @@ fn build_search_passes_output_dir_as_single_argument() {
         root.path(),
         indoc! {r#"
             #!/bin/sh
+            test -f "$2/posts/hello/index.html" || exit 8
             printf '%s\n' "$@" > "$2/arguments.txt"
         "#},
+    );
+
+    write_test_file(
+        root.path(),
+        "content/posts/hello/index.md",
+        indoc! {r#"
+        +++
+        title = "Hello"
+        +++
+        Searchable body.
+    "#},
     );
 
     let output = kiln()
@@ -95,13 +113,21 @@ fn build_search_passes_output_dir_as_single_argument() {
         String::from_utf8_lossy(&output.stderr)
     );
     let arguments = fs::read_to_string(root.path().join("public/arguments.txt")).unwrap();
-    let expected = root.path().canonicalize().unwrap().join("public");
+    let arguments: Vec<_> = arguments.lines().collect();
+    let [flag, staged] = arguments.as_slice() else {
+        panic!("unexpected Pagefind arguments: {arguments:?}");
+    };
+    assert_eq!(*flag, "--site");
+    let staged = std::path::Path::new(staged);
     assert_eq!(
-        arguments.lines().collect::<Vec<_>>(),
-        ["--site", expected.to_str().unwrap()]
+        staged.parent().unwrap().parent().unwrap(),
+        root.path().canonicalize().unwrap()
     );
+    assert!(!staged.exists());
+    assert!(root.path().join("public/posts/hello/index.html").is_file());
 }
 
+#[cfg(unix)]
 #[test]
 fn build_search_failure_preserves_output_returns_error() {
     let root = tempfile::tempdir().unwrap();
@@ -115,6 +141,8 @@ fn build_search_failure_preserves_output_returns_error() {
         "},
     );
 
+    write_test_file(root.path(), "public/sentinel.html", "Previous output");
+
     let output = kiln()
         .arg("build")
         .current_dir(root.path())
@@ -122,6 +150,10 @@ fn build_search_failure_preserves_output_returns_error() {
         .unwrap();
 
     assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        fs::read_to_string(root.path().join("public/sentinel.html")).unwrap(),
+        "Previous output"
+    );
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert!(stderr.contains("search indexing failed"), "{stderr}");
     assert!(
@@ -249,6 +281,7 @@ fn init_theme_default_and_explicit_roots() {
     }
 }
 
+#[cfg(unix)]
 fn write_search_site(root: &Path, script: &str) {
     write_test_file(root, "templates/post.html", "{{ content | safe }}");
     let binary = write_executable_file(root, "pagefind", script);

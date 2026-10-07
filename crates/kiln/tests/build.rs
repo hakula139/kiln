@@ -194,6 +194,59 @@ fn build_output_dir_override_preserves_configured_output() {
 }
 
 #[test]
+fn build_failed_render_preserves_previous_output() {
+    let root = tempfile::tempdir().unwrap();
+    copy_templates(&root.path().join("templates"));
+    write_page(
+        root.path(),
+        "posts/example",
+        indoc! {r#"
+            +++
+            title = "Example"
+            +++
+            Original body
+        "#},
+    );
+    build(root.path(), BuildOptions::default()).unwrap();
+    let output = root.path().join("public/posts/example/index.html");
+    let previous = fs::read_to_string(&output).unwrap();
+    fs::write(root.path().join("templates/post.html"), "{% invalid %}").unwrap();
+
+    assert!(build(root.path(), BuildOptions::default()).is_err());
+    assert_eq!(fs::read_to_string(output).unwrap(), previous);
+}
+
+#[test]
+fn build_output_override_input_overlap_returns_error() {
+    let root = tempfile::tempdir().unwrap();
+    copy_templates(&root.path().join("templates"));
+    for name in ["content", "assets", "static", ".git"] {
+        fs::create_dir(root.path().join(name)).unwrap();
+        fs::write(root.path().join(name).join("sentinel.txt"), "original").unwrap();
+    }
+
+    for name in ["content", "assets", "static", ".git"] {
+        let output = root.path().join(name);
+        let error = build(
+            root.path(),
+            BuildOptions {
+                output_dir_override: Some(&output),
+                ..BuildOptions::default()
+            },
+        )
+        .unwrap_err();
+        assert!(
+            error.to_string().contains("overlaps project input"),
+            "{error}"
+        );
+        assert_eq!(
+            fs::read_to_string(output.join("sentinel.txt")).unwrap(),
+            "original"
+        );
+    }
+}
+
+#[test]
 fn build_base_url_override() {
     let root = tempfile::tempdir().unwrap();
     fs::write(
@@ -2599,21 +2652,27 @@ fn build_broken_directive_template_returns_error() {
     );
 }
 
+#[cfg(unix)]
 #[test]
-fn build_output_cleanup_permission_denied_returns_error() {
+fn build_staging_permission_denied_preserves_output() {
     let root = tempfile::tempdir().unwrap();
     setup_site_with_page(root.path());
 
     build(root.path(), BuildOptions::default()).unwrap();
     let output_dir = root.path().join("public");
-    let _guard = PermissionGuard::restrict(&output_dir, 0o555);
+    let previous = fs::read_to_string(output_dir.join("posts/hello/index.html")).unwrap();
+    let _guard = PermissionGuard::restrict(root.path(), 0o555);
 
     let err = build(root.path(), BuildOptions::default())
         .unwrap_err()
         .to_string();
     assert!(
-        err.contains("failed to clean output directory"),
-        "should report output cleanup failure, got: {err}"
+        err.contains("failed to create build staging directory"),
+        "should report staging failure, got: {err}"
+    );
+    assert_eq!(
+        fs::read_to_string(output_dir.join("posts/hello/index.html")).unwrap(),
+        previous
     );
 }
 

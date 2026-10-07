@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 use jiff::tz::TimeZone;
 use serde::{Deserialize, Serialize};
 
@@ -197,33 +197,48 @@ impl Config {
             .map(|name| root.join("themes").join(name))
     }
 
-    /// Resolves and validates `output_dir` against the project `root`.
+    /// Resolves `output_dir`, rejecting overlaps with project inputs and metadata.
     ///
     /// # Errors
     ///
-    /// Returns an error if `output_dir` is empty, cannot be canonicalized, or resolves to the
-    /// project root or one of its ancestors.
+    /// Returns an error if the path cannot be resolved or would overwrite project inputs.
     pub fn resolved_output_dir(&self, root: &Path) -> Result<PathBuf> {
-        if self.output_dir.is_empty() {
-            bail!("output_dir cannot be empty");
-        }
+        ensure!(!self.output_dir.is_empty(), "output_dir cannot be empty");
+        self.validate_output_dir(root, &root.join(&self.output_dir))
+    }
 
-        let resolved = root.join(&self.output_dir);
-        let canonical = canonicalize_via_parent(&resolved)
-            .with_context(|| format!("failed to canonicalize output_dir `{}`", self.output_dir))?;
+    pub(crate) fn validate_output_dir(&self, root: &Path, output: &Path) -> Result<PathBuf> {
+        ensure!(!output.as_os_str().is_empty(), "output_dir cannot be empty");
+        let canonical = canonicalize_via_parent(output)?;
         let canonical_root = root
             .canonicalize()
             .with_context(|| format!("failed to canonicalize project root {}", root.display()))?;
+        ensure!(
+            !canonical_root.starts_with(&canonical),
+            "output directory {} would overwrite the project root at {}",
+            canonical.display(),
+            canonical_root.display()
+        );
+        ensure!(
+            !canonical.exists() || canonical.is_dir(),
+            "output directory {} is not a directory",
+            canonical.display()
+        );
 
-        if canonical_root.starts_with(&canonical) {
-            bail!(
-                "refusing to use output_dir `{}` — it resolves to {}, which would overwrite the project root at {}",
-                self.output_dir,
-                canonical.display(),
-                canonical_root.display(),
-            );
+        for name in ["assets", "content", "i18n", "static", "templates"] {
+            validate_input_tree(&root.join(name), &canonical)?;
         }
-
+        validate_output_overlap(&root.join("themes"), &canonical)?;
+        if let Some(theme) = self.theme_dir(root) {
+            validate_output_overlap(&theme, &canonical)?;
+            for name in ["assets", "i18n", "static", "templates", "theme.toml"] {
+                validate_input_tree(&theme.join(name), &canonical)?;
+            }
+        }
+        validate_output_overlap(&root.join("config.toml"), &canonical)?;
+        for ancestor in canonical_root.ancestors() {
+            validate_git_metadata(ancestor, &canonical, ancestor == canonical_root)?;
+        }
         Ok(canonical)
     }
 
@@ -311,35 +326,85 @@ fn default_output_dir() -> String {
     String::from("public")
 }
 
-/// Canonicalizes `path` even when it (or its ancestors) do not exist yet,
-/// by walking up to the nearest existing ancestor.
-fn canonicalize_via_parent(path: &Path) -> Result<PathBuf> {
-    if path.exists() {
-        return path
-            .canonicalize()
-            .with_context(|| format!("failed to canonicalize {}", path.display()));
+fn validate_input_tree(path: &Path, output: &Path) -> Result<()> {
+    validate_output_overlap(path, output)?;
+    if !path.exists() {
+        return Ok(());
     }
-    let mut tail: Vec<&std::ffi::OsStr> = Vec::new();
-    let mut probe = path;
-    loop {
-        let leaf = probe
-            .file_name()
-            .with_context(|| format!("path {} has no file name", path.display()))?;
-        tail.push(leaf);
-        probe = probe
-            .parent()
-            .with_context(|| format!("path {} has no parent", path.display()))?;
-        if probe.exists() {
-            break;
+    for entry in walkdir::WalkDir::new(path).follow_links(true) {
+        let entry = match entry {
+            Err(error)
+                if error.loop_ancestor().is_some()
+                    || error
+                        .io_error()
+                        .is_some_and(|error| error.kind() == std::io::ErrorKind::NotFound) =>
+            {
+                continue;
+            }
+            entry => {
+                entry.with_context(|| format!("failed to inspect input {}", path.display()))?
+            }
+        };
+        if entry.path_is_symlink() {
+            validate_output_overlap(entry.path(), output)?;
         }
     }
-    let mut canonical = probe
-        .canonicalize()
-        .with_context(|| format!("failed to canonicalize ancestor {}", probe.display()))?;
-    for component in tail.into_iter().rev() {
-        canonical.push(component);
+    Ok(())
+}
+
+fn validate_git_metadata(root: &Path, output: &Path, reserve_name: bool) -> Result<()> {
+    let git_file = root.join(".git");
+    if reserve_name || git_file.exists() || git_file.is_symlink() {
+        validate_output_overlap(&git_file, output)?;
     }
-    Ok(canonical)
+    if git_file.is_file() {
+        let contents = fs::read_to_string(&git_file).context("failed to read .git file")?;
+        if let Some(git_dir) = contents.trim().strip_prefix("gitdir: ") {
+            let git_dir = root.join(git_dir);
+            validate_output_overlap(&git_dir, output)?;
+            let common_dir = git_dir.join("commondir");
+            if common_dir.is_file() {
+                let common = fs::read_to_string(common_dir)
+                    .context("failed to read Git common directory")?;
+                validate_output_overlap(&git_dir.join(common.trim()), output)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_output_overlap(input: &Path, output: &Path) -> Result<()> {
+    let input = canonicalize_via_parent(input)?;
+    ensure!(
+        !input.starts_with(output) && !output.starts_with(&input),
+        "output directory {} overlaps project input {}",
+        output.display(),
+        input.display()
+    );
+    Ok(())
+}
+
+/// Resolves symlinks before parent components, including paths with nonexistent components.
+fn canonicalize_via_parent(path: &Path) -> Result<PathBuf> {
+    let absolute = std::path::absolute(path)?;
+    let mut resolved = PathBuf::new();
+    for component in absolute.components() {
+        match component {
+            Component::ParentDir => {
+                resolved.pop();
+            }
+            Component::CurDir => {}
+            component => {
+                resolved.push(component);
+                if resolved.exists() || resolved.is_symlink() {
+                    resolved = resolved
+                        .canonicalize()
+                        .with_context(|| format!("failed to resolve {}", resolved.display()))?;
+                }
+            }
+        }
+    }
+    Ok(resolved)
 }
 
 #[cfg(test)]
@@ -1063,6 +1128,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn resolved_output_dir_symlink_to_root_or_ancestor_returns_error() {
         let outer = tempfile::tempdir().unwrap();
@@ -1081,6 +1147,130 @@ mod tests {
                 "should reject {output_dir}, got: {err}"
             );
         }
+    }
+
+    #[test]
+    fn resolved_output_dir_input_or_metadata_overlap_returns_error() {
+        let root = tempfile::tempdir().unwrap();
+        for output in [
+            "content",
+            "content/posts/generated",
+            "static",
+            "assets/css",
+            "templates",
+            "i18n",
+            "themes",
+            "themes/example/generated",
+            "config.toml",
+            ".git",
+            ".git/objects",
+            "missing/../content",
+        ] {
+            let error = resolved_output_dir_for(root.path(), output).unwrap_err();
+            assert!(
+                error.to_string().contains("overlaps project input"),
+                "{output}: {error}"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn resolved_output_dir_symlinked_inputs_and_output_returns_error() {
+        let root = tempfile::tempdir().unwrap();
+        let external = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join("content/posts/example")).unwrap();
+        fs::write(external.path().join("image.png"), "original").unwrap();
+        std::os::unix::fs::symlink(
+            external.path(),
+            root.path().join("content/posts/example/images"),
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(root.path().join("content"), root.path().join("alias")).unwrap();
+
+        for output in [
+            external.path().to_owned(),
+            external.path().join("generated"),
+            root.path().join("alias/posts"),
+        ] {
+            let error =
+                resolved_output_dir_for(root.path(), &output.to_string_lossy()).unwrap_err();
+            assert!(
+                error.to_string().contains("overlaps project input"),
+                "{error}"
+            );
+        }
+        assert_eq!(
+            fs::read_to_string(external.path().join("image.png")).unwrap(),
+            "original"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn resolved_output_dir_external_theme_overlap_returns_error() {
+        let root = tempfile::tempdir().unwrap();
+        let theme = tempfile::tempdir().unwrap();
+        let output = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink(output.path(), theme.path().join("assets")).unwrap();
+        let config = Config {
+            theme: Some(theme.path().to_string_lossy().into_owned()),
+            ..Config::default()
+        };
+
+        for path in [
+            theme.path().join("generated"),
+            output.path().join("generated"),
+        ] {
+            assert!(
+                config
+                    .validate_output_dir(root.path(), &path)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("overlaps project input")
+            );
+        }
+    }
+
+    #[test]
+    fn resolved_output_dir_linked_git_metadata_returns_error() {
+        let root = tempfile::tempdir().unwrap();
+        let repository = tempfile::tempdir().unwrap();
+        let git_dir = repository.path().join("worktrees/example");
+        fs::create_dir_all(&git_dir).unwrap();
+        fs::write(
+            root.path().join(".git"),
+            format!("gitdir: {}", git_dir.display()),
+        )
+        .unwrap();
+        fs::write(git_dir.join("commondir"), "../..").unwrap();
+
+        for output in [git_dir.join("objects"), repository.path().join("objects")] {
+            assert!(
+                resolved_output_dir_for(root.path(), &output.to_string_lossy())
+                    .unwrap_err()
+                    .to_string()
+                    .contains("overlaps project input")
+            );
+        }
+    }
+
+    #[test]
+    fn resolved_output_dir_parent_repository_metadata_returns_error() {
+        let repository = tempfile::tempdir().unwrap();
+        let root = repository.path().join("site");
+        fs::create_dir(&root).unwrap();
+        fs::create_dir(repository.path().join(".git")).unwrap();
+        assert!(
+            resolved_output_dir_for(&root, "../.git/objects")
+                .unwrap_err()
+                .to_string()
+                .contains("overlaps project input")
+        );
+        assert_eq!(
+            resolved_output_dir_for(&root, "../dist").unwrap(),
+            repository.path().canonicalize().unwrap().join("dist")
+        );
     }
 
     // ── time_zone ──
