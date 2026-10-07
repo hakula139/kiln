@@ -94,11 +94,11 @@ fn build_search_passes_output_dir_as_single_argument() {
         root.path(),
         "content/posts/hello/index.md",
         indoc! {r#"
-        +++
-        title = "Hello"
-        +++
-        Searchable body.
-    "#},
+            +++
+            title = "Hello"
+            +++
+            Searchable body.
+        "#},
     );
 
     let output = kiln()

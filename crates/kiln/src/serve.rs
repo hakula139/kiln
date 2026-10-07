@@ -945,9 +945,11 @@ mod tests {
     #[tokio::test]
     async fn build_router_redirects_directory_without_trailing_slash() {
         let dir = tempfile::tempdir().unwrap();
-        let sub = dir.path().join("about");
-        fs::create_dir(&sub).unwrap();
-        fs::write(sub.join("index.html"), "<html><body>About</body></html>").unwrap();
+        for name in ["about", "about us"] {
+            let sub = dir.path().join(name);
+            fs::create_dir(&sub).unwrap();
+            fs::write(sub.join("index.html"), "<html><body>About</body></html>").unwrap();
+        }
 
         let app = setup_router(dir.path());
         for (uri, location) in [
@@ -958,6 +960,7 @@ mod tests {
                 "/about/?next=%2F%3F%3D&text=a+b",
             ),
             ("/about?", "/about/?"),
+            ("/about%20us?next=%2F", "/about%20us/?next=%2F"),
         ] {
             let response = app
                 .clone()
@@ -1126,26 +1129,6 @@ mod tests {
         );
         assert_eq!(response.headers()[header::CONTENT_LENGTH], "6");
         assert_eq!(collect_body(response).await, "<html>");
-    }
-
-    #[tokio::test]
-    async fn build_router_redirects_encoded_directory() {
-        let dir = tempfile::tempdir().unwrap();
-        fs::create_dir(dir.path().join("about us")).unwrap();
-        fs::write(dir.path().join("about us/index.html"), "About").unwrap();
-        let response = setup_router(dir.path())
-            .oneshot(
-                Request::get("/about%20us?next=%2F")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::TEMPORARY_REDIRECT);
-        assert_eq!(
-            response.headers()[header::LOCATION],
-            "/about%20us/?next=%2F"
-        );
     }
 
     #[tokio::test]

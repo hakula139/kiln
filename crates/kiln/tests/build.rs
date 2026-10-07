@@ -217,6 +217,37 @@ fn build_failed_render_preserves_previous_output() {
 }
 
 #[test]
+fn build_existing_file_output_returns_error() {
+    let root = tempfile::tempdir().unwrap();
+    copy_templates(&root.path().join("templates"));
+    let output = root.path().join("existing");
+    fs::write(&output, "original").unwrap();
+
+    for (configured, output_dir_override) in
+        [("existing", None), ("public", Some(output.as_path()))]
+    {
+        fs::write(
+            root.path().join("config.toml"),
+            format!(r#"output_dir = "{configured}""#),
+        )
+        .unwrap();
+
+        let error = build(
+            root.path(),
+            BuildOptions {
+                output_dir_override,
+                ..BuildOptions::default()
+            },
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("is not a directory"), "{error}");
+        assert_eq!(fs::read_to_string(&output).unwrap(), "original");
+        assert!(!root.path().join("public").exists());
+    }
+}
+
+#[test]
 fn build_output_override_input_overlap_returns_error() {
     let root = tempfile::tempdir().unwrap();
     copy_templates(&root.path().join("templates"));

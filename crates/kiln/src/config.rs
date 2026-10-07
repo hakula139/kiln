@@ -1245,6 +1245,11 @@ mod tests {
         .unwrap();
         fs::write(git_dir.join("commondir"), "../..").unwrap();
 
+        assert_eq!(
+            resolved_output_dir_for(root.path(), "public").unwrap(),
+            root.path().canonicalize().unwrap().join("public")
+        );
+
         for output in [git_dir.join("objects"), repository.path().join("objects")] {
             assert!(
                 resolved_output_dir_for(root.path(), &output.to_string_lossy())
