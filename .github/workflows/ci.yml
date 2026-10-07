@@ -76,7 +76,7 @@ jobs:
         run: cargo build --locked
 
       - name: Test default features
-        run: cargo test --locked --lib --test image_features
+        run: cargo test --locked --lib --test avif
 
   windows-test:
     name: Windows Rust Test
