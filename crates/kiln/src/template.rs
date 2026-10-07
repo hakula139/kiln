@@ -791,22 +791,6 @@ mod tests {
         assert_eq!(html, contents);
     }
 
-    #[cfg(unix)]
-    #[test]
-    fn tpl_read_file_follows_external_symlink() {
-        let source = tempfile::tempdir().unwrap();
-        let external = tempfile::tempdir().unwrap();
-        test_fs::write(external.path().join("data.txt"), "external <data>").unwrap();
-        std::os::unix::fs::symlink(
-            external.path().join("data.txt"),
-            source.path().join("data.txt"),
-        )
-        .unwrap();
-
-        let html = render_read_file("data.txt", Some(source.path())).unwrap();
-        assert_eq!(html, "external &lt;data&gt;");
-    }
-
     #[test]
     fn tpl_read_file_path_traversal_returns_error() {
         let source = tempfile::tempdir().unwrap();
@@ -861,6 +845,22 @@ mod tests {
             err.contains("failed to read"),
             "should report file read error, got: {err}"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn tpl_read_file_follows_external_symlink() {
+        let source = tempfile::tempdir().unwrap();
+        let external = tempfile::tempdir().unwrap();
+        test_fs::write(external.path().join("data.txt"), "external <data>").unwrap();
+        std::os::unix::fs::symlink(
+            external.path().join("data.txt"),
+            source.path().join("data.txt"),
+        )
+        .unwrap();
+
+        let html = render_read_file("data.txt", Some(source.path())).unwrap();
+        assert_eq!(html, "external &lt;data&gt;");
     }
 
     // ── tpl_parse_csv ──

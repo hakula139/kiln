@@ -312,6 +312,37 @@ fn build_compiles_tailwind_with_shared_context_and_fresh_candidates() {
     assert!(!rebuilt.contains(".bg-brand"), "{rebuilt}");
 }
 
+#[test]
+fn build_with_invalid_tailwind_utility_returns_error() {
+    let root = tempfile::tempdir().unwrap();
+    write_test_file(
+        root.path(),
+        "config.toml",
+        indoc! {r#"
+            [css]
+            processor = "tailwind"
+        "#},
+    );
+    copy_templates(&root.path().join("templates"));
+    write_test_file(
+        root.path(),
+        "assets/css/_src/style.css",
+        indoc! {r#"
+            @import "tailwindcss" source(none);
+            .invalid { @apply kiln-unknown-utility; }
+        "#},
+    );
+
+    let error = build(root.path(), BuildOptions::default()).unwrap_err();
+    let message = format!("{error:#}");
+    assert!(message.contains("assets/css/_src/style.css"), "{message}");
+    assert!(message.contains("Tailwind CSS exited with"), "{message}");
+    assert!(
+        message.contains("Cannot apply unknown utility class `kiln-unknown-utility`"),
+        "{message}"
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn build_compiles_tailwind_imports_from_static_symlinks() {
@@ -402,35 +433,4 @@ fn build_compiles_tailwind_imports_through_public_bundle_aliases() {
         "image"
     );
     assert!(!output.join("_assets").exists());
-}
-
-#[test]
-fn build_with_invalid_tailwind_utility_returns_error() {
-    let root = tempfile::tempdir().unwrap();
-    write_test_file(
-        root.path(),
-        "config.toml",
-        indoc! {r#"
-            [css]
-            processor = "tailwind"
-        "#},
-    );
-    copy_templates(&root.path().join("templates"));
-    write_test_file(
-        root.path(),
-        "assets/css/_src/style.css",
-        indoc! {r#"
-            @import "tailwindcss" source(none);
-            .invalid { @apply kiln-unknown-utility; }
-        "#},
-    );
-
-    let error = build(root.path(), BuildOptions::default()).unwrap_err();
-    let message = format!("{error:#}");
-    assert!(message.contains("assets/css/_src/style.css"), "{message}");
-    assert!(message.contains("Tailwind CSS exited with"), "{message}");
-    assert!(
-        message.contains("Cannot apply unknown utility class `kiln-unknown-utility`"),
-        "{message}"
-    );
 }

@@ -68,15 +68,6 @@ mod tests {
 
     // ── run_pagefind ──
 
-    #[cfg(unix)]
-    #[test]
-    fn run_pagefind_succeeds_with_and_without_output() {
-        let dir = tempfile::tempdir().unwrap();
-        for binary in ["echo", "true"] {
-            run_pagefind(dir.path(), Some(binary)).unwrap();
-        }
-    }
-
     #[test]
     fn run_pagefind_missing_binary_returns_error() {
         let dir = tempfile::tempdir().unwrap();
@@ -91,6 +82,15 @@ mod tests {
             err.contains("cargo install pagefind"),
             "should include install instructions, got: {err}"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_pagefind_succeeds_with_and_without_output() {
+        let dir = tempfile::tempdir().unwrap();
+        for binary in ["echo", "true"] {
+            run_pagefind(dir.path(), Some(binary)).unwrap();
+        }
     }
 
     #[cfg(unix)]

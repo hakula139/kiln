@@ -331,96 +331,6 @@ fn build_copies_colocated_assets() {
     );
 }
 
-#[cfg(unix)]
-#[test]
-fn build_materializes_external_bundle_symlinks() {
-    let root = tempfile::tempdir().unwrap();
-    fs::write(root.path().join("config.toml"), "").unwrap();
-    copy_templates(&root.path().join("templates"));
-    write_page(
-        root.path(),
-        "posts/example",
-        indoc! {r#"
-            +++
-            title = "Post A"
-            +++
-            Body
-        "#},
-    );
-    let bundle = root.path().join("content/posts/example");
-    let external = tempfile::tempdir().unwrap();
-    fs::create_dir(external.path().join("nested")).unwrap();
-    fs::write(external.path().join("nested/image.svg"), "linked image").unwrap();
-    fs::write(external.path().join("caption.txt"), "linked caption").unwrap();
-    fs::write(external.path().join("notes.md"), "not a bundle asset").unwrap();
-    fs::write(
-        external.path().join("vendor.css"),
-        ".imported { background: url(nested/image.svg); }",
-    )
-    .unwrap();
-    std::os::unix::fs::symlink(external.path(), bundle.join("shared")).unwrap();
-    std::os::unix::fs::symlink(
-        external.path().join("caption.txt"),
-        bundle.join("caption.txt"),
-    )
-    .unwrap();
-
-    fs::create_dir_all(bundle.join("_cache")).unwrap();
-    std::os::unix::fs::symlink(
-        external.path().join("missing"),
-        bundle.join("_cache/broken"),
-    )
-    .unwrap();
-    std::os::unix::fs::symlink(external.path(), bundle.join("_private")).unwrap();
-    write_test_file(root.path(), "static/icon.svg", "static image");
-    write_test_file(
-        root.path(),
-        "content/posts/example/assets/css/_src/style.css",
-        indoc! {r#"
-            @import "../../../shared/vendor.css";
-            .image { background: url(../../../shared/nested/image.svg); }
-            .caption { background: url(../../../caption.txt); }
-            .static { background: url(../../../../../../static/icon.svg); }
-        "#},
-    );
-
-    for processor in ["plain", "tailwind"] {
-        fs::write(
-            root.path().join("config.toml"),
-            formatdoc! {r#"
-                [css]
-                processor = "{processor}"
-            "#},
-        )
-        .unwrap();
-        build(root.path(), BuildOptions::default()).unwrap();
-
-        let output = root.path().join("public/posts/example");
-        for (path, expected) in [
-            ("caption.txt", "linked caption"),
-            ("shared/caption.txt", "linked caption"),
-            ("shared/nested/image.svg", "linked image"),
-        ] {
-            let asset = output.join(path);
-            assert_eq!(fs::read_to_string(&asset).unwrap(), expected);
-            assert!(fs::symlink_metadata(asset).unwrap().file_type().is_file());
-        }
-        assert!(
-            fs::symlink_metadata(output.join("shared"))
-                .unwrap()
-                .is_dir()
-        );
-        assert!(!output.join("shared/notes.md").exists());
-        assert!(!output.join("_cache").exists());
-        assert!(!output.join("_private").exists());
-        let css = fs::read_to_string(output.join("assets/css/page.css")).unwrap();
-        assert!(css.contains("../../shared/nested/image.svg"), "{css}");
-        assert!(css.contains("../../caption.txt"), "{css}");
-        assert!(css.contains(".imported"), "{css}");
-        assert!(css.contains("../../../../icon.svg"), "{css}");
-    }
-}
-
 #[test]
 fn build_fingerprints_bundle_assets_after_static_collisions() {
     let root = tempfile::tempdir().unwrap();
@@ -604,4 +514,94 @@ fn build_reads_image_dimensions_from_published_theme_and_site_assets() {
         dimensions,
         vec![(Some("3"), Some("5")), (Some("11"), Some("13"))]
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn build_materializes_external_bundle_symlinks() {
+    let root = tempfile::tempdir().unwrap();
+    fs::write(root.path().join("config.toml"), "").unwrap();
+    copy_templates(&root.path().join("templates"));
+    write_page(
+        root.path(),
+        "posts/example",
+        indoc! {r#"
+            +++
+            title = "Post A"
+            +++
+            Body
+        "#},
+    );
+    let bundle = root.path().join("content/posts/example");
+    let external = tempfile::tempdir().unwrap();
+    fs::create_dir(external.path().join("nested")).unwrap();
+    fs::write(external.path().join("nested/image.svg"), "linked image").unwrap();
+    fs::write(external.path().join("caption.txt"), "linked caption").unwrap();
+    fs::write(external.path().join("notes.md"), "not a bundle asset").unwrap();
+    fs::write(
+        external.path().join("vendor.css"),
+        ".imported { background: url(nested/image.svg); }",
+    )
+    .unwrap();
+    std::os::unix::fs::symlink(external.path(), bundle.join("shared")).unwrap();
+    std::os::unix::fs::symlink(
+        external.path().join("caption.txt"),
+        bundle.join("caption.txt"),
+    )
+    .unwrap();
+
+    fs::create_dir_all(bundle.join("_cache")).unwrap();
+    std::os::unix::fs::symlink(
+        external.path().join("missing"),
+        bundle.join("_cache/broken"),
+    )
+    .unwrap();
+    std::os::unix::fs::symlink(external.path(), bundle.join("_private")).unwrap();
+    write_test_file(root.path(), "static/icon.svg", "static image");
+    write_test_file(
+        root.path(),
+        "content/posts/example/assets/css/_src/style.css",
+        indoc! {r#"
+            @import "../../../shared/vendor.css";
+            .image { background: url(../../../shared/nested/image.svg); }
+            .caption { background: url(../../../caption.txt); }
+            .static { background: url(../../../../../../static/icon.svg); }
+        "#},
+    );
+
+    for processor in ["plain", "tailwind"] {
+        fs::write(
+            root.path().join("config.toml"),
+            formatdoc! {r#"
+                [css]
+                processor = "{processor}"
+            "#},
+        )
+        .unwrap();
+        build(root.path(), BuildOptions::default()).unwrap();
+
+        let output = root.path().join("public/posts/example");
+        for (path, expected) in [
+            ("caption.txt", "linked caption"),
+            ("shared/caption.txt", "linked caption"),
+            ("shared/nested/image.svg", "linked image"),
+        ] {
+            let asset = output.join(path);
+            assert_eq!(fs::read_to_string(&asset).unwrap(), expected);
+            assert!(fs::symlink_metadata(asset).unwrap().file_type().is_file());
+        }
+        assert!(
+            fs::symlink_metadata(output.join("shared"))
+                .unwrap()
+                .is_dir()
+        );
+        assert!(!output.join("shared/notes.md").exists());
+        assert!(!output.join("_cache").exists());
+        assert!(!output.join("_private").exists());
+        let css = fs::read_to_string(output.join("assets/css/page.css")).unwrap();
+        assert!(css.contains("../../shared/nested/image.svg"), "{css}");
+        assert!(css.contains("../../caption.txt"), "{css}");
+        assert!(css.contains(".imported"), "{css}");
+        assert!(css.contains("../../../../icon.svg"), "{css}");
+    }
 }

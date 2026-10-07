@@ -148,21 +148,6 @@ mod tests {
         assert_eq!(zh_i18n.t("all_posts").as_ref(), "全部文章");
     }
 
-    #[cfg(unix)]
-    #[test]
-    fn init_theme_unwritable_root_returns_error() {
-        use crate::test_utils::PermissionGuard;
-
-        let root = tempfile::tempdir().unwrap();
-        let _guard = PermissionGuard::restrict(root.path(), 0o555);
-
-        let err = init_theme(root.path(), "my-theme").unwrap_err().to_string();
-        assert!(
-            err.contains("failed to create CSS source directory"),
-            "should report directory creation failure, got: {err}"
-        );
-    }
-
     #[test]
     fn init_theme_invalid_name_returns_error() {
         let root = tempfile::tempdir().unwrap();
@@ -194,6 +179,21 @@ mod tests {
         assert!(
             err.contains("already exists"),
             "should report existing directory, got: {err}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn init_theme_unwritable_root_returns_error() {
+        use crate::test_utils::PermissionGuard;
+
+        let root = tempfile::tempdir().unwrap();
+        let _guard = PermissionGuard::restrict(root.path(), 0o555);
+
+        let err = init_theme(root.path(), "my-theme").unwrap_err().to_string();
+        assert!(
+            err.contains("failed to create CSS source directory"),
+            "should report directory creation failure, got: {err}"
         );
     }
 }

@@ -449,6 +449,29 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn from_file_excludes_private_invalid_asset_symlinks() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("index.md"),
+            indoc! {r#"
+                +++
+                title = "Example"
+                +++
+            "#},
+        )
+        .unwrap();
+        let public = dir.path().join("visible.txt");
+        fs::write(&public, "published").unwrap();
+        std::os::unix::fs::symlink(dir.path().join("missing"), dir.path().join("_broken")).unwrap();
+        std::os::unix::fs::symlink(dir.path(), dir.path().join("_cycle")).unwrap();
+
+        let page = Page::from_file(&dir.path().join("index.md")).unwrap();
+
+        assert_eq!(page.assets, vec![public]);
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn from_file_unreadable_bundle_dir_returns_error() {
         let dir = tempfile::tempdir().unwrap();
         let bundle = dir.path().join("hello");
@@ -505,29 +528,6 @@ mod tests {
             err.contains("failed to read"),
             "should report entry read failure, got: {err}"
         );
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn from_file_excludes_private_invalid_asset_symlinks() {
-        let dir = tempfile::tempdir().unwrap();
-        fs::write(
-            dir.path().join("index.md"),
-            indoc! {r#"
-                +++
-                title = "Example"
-                +++
-            "#},
-        )
-        .unwrap();
-        let public = dir.path().join("visible.txt");
-        fs::write(&public, "published").unwrap();
-        std::os::unix::fs::symlink(dir.path().join("missing"), dir.path().join("_broken")).unwrap();
-        std::os::unix::fs::symlink(dir.path(), dir.path().join("_cycle")).unwrap();
-
-        let page = Page::from_file(&dir.path().join("index.md")).unwrap();
-
-        assert_eq!(page.assets, vec![public]);
     }
 
     #[cfg(unix)]
