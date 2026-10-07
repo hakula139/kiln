@@ -17,7 +17,6 @@ fnref
 hakula
 idat
 ihdr
-ilammy
 impls
 indoc
 infty
@@ -28,12 +27,8 @@ katex
 kwarg
 kwargs
 lanczos
-libc
 libdav
-libdl
 libiconv
-libm
-libpthread
 libwebp
 lqip
 luma
@@ -47,7 +42,6 @@ numtide
 objc
 onclose
 onig
-otool
 oxalica
 pixiv
 pkgs
@@ -82,7 +76,6 @@ tzdata
 TZDIR
 unparseable
 VCPKGRS
-vscrt
 walkdir
 webp
 writeln

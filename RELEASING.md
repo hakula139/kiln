@@ -51,22 +51,16 @@ brew install git-cliff       # macOS / Homebrew
 cargo install git-cliff      # any platform with cargo
 ```
 
-## Rebuilding release assets
-
-To replace faulty archives for an existing release, run the current workflow against its unchanged tag:
-
-```bash
-gh workflow run release.yml --ref main -f tag=vX.Y.Z
-```
-
-The workflow builds the tagged source with the selected workflow revision's packaging tools, verifies all archives, and replaces the existing assets and checksums. It preserves the tag, release notes, and source commit. Source changes require a new version.
-
 ## Targets
 
 Three platforms ship per release:
 
-- `x86_64-unknown-linux-gnu` (Ubuntu 24.04 or compatible glibc)
-- `aarch64-apple-darwin` (Apple Silicon)
-- `x86_64-pc-windows-msvc` (Windows)
+- `x86_64-unknown-linux-gnu` (Linux CI consumers, `ubuntu-latest`)
+- `aarch64-apple-darwin` (Apple Silicon dev, `macos-latest`)
+- `x86_64-pc-windows-msvc` (Windows, `windows-latest`)
 
-Official binaries enable all features, including AVIF decoding. The shared native-dependency action builds a checksum-pinned dav1d static library in an isolated prefix. Each archive is extracted and checked for native dependencies, then used to build a site containing an AVIF image with the build library unavailable. Publication waits for every platform's checks to pass. Extend the matrix and dependency checks together when adding targets.
+Each platform has two archives, both containing the `kiln` binary. `kiln-<target>` uses the default Cargo features and requires no dav1d installation. `kiln-extended-<target>` enables AVIF placeholder decoding. The extended Linux binary needs `libdav1d` from the system package manager. On macOS, install it with `brew install dav1d`. Windows extended binaries link dav1d statically through vcpkg.
+
+AVIF files are published and their dimensions are read in both variants. See [Building from Source](README.md#building-from-source) to enable placeholder decoding in a source build.
+
+Add new targets by extending the matrix in `release.yml`.

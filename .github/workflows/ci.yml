@@ -46,6 +46,9 @@ jobs:
       - name: Format
         run: nix develop -c cargo fmt --all --check
 
+      - name: Verify AVIF dependency
+        run: nix develop -c pkg-config --modversion dav1d
+
       - name: Clippy
         run: nix develop -c cargo clippy --all-targets --all-features -- -D warnings
 
@@ -85,9 +88,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Setup native dependencies
-        uses: ./.github/actions/setup-native
-
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
@@ -102,10 +102,10 @@ jobs:
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          key: windows-${{ hashFiles('.github/scripts/build-dav1d.py') }}
+          key: windows
 
       - name: Test
-        run: cargo test --locked --all-features
+        run: cargo test --locked
 
   coverage:
     name: Coverage

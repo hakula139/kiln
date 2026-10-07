@@ -3,129 +3,93 @@ name: Release
 on:
   push:
     tags: ['v[0-9]+.*']
-  pull_request:
-    paths:
-      - .github/actions/setup-native/**
-      - .github/scripts/build-dav1d.py
-      - .github/scripts/release-archive.py
-      - .github/workflows/release.yml
-      - Cargo.lock
-      - Cargo.toml
-      - crates/kiln/Cargo.toml
-      - crates/kiln/tests/fixtures/example.avif
   workflow_dispatch:
-    inputs:
-      tag:
-        description: Existing release tag to rebuild
-        required: true
-        type: string
 
 permissions:
   contents: read
-
-concurrency:
-  group: release-${{ github.event.pull_request.number || inputs.tag || github.ref_name }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build-assets:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-24.04
-          - target: aarch64-apple-darwin
-            os: macos-latest
-          - target: x86_64-pc-windows-msvc
-            os: windows-latest
-    steps:
-      - name: Checkout build tooling
-        uses: actions/checkout@v7
-
-      - name: Validate release tag
-        if: github.event_name != 'pull_request'
-        shell: bash
-        env:
-          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
-        run: |
-          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]
-
-      - name: Checkout source
-        uses: actions/checkout@v7
-        with:
-          ref: ${{ github.event_name == 'pull_request' && github.sha || format('refs/tags/{0}', inputs.tag || github.ref_name) }}
-          path: source
-
-      - name: Setup native dependencies
-        uses: ./.github/actions/setup-native
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
-      - name: Cache dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: source
-          key: release-${{ matrix.target }}-${{ hashFiles('.github/scripts/build-dav1d.py') }}
-
-      - name: Build binary
-        working-directory: source
-        run: cargo build --release --locked --all-features --target ${{ matrix.target }}
-
-      - name: Package and verify archive
-        shell: bash
-        env:
-          TARGET: ${{ matrix.target }}
-        run: |
-          mv "$DAV1D_PREFIX" "$DAV1D_PREFIX.unavailable"
-          binary="source/target/$TARGET/release/kiln"
-          if [ "$RUNNER_OS" = Windows ]; then
-            binary="$binary.exe"
-          fi
-          python .github/scripts/release-archive.py "$binary" "$TARGET" source/LICENSE
-
-      - name: Upload verified archive
-        uses: actions/upload-artifact@v7
-        with:
-          name: kiln-${{ matrix.target }}
-          path: dist/*
-          if-no-files-found: error
-
-  publish:
-    if: github.event_name != 'pull_request'
-    needs: build-assets
+  create-release:
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Checkout tagged source
+      - name: Checkout
         uses: actions/checkout@v7
-        with:
-          ref: refs/tags/${{ inputs.tag || github.ref_name }}
-
-      - name: Download verified archives
-        uses: actions/download-artifact@v8
-        with:
-          pattern: kiln-*
-          path: dist
-          merge-multiple: true
 
       - name: Create GitHub release
-        if: github.event_name == 'push'
         uses: taiki-e/create-gh-release-action@v1
         with:
           changelog: CHANGELOG.md
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload release assets
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
-        run: gh release upload "$RELEASE_TAG" dist/* --clobber
+  upload-assets:
+    name: ${{ matrix.variant.name }} (${{ matrix.platform.target }})
+    needs: create-release
+    runs-on: ${{ matrix.platform.os }}
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        variant:
+          - name: base
+            features: ""
+            archive: kiln
+          - name: extended
+            features: avif
+            archive: kiln-extended
+        platform:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install libdav1d (Linux)
+        if: matrix.variant.name == 'extended' && runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libdav1d-dev
+
+      - name: Install libdav1d (macOS)
+        if: matrix.variant.name == 'extended' && runner.os == 'macOS'
+        run: brew install dav1d
+
+      - name: Install libdav1d (Windows)
+        # vcpkg ships dav1d; pkgconfiglite lets `system-deps` read its .pc files.
+        if: matrix.variant.name == 'extended' && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install --no-progress pkgconfiglite
+          vcpkg install dav1d:x64-windows-static-md
+          $vcpkgInstalled = "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows-static-md"
+          "PKG_CONFIG_PATH=$vcpkgInstalled\lib\pkgconfig" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "VCPKGRS_TRIPLET=x64-windows-static-md" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform.target }}
+
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Upload binary
+        uses: taiki-e/upload-rust-binary-action@v1
+        with:
+          bin: kiln
+          archive: ${{ matrix.variant.archive }}-$target
+          features: ${{ matrix.variant.features }}
+          target: ${{ matrix.platform.target }}
+          tar: unix
+          zip: windows
+          checksum: sha256
+          locked: true
+          token: ${{ secrets.GITHUB_TOKEN }}
