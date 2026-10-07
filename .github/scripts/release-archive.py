@@ -66,13 +66,13 @@ def check_dependencies(binary):
         dependencies = subprocess.check_output(["readelf", "-d", binary], text=True)
         libraries = re.findall(r"\(NEEDED\).*\[(.*?)\]", dependencies)
         allowed = {
-            "libc.so.6",
-            "libm.so.6",
-            "libgcc_s.so.1",
-            "libpthread.so.0",
-            "libdl.so.2",
-            "librt.so.1",
             "ld-linux-x86-64.so.2",
+            "libc.so.6",
+            "libdl.so.2",
+            "libgcc_s.so.1",
+            "libm.so.6",
+            "libpthread.so.0",
+            "librt.so.1",
         }
         unexpected = sorted(set(libraries) - allowed)
     else:
