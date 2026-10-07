@@ -52,14 +52,14 @@ jobs:
       - name: Clippy
         run: nix develop -c cargo clippy --all-targets --all-features -- -D warnings
 
-      - name: Test
+      - name: Test extended features
         run: nix develop -c cargo test --all-features
 
       - name: Test benchmark workloads
         run: nix develop -c cargo test --bench performance
 
-  core-test:
-    name: Core Rust Test
+  base-test:
+    name: Base Rust Test
     runs-on: ubuntu-latest
     env:
       SYSTEM_DEPS_DAV1D_NO_PKG_CONFIG: '1'
@@ -73,7 +73,7 @@ jobs:
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          key: core
+          key: base
 
       - name: Build without the AVIF decoder
         run: cargo build --locked
@@ -203,7 +203,7 @@ jobs:
   pin-main:
     name: Pin main builds (${{ matrix.config.runner }})
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [core-test, flake-check, nix-build, node-check, rust-check, windows-test]
+    needs: [base-test, flake-check, nix-build, node-check, rust-check, windows-test]
     runs-on: ${{ matrix.config.runner }}
     strategy: *nix-platforms
     concurrency:
