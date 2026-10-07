@@ -89,7 +89,7 @@ jobs:
           if [ "$RUNNER_OS" = Windows ]; then
             binary="$binary.exe"
           fi
-          python .github/scripts/release-archive.py "$binary" "$TARGET"
+          python .github/scripts/release-archive.py "$binary" "$TARGET" source/LICENSE
 
       - name: Upload verified archive
         uses: actions/upload-artifact@v7
