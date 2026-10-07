@@ -31,7 +31,7 @@ use crate::content::page::{Page, PageKind};
 use crate::css::Stylesheets;
 use crate::i18n::I18n;
 use crate::minify::{self, MinifyStats};
-use crate::output::{clean_output_dir, write_output};
+use crate::output::{OutputTransaction, write_output};
 use crate::render::RenderOptions;
 use crate::render::lqip::ImageResolver;
 use crate::render::pipeline::render_page;
@@ -61,8 +61,7 @@ pub struct BuildOptions<'a> {
     /// Replaces `base_url` from config when set. Used by `kiln serve` so rendered URLs match the
     /// actual server port.
     pub base_url_override: Option<&'a str>,
-    /// Writes into this directory instead of `root/<config.output_dir>`. Used by the dev server to
-    /// stage a fresh build before swapping it in.
+    /// Publishes into this directory instead of `root/<config.output_dir>`.
     pub output_dir_override: Option<&'a Path>,
     /// Runs HTML / CSS / JS minification over the output directory before Pagefind indexing.
     pub minify: bool,
@@ -110,11 +109,12 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
 
     let content = discover_content(root)?;
     let output_dir = match output_dir_override {
-        Some(path) => path.to_owned(),
+        Some(path) => config.validate_output_dir(root, path)?,
         None => config.resolved_output_dir(root)?,
     };
 
-    clean_output_dir(&output_dir)?;
+    let transaction = OutputTransaction::new(output_dir)?;
+    let output_dir = transaction.path().to_owned();
 
     let assets = PublishedAssets::publish(
         root,
@@ -186,7 +186,7 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
 
     finish_build(
         &ctx,
-        &output_dir,
+        transaction,
         minify_stats,
         page_count,
         content.pages.len(),
@@ -196,12 +196,13 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
 
 fn finish_build(
     ctx: &BuildContext,
-    output_dir: &Path,
+    transaction: OutputTransaction,
     mut minify_stats: Option<MinifyStats>,
     page_count: usize,
     content_count: usize,
     started: Instant,
 ) -> Result<()> {
+    let output_dir = transaction.path();
     if let Some(stats) = &mut minify_stats {
         *stats += minify::minify_output_dir_excluding(
             output_dir,
@@ -219,6 +220,8 @@ fn finish_build(
     } else {
         None
     };
+
+    transaction.commit()?;
 
     eprintln!(
         "{}",

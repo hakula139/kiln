@@ -77,7 +77,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 ├── main.rs              # CLI argument parsing and command dispatch
 ├── markdown.rs          # Shared raw-markdown text utilities (code fence detection, code span scanning)
 ├── minify.rs            # Post-build HTML / CSS / JS minification (lightningcss, oxc_minifier, minify-html)
-├── output.rs            # File output, static file copying, output directory cleaning
+├── output.rs            # Owned build transactions, file output and static file copying
 ├── pagination.rs        # Paginator for windowed views over slices, page URL computation
 ├── render.rs            # RenderOptions struct + render submodule declarations
 ├── render/              # Markdown rendering pipeline submodules
@@ -197,7 +197,7 @@ Follows global CLAUDE.md commit / branch / PR conventions, plus:
 
 - Unit tests in the same file as the code they test (`#[cfg(test)]` module).
 - Integration tests in `tests/` directory for cross-module behavior.
-- Group tests by function under `// ── function_name ──` section headers. Section order must mirror the production function order in the same file. Within each section, order: happy path → variants → edge / error cases.
+- Group tests by function under `// ── function_name ──` section headers, following production function order. Within each section, place portable tests before platform-specific tests, ordering each group as happy path → variants → edge / error cases.
 - Test name prefixes match the section's function name. Name after the scenario. Error-case suffixes: `_returns_error`, `_returns_none`, `_returns_false`.
 - Use `indoc!` for multi-line test inputs.
 - Use generic, fictional test data (e.g., `example.com`, `"Post A"`). Avoid real names or branded content.

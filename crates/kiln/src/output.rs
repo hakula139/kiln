@@ -6,18 +6,59 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, ensure};
 use walkdir::WalkDir;
 
-/// Creates an empty output directory, removing existing contents first.
-///
-/// # Errors
-///
-/// Returns an error if removal or creation fails.
-pub fn clean_output_dir(path: &Path) -> Result<()> {
-    if path.exists() {
-        fs::remove_dir_all(path)
-            .with_context(|| format!("failed to clean output directory {}", path.display()))?;
+/// Owns unpublished output and preserves the previous build until promotion succeeds.
+pub(crate) struct OutputTransaction {
+    directory: tempfile::TempDir,
+    destination: PathBuf,
+    staging: PathBuf,
+}
+
+impl OutputTransaction {
+    pub(crate) fn new(destination: PathBuf) -> Result<Self> {
+        let parent = destination
+            .parent()
+            .context("output directory has no parent")?;
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create output parent {}", parent.display()))?;
+        let directory = tempfile::Builder::new()
+            .prefix(".kiln-build-")
+            .tempdir_in(parent)
+            .context("failed to create build staging directory")?;
+        let staging = directory.path().join("output");
+        fs::create_dir(&staging).context("failed to create staged output")?;
+        Ok(Self {
+            directory,
+            destination,
+            staging,
+        })
     }
-    fs::create_dir_all(path)
-        .with_context(|| format!("failed to create output directory {}", path.display()))
+
+    pub(crate) fn path(&self) -> &Path {
+        &self.staging
+    }
+
+    pub(crate) fn commit(self) -> Result<()> {
+        let previous = self.directory.path().join("previous");
+        let had_output = self.destination.exists();
+        if had_output {
+            fs::rename(&self.destination, &previous)
+                .context("failed to back up output directory")?;
+        }
+        if let Err(error) = fs::rename(&self.staging, &self.destination) {
+            if had_output && let Err(rollback) = fs::rename(&previous, &self.destination) {
+                let retained = self.directory.keep();
+                anyhow::bail!(
+                    "failed to publish output: {error}. Failed to restore previous output: {rollback}. Previous output retained at {}",
+                    retained.join("previous").display()
+                );
+            }
+            return Err(error).context("failed to publish output directory");
+        }
+        if let Err(error) = self.directory.close() {
+            tracing::warn!("failed to remove previous build: {error}");
+        }
+        Ok(())
+    }
 }
 
 /// Recursively copies included files into `dest`, materializing source symlinks as regular
@@ -127,53 +168,67 @@ pub fn write_output(path: &Path, content: &str) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
     use std::os::unix::fs::symlink;
 
     use super::*;
+    #[cfg(unix)]
     use crate::test_utils::PermissionGuard;
 
-    // ── clean_output_dir ──
+    // ── OutputTransaction ──
 
     #[test]
-    fn clean_creates_nonexistent_dir() {
-        let dir = tempfile::tempdir().unwrap();
-        let output = dir.path().join("public");
-
-        clean_output_dir(&output).unwrap();
-
-        assert!(output.exists());
+    fn output_transaction_publishes_and_removes_stale_files() {
+        let root = tempfile::tempdir().unwrap();
+        let output = root.path().join("public");
+        for body in ["first", "second"] {
+            let transaction = OutputTransaction::new(output.clone()).unwrap();
+            fs::write(transaction.path().join("index.html"), body).unwrap();
+            transaction.commit().unwrap();
+            assert_eq!(fs::read_to_string(output.join("index.html")).unwrap(), body);
+            assert!(!output.join("stale.html").exists());
+            fs::write(output.join("stale.html"), "stale").unwrap();
+        }
+        assert_eq!(fs::read_dir(root.path()).unwrap().count(), 1);
     }
 
     #[test]
-    fn clean_removes_existing_contents() {
-        let dir = tempfile::tempdir().unwrap();
-        let output = dir.path().join("public");
-        fs::create_dir_all(output.join("old")).unwrap();
-        fs::write(output.join("old").join("stale.html"), "stale").unwrap();
-
-        clean_output_dir(&output).unwrap();
-
-        assert!(output.exists(), "output dir should be recreated");
-        assert!(
-            fs::read_dir(&output).unwrap().next().is_none(),
-            "output dir should be empty after clean"
+    fn output_transaction_abandoned_build_preserves_output() {
+        let root = tempfile::tempdir().unwrap();
+        let output = root.path().join("public");
+        fs::create_dir(&output).unwrap();
+        fs::write(output.join("index.html"), "previous").unwrap();
+        let transaction = OutputTransaction::new(output.clone()).unwrap();
+        let staging = transaction.path().to_owned();
+        fs::write(staging.join("index.html"), "incomplete").unwrap();
+        drop(transaction);
+        assert_eq!(
+            fs::read_to_string(output.join("index.html")).unwrap(),
+            "previous"
         );
+        assert!(!staging.exists());
     }
 
     #[test]
-    fn clean_permission_denied_returns_error() {
-        let dir = tempfile::tempdir().unwrap();
-        let output = dir.path().join("public");
-        fs::create_dir_all(output.join("sub")).unwrap();
-
-        // Lock the parent so remove_dir_all fails on the child.
-        let _guard = PermissionGuard::restrict(&output, 0o444);
-
-        let err = clean_output_dir(&output).unwrap_err().to_string();
+    fn output_transaction_failed_promotion_restores_output() {
+        let root = tempfile::tempdir().unwrap();
+        let output = root.path().join("public");
+        fs::create_dir(&output).unwrap();
+        fs::write(output.join("index.html"), "previous").unwrap();
+        let transaction = OutputTransaction::new(output.clone()).unwrap();
+        fs::remove_dir(transaction.path()).unwrap();
         assert!(
-            err.contains("failed to clean output directory"),
-            "should report clean failure, got: {err}"
+            transaction
+                .commit()
+                .unwrap_err()
+                .to_string()
+                .contains("failed to publish")
         );
+        assert_eq!(
+            fs::read_to_string(output.join("index.html")).unwrap(),
+            "previous"
+        );
+        assert_eq!(fs::read_dir(root.path()).unwrap().count(), 1);
     }
 
     // ── copy_directory ──
@@ -200,6 +255,42 @@ mod tests {
         );
     }
 
+    #[test]
+    fn copy_directory_preserves_underscore_names_at_every_depth() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("static");
+        let dest = dir.path().join("public");
+        let files = [
+            "_headers",
+            "_redirects",
+            "_custom/data.txt",
+            "nested/_headers",
+        ];
+        for file in files {
+            let path = src.join(file);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, file).unwrap();
+        }
+
+        copy_directory(&src, &dest, |_| true).unwrap();
+
+        for file in files {
+            assert_eq!(fs::read_to_string(dest.join(file)).unwrap(), file);
+        }
+    }
+
+    #[test]
+    fn copy_directory_missing_src_is_noop() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("static");
+        let dest = dir.path().join("public");
+
+        copy_directory(&src, &dest, |_| true).unwrap();
+
+        assert!(!dest.exists());
+    }
+
+    #[cfg(unix)]
     #[test]
     fn copy_directory_materializes_external_symlinks() {
         let dir = tempfile::tempdir().unwrap();
@@ -242,6 +333,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn copy_directory_symlink_root() {
         let dir = tempfile::tempdir().unwrap();
@@ -260,32 +352,9 @@ mod tests {
         assert!(fs::symlink_metadata(&dest).unwrap().is_dir());
     }
 
-    #[test]
-    fn copy_directory_preserves_underscore_names_at_every_depth() {
-        let dir = tempfile::tempdir().unwrap();
-        let src = dir.path().join("static");
-        let dest = dir.path().join("public");
-        let files = [
-            "_headers",
-            "_redirects",
-            "_custom/data.txt",
-            "nested/_headers",
-        ];
-        for file in files {
-            let path = src.join(file);
-            fs::create_dir_all(path.parent().unwrap()).unwrap();
-            fs::write(path, file).unwrap();
-        }
-
-        copy_directory(&src, &dest, |_| true).unwrap();
-
-        for file in files {
-            assert_eq!(fs::read_to_string(dest.join(file)).unwrap(), file);
-        }
-    }
-
     // macOS APFS rejects non-UTF-8 filenames, while Linux ext4 and btrfs accept them.
     #[cfg(target_os = "linux")]
+    #[cfg(unix)]
     #[test]
     fn copy_directory_copies_files_with_non_utf8_names() {
         use std::ffi::OsStr;
@@ -303,6 +372,7 @@ mod tests {
         assert_eq!(fs::read(dest.join(name)).unwrap(), b"binary");
     }
 
+    #[cfg(unix)]
     #[test]
     fn copy_directory_excludes_invalid_links_and_preserves_public_errors() {
         let dir = tempfile::tempdir().unwrap();
@@ -331,17 +401,7 @@ mod tests {
         );
     }
 
-    #[test]
-    fn copy_directory_missing_src_is_noop() {
-        let dir = tempfile::tempdir().unwrap();
-        let src = dir.path().join("static");
-        let dest = dir.path().join("public");
-
-        copy_directory(&src, &dest, |_| true).unwrap();
-
-        assert!(!dest.exists());
-    }
-
+    #[cfg(unix)]
     #[test]
     fn copy_directory_unreadable_subdir_returns_error() {
         let dir = tempfile::tempdir().unwrap();
@@ -363,6 +423,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn copy_directory_broken_symlinks_returns_error() {
         for root_link in [false, true] {
@@ -383,6 +444,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     #[test]
     fn copy_directory_symlink_cycle_returns_error() {
         let dir = tempfile::tempdir().unwrap();
@@ -395,6 +457,7 @@ mod tests {
         assert!(format!("{err:#}").contains("loop"));
     }
 
+    #[cfg(unix)]
     #[test]
     fn copy_directory_symlink_overlaps_destination_returns_error() {
         for target_is_ancestor in [false, true] {
@@ -422,6 +485,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     #[test]
     fn copy_directory_unwritable_dest_returns_error() {
         let dir = tempfile::tempdir().unwrap();
@@ -444,6 +508,7 @@ mod tests {
 
     // ── validate_source_link ──
 
+    #[cfg(unix)]
     #[test]
     fn validate_source_link_broken_target_returns_error() {
         let dir = tempfile::tempdir().unwrap();
@@ -491,6 +556,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn copy_file_unwritable_dest_parent_returns_error() {
         let dir = tempfile::tempdir().unwrap();
@@ -532,6 +598,7 @@ mod tests {
         assert_eq!(fs::read_to_string(&path).unwrap(), "second");
     }
 
+    #[cfg(unix)]
     #[test]
     fn write_output_create_dir_permission_denied_returns_error() {
         let dir = tempfile::tempdir().unwrap();
@@ -548,6 +615,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn write_output_permission_denied_returns_error() {
         let dir = tempfile::tempdir().unwrap();

@@ -1,5 +1,8 @@
+#[cfg(unix)]
 use std::fs;
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
+#[cfg(unix)]
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -14,6 +17,7 @@ pub fn kiln() -> Command {
     command
 }
 
+#[cfg(unix)]
 pub fn write_executable_file(root: &Path, path: &str, content: &str) -> PathBuf {
     write_test_file(root, path, content);
     let binary = root.join(path);

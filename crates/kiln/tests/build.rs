@@ -2506,6 +2506,90 @@ fn build_skips_404_without_template() {
 // ── build: errors ──
 
 #[test]
+fn build_failed_render_preserves_previous_output() {
+    let root = tempfile::tempdir().unwrap();
+    copy_templates(&root.path().join("templates"));
+    write_page(
+        root.path(),
+        "posts/example",
+        indoc! {r#"
+            +++
+            title = "Example"
+            +++
+            Original body
+        "#},
+    );
+    build(root.path(), BuildOptions::default()).unwrap();
+    let output = root.path().join("public/posts/example/index.html");
+    let previous = fs::read_to_string(&output).unwrap();
+    fs::write(root.path().join("templates/post.html"), "{% invalid %}").unwrap();
+
+    assert!(build(root.path(), BuildOptions::default()).is_err());
+    assert_eq!(fs::read_to_string(output).unwrap(), previous);
+}
+
+#[test]
+fn build_existing_file_output_returns_error() {
+    let root = tempfile::tempdir().unwrap();
+    copy_templates(&root.path().join("templates"));
+    let output = root.path().join("existing");
+    fs::write(&output, "original").unwrap();
+
+    for (configured, output_dir_override) in
+        [("existing", None), ("public", Some(output.as_path()))]
+    {
+        fs::write(
+            root.path().join("config.toml"),
+            format!(r#"output_dir = "{configured}""#),
+        )
+        .unwrap();
+
+        let error = build(
+            root.path(),
+            BuildOptions {
+                output_dir_override,
+                ..BuildOptions::default()
+            },
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("is not a directory"), "{error}");
+        assert_eq!(fs::read_to_string(&output).unwrap(), "original");
+        assert!(!root.path().join("public").exists());
+    }
+}
+
+#[test]
+fn build_output_override_input_overlap_returns_error() {
+    let root = tempfile::tempdir().unwrap();
+    copy_templates(&root.path().join("templates"));
+    for name in ["content", "assets", "static", ".git"] {
+        fs::create_dir(root.path().join(name)).unwrap();
+        fs::write(root.path().join(name).join("sentinel.txt"), "original").unwrap();
+    }
+
+    for name in ["content", "assets", "static", ".git"] {
+        let output = root.path().join(name);
+        let error = build(
+            root.path(),
+            BuildOptions {
+                output_dir_override: Some(&output),
+                ..BuildOptions::default()
+            },
+        )
+        .unwrap_err();
+        assert!(
+            error.to_string().contains("overlaps project input"),
+            "{error}"
+        );
+        assert_eq!(
+            fs::read_to_string(output.join("sentinel.txt")).unwrap(),
+            "original"
+        );
+    }
+}
+
+#[test]
 fn build_invalid_config_returns_error() {
     let root = tempfile::tempdir().unwrap();
     fs::write(root.path().join("config.toml"), "{{invalid toml").unwrap();
@@ -2600,24 +2684,6 @@ fn build_broken_directive_template_returns_error() {
 }
 
 #[test]
-fn build_output_cleanup_permission_denied_returns_error() {
-    let root = tempfile::tempdir().unwrap();
-    setup_site_with_page(root.path());
-
-    build(root.path(), BuildOptions::default()).unwrap();
-    let output_dir = root.path().join("public");
-    let _guard = PermissionGuard::restrict(&output_dir, 0o555);
-
-    let err = build(root.path(), BuildOptions::default())
-        .unwrap_err()
-        .to_string();
-    assert!(
-        err.contains("failed to clean output directory"),
-        "should report output cleanup failure, got: {err}"
-    );
-}
-
-#[test]
 fn build_asset_copy_permission_denied_returns_error() {
     let root = tempfile::tempdir().unwrap();
     setup_site_with_page(root.path());
@@ -2633,6 +2699,30 @@ fn build_asset_copy_permission_denied_returns_error() {
     assert!(
         err.contains("failed to copy asset"),
         "should report asset copy failure, got: {err}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn build_staging_permission_denied_preserves_output() {
+    let root = tempfile::tempdir().unwrap();
+    setup_site_with_page(root.path());
+
+    build(root.path(), BuildOptions::default()).unwrap();
+    let output_dir = root.path().join("public");
+    let previous = fs::read_to_string(output_dir.join("posts/hello/index.html")).unwrap();
+    let _guard = PermissionGuard::restrict(root.path(), 0o555);
+
+    let err = build(root.path(), BuildOptions::default())
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("failed to create build staging directory"),
+        "should report staging failure, got: {err}"
+    );
+    assert_eq!(
+        fs::read_to_string(output_dir.join("posts/hello/index.html")).unwrap(),
+        previous
     );
 }
 

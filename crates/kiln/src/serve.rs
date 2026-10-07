@@ -1,6 +1,5 @@
 //! Dev server with file watching, auto-rebuild, and live reload.
 
-use std::fs;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
@@ -11,7 +10,7 @@ use axum::Router;
 use axum::body::Body;
 use axum::extract::State;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::http::{StatusCode, header};
+use axum::http::{Method, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use http_body_util::BodyExt;
@@ -49,35 +48,49 @@ const LIVE_RELOAD_SCRIPT: &str = indoc! {r#"
     <script>
     (function () {
       let ws = null;
+      let retry = null;
+      let active = true;
       const connect = () => {
-        if (ws) {
-          ws.close();
+        if (!active || ws) {
+          return;
         }
         const url = (location.protocol === "https:" ? "wss://" : "ws://")
           + location.host + "/__kiln_live_reload";
-        ws = new WebSocket(url);
-        ws.onmessage = (e) => {
+        const socket = new WebSocket(url);
+        ws = socket;
+        socket.onmessage = (e) => {
           if (e.data === "reload") {
             window.location.reload();
           }
         };
-        ws.onclose = () => {
+        socket.onclose = () => {
+          if (ws !== socket) {
+            return;
+          }
           ws = null;
-          setTimeout(connect, 1000);
+          if (active) {
+            retry = setTimeout(() => {
+              retry = null;
+              connect();
+            }, 1000);
+          }
         };
       };
+      window.addEventListener("pagehide", () => {
+        active = false;
+        clearTimeout(retry);
+        retry = null;
+        const socket = ws;
+        ws = null;
+        if (socket) {
+          socket.close();
+        }
+      });
+      window.addEventListener("pageshow", () => {
+        active = true;
+        connect();
+      });
       connect();
-      document.addEventListener("pagehide", () => {
-        if (ws) {
-          ws.close();
-          ws = null;
-        }
-      });
-      document.addEventListener("pageshow", (e) => {
-        if (e.persisted && !ws) {
-          connect();
-        }
-      });
     })();
     </script>
 "#};
@@ -128,7 +141,7 @@ async fn serve_until(
 
     let config = Config::load(root).context("failed to load config")?;
     // output_dir is captured once. If config.toml changes it, the server must be restarted.
-    let output_dir = root.join(&config.output_dir);
+    let output_dir = config.resolved_output_dir(root)?;
 
     let (reload_tx, _) = broadcast::channel::<()>(16);
 
@@ -142,6 +155,7 @@ async fn serve_until(
     tokio::spawn(watch_loop(
         rebuild_root,
         base_url.clone(),
+        output_dir.clone(),
         watch_rx,
         rebuild_tx,
     ));
@@ -272,6 +286,7 @@ fn watch_paths(root: &Path, config: &Config) -> Vec<WatchEntry> {
 async fn watch_loop(
     root: PathBuf,
     base_url: String,
+    output_dir: PathBuf,
     mut event_rx: mpsc::UnboundedReceiver<()>,
     reload_tx: broadcast::Sender<()>,
 ) {
@@ -285,7 +300,9 @@ async fn watch_loop(
         eprintln!("\nRebuilding...");
         let root = root.clone();
         let base_url = base_url.clone();
-        let result = tokio::task::spawn_blocking(move || safe_rebuild(&root, &base_url)).await;
+        let output_dir = output_dir.clone();
+        let result =
+            tokio::task::spawn_blocking(move || safe_rebuild(&root, &base_url, &output_dir)).await;
 
         match result {
             Ok(Ok(())) => {
@@ -301,50 +318,15 @@ async fn watch_loop(
     }
 }
 
-/// Builds into a staging directory, preserving live output if the build fails, then promotes it.
-fn safe_rebuild(root: &Path, base_url: &str) -> Result<()> {
-    let config = Config::load(root).context("failed to load config")?;
-    let output_dir = config
-        .resolved_output_dir(root)
-        .context("failed to resolve output_dir")?;
-    let staging_dir = append_suffix(&output_dir, ".staging");
-    let backup_dir = append_suffix(&output_dir, ".prev");
-
-    if staging_dir.exists() {
-        _ = fs::remove_dir_all(&staging_dir);
-    }
-
-    let build_result = crate::build(
+fn safe_rebuild(root: &Path, base_url: &str, output_dir: &Path) -> Result<()> {
+    crate::build(
         root,
         BuildOptions {
             base_url_override: Some(base_url),
-            output_dir_override: Some(&staging_dir),
+            output_dir_override: Some(output_dir),
             ..Default::default()
         },
-    );
-    if let Err(e) = build_result {
-        _ = fs::remove_dir_all(&staging_dir);
-        return Err(e);
-    }
-
-    if backup_dir.exists() {
-        _ = fs::remove_dir_all(&backup_dir);
-    }
-    if output_dir.exists() {
-        fs::rename(&output_dir, &backup_dir).context("failed to back up output directory")?;
-    }
-    fs::rename(&staging_dir, &output_dir).context("failed to promote staging directory")?;
-    if backup_dir.exists() {
-        _ = fs::remove_dir_all(&backup_dir);
-    }
-    Ok(())
-}
-
-/// Returns `path` with `suffix` appended (e.g., `dist/site` + `.staging`).
-fn append_suffix(path: &Path, suffix: &str) -> PathBuf {
-    let mut buf = path.as_os_str().to_owned();
-    buf.push(suffix);
-    PathBuf::from(buf)
+    )
 }
 
 /// Creates the axum router with WebSocket live reload and static file serving.
@@ -398,30 +380,13 @@ async fn ws_relay(mut socket: WebSocket, tx: broadcast::Sender<()>) {
     }
 }
 
-/// Serves a request from the output directory.
-///
-/// 1. **Trailing-slash redirect** — 301 to `path/` when a directory with `index.html` exists.
-/// 2. **HTML response** — injects the live reload script before `</body>`.
-/// 3. **Non-HTML response** — passes through untouched.
+/// Injects live reload into complete HTML responses while preserving static HTTP semantics.
 async fn serve_request(
     serve_dir: ServeDir,
     output_dir: &Path,
     request: axum::extract::Request,
 ) -> Response {
-    let path = request.uri().path();
-    if !path.ends_with('/') && has_index_html(output_dir, path).await {
-        let location = match request.uri().query() {
-            Some(query) => format!("{path}/?{query}"),
-            None => format!("{path}/"),
-        };
-
-        return Response::builder()
-            .status(StatusCode::MOVED_PERMANENTLY)
-            .header(header::LOCATION, location)
-            .body(Body::empty())
-            .expect("redirect response is valid");
-    }
-
+    let is_head = request.method() == Method::HEAD;
     let mut response = serve_dir
         .oneshot(request)
         .await
@@ -437,11 +402,17 @@ async fn serve_request(
     if response.status() == StatusCode::NOT_FOUND
         && let Ok(html) = tokio::fs::read_to_string(output_dir.join("404.html")).await
     {
+        let html = inject_script(&html);
         return Response::builder()
             .status(StatusCode::NOT_FOUND)
             .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
             .header(header::CACHE_CONTROL, "no-cache")
-            .body(Body::from(inject_script(&html)))
+            .header(header::CONTENT_LENGTH, html.len())
+            .body(if is_head {
+                Body::empty()
+            } else {
+                Body::from(html)
+            })
             .expect("404 response is valid");
     }
 
@@ -451,14 +422,27 @@ async fn serve_request(
         .and_then(|v| v.to_str().ok())
         .is_some_and(|ct| ct.starts_with("text/html"));
 
-    if !is_html {
+    if is_head && response.status() == StatusCode::OK && is_html {
+        // ServeDir sets a numeric Content-Length for successful file responses.
+        let length = response.headers()[header::CONTENT_LENGTH]
+            .to_str()
+            .expect("file length is ASCII")
+            .parse::<u64>()
+            .expect("file length is numeric");
+        response.headers_mut().insert(
+            header::CONTENT_LENGTH,
+            (length + LIVE_RELOAD_SCRIPT.len() as u64).into(),
+        );
+    }
+
+    if is_head || response.status() != StatusCode::OK || !is_html {
         return response;
     }
 
     let (mut parts, body) = response.into_parts();
     let Ok(collected) = body.collect().await else {
         tracing::warn!("failed to collect response body for live reload injection");
-        return Response::from_parts(parts, Body::empty());
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     };
     let bytes = collected.to_bytes();
     let html = String::from_utf8_lossy(&bytes);
@@ -466,16 +450,6 @@ async fn serve_request(
     let modified = inject_script(&html);
     parts.headers.remove(header::CONTENT_LENGTH);
     Response::from_parts(parts, Body::from(modified))
-}
-
-/// Checks whether `{output_dir}/{path}/index.html` exists without blocking the async runtime.
-async fn has_index_html(output_dir: &Path, path: &str) -> bool {
-    let candidate = output_dir
-        .join(path.trim_start_matches('/'))
-        .join("index.html");
-    tokio::fs::metadata(candidate)
-        .await
-        .is_ok_and(|m| m.is_file())
 }
 
 /// Injects the live reload script before `</body>` in HTML content.
@@ -780,6 +754,7 @@ mod tests {
         tokio::spawn(watch_loop(
             root_path,
             "http://localhost:0".to_owned(),
+            root.path().join("public"),
             event_rx,
             reload_tx,
         ));
@@ -804,6 +779,7 @@ mod tests {
         let handle = tokio::spawn(watch_loop(
             root_path,
             "http://localhost:0".to_owned(),
+            root.path().join("public"),
             event_rx,
             reload_tx,
         ));
@@ -834,6 +810,7 @@ mod tests {
         let handle = tokio::spawn(watch_loop(
             root_path,
             "http://localhost:0".to_owned(),
+            root.path().join("public"),
             event_rx,
             reload_tx,
         ));
@@ -856,7 +833,7 @@ mod tests {
     // ── safe_rebuild ──
 
     #[test]
-    fn safe_rebuild_replaces_output_and_cleans_temp_dirs() {
+    fn safe_rebuild_replaces_output() {
         let root = tempfile::tempdir().unwrap();
         setup_site(root.path());
 
@@ -874,86 +851,61 @@ mod tests {
         )
         .unwrap();
 
-        safe_rebuild(root.path(), "http://localhost:0").unwrap();
+        safe_rebuild(
+            root.path(),
+            "http://localhost:0",
+            &root.path().join("public"),
+        )
+        .unwrap();
 
         let html = fs::read_to_string(output.join("posts/hello/index.html")).unwrap();
         assert!(html.contains("<p>Updated body</p>"), "got: {html}");
         assert!(!output.join("stale.html").exists());
-        assert!(!root.path().join("public.staging").exists());
-        assert!(!root.path().join("public.prev").exists());
     }
 
     #[test]
-    fn safe_rebuild_no_existing_output() {
+    fn safe_rebuild_preserves_unowned_neighbors() {
         let root = tempfile::tempdir().unwrap();
         setup_site(root.path());
+        let neighbors = ["public.staging", "public.prev"];
+        for name in neighbors {
+            let directory = root.path().join(name);
+            fs::create_dir(&directory).unwrap();
+            fs::write(directory.join("sentinel.txt"), name).unwrap();
+        }
 
-        assert!(!root.path().join("public").exists());
-
-        safe_rebuild(root.path(), "http://localhost:0").unwrap();
-        assert!(root.path().join("public").exists());
-        assert!(!root.path().join("public.staging").exists());
-    }
-
-    #[test]
-    fn safe_rebuild_cleans_leftover_staging() {
-        let root = tempfile::tempdir().unwrap();
-        setup_site(root.path());
-        crate::build(root.path(), BuildOptions::default()).unwrap();
-
-        let staging = root.path().join("public.staging");
-        fs::create_dir_all(staging.join("stale")).unwrap();
-        fs::write(staging.join("stale").join("old.html"), "leftover").unwrap();
-
-        safe_rebuild(root.path(), "http://localhost:0").unwrap();
-        assert!(root.path().join("public").exists());
-        assert!(!staging.exists(), "leftover staging dir should be removed");
-    }
-
-    #[test]
-    fn safe_rebuild_cleans_leftover_backup() {
-        let root = tempfile::tempdir().unwrap();
-        setup_site(root.path());
-        crate::build(root.path(), BuildOptions::default()).unwrap();
-
-        let backup = root.path().join("public.prev");
-        fs::create_dir_all(&backup).unwrap();
-        fs::write(backup.join("old.html"), "leftover").unwrap();
-
-        safe_rebuild(root.path(), "http://localhost:0").unwrap();
-        assert!(root.path().join("public").exists());
-        assert!(!backup.exists(), "leftover backup dir should be removed");
-    }
-
-    #[test]
-    fn safe_rebuild_failure_leaves_output_intact() {
-        let root = tempfile::tempdir().unwrap();
-        setup_site(root.path());
-
-        crate::build(root.path(), BuildOptions::default()).unwrap();
-        let output = root
-            .path()
-            .join("public")
-            .join("posts")
-            .join("hello")
-            .join("index.html");
-        let original = fs::read_to_string(&output).unwrap();
-
-        fs::write(
-            root.path().join("templates").join("post.html"),
-            "{% invalid %}",
+        safe_rebuild(
+            root.path(),
+            "http://localhost:0",
+            &root.path().join("public"),
         )
         .unwrap();
 
-        assert!(safe_rebuild(root.path(), "http://localhost:0").is_err());
+        for name in neighbors {
+            assert_eq!(
+                fs::read_to_string(root.path().join(name).join("sentinel.txt")).unwrap(),
+                name
+            );
+        }
+    }
 
-        let preserved = fs::read_to_string(&output).unwrap();
-        assert_eq!(
-            preserved, original,
-            "output should be untouched after failed rebuild"
+    #[test]
+    fn safe_rebuild_keeps_the_served_output_directory() {
+        let root = tempfile::tempdir().unwrap();
+        setup_site(root.path());
+        fs::write(
+            root.path().join("config.toml"),
+            r#"output_dir = "elsewhere""#,
+        )
+        .unwrap();
+        let output = root.path().join("public");
+        safe_rebuild(root.path(), "http://localhost:0", &output).unwrap();
+        assert!(
+            fs::read_to_string(output.join("posts/hello/index.html"))
+                .unwrap()
+                .contains("Hello")
         );
-        assert!(!root.path().join("public.staging").exists());
-        assert!(!root.path().join("public.prev").exists());
+        assert!(!root.path().join("elsewhere").exists());
     }
 
     #[test]
@@ -968,14 +920,24 @@ mod tests {
         let original = fs::read_to_string(&output).unwrap();
 
         fs::write(css_dir.join("style.css"), r#"@import "missing.css";"#).unwrap();
-        assert!(safe_rebuild(root.path(), "http://localhost:0").is_err());
+        assert!(
+            safe_rebuild(
+                root.path(),
+                "http://localhost:0",
+                &root.path().join("public")
+            )
+            .is_err()
+        );
         assert_eq!(fs::read_to_string(&output).unwrap(), original);
-        assert!(!root.path().join("public.staging").exists());
 
         fs::write(css_dir.join("missing.css"), ".recovered { color: blue; }").unwrap();
-        safe_rebuild(root.path(), "http://localhost:0").unwrap();
+        safe_rebuild(
+            root.path(),
+            "http://localhost:0",
+            &root.path().join("public"),
+        )
+        .unwrap();
         assert!(fs::read_to_string(&output).unwrap().contains(".recovered"));
-        assert!(!root.path().join("public.prev").exists());
     }
 
     // ── build_router ──
@@ -983,9 +945,11 @@ mod tests {
     #[tokio::test]
     async fn build_router_redirects_directory_without_trailing_slash() {
         let dir = tempfile::tempdir().unwrap();
-        let sub = dir.path().join("about");
-        fs::create_dir(&sub).unwrap();
-        fs::write(sub.join("index.html"), "<html><body>About</body></html>").unwrap();
+        for name in ["about", "about us"] {
+            let sub = dir.path().join(name);
+            fs::create_dir(&sub).unwrap();
+            fs::write(sub.join("index.html"), "<html><body>About</body></html>").unwrap();
+        }
 
         let app = setup_router(dir.path());
         for (uri, location) in [
@@ -996,6 +960,7 @@ mod tests {
                 "/about/?next=%2F%3F%3D&text=a+b",
             ),
             ("/about?", "/about/?"),
+            ("/about%20us?next=%2F", "/about%20us/?next=%2F"),
         ] {
             let response = app
                 .clone()
@@ -1003,7 +968,7 @@ mod tests {
                 .await
                 .unwrap();
 
-            assert_eq!(response.status(), StatusCode::MOVED_PERMANENTLY, "{uri}");
+            assert_eq!(response.status(), StatusCode::TEMPORARY_REDIRECT, "{uri}");
             assert_eq!(
                 response.headers().get(header::LOCATION).unwrap(),
                 location,
@@ -1122,6 +1087,48 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let body = collect_body(response).await;
         assert_eq!(body, "body { color: red; }");
+    }
+
+    #[tokio::test]
+    async fn build_router_preserves_head_and_range_responses() {
+        let dir = tempfile::tempdir().unwrap();
+        let html = "<html><body>Hello</body></html>";
+        fs::write(dir.path().join("page.html"), html).unwrap();
+        fs::write(dir.path().join("404.html"), html).unwrap();
+        let app = setup_router(dir.path());
+
+        for (path, status) in [
+            ("/page.html", StatusCode::OK),
+            ("/missing", StatusCode::NOT_FOUND),
+        ] {
+            let response = app
+                .clone()
+                .oneshot(Request::head(path).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), status);
+            assert_eq!(
+                response.headers()[header::CONTENT_LENGTH],
+                (html.len() + LIVE_RELOAD_SCRIPT.len()).to_string()
+            );
+            assert_eq!(collect_body(response).await, "");
+        }
+        let response = app
+            .oneshot(
+                Request::get("/page.html")
+                    .header(header::RANGE, "bytes=0-5")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
+        assert_eq!(
+            response.headers()[header::CONTENT_RANGE],
+            format!("bytes 0-5/{}", html.len())
+        );
+        assert_eq!(response.headers()[header::CONTENT_LENGTH], "6");
+        assert_eq!(collect_body(response).await, "<html>");
     }
 
     #[tokio::test]
