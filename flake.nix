@@ -1,17 +1,9 @@
 # ==============================================================================
 # kiln Development Flake
 # ==============================================================================
-#
-# Provides Rust toolchain, libdav1d (AVIF decode), Pagefind, Tailwind CSS, git-cliff,
-# and pre-commit hooks. Exposes `packages.{kiln,kiln-tailwindcss,pagefind}` for site
-# repos importing this flake.
-#
-#   nix develop        # interactive shell for hacking on kiln
-#   nix flake check    # run pre-commit hooks
-#   nix build '.#kiln' # build kiln from source (dav1d wired in by Nix)
 
 {
-  description = "kiln — custom static site generator (dev environment)";
+  description = "kiln packages and development environment";
 
   nixConfig = {
     extra-substituters = [ "https://hakula.cachix.org" ];
@@ -31,7 +23,10 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    git-hooks-nix.url = "github:cachix/git-hooks.nix";
+    git-hooks-nix = {
+      url = "github:cachix/git-hooks.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
 
     kiln-tailwindcss = {
       url = "github:hakula139/kiln-tailwindcss";
@@ -52,20 +47,13 @@
       kiln-tailwindcss,
       ...
     }:
-    flake-utils.lib.eachDefaultSystem (
+    flake-utils.lib.eachSystem [ "aarch64-darwin" "x86_64-linux" ] (
       system:
       let
-        overlays = [
-          rust-overlay.overlays.default
-          # `pagefind` is a vendored prebuilt; expose it as `pkgs.pagefind`.
-          # `kiln` is built from source and stays out of the overlay so it can
-          # depend on `rustToolchain` without a `pkgs`-evaluation cycle.
-          (final: _: {
-            pagefind = final.callPackage ./packages/pagefind { };
-          })
-        ];
-
-        pkgs = import nixpkgs { inherit system overlays; };
+        pkgs = import nixpkgs {
+          inherit system;
+          overlays = [ rust-overlay.overlays.default ];
+        };
 
         rustToolchain = pkgs.rust-bin.stable.latest.default.override {
           extensions = [
@@ -76,12 +64,13 @@
         };
 
         cssCompiler = kiln-tailwindcss.packages.${system}.default;
+        pagefind = pkgs.callPackage ./packages/pagefind { };
 
         # Some workspace dependencies require a newer Rust version than nixpkgs provides.
         kiln = pkgs.callPackage ./packages/kiln {
           inherit cssCompiler;
+          inherit ((pkgs.lib.importTOML ./Cargo.toml).workspace.package) version;
           cargoLock.lockFile = ./Cargo.lock;
-          version = (pkgs.lib.importTOML ./Cargo.toml).workspace.package.version;
           rustPlatform = pkgs.makeRustPlatform {
             cargo = rustToolchain;
             rustc = rustToolchain;
@@ -103,12 +92,12 @@
         # CI runs the equivalent checks directly with pnpm.
         nodeHook =
           name: cmd:
-          let
-            wrapper = pkgs.writeShellApplication {
+          pkgs.lib.getExe (
+            pkgs.writeShellApplication {
               inherit name;
-              runtimeInputs = [
-                pkgs.nodejs_24
-                pkgs.pnpm
+              runtimeInputs = with pkgs; [
+                nodejs_24
+                pnpm
               ];
               text = ''
                 if [ ! -d node_modules ]; then
@@ -116,9 +105,8 @@
                 fi
                 pnpm exec ${cmd} "$@"
               '';
-            };
-          in
-          "${wrapper}/bin/${name}";
+            }
+          );
 
         # ----------------------------------------------------------------------
         # Pre-commit Hooks
@@ -153,7 +141,6 @@
               name = "prettier";
               entry = nodeHook "prettier-write" "prettier --write --ignore-unknown";
               files = "\\.json$";
-              pass_filenames = true;
             };
 
             dprint-write = {
@@ -161,7 +148,6 @@
               name = "dprint";
               entry = nodeHook "dprint-write" "dprint fmt";
               files = "\\.md$";
-              pass_filenames = true;
             };
 
             taplo-write = {
@@ -169,7 +155,6 @@
               name = "taplo";
               entry = nodeHook "taplo-write" "taplo format";
               files = "\\.toml$";
-              pass_filenames = true;
             };
 
             markdownlint = {
@@ -177,14 +162,12 @@
               name = "markdownlint-cli2";
               entry = nodeHook "markdownlint" "markdownlint-cli2 --fix";
               files = "\\.md$";
-              pass_filenames = true;
             };
 
             cspell = {
               enable = true;
               entry = nodeHook "cspell" "cspell --no-must-find-files --no-progress";
               types = [ "text" ];
-              pass_filenames = true;
             };
           };
         };
@@ -201,13 +184,13 @@
             ++ [
               rustToolchain
               cssCompiler
+              pagefind
             ]
             ++ (with pkgs; [
               dav1d
               git-cliff
               nasm
               nodejs_24
-              pagefind
               pkg-config
               pnpm
             ])
@@ -221,7 +204,7 @@
               if command -v xcrun >/dev/null 2>&1; then
                 export LIBRARY_PATH="$(xcrun --show-sdk-path)/usr/lib''${LIBRARY_PATH:+:$LIBRARY_PATH}"
               else
-                echo "warning: xcrun not found — run \`xcode-select --install\` so cargo can link against the system SDK" >&2
+                echo "warning: xcrun not found. Run \`xcode-select --install\` so cargo can link against the system SDK" >&2
               fi
             '';
 
@@ -229,25 +212,21 @@
         };
 
         # ----------------------------------------------------------------------
-        # Packages (`nix build '.#<name>'`)
+        # Packages
         # ----------------------------------------------------------------------
-        # Site repos consume these via `kiln.packages.${system}.<name>`.
         packages = {
           default = kiln;
-          inherit kiln;
-          inherit (pkgs) pagefind;
+          inherit kiln pagefind;
           kiln-tailwindcss = cssCompiler;
         };
 
         # ----------------------------------------------------------------------
-        # Checks (`nix flake check`)
+        # Checks
         # ----------------------------------------------------------------------
-        checks = {
-          pre-commit = preCommitCheck;
-        };
+        checks.pre-commit = preCommitCheck;
 
         # ----------------------------------------------------------------------
-        # Formatter (`nix fmt`)
+        # Formatter
         # ----------------------------------------------------------------------
         formatter = pkgs.nixfmt-tree;
       }
