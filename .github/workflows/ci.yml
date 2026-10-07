@@ -55,6 +55,58 @@ jobs:
       - name: Test benchmark workloads
         run: nix develop -c cargo test --bench performance
 
+  core-test:
+    name: Core Rust Test
+    runs-on: ubuntu-latest
+    env:
+      SYSTEM_DEPS_DAV1D_NO_PKG_CONFIG: '1'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: core
+
+      - name: Build without the AVIF decoder
+        run: cargo build --locked
+
+      - name: Test core library
+        run: cargo test --locked --lib
+
+  windows-test:
+    name: Windows Rust Test
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup native dependencies
+        uses: ./.github/actions/setup-native
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
+      - name: Install CSS processor
+        run: npm install --global @kiln-ssg/tailwindcss@0.1.2
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: windows-${{ hashFiles('.github/scripts/build-dav1d.py') }}
+
+      - name: Test
+        run: cargo test --locked --all-features
+
   coverage:
     name: Coverage
     runs-on: ubuntu-latest
@@ -151,7 +203,7 @@ jobs:
   pin-main:
     name: Pin main builds (${{ matrix.config.runner }})
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [flake-check, nix-build, node-check, rust-check]
+    needs: [core-test, flake-check, nix-build, node-check, rust-check, windows-test]
     runs-on: ${{ matrix.config.runner }}
     strategy: *nix-platforms
     concurrency:
