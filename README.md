@@ -9,35 +9,23 @@ A static site generator written in Rust for [hakula.xyz](https://hakula.xyz), wi
 
 ## Highlights
 
-### Authoring
-
-- GitHub Flavored Markdown with TOML frontmatter and CJK-friendly headings
-- KaTeX math, Mermaid diagrams, and syntax highlighting for 200+ languages
-- Custom `:::` directives rendered through theme templates
-
-### Publishing
-
-- Page bundles, section and tag archives, and pagination
-- Full-text search via [Pagefind](https://pagefind.app), RSS feeds, and sitemaps
-- Automatic image dimensions and blurred loading placeholders
-- Asset fingerprinting and optional HTML / CSS / JS minification
-
-### Theming and Development
-
-- MiniJinja templates with site overrides and translatable theme strings
-- [IgnIt](https://github.com/hakula139/IgnIt) theme with responsive layouts and dark mode
-- Live-reloading dev server, theme scaffolding, and Hugo content migration
+- CJK-friendly Markdown for technical writing, with math, diagrams and syntax highlighting
+- Custom content components through nested `:::` directives and theme templates
+- Page bundles that keep writing, images and page-specific styles together
+- Full-text search via [Pagefind](https://pagefind.app), with archives and feeds for finding and following posts
+- [IgnIt](https://github.com/hakula139/IgnIt) theme with responsive layouts and dark mode, customizable through site overrides
+- Local preview with live reload, plus optimized stylesheets and image loading placeholders for publication
 
 ## Documentation
 
-| Document                                 | Description                                            |
-| ---------------------------------------- | ------------------------------------------------------ |
-| [Content](docs/content.md)               | Content, frontmatter and Hugo migration                |
-| [Syntax Reference](docs/syntax.md)       | Markdown extensions and directives                     |
-| [Assets and Stylesheets](docs/assets.md) | Publication, stylesheets, fingerprints and live reload |
-| [Themes](docs/themes.md)                 | Site configuration, themes and templates               |
-| [Benchmarks](docs/benchmarks.md)         | Performance measurements and baseline comparisons      |
-| [Roadmap](docs/roadmap.md)               | Current priorities and project scope                   |
+| Document                                 | Description                                             |
+| ---------------------------------------- | ------------------------------------------------------- |
+| [Content](docs/content.md)               | Content, frontmatter and Hugo migration                 |
+| [Syntax Reference](docs/syntax.md)       | Markdown extensions and directives                      |
+| [Assets and Stylesheets](docs/assets.md) | Publication, stylesheets, fingerprints and live reload  |
+| [Themes](docs/themes.md)                 | Site configuration, themes and templates                |
+| [Benchmarks](docs/benchmarks.md)         | Performance measurements and baseline comparisons       |
+| [Roadmap](docs/roadmap.md)               | Developer capability status, constraints and priorities |
 
 ## Installation
 
