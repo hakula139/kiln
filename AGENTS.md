@@ -4,7 +4,7 @@
 
 kiln is a custom static site generator (SSG) written in Rust, replacing a Hugo + LoveIt theme stack for [hakula.xyz](https://hakula.xyz).
 
-User-facing feature positioning belongs in `README.md`. The canonical in-repo roadmap / status summary lives in `docs/roadmap.md`. Do not duplicate long feature checklists in this file.
+`README.md` presents selected user-facing highlights. `docs/roadmap.md` documents detailed capabilities, limits, and plans for developers. Do not duplicate long feature checklists in this file.
 
 ### CLI
 
