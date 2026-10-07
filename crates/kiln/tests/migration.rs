@@ -203,15 +203,19 @@ fn convert_source_file_symlink_copies_contents() {
 #[cfg(unix)]
 #[test]
 fn convert_destination_symlink_escape_returns_error() {
-    let root = tempfile::tempdir().unwrap();
-    let source = root.path().join("source");
-    let destination = root.path().join("destination");
-    let outside = root.path().join("outside");
-    write_test_file(&source, "content/new.txt", "new");
-    fs::create_dir_all(&destination).unwrap();
-    fs::create_dir_all(&outside).unwrap();
-    std::os::unix::fs::symlink(&outside, destination.join("content")).unwrap();
-    let error = convert(&source, &destination).unwrap_err();
-    assert!(error.to_string().contains("escapes its root"), "{error}");
-    assert!(!outside.join("new.txt").exists());
+    for directory in ["content", "content/sub"] {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("source");
+        let destination = root.path().join("destination");
+        let outside = root.path().join("outside");
+        let link = destination.join(directory);
+        write_test_file(&source, &format!("{directory}/new.txt"), "new");
+        fs::create_dir_all(link.parent().unwrap()).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        std::os::unix::fs::symlink(&outside, &link).unwrap();
+
+        let error = convert(&source, &destination).unwrap_err();
+        assert!(error.to_string().contains("escapes its root"), "{error}");
+        assert!(!outside.join("new.txt").exists());
+    }
 }
