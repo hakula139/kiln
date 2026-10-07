@@ -255,6 +255,41 @@ mod tests {
         );
     }
 
+    #[test]
+    fn copy_directory_preserves_underscore_names_at_every_depth() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("static");
+        let dest = dir.path().join("public");
+        let files = [
+            "_headers",
+            "_redirects",
+            "_custom/data.txt",
+            "nested/_headers",
+        ];
+        for file in files {
+            let path = src.join(file);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, file).unwrap();
+        }
+
+        copy_directory(&src, &dest, |_| true).unwrap();
+
+        for file in files {
+            assert_eq!(fs::read_to_string(dest.join(file)).unwrap(), file);
+        }
+    }
+
+    #[test]
+    fn copy_directory_missing_src_is_noop() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("static");
+        let dest = dir.path().join("public");
+
+        copy_directory(&src, &dest, |_| true).unwrap();
+
+        assert!(!dest.exists());
+    }
+
     #[cfg(unix)]
     #[test]
     fn copy_directory_materializes_external_symlinks() {
@@ -317,30 +352,6 @@ mod tests {
         assert!(fs::symlink_metadata(&dest).unwrap().is_dir());
     }
 
-    #[test]
-    fn copy_directory_preserves_underscore_names_at_every_depth() {
-        let dir = tempfile::tempdir().unwrap();
-        let src = dir.path().join("static");
-        let dest = dir.path().join("public");
-        let files = [
-            "_headers",
-            "_redirects",
-            "_custom/data.txt",
-            "nested/_headers",
-        ];
-        for file in files {
-            let path = src.join(file);
-            fs::create_dir_all(path.parent().unwrap()).unwrap();
-            fs::write(path, file).unwrap();
-        }
-
-        copy_directory(&src, &dest, |_| true).unwrap();
-
-        for file in files {
-            assert_eq!(fs::read_to_string(dest.join(file)).unwrap(), file);
-        }
-    }
-
     // macOS APFS rejects non-UTF-8 filenames, while Linux ext4 and btrfs accept them.
     #[cfg(target_os = "linux")]
     #[cfg(unix)]
@@ -388,17 +399,6 @@ mod tests {
             error.downcast_ref::<walkdir::Error>().unwrap().path(),
             Some(src.join("broken").as_path())
         );
-    }
-
-    #[test]
-    fn copy_directory_missing_src_is_noop() {
-        let dir = tempfile::tempdir().unwrap();
-        let src = dir.path().join("static");
-        let dest = dir.path().join("public");
-
-        copy_directory(&src, &dest, |_| true).unwrap();
-
-        assert!(!dest.exists());
     }
 
     #[cfg(unix)]

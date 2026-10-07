@@ -636,16 +636,6 @@ mod tests {
     }
 
     #[test]
-    fn load_invalid_toml_returns_error() {
-        let dir = tempfile::tempdir().unwrap();
-        let config_path = dir.path().join("config.toml");
-        fs::write(&config_path, "{{invalid toml").unwrap();
-
-        let result = Config::load(dir.path());
-        assert!(result.is_err());
-    }
-
-    #[test]
     fn menu_sorts_by_weight_on_load() {
         let dir = tempfile::tempdir().unwrap();
         fs::write(
@@ -719,13 +709,17 @@ mod tests {
         assert_eq!(social, ["X", "Y"]);
     }
 
-    // ── load (theme) ──
+    #[test]
+    fn load_invalid_toml_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("config.toml");
+        fs::write(&config_path, "{{invalid toml").unwrap();
 
-    fn setup_theme(root: &Path, theme_toml: &str) {
-        let theme_dir = root.join("themes").join("test-theme");
-        fs::create_dir_all(&theme_dir).unwrap();
-        fs::write(theme_dir.join("theme.toml"), theme_toml).unwrap();
+        let result = Config::load(dir.path());
+        assert!(result.is_err());
     }
+
+    // ── load (theme) ──
 
     #[test]
     fn load_no_theme_skips_theme() {
@@ -974,6 +968,12 @@ mod tests {
         );
     }
 
+    fn setup_theme(root: &Path, theme_toml: &str) {
+        let theme_dir = root.join("themes").join("test-theme");
+        fs::create_dir_all(&theme_dir).unwrap();
+        fs::write(theme_dir.join("theme.toml"), theme_toml).unwrap();
+    }
+
     // ── theme_dir ──
 
     #[test]
@@ -994,12 +994,6 @@ mod tests {
     }
 
     // ── resolved_output_dir ──
-
-    fn resolved_output_dir_for(root: &Path, output_dir: &str) -> Result<PathBuf> {
-        let toml_str = format!("output_dir = {}", toml::Value::String(output_dir.into()));
-        let config: Config = toml::from_str(&toml_str).unwrap();
-        config.resolved_output_dir(root)
-    }
 
     #[test]
     fn resolved_output_dir_default_relative_path() {
@@ -1128,27 +1122,6 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
-    #[test]
-    fn resolved_output_dir_symlink_to_root_or_ancestor_returns_error() {
-        let outer = tempfile::tempdir().unwrap();
-        let root = outer.path().join("project");
-        fs::create_dir(&root).unwrap();
-        std::os::unix::fs::symlink(&root, root.join("root-link")).unwrap();
-        std::os::unix::fs::symlink(outer.path(), root.join("ancestor-link")).unwrap();
-
-        for output_dir in ["root-link", "ancestor-link"] {
-            let err = resolved_output_dir_for(&root, output_dir)
-                .unwrap_err()
-                .to_string();
-
-            assert!(
-                err.contains("would overwrite the project root"),
-                "should reject {output_dir}, got: {err}"
-            );
-        }
-    }
-
     #[test]
     fn resolved_output_dir_input_or_metadata_overlap_returns_error() {
         let root = tempfile::tempdir().unwrap();
@@ -1170,6 +1143,73 @@ mod tests {
             assert!(
                 error.to_string().contains("overlaps project input"),
                 "{output}: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn resolved_output_dir_linked_git_metadata_returns_error() {
+        let root = tempfile::tempdir().unwrap();
+        let repository = tempfile::tempdir().unwrap();
+        let git_dir = repository.path().join("worktrees/example");
+        fs::create_dir_all(&git_dir).unwrap();
+        fs::write(
+            root.path().join(".git"),
+            format!("gitdir: {}", git_dir.display()),
+        )
+        .unwrap();
+        fs::write(git_dir.join("commondir"), "../..").unwrap();
+
+        assert_eq!(
+            resolved_output_dir_for(root.path(), "public").unwrap(),
+            root.path().canonicalize().unwrap().join("public")
+        );
+
+        for output in [git_dir.join("objects"), repository.path().join("objects")] {
+            assert!(
+                resolved_output_dir_for(root.path(), &output.to_string_lossy())
+                    .unwrap_err()
+                    .to_string()
+                    .contains("overlaps project input")
+            );
+        }
+    }
+
+    #[test]
+    fn resolved_output_dir_parent_repository_metadata_returns_error() {
+        let repository = tempfile::tempdir().unwrap();
+        let root = repository.path().join("site");
+        fs::create_dir(&root).unwrap();
+        fs::create_dir(repository.path().join(".git")).unwrap();
+        assert!(
+            resolved_output_dir_for(&root, "../.git/objects")
+                .unwrap_err()
+                .to_string()
+                .contains("overlaps project input")
+        );
+        assert_eq!(
+            resolved_output_dir_for(&root, "../dist").unwrap(),
+            repository.path().canonicalize().unwrap().join("dist")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn resolved_output_dir_symlink_to_root_or_ancestor_returns_error() {
+        let outer = tempfile::tempdir().unwrap();
+        let root = outer.path().join("project");
+        fs::create_dir(&root).unwrap();
+        std::os::unix::fs::symlink(&root, root.join("root-link")).unwrap();
+        std::os::unix::fs::symlink(outer.path(), root.join("ancestor-link")).unwrap();
+
+        for output_dir in ["root-link", "ancestor-link"] {
+            let err = resolved_output_dir_for(&root, output_dir)
+                .unwrap_err()
+                .to_string();
+
+            assert!(
+                err.contains("would overwrite the project root"),
+                "should reject {output_dir}, got: {err}"
             );
         }
     }
@@ -1232,50 +1272,10 @@ mod tests {
         }
     }
 
-    #[test]
-    fn resolved_output_dir_linked_git_metadata_returns_error() {
-        let root = tempfile::tempdir().unwrap();
-        let repository = tempfile::tempdir().unwrap();
-        let git_dir = repository.path().join("worktrees/example");
-        fs::create_dir_all(&git_dir).unwrap();
-        fs::write(
-            root.path().join(".git"),
-            format!("gitdir: {}", git_dir.display()),
-        )
-        .unwrap();
-        fs::write(git_dir.join("commondir"), "../..").unwrap();
-
-        assert_eq!(
-            resolved_output_dir_for(root.path(), "public").unwrap(),
-            root.path().canonicalize().unwrap().join("public")
-        );
-
-        for output in [git_dir.join("objects"), repository.path().join("objects")] {
-            assert!(
-                resolved_output_dir_for(root.path(), &output.to_string_lossy())
-                    .unwrap_err()
-                    .to_string()
-                    .contains("overlaps project input")
-            );
-        }
-    }
-
-    #[test]
-    fn resolved_output_dir_parent_repository_metadata_returns_error() {
-        let repository = tempfile::tempdir().unwrap();
-        let root = repository.path().join("site");
-        fs::create_dir(&root).unwrap();
-        fs::create_dir(repository.path().join(".git")).unwrap();
-        assert!(
-            resolved_output_dir_for(&root, "../.git/objects")
-                .unwrap_err()
-                .to_string()
-                .contains("overlaps project input")
-        );
-        assert_eq!(
-            resolved_output_dir_for(&root, "../dist").unwrap(),
-            repository.path().canonicalize().unwrap().join("dist")
-        );
+    fn resolved_output_dir_for(root: &Path, output_dir: &str) -> Result<PathBuf> {
+        let toml_str = format!("output_dir = {}", toml::Value::String(output_dir.into()));
+        let config: Config = toml::from_str(&toml_str).unwrap();
+        config.resolved_output_dir(root)
     }
 
     // ── time_zone ──
