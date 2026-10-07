@@ -928,17 +928,17 @@ fn build_zero_paginate_falls_back_to_defaults() {
         root.path(),
         "config.toml",
         indoc! {r#"
-        base_url = "https://example.com"
+            base_url = "https://example.com"
 
-        [params]
-        paginate = 0
+            [params]
+            paginate = 0
 
-        [params.home]
-        paginate = 0
+            [params.home]
+            paginate = 0
 
-        [params.section]
-        paginate = 0
-    "#},
+            [params.section]
+            paginate = 0
+        "#},
     );
     copy_templates(&root.path().join("templates"));
     for i in 1..=11 {
@@ -946,13 +946,13 @@ fn build_zero_paginate_falls_back_to_defaults() {
             root.path(),
             &format!("posts/note/post-{i:02}"),
             &formatdoc! {r#"
-            +++
-            title = "Post {i}"
-            tags = ["example"]
-            date = "2026-01-{i:02}T00:00:00Z"
-            +++
-            Body
-        "#},
+                +++
+                title = "Post {i}"
+                tags = ["example"]
+                date = "2026-01-{i:02}T00:00:00Z"
+                +++
+                Body
+            "#},
         );
     }
 

@@ -779,7 +779,7 @@ mod tests {
     // ── tpl_read_file ──
 
     #[test]
-    fn read_file_reads_relative_to_source_dir() {
+    fn tpl_read_file_reads_relative_to_source_dir() {
         let source = tempfile::tempdir().unwrap();
         let contents = indoc! {"
             A,B
@@ -793,7 +793,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn read_file_follows_external_symlink() {
+    fn tpl_read_file_follows_external_symlink() {
         let source = tempfile::tempdir().unwrap();
         let external = tempfile::tempdir().unwrap();
         test_fs::write(external.path().join("data.txt"), "external <data>").unwrap();
@@ -808,7 +808,7 @@ mod tests {
     }
 
     #[test]
-    fn read_file_path_traversal_returns_error() {
+    fn tpl_read_file_path_traversal_returns_error() {
         let source = tempfile::tempdir().unwrap();
         let source_dir = source.path().join("subdir");
         test_fs::create_dir(&source_dir).unwrap();
@@ -825,7 +825,7 @@ mod tests {
     }
 
     #[test]
-    fn read_file_absolute_path_returns_error() {
+    fn tpl_read_file_absolute_path_returns_error() {
         let source = tempfile::tempdir().unwrap();
         let file = source.path().join("example.txt");
         test_fs::write(&file, "body").unwrap();
@@ -841,7 +841,7 @@ mod tests {
     }
 
     #[test]
-    fn read_file_without_source_dir_returns_error() {
+    fn tpl_read_file_without_source_dir_returns_error() {
         let err = format!("{:#}", render_read_file("test.csv", None).unwrap_err());
         assert!(
             err.contains("read_file requires source_dir"),
@@ -850,7 +850,7 @@ mod tests {
     }
 
     #[test]
-    fn read_file_nonexistent_file_returns_error() {
+    fn tpl_read_file_nonexistent_file_returns_error() {
         let source = tempfile::tempdir().unwrap();
 
         let err = format!(
@@ -866,7 +866,7 @@ mod tests {
     // ── tpl_parse_csv ──
 
     #[test]
-    fn parse_csv_reads_and_escapes_rows_from_source_file() {
+    fn tpl_parse_csv_reads_and_escapes_rows_from_source_file() {
         let (_templates, engine) = engine_with_directive(
             "csv-test",
             r#"{% set rows = parse_csv(read_file(positional_args[0])) %}{% for row in rows %}[{{ row | join("|") }}]{% endfor %}"#,
@@ -904,7 +904,7 @@ mod tests {
     // ── tpl_t ──
 
     #[test]
-    fn t_returns_string_for_known_key() {
+    fn tpl_t_returns_string_for_known_key() {
         let engine = test_engine();
         let result = engine
             .env
@@ -914,7 +914,7 @@ mod tests {
     }
 
     #[test]
-    fn t_interpolates_keyword_arguments() {
+    fn tpl_t_interpolates_keyword_arguments() {
         let dir = tempfile::tempdir().unwrap();
         test_fs::create_dir_all(dir.path().join("i18n")).unwrap();
         test_fs::write(
@@ -937,7 +937,7 @@ mod tests {
     }
 
     #[test]
-    fn t_returns_key_literal_for_missing_key() {
+    fn tpl_t_returns_key_literal_for_missing_key() {
         let engine = test_engine();
         let result = engine
             .env
@@ -949,7 +949,7 @@ mod tests {
     // ── tpl_asset_url ──
 
     #[test]
-    fn asset_url_renders_prefixed_and_encoded_manifest_urls() {
+    fn tpl_asset_url_renders_prefixed_and_encoded_manifest_urls() {
         let static_dir = tempfile::tempdir().unwrap();
         for path in ["shared.css", "shared.js", "page script.js"] {
             test_fs::write(static_dir.path().join(path), "abc").unwrap();
@@ -959,10 +959,10 @@ mod tests {
         test_fs::write(
             templates.path().join("assets.html"),
             indoc! {r#"
-            <link rel="stylesheet" href="{{ asset_url('/shared.css') | safe }}">
-            <script src="{{ asset_url('/shared.js') | safe }}"></script>
-            <script src="{{ asset_url('/page%20script.js') | safe }}"></script>
-        "#},
+                <link rel="stylesheet" href="{{ asset_url('/shared.css') | safe }}">
+                <script src="{{ asset_url('/shared.js') | safe }}"></script>
+                <script src="{{ asset_url('/page%20script.js') | safe }}"></script>
+            "#},
         )
         .unwrap();
         let engine = TemplateEngine::new_with_assets(
@@ -993,7 +993,7 @@ mod tests {
     // ── tpl_register_script ──
 
     #[test]
-    fn register_script_records_default_deferred_tag() {
+    fn tpl_register_script_records_default_deferred_tag() {
         let (_dir, engine) = engine_with_directive(
             "widget",
             r#"{{ register_script("/js/widget.js") }}<widget>"#,
@@ -1013,7 +1013,38 @@ mod tests {
     }
 
     #[test]
-    fn register_script_synchronous_module_returns_error() {
+    fn tpl_register_script_honors_load_async_kwarg() {
+        let (_dir, engine) = engine_with_directive(
+            "widget",
+            r#"{{ register_script("/js/widget.js", load="async") }}"#,
+        );
+        let assets = AssetsHandle::default();
+        engine
+            .render_directive("widget", empty_ctx("widget"), &assets, &Config::default())
+            .unwrap()
+            .unwrap();
+
+        let snapshot = assets.snapshot();
+        assert_eq!(snapshot.scripts()[0].load, LoadStrategy::Async);
+        assert!(!snapshot.scripts()[0].module);
+    }
+
+    #[test]
+    fn tpl_register_script_deduplicates_repeated_directive_renders() {
+        let (_dir, engine) =
+            engine_with_directive("widget", r#"{{ register_script("/js/widget.js") }}"#);
+        let assets = AssetsHandle::default();
+        for _ in 0..5 {
+            engine
+                .render_directive("widget", empty_ctx("widget"), &assets, &Config::default())
+                .unwrap()
+                .unwrap();
+        }
+        assert_eq!(assets.snapshot().scripts().len(), 1);
+    }
+
+    #[test]
+    fn tpl_register_script_synchronous_module_returns_error() {
         let (_dir, engine) = engine_with_directive(
             "widget",
             r#"{{ register_script("/js/widget.js", load="sync", module=true) }}"#,
@@ -1031,38 +1062,7 @@ mod tests {
     }
 
     #[test]
-    fn register_script_honors_load_async_kwarg() {
-        let (_dir, engine) = engine_with_directive(
-            "widget",
-            r#"{{ register_script("/js/widget.js", load="async") }}"#,
-        );
-        let assets = AssetsHandle::default();
-        engine
-            .render_directive("widget", empty_ctx("widget"), &assets, &Config::default())
-            .unwrap()
-            .unwrap();
-
-        let snapshot = assets.snapshot();
-        assert_eq!(snapshot.scripts()[0].load, LoadStrategy::Async);
-        assert!(!snapshot.scripts()[0].module);
-    }
-
-    #[test]
-    fn register_script_deduplicates_repeated_directive_renders() {
-        let (_dir, engine) =
-            engine_with_directive("widget", r#"{{ register_script("/js/widget.js") }}"#);
-        let assets = AssetsHandle::default();
-        for _ in 0..5 {
-            engine
-                .render_directive("widget", empty_ctx("widget"), &assets, &Config::default())
-                .unwrap()
-                .unwrap();
-        }
-        assert_eq!(assets.snapshot().scripts().len(), 1);
-    }
-
-    #[test]
-    fn register_script_returns_error_on_conflicting_attributes() {
+    fn tpl_register_script_conflicting_attributes_returns_error() {
         let (_dir, engine) = engine_with_directive(
             "widget",
             r#"
@@ -1085,7 +1085,7 @@ mod tests {
     }
 
     #[test]
-    fn register_script_returns_error_when_called_outside_directive_context() {
+    fn tpl_register_script_outside_directive_context_returns_error() {
         let dir = tempfile::tempdir().unwrap();
         let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
         let err = engine
@@ -1100,7 +1100,7 @@ mod tests {
     }
 
     #[test]
-    fn register_script_returns_error_when_assets_has_wrong_type() {
+    fn tpl_register_script_wrong_assets_type_returns_error() {
         // Unreachable through `render_directive`. This pins the contract for any
         // future path that populates `__assets`.
         let dir = tempfile::tempdir().unwrap();
@@ -1120,7 +1120,7 @@ mod tests {
     }
 
     #[test]
-    fn register_script_returns_error_on_unknown_kwarg() {
+    fn tpl_register_script_unknown_kwarg_returns_error() {
         let (_dir, engine) =
             engine_with_directive("widget", r#"{{ register_script("/x.js", bogus=true) }}"#);
         let err = format!(
@@ -1142,7 +1142,7 @@ mod tests {
     }
 
     #[test]
-    fn register_script_returns_error_on_unknown_load_strategy() {
+    fn tpl_register_script_unknown_load_strategy_returns_error() {
         let (_dir, engine) =
             engine_with_directive("widget", r#"{{ register_script("/x.js", load="eager") }}"#);
         let err = format!(
@@ -1164,7 +1164,7 @@ mod tests {
     }
 
     #[test]
-    fn register_script_returns_error_on_wrong_type_module_kwarg() {
+    fn tpl_register_script_wrong_module_type_returns_error() {
         let (_dir, engine) =
             engine_with_directive("widget", r#"{{ register_script("/x.js", module="yes") }}"#);
         let err = format!(

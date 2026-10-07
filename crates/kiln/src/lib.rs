@@ -9,7 +9,7 @@ pub mod feed;
 pub mod html;
 pub mod i18n;
 pub mod init;
-pub mod markdown;
+mod markdown;
 pub mod minify;
 pub mod output;
 pub mod pagination;

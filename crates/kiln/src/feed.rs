@@ -3,7 +3,9 @@ use jiff::Timestamp;
 use jiff::tz::TimeZone;
 
 use crate::html::{self, writeln_indented};
+
 /// Borrowed RSS item metadata with an unformatted publication timestamp.
+#[derive(Debug)]
 pub struct FeedItem<'a> {
     pub title: &'a str,
     pub url: &'a str,

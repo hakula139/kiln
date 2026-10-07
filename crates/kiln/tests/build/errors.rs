@@ -180,11 +180,11 @@ fn build_failed_render_preserves_previous_output() {
         root.path(),
         "posts/example",
         indoc! {r#"
-        +++
-        title = "Example"
-        +++
-        Original body
-    "#},
+            +++
+            title = "Example"
+            +++
+            Original body
+        "#},
     );
     build(root.path(), BuildOptions::default()).unwrap();
     let output = root.path().join("public/posts/example/index.html");
@@ -257,7 +257,7 @@ fn build_output_override_input_overlap_returns_error() {
 }
 
 #[test]
-fn build_invalid_base_url_returns_error_before_publication() {
+fn build_invalid_base_url_before_publication_returns_error() {
     let root = tempfile::tempdir().unwrap();
     let output = root.path().join("public");
     fs::create_dir(&output).unwrap();
@@ -303,7 +303,7 @@ fn build_search_requires_pagefind_only_when_enabled() {
         if enabled {
             let message = format!("{:#}", result.unwrap_err());
             assert!(message.contains("nonexistent-pagefind-for-disabled-search"));
-            assert!(message.contains("is Pagefind installed?"));
+            assert!(message.contains("Is Pagefind installed?"));
         } else {
             result.unwrap();
             assert!(!root.path().join("public/pagefind").exists());

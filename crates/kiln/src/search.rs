@@ -6,16 +6,12 @@ use indoc::formatdoc;
 
 const DEFAULT_BINARY: &str = "pagefind";
 
-/// Runs the Pagefind indexer on the given output directory.
-///
-/// Expects `output_dir` to contain the fully built site HTML. Pagefind writes
-/// its search index and client assets to `{output_dir}/pagefind/`. Successful stdout uses debug
-/// logging, stderr remains visible, and failures include both streams.
+/// Indexes built site HTML in `output_dir`, writing search assets to `output_dir/pagefind/`.
 ///
 /// # Errors
 ///
 /// Returns an error if the output path is not UTF-8, the binary cannot be executed, or it exits
-/// with a non-zero status.
+/// with a non-zero status. Exit failures include stdout and stderr.
 pub fn run_pagefind(output_dir: &Path, binary: Option<&str>) -> Result<()> {
     let binary = binary.unwrap_or(DEFAULT_BINARY);
     let site_arg = output_dir
@@ -27,7 +23,7 @@ pub fn run_pagefind(output_dir: &Path, binary: Option<&str>) -> Result<()> {
         .output()
         .with_context(|| {
             formatdoc! {"
-                failed to run `{binary}` — is Pagefind installed?
+                failed to run `{binary}`. Is Pagefind installed?
 
                 Install with one of:
 
@@ -88,7 +84,7 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(
-            err.contains("is Pagefind installed?"),
+            err.contains("Is Pagefind installed?"),
             "should mention installation, got: {err}"
         );
         assert!(

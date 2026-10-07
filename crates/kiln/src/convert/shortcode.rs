@@ -23,38 +23,6 @@ impl ShortcodeArgs<'_> {
     }
 }
 
-fn parse_shortcode_args(input: &str) -> Result<ShortcodeArgs<'_>> {
-    let mut args = ShortcodeArgs::default();
-    for token in AttrTokens::values(input) {
-        match token {
-            AttrToken::Named(key, value) => {
-                ensure!(!key.is_empty(), "shortcode argument name cannot be empty");
-                ensure!(
-                    args.get(key).is_none(),
-                    "duplicate shortcode argument `{key}`"
-                );
-                args.named.push((key, value));
-            }
-            AttrToken::Quoted(value) => args.positional.push(value),
-            AttrToken::Bare(value) => args.positional.push(Cow::Borrowed(value)),
-            AttrToken::Id(value) => args.positional.push(Cow::Owned(format!("#{value}"))),
-            AttrToken::Class(value) => args.positional.push(Cow::Owned(format!(".{value}"))),
-        }
-    }
-    ensure!(
-        args.positional
-            .iter()
-            .chain(args.named.iter().map(|(_, value)| value))
-            .all(|value| !value.contains(['\r', '\n'])),
-        "multiline shortcode values require manual conversion"
-    );
-    ensure!(
-        args.named.is_empty() || args.positional.is_empty(),
-        "cannot mix named and positional Hugo shortcode arguments"
-    );
-    Ok(args)
-}
-
 /// Converts supported Hugo shortcodes while preserving prose and literal code.
 pub(crate) fn convert_shortcodes(content: &str) -> Result<String> {
     let mut output = String::with_capacity(content.len());
@@ -169,8 +137,35 @@ fn shortcode_end(input: &str, marker: &str) -> Result<usize> {
     bail!("unclosed Hugo shortcode")
 }
 
-fn quote(value: &str) -> String {
-    format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
+fn parse_shortcode_args(input: &str) -> Result<ShortcodeArgs<'_>> {
+    let mut args = ShortcodeArgs::default();
+    for token in AttrTokens::values(input) {
+        match token {
+            AttrToken::Named(key, value) => {
+                ensure!(
+                    args.get(key).is_none(),
+                    "duplicate shortcode argument `{key}`"
+                );
+                args.named.push((key, value));
+            }
+            AttrToken::Quoted(value) => args.positional.push(value),
+            AttrToken::Bare(value) => args.positional.push(Cow::Borrowed(value)),
+            AttrToken::Id(value) => args.positional.push(Cow::Owned(format!("#{value}"))),
+            AttrToken::Class(value) => args.positional.push(Cow::Owned(format!(".{value}"))),
+        }
+    }
+    ensure!(
+        args.positional
+            .iter()
+            .chain(args.named.iter().map(|(_, value)| value))
+            .all(|value| !value.contains(['\r', '\n'])),
+        "multiline shortcode values require manual conversion"
+    );
+    ensure!(
+        args.named.is_empty() || args.positional.is_empty(),
+        "cannot mix named and positional Hugo shortcode arguments"
+    );
+    Ok(args)
 }
 
 fn emit_callout(args: &ShortcodeArgs, out: &mut String) -> Result<()> {
@@ -290,20 +285,15 @@ fn emit_directive(name: &str, args: &ShortcodeArgs) -> String {
     output
 }
 
+fn quote(value: &str) -> String {
+    format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
+}
+
 #[cfg(test)]
 mod tests {
     use indoc::indoc;
 
     use super::*;
-
-    // ── parse_shortcode_args ──
-
-    #[test]
-    fn parse_shortcode_args_decodes_escaped_values() {
-        let args = parse_shortcode_args(r#"title="A \"quoted\" title" path="C:\\docs""#).unwrap();
-        assert_eq!(args.get("title"), Some(r#"A "quoted" title"#));
-        assert_eq!(args.get("path"), Some(r"C:\docs"));
-    }
 
     // ── convert_shortcodes ──
 
@@ -322,20 +312,20 @@ mod tests {
 
     #[test]
     fn convert_shortcodes_defaults_and_nested_blocks() {
-        let input = indoc! {r"
+        let input = indoc! {r#"
             {{< admonition >}}
             Outer
-            {{< admonition info Title false >}}
+            {{< admonition info "A \"quoted\" title" false >}}
             Inner
             {{< /admonition >}}
             {{< /admonition >}}
-        "};
+        "#};
         assert_eq!(
             convert_shortcodes(input).unwrap(),
             indoc! {r#"
                 ::: callout {type=note}
                 Outer
-                ::: callout {type=info title="Title" open=false}
+                ::: callout {type=info title="A \"quoted\" title" open=false}
                 Inner
                 :::
                 :::
@@ -344,9 +334,19 @@ mod tests {
     }
 
     #[test]
-    fn convert_shortcodes_preserves_image_link_and_dimensions() {
+    fn convert_shortcodes_preserves_image_link_dimensions_and_alt() {
         assert_eq!(convert_shortcodes(r#"[{{< image src="a b.svg" alt="[Icon]" width=50 height=30 >}}](https://example.com)"#).unwrap(),
             r"[![\[Icon\]](a%20b.svg){width=50 height=30}](https://example.com)");
+
+        for (arguments, expected_alt) in [
+            (r#"alt="Authored" caption="Caption""#, "Authored"),
+            (r#"caption="Caption""#, "Caption"),
+        ] {
+            assert_eq!(
+                convert_shortcodes(&format!("{{{{< image src=x {arguments} >}}}}")).unwrap(),
+                format!("![{expected_alt}](x)"),
+            );
+        }
     }
 
     #[test]
@@ -402,10 +402,11 @@ mod tests {
     }
 
     #[test]
-    fn convert_shortcodes_malformed_or_lossy_inputs_return_error() {
+    fn convert_shortcodes_malformed_or_lossy_inputs_returns_error() {
         for input in [
             "{{< /unknown >}}",
             "{{< admonition >}}body",
+            "{{< image src=x",
             "{{< style >}}body{{< /style >}}",
             "{{< admonition >}}body{{< /mermaid >}}",
             "{{< image src=\"unfinished >}}",
@@ -420,5 +421,14 @@ mod tests {
         ] {
             assert!(convert_shortcodes(input).is_err(), "{input}");
         }
+    }
+
+    // ── parse_shortcode_args ──
+
+    #[test]
+    fn parse_shortcode_args_decodes_escaped_values() {
+        let args = parse_shortcode_args(r#"title="A \"quoted\" title" path="C:\\docs""#).unwrap();
+        assert_eq!(args.get("title"), Some(r#"A "quoted" title"#));
+        assert_eq!(args.get("path"), Some(r"C:\docs"));
     }
 }

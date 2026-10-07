@@ -13,6 +13,9 @@ mod pages;
 #[path = "build/listings.rs"]
 mod listings;
 
+#[path = "build/routes.rs"]
+mod routes;
+
 #[path = "build/feeds.rs"]
 mod feeds;
 

@@ -433,7 +433,6 @@ mod tests {
         let sections = [Section {
             slug: "notes".into(),
             title: "Notes".into(),
-            page_count: 1,
         }];
 
         for base_url in ["https://example.com/blog", "https://example.com/blog/"] {

@@ -4,8 +4,7 @@ use anyhow::{Context, Result};
 
 use super::BuildContext;
 use super::listing::{BucketKind, ListingBucket, group_by_year};
-use super::paginate::paginated_path;
-use super::paginate::{paginate_config, write_paginated};
+use super::paginate::{paginate_config, paginated_path, write_paginated};
 use crate::template::vars::{ArchivePageVars, PageMetadata};
 use crate::url::page_url;
 

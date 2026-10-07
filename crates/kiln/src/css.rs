@@ -399,8 +399,8 @@ mod tests {
             root.path(),
             ENTRY,
             indoc! {r#"
-            .image { background: url("../../../static/a%20%25%20%23%20%E4%B8%96%E7%95%8C.svg?v=1#icon"); }
-        "#},
+                .image { background: url("../../../static/a%20%25%20%23%20%E4%B8%96%E7%95%8C.svg?v=1#icon"); }
+            "#},
         );
         write_test_file(root.path(), "static/a % # 世界.svg", "image");
         let output = root.path().join("public");

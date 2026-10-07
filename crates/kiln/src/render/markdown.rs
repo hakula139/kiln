@@ -1065,6 +1065,18 @@ mod tests {
     }
 
     #[test]
+    fn render_markdown_inline_image_with_nested_alt_preserves_surrounding_text() {
+        let out = render("Before ![outer ![inner](inner.png)](outer.png) after.");
+
+        assert_eq!(
+            out.html,
+            indoc! {r#"
+                <p>Before <img src="outer.png" alt="outer inner" loading="lazy" decoding="async" /> after.</p>
+            "#},
+        );
+    }
+
+    #[test]
     fn render_markdown_image_with_trailing_text_stays_inline() {
         let md = "![icon](icon.png) followed by text\n";
         let out = render(md);

@@ -236,6 +236,17 @@ mod tests {
     // ── RoutePlan::validate_assets ──
 
     #[test]
+    fn validate_assets_removes_reservations_before_rendering() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut plan = RoutePlan {
+            outputs: BTreeMap::new(),
+        };
+        plan.insert("posts/index.html".into(), "archive".into(), None)
+            .unwrap();
+        plan.validate_assets(directory.path()).unwrap();
+        assert!(!directory.path().join("posts/index.html").exists());
+    }
+    #[test]
     fn validate_assets_conflicting_destinations_returns_error() {
         let directory = tempfile::tempdir().unwrap();
         std::fs::write(directory.path().join("posts"), "asset").unwrap();
@@ -310,161 +321,5 @@ mod tests {
         let message = format!("{error:#}");
         assert!(message.contains("first source"));
         assert!(message.contains("second source"));
-    }
-
-    #[test]
-    fn validate_assets_removes_reservations_before_rendering() {
-        let directory = tempfile::tempdir().unwrap();
-        let mut plan = RoutePlan {
-            outputs: BTreeMap::new(),
-        };
-        plan.insert("posts/index.html".into(), "archive".into(), None)
-            .unwrap();
-        plan.validate_assets(directory.path()).unwrap();
-        assert!(!directory.path().join("posts/index.html").exists());
-    }
-
-    // ── build ──
-
-    fn site() -> tempfile::TempDir {
-        let root = tempfile::tempdir().unwrap();
-        crate::test_utils::write_test_file(
-            root.path(),
-            "config.toml",
-            indoc::indoc! {r#"
-            base_url = "https://example.com/blog/"
-            title = "Example"
-            [params]
-            paginate = 1
-        "#},
-        );
-        for template in ["post", "home", "archive", "overview"] {
-            crate::test_utils::write_test_file(
-                root.path(),
-                &format!("templates/{template}.html"),
-                indoc::indoc! {r#"
-                    <title>{{ title }}</title><link href="{{ url | safe }}">
-                    {{ description }} {{ updated }} {{ license }}
-                    {% for tag in tags %}<a href="{{ tag.url | safe }}">{{ tag.name }}</a>{% endfor %}
-                    {% for page in pages %}<a href="{{ page.url | safe }}">{{ page.title }}</a>{% endfor %}
-                    {% for bucket in buckets %}<a href="{{ bucket.url | safe }}">{{ bucket.name }}</a>{% endfor %}
-                    {% if pagination %}{{ pagination.current_page }}/{{ pagination.total_pages }}{% endif %}
-                    {% if pagination %}{% for item in pagination.items %}<a href="{{ item.url | safe }}">{{ item.number }}</a>{% endfor %}{% endif %}
-                "#},
-            );
-        }
-        root
-    }
-
-    fn post(root: &Path, path: &str, title: &str) {
-        crate::test_utils::write_test_file(
-            root,
-            path,
-            &indoc::formatdoc! {r#"
-            +++
-            title = "{title}"
-            date = "2024-01-01T00:00:00Z"
-            updated = "2025-01-02T00:00:00Z"
-            tags = [" Rust ", "rust", ""]
-            +++
-            Summary.
-        "#},
-        );
-    }
-
-    #[test]
-    fn build_routes_share_prefix_metadata_and_sitemap() {
-        let root = site();
-        post(root.path(), "content/posts/one.md", "One");
-        post(root.path(), "content/posts/two.md", "Two");
-        crate::test_utils::write_test_file(
-            root.path(),
-            "content/tags/rust/_index.md",
-            indoc::indoc! {r#"
-            +++
-            title = "Rust language"
-            +++
-        "#},
-        );
-        crate::build::build(root.path(), crate::build::BuildOptions::default()).unwrap();
-        let output = root.path().join("public");
-        let page = std::fs::read_to_string(output.join("posts/one/index.html")).unwrap();
-        assert!(page.contains("2025-01-02T00:00:00Z"));
-        assert_eq!(page.matches("Rust language").count(), 1);
-        assert!(page.contains("https://example.com/blog/tags/rust/"));
-        let home = std::fs::read_to_string(output.join("page/2/index.html")).unwrap();
-        assert!(home.contains("https://example.com/blog/page/2/"));
-        assert!(home.contains(r#"href="/blog/""#));
-        let archive = std::fs::read_to_string(output.join("posts/page/2/index.html")).unwrap();
-        assert!(archive.contains("https://example.com/blog/posts/page/2/"));
-        assert!(archive.contains(r#"href="/blog/posts/""#));
-        let overview = std::fs::read_to_string(output.join("tags/index.html")).unwrap();
-        assert!(overview.contains("https://example.com/blog/tags/rust/"));
-        let sitemap = std::fs::read_to_string(output.join("sitemap.xml")).unwrap();
-        let locations: Vec<_> = sitemap
-            .split("<loc>")
-            .skip(1)
-            .map(|entry| entry.split("</loc>").next().unwrap())
-            .collect();
-        assert_eq!(
-            locations,
-            [
-                "https://example.com/blog/",
-                "https://example.com/blog/page/2/",
-                "https://example.com/blog/posts/",
-                "https://example.com/blog/posts/one/",
-                "https://example.com/blog/posts/page/2/",
-                "https://example.com/blog/posts/two/",
-                "https://example.com/blog/sections/",
-                "https://example.com/blog/tags/",
-                "https://example.com/blog/tags/rust/",
-                "https://example.com/blog/tags/rust/page/2/",
-            ]
-        );
-        assert!(sitemap.contains("<lastmod>2025-01-02T00:00:00Z</lastmod>"));
-        let feed = std::fs::read_to_string(output.join("index.xml")).unwrap();
-        assert!(feed.contains("<pubDate>Mon, 01 Jan 2024 00:00:00 +0000</pubDate>"));
-    }
-
-    #[test]
-    fn build_conflicting_content_generated_and_static_routes_returns_error() {
-        for destination in [
-            "content/index.md",
-            "content/posts/index.md",
-            "content/tags/index.md",
-            "content/page/2/index.md",
-            "static/posts/index.html",
-            "static/sitemap.xml",
-            "content/posts/one/index.md",
-        ] {
-            let root = site();
-            post(root.path(), "content/posts/one.md", "One");
-            post(root.path(), "content/posts/two.md", "Two");
-            post(root.path(), destination, "Conflicting");
-            let error = crate::build::build(root.path(), crate::build::BuildOptions::default())
-                .unwrap_err();
-            assert!(
-                format!("{error:#}").contains("collision"),
-                "{destination}: {error:#}"
-            );
-        }
-    }
-
-    #[test]
-    fn build_sitemap_only_contains_emitted_html() {
-        let root = site();
-        for template in ["home", "archive", "overview"] {
-            std::fs::remove_file(root.path().join(format!("templates/{template}.html"))).unwrap();
-        }
-        post(root.path(), "content/index.md", "Root page");
-        crate::build::build(root.path(), crate::build::BuildOptions::default()).unwrap();
-        let xml = std::fs::read_to_string(root.path().join("public/sitemap.xml")).unwrap();
-        assert_eq!(xml.matches("<loc>").count(), 1);
-        assert!(xml.contains("<loc>https://example.com/blog/</loc>"));
-        std::fs::remove_file(root.path().join("content/index.md")).unwrap();
-        crate::build::build(root.path(), crate::build::BuildOptions::default()).unwrap();
-        let xml = std::fs::read_to_string(root.path().join("public/sitemap.xml")).unwrap();
-        assert!(!xml.contains("<loc>"));
-        assert!(!root.path().join("public/index.html").exists());
     }
 }

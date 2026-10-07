@@ -392,11 +392,11 @@ mod tests {
         let relative_paths: Vec<_> = page
             .assets
             .iter()
-            .map(|p| p.strip_prefix(&bundle).unwrap().to_str().unwrap())
+            .map(|p| p.strip_prefix(&bundle).unwrap())
             .collect();
         assert_eq!(
             relative_paths,
-            vec!["assets/data.json", "assets/screenshot.webp", "cover.webp"]
+            ["assets/data.json", "assets/screenshot.webp", "cover.webp"].map(Path::new)
         );
     }
 

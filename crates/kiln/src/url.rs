@@ -53,12 +53,12 @@ pub(crate) fn join_site_url(base_url: &str, path: &str) -> String {
 
 /// Resolves a relative path against a page's output URL.
 ///
-/// Absolute paths (starting with `/`) and external URLs (containing `://`) are returned as-is.
+/// Absolute paths and URLs are returned unchanged.
 /// Relative paths are resolved against the page's directory URL (must end with `/`) so that
 /// co-located assets like `assets/cover.webp` become `/posts/section/slug/assets/cover.webp`.
 #[must_use]
 pub(crate) fn resolve_relative_url(src: &str, page_url: &str) -> String {
-    if src.starts_with('/') || src.contains("://") {
+    if src.starts_with('/') || url::Url::parse(src).is_ok() {
         return src.to_owned();
     }
     let path = if let Some(scheme_end) = page_url.find("://") {
@@ -86,14 +86,6 @@ mod tests {
             "%E4%B8%AD%E6%96%87/hash%23query%3F%20100%25.html"
         );
         assert_eq!(path_url(Path::new("../image.webp")), "../image.webp");
-        assert_eq!(
-            page_url("https://example.com/blog/", &path),
-            "https://example.com/blog/%E4%B8%AD%E6%96%87/hash%23query%3F%20100%25.html"
-        );
-        assert_eq!(
-            page_url("https://example.com", Path::new("myindex.html")),
-            "https://example.com/myindex.html"
-        );
     }
 
     // ── page_url ──
@@ -108,10 +100,25 @@ mod tests {
 
     #[test]
     fn page_url_non_index() {
-        assert_eq!(
-            page_url("https://example.com", Path::new("standalone.html")),
-            "https://example.com/standalone.html"
-        );
+        for (base, path, expected) in [
+            (
+                "https://example.com",
+                "standalone.html",
+                "https://example.com/standalone.html",
+            ),
+            (
+                "https://example.com",
+                "myindex.html",
+                "https://example.com/myindex.html",
+            ),
+            (
+                "https://example.com/blog/",
+                "中文/hash#query? 100%.html",
+                "https://example.com/blog/%E4%B8%AD%E6%96%87/hash%23query%3F%20100%25.html",
+            ),
+        ] {
+            assert_eq!(page_url(base, Path::new(path)), expected);
+        }
     }
 
     #[test]
@@ -205,12 +212,14 @@ mod tests {
 
     #[test]
     fn resolve_relative_url_external_url() {
-        assert_eq!(
-            resolve_relative_url(
-                "https://cdn.example.com/img.jpg",
-                "https://example.com/posts/foo/"
-            ),
-            "https://cdn.example.com/img.jpg"
-        );
+        for src in [
+            "https://cdn.example.com/img.jpg",
+            "data:image/png;base64,example",
+        ] {
+            assert_eq!(
+                resolve_relative_url(src, "https://example.com/posts/foo/"),
+                src
+            );
+        }
     }
 }
