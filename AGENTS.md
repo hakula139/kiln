@@ -227,7 +227,7 @@ nix build '.#kiln'                     # build kiln from source
 
 ### Pre-commit hooks
 
-Clippy stays in CI because the bare hook process cannot see `libdav1d`. Run `pnpm format`, `pnpm lint`, and `pnpm spellcheck` directly when changing Node sources or documentation.
+Run `pnpm format`, `pnpm lint`, and `pnpm spellcheck` directly when changing Node sources or documentation.
 
 ### Adding native dependencies
 

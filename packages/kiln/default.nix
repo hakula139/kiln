@@ -1,14 +1,11 @@
-# kiln — built from source. dav1d is a real buildInputs entry; Nix wires the
-# correct rpath / install_name on Linux and Darwin, no post-build patching.
-
 {
+  avifSupport ? true,
   cargoLock,
   cssCompiler,
   dav1d,
   git,
   lib,
   makeWrapper,
-  nasm,
   pkg-config,
   rustPlatform,
   src,
@@ -20,12 +17,10 @@ rustPlatform.buildRustPackage {
   pname = "kiln";
   inherit cargoLock src version;
 
-  nativeBuildInputs = [
-    makeWrapper
-    nasm
-    pkg-config
-  ];
-  buildInputs = [ dav1d ];
+  buildFeatures = lib.optional avifSupport "avif";
+
+  nativeBuildInputs = [ makeWrapper ] ++ lib.optional avifSupport pkg-config;
+  buildInputs = lib.optional avifSupport dav1d;
 
   # The dev server tests bind 127.0.0.1, which the darwin sandbox denies by default.
   __darwinAllowLocalNetworking = true;
