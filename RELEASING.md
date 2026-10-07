@@ -55,9 +55,9 @@ cargo install git-cliff      # any platform with cargo
 
 Three platforms ship per release:
 
-- `x86_64-unknown-linux-gnu` (Linux CI consumers, `ubuntu-latest`)
-- `aarch64-apple-darwin` (Apple Silicon dev, `macos-latest`)
-- `x86_64-pc-windows-msvc` (Windows, `windows-latest`)
+- `x86_64-unknown-linux-gnu` (Linux)
+- `aarch64-apple-darwin` (Apple Silicon)
+- `x86_64-pc-windows-msvc` (Windows)
 
 Each platform has two archives, both containing the `kiln` binary. `kiln-<target>` uses the default Cargo features and requires no dav1d installation. `kiln-extended-<target>` enables AVIF placeholder decoding. The extended Linux binary needs `libdav1d` from the system package manager. On macOS, install it with `brew install dav1d`. Windows extended binaries link dav1d statically through vcpkg.
 

@@ -49,6 +49,8 @@ unzip kiln-x86_64-pc-windows-msvc.zip
 kiln --version
 ```
 
+From 0.5.0 onward, the default archive needs no dav1d, and `kiln-extended-<target>` provides AVIF loading placeholders with [platform requirements](RELEASING.md#targets).
+
 The v0.4.0 Linux and macOS binaries require dav1d at runtime.
 
 ### From source
