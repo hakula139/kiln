@@ -6,6 +6,9 @@ authors.workspace = true
 license.workspace = true
 description = "A custom static site generator"
 
+[features]
+avif = ["image/avif-native"]
+
 [lints]
 workspace = true
 

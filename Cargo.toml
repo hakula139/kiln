@@ -28,7 +28,6 @@ gh-emoji = "1"
 hex = "0.4"
 http-body-util = "0.1"
 image = { version = "0.25", default-features = false, features = [
-  "avif-native",
   "bmp",
   "gif",
   "jpeg",

@@ -127,7 +127,6 @@
             statix.enable = true;
             deadnix.enable = true;
 
-            # Clippy needs libdav1d from the dev shell and runs in CI.
             rustfmt = {
               enable = true;
               packageOverrides = {
@@ -189,7 +188,6 @@
             ++ (with pkgs; [
               dav1d
               git-cliff
-              nasm
               nodejs_24
               pkg-config
               pnpm
