@@ -31,7 +31,10 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    git-hooks-nix.url = "github:cachix/git-hooks.nix";
+    git-hooks-nix = {
+      url = "github:cachix/git-hooks.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
 
     kiln-tailwindcss = {
       url = "github:hakula139/kiln-tailwindcss";
@@ -52,7 +55,7 @@
       kiln-tailwindcss,
       ...
     }:
-    flake-utils.lib.eachDefaultSystem (
+    flake-utils.lib.eachSystem [ "aarch64-darwin" "x86_64-linux" ] (
       system:
       let
         overlays = [
