@@ -117,11 +117,9 @@ all_posts = "All Posts"
 page_counter = "Page {current} of {total}"
 ```
 
-For each key, lookup follows site active language → theme active language → theme English fallback. A theme shipping translations must provide the exact filename `en.toml`. Site-only translations are supported when the theme has no translation directory.
+For each key, lookup follows site active language → theme active language → theme English fallback. A theme shipping translations must provide the exact filename `en.toml`. Site-only translations work when the theme provides no locale files.
 
 Use `{{ t("all_posts") }}` to look up a key and `{{ t("page_counter", current=1, total=3) }}` to substitute named placeholders. `{{` and `}}` in a translation escape literal braces.
-
-#### Missing-Key Behavior
 
 A missing key renders as the key itself. This lets menu labels and similar values contain either a translation key or literal text.
 
@@ -140,12 +138,12 @@ themes/my-theme/
 ├── assets/
 │   └── css/_src/style.css   # Shared stylesheet entry
 ├── i18n/
-│   └── en.toml             # Translation fallback
-├── static/                 # Output-root files
+│   ├── en.toml              # Translation fallback
+│   └── zh-Hans.toml         # Example translation
+├── static/                  # Output-root files
 ├── templates/
 │   ├── base.html
-│   ├── post.html
-│   └── directives/
+│   └── post.html
 └── theme.toml
 ```
 
@@ -169,31 +167,28 @@ Post, standalone, home, archive and overview templates share `title`, `descripti
 
 MiniJinja auto-escapes strings. Apply `| safe` to generated HTML such as `content`, `toc` and `body_html`. Dates are ISO 8601 timestamps in the configured time zone, or UTC. Templates may use `date[:10]` when only the date is wanted.
 
-#### Post templates (`post.html`)
+#### Post Templates (`post.html`)
 
-| Variable               | Contract                                              |
-| ---------------------- | ----------------------------------------------------- |
-| `title`, `description` | Page title and description                            |
-| `url`                  | Canonical page URL                                    |
-| `date`, `updated`      | Publication / modification timestamps, or `none`      |
-| `featured_image`       | Resolved image metadata, or `none`                    |
-| `license`              | Authored page license, or `none`                      |
-| `page_css`             | Fingerprinted owning-page stylesheet URL, or `none`   |
-| `tags`                 | Linked terms with `name` and `url`                    |
-| `section`              | Linked section, or `none`                             |
-| `content`, `toc`       | Rendered page HTML and table of contents              |
-| `assets`               | Detected features and registered scripts              |
-| `config`               | Site configuration, including merged theme parameters |
+| Variable          | Contract                                            |
+| ----------------- | --------------------------------------------------- |
+| `date`, `updated` | Publication / modification timestamps, or `none`    |
+| `featured_image`  | Resolved image metadata, or `none`                  |
+| `license`         | Authored page license, or `none`                    |
+| `page_css`        | Fingerprinted owning-page stylesheet URL, or `none` |
+| `tags`            | Linked terms with `name` and `url`                  |
+| `section`         | Linked section, or `none`                           |
+| `content`, `toc`  | Rendered page HTML and table of contents            |
+| `assets`          | Detected features and registered scripts            |
 
-#### Standalone page templates (`page.html`)
+#### Standalone Page Templates (`page.html`)
 
 Standalone pages use the post variables. When `page.html` is absent, kiln uses `post.html`.
 
-#### Home page templates (`home.html`)
+#### Home Page Templates (`home.html`)
 
-Receives `title`, `description`, `url`, `config`, the current slice of `pages`, and `pagination`. Only posts appear here. Posts with a frontmatter `weight` are pinned first, ordered by ascending weight. Remaining posts are newest first. No home page is generated when this template is absent.
+Receives the common metadata, the current slice of `pages`, and `pagination`. Only posts appear here. Posts with a frontmatter `weight` are pinned first, ordered by ascending weight. Remaining posts are newest first. No home page is generated when this template is absent.
 
-#### Archive page templates (`archive.html`)
+#### Archive Page Templates (`archive.html`)
 
 | Variable           | Contract                                             |
 | ------------------ | ---------------------------------------------------- |
@@ -201,19 +196,34 @@ Receives `title`, `description`, `url`, `config`, the current slice of `pages`, 
 | `name`, `slug`     | Display title and URL slug                           |
 | `page_groups`      | Current page's entries grouped by year, newest first |
 | `pagination`       | Navigation for this archive                          |
-| `config`           | Site configuration                                   |
 
 Archives cover `/posts/`, `/posts/<section>/` and `/tags/<slug>/`. Tagged standalone pages appear in tag archives. Pinning does not change archive or feed order. No archives are generated when this template is absent.
 
-#### Overview page templates (`overview.html`)
+#### Overview Page Templates (`overview.html`)
 
 Receives the common metadata, `kind`, `singular` and `buckets` for `/sections/` or `/tags/`. Each bucket has `name`, `slug`, `url` and its date-sorted `pages`. Use `bucket.pages | length` for the count. No overviews are generated when this template is absent.
 
-#### Error page templates (`404.html`)
+#### Error Page Templates (`404.html`)
 
 Receives `title` and `config`. The output is `404.html`. Generation is skipped when this template is absent.
 
-#### Shared Listing Types
+#### Directive Templates (`directives/<name>.html`)
+
+| Variable                | Contract                                 |
+| ----------------------- | ---------------------------------------- |
+| `name`                  | Directive name                           |
+| `positional_args`       | Positional argument strings              |
+| `named_args`            | Named argument string values             |
+| `id`, `classes`         | Authored `#id` and `.class` tokens       |
+| `body_html`, `body_raw` | Rendered body HTML and original Markdown |
+| `source_dir`            | Page source directory, or `none`         |
+| `config`                | Site configuration                       |
+
+Arguments remain nested in `named_args`, so `named_args.id` and the outer `id` are separate values. Use `body_html | safe` for rendered content. `body_raw` is available to data-driven components that interpret their own input.
+
+### Shared Template Values
+
+#### Listing Entries
 
 Each entry in `pages`, `bucket.pages` or `page_groups[].pages` has:
 
@@ -228,13 +238,15 @@ Each entry in `pages`, `bucket.pages` or `page_groups[].pages` has:
 
 A page group has `key` (the year, or an empty string for undated entries) and `pages`.
 
+#### Pagination
+
 The `pagination` object contains `current_page`, `total_pages`, `base_url`, `prev_url`, `next_url` and `items`. Previous / next URLs are `none` at the respective boundaries. Each item contains `number`, `url` and `is_current`. Gaps are represented by `number = none` and `url = none`.
 
 Controls include the first and last pages plus pages within two of the current page. For a page-jump control, page one is `{base_url}/` and later pages use `{base_url}/page/{n}/`.
 
 #### Featured Images
 
-`featured_image` contains authored `src`, `position` and `credit`, plus build-resolved `width`, `height` and `lqip_uri`. `credit` contains optional `title`, `author` and `url`. Relative image sources resolve against the owning page URL. Local resolvable images receive dimensions, and supported decodable images can receive a placeholder. Gate rendering on optional fields.
+`featured_image` contains `src`, `position` and `credit`, plus optional `width`, `height` and `lqip_uri`. `credit` contains optional `title`, `author` and `url`. Relative image sources resolve against the owning page URL. Local resolvable images receive dimensions, and supported decodable images can receive a placeholder. Gate rendering on optional fields.
 
 #### Page Assets
 
@@ -249,20 +261,6 @@ A shared partial can check presence before loading a runtime:
 ```
 
 Themes supply KaTeX rendering, Mermaid initialization and registered script tags. Keep these runtimes conditional on the page's declarations.
-
-#### Directive templates (`directives/<name>.html`)
-
-| Variable                | Contract                                 |
-| ----------------------- | ---------------------------------------- |
-| `name`                  | Directive name                           |
-| `positional_args`       | Positional argument strings              |
-| `named_args`            | Named argument string values             |
-| `id`, `classes`         | Authored `#id` and `.class` tokens       |
-| `body_html`, `body_raw` | Rendered body HTML and original Markdown |
-| `source_dir`            | Page source directory, or `none`         |
-| `config`                | Site configuration                       |
-
-Arguments remain nested in `named_args`, so `named_args.id` and the outer `id` are separate values. Use `body_html | safe` for rendered content. `body_raw` is available to data-driven components that interpret their own input.
 
 ### Template Functions
 
@@ -321,11 +319,15 @@ Authored IDs and classes belong to the outer details element. Per-line highlight
 
 Callouts use `<details class="callout <type>">`, `.callout-title`, and `.callout-body > .callout-body-inner`. Authored IDs and classes belong to the details element. Generic directives use a div with the directive name and authored classes. See [Directives](syntax.md#directives) for syntax.
 
-## Image Rendering
+### Math and Diagrams
 
-Markdown images receive lazy loading and asynchronous decoding. A paragraph containing only one image becomes a figure with a caption from its alt text. Authored IDs / classes belong to the figure for block images and the img for inline images. Width / height always belong to the img.
+Math uses `<span class="math math-inline">` with `\(...\)` delimiters or `<span class="math math-display">` with `\[...\]`. Mermaid uses `<pre class="mermaid">` with its original source mirrored in `data-source`, allowing themes to render it again after a color-mode change. Load and initialize the corresponding runtime using the [page's declared features](#page-assets).
 
-Locally resolvable images receive natural dimensions. Supported decoded images also receive a small WebP placeholder. When present, an `.lqip` span wraps the img and exposes the placeholder as the `--lqip-uri` CSS custom property. It sits inside the figure for block images.
+### Image Rendering
+
+Markdown images receive lazy loading and asynchronous decoding. A paragraph containing only one image becomes a figure with a caption from its alt text. Authored IDs / classes belong to the `<figure>` for block images and the `<img>` for inline images. Width / height always belong to the `<img>`.
+
+Locally resolvable images receive natural dimensions. Supported decoded images also receive a small WebP placeholder. When present, an `.lqip` span wraps the `<img>` and exposes the placeholder as the `--lqip-uri` CSS custom property. It sits inside the figure for block images.
 
 ```html
 <span class="lqip" style="--lqip-uri:url('data:image/webp;base64,...')">
@@ -352,7 +354,7 @@ Themes can paint the placeholder behind the foreground image:
 }
 ```
 
-Template-rendered featured images need their own wrapper, gated on `featured_image.lqip_uri`. Remote, unresolved or undecodable images may lack a placeholder, so keep the bare img path available.
+Template-rendered featured images need their own wrapper, gated on `featured_image.lqip_uri`. Remote, unresolved or undecodable images may lack a placeholder, so support images without the wrapper.
 
 ```toml
 [image]

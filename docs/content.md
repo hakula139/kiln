@@ -8,18 +8,18 @@ Posts, standalone pages and their assets live under `content/`.
 content/
 ├── about-me/
 │   └── index.md             # Standalone page → /about-me/
-├── posts/
-│   ├── _index.md            # Optional: sets title for /posts/ listing
-│   ├── note/
-│   │   ├── _index.md        # Optional: sets title for /posts/note/ listing
-│   │   └── my-post/
-│   │       ├── index.md     # Post (sectioned) → /posts/note/my-post/
-│   │       ├── cover.webp   # Co-located asset
-│   │       └── assets/
-│   │           └── diagram.svg
-│   └── standalone-post.md   # Post (orphan, no bundle) → /posts/standalone-post/
-└── comments/
-    └── index.md             # Standalone page → /comments/
+├── comments/
+│   └── index.md             # Standalone page → /comments/
+└── posts/
+    ├── _index.md            # Optional: sets title for /posts/ listing
+    ├── note/
+    │   ├── _index.md        # Optional: sets title for /posts/note/ listing
+    │   └── my-post/
+    │       ├── assets/
+    │       │   └── diagram.svg
+    │       ├── cover.webp   # Co-located asset
+    │       └── index.md     # Post (sectioned) → /posts/note/my-post/
+    └── standalone-post.md   # Post (orphan, no bundle) → /posts/standalone-post/
 ```
 
 ### Page Kinds
@@ -33,12 +33,13 @@ kiln classifies pages based on their location under `content/`:
 | `content/posts/<slug>/index.md`           | Post (orphan)    | Yes           | No            |
 | `content/posts/<slug>.md`                 | Post (orphan)    | Yes           | No            |
 | `content/<slug>/index.md`                 | Standalone page  | No            | No            |
+| `content/<slug>.md`                       | Standalone page  | No            | No            |
 
 Posts appear on the home page, posts index and their section archives. Tag archives include every tagged page, including standalone pages.
 
 ### Sections
 
-A section is a subdirectory directly under `content/posts/`. Posts inside `content/posts/note/` belong to the `note` section. Each section gets its own archive page at `/posts/<section>/`.
+A section is a subdirectory directly under `content/posts/`. Posts inside `content/posts/note/` belong to the `note` section. Each section has an archive at `/posts/<section>/`.
 
 To set a custom title for a section listing, add a `_index.md` with frontmatter:
 
@@ -99,6 +100,8 @@ All fields are optional. Defaults:
 | `weight`            | none                         |
 | `heading_numbering` | `false`                      |
 
+When `description` is absent, text before `<!--more-->` supplies a plain-text description for page and listing templates. Without either, the description is empty.
+
 `slug` overrides the final component of the page route and must be one nonempty directory name. It applies to HTML, bundle assets and canonical links. Conflicting content, generated pages or public files fail the build with a route collision diagnostic.
 
 `date` and `updated` are absolute instants. Post templates receive them as ISO 8601 strings in the time zone set in the site's `config.toml`, or UTC when `timezone` is unset:
@@ -115,9 +118,9 @@ enable_git_info = true
 
 The Git fallback requires the `git` executable on `PATH` and full repository history, including in CI. When they are unavailable or the checkout is shallow, `updated` has no Git-derived value.
 
-Each tag gets one archive page, addressed by its [slug](syntax.md#headings). Spellings that differ only in case (`Rust` and `rust`) merge there, using the first spelling as the default display name. A tag's `tags/<slug>/_index.md` can override that title. When two tags differ beyond case yet slugify alike (`Rock & Roll` and `Rock Roll`), one URL cannot serve both, so the build fails with a `tag slug collision` error naming the slug, both tags, and their page counts.
+Each tag has an archive at `/tags/<slug>/`, using the same [slug rules as headings](syntax.md#headings). Spellings that differ only in case (`Rust` and `rust`) merge there, using the first spelling as the default display name. A tag's `content/tags/<slug>/_index.md` can override that title. When two tags differ beyond case yet slugify alike (`Rock & Roll` and `Rock Roll`), one URL cannot serve both, so the build fails with a `tag slug collision` error naming the slug, both tags, and their page counts.
 
-A post with any `weight` set is pinned on the home page, sorted before unpinned posts and ordered by `weight` ascending (lower floats higher, matching Hugo's `weight` semantics). Archive, tag, and section listings ignore `weight` and stay strictly date-sorted, so a pinned post still appears at its natural date position in those listings.
+On the home page, posts with a `weight` precede unweighted posts and use ascending weight. Archives and feeds remain date-sorted.
 
 ## Page Bundles
 
@@ -127,10 +130,10 @@ A **page bundle** is a directory containing an `index.md` alongside related file
 content/posts/note/my-post/
 ├── assets/
 │   ├── css/_src/style.css   # Private page stylesheet source
-│   ├── data.csv            # Data files for directives
-│   └── diagram.svg         # Nested assets work too
-├── cover.webp              # Image (co-located asset)
-└── index.md                # Page content
+│   ├── data.csv             # Data files for directives
+│   └── diagram.svg          # Nested assets work too
+├── cover.webp               # Image (co-located asset)
+└── index.md                 # Page content
 ```
 
 Public non-Markdown files owned by a bundle are copied beside its rendered HTML. Underscore-prefixed files and directories are private. Nested bundles own their own files, including when excluded from the build. Excluded bundles do not publish their assets. Published assets retain their relative paths:

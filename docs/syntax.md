@@ -1,6 +1,6 @@
 # Syntax Reference
 
-kiln supports CommonMark and GitHub Flavored Markdown with the authoring extensions below. Theme rendering contracts are covered in [Theming](themes.md).
+kiln supports CommonMark with [GitHub Flavored Markdown](https://github.github.com/gfm/) tables, strikethrough and task lists, plus the authoring extensions below. Theme rendering contracts are covered in [Themes](themes.md).
 
 ## Frontmatter
 
@@ -47,7 +47,7 @@ Headings automatically receive `id` attributes generated from their text, suitab
 <!-- renders as: <h2 id="getting-started">Getting Started</h2> -->
 ```
 
-The slugification algorithm is CJK-aware and preserves Chinese / Japanese / Korean characters in IDs. Alphanumerics are lowercased, `+`, `.`, `_`, and `~` survive as-is (so `C++` becomes `c++`), and every other character collapses into a single `-`. Duplicate IDs are disambiguated with numeric suffixes (`-1`, `-2`, ...).
+The slugification algorithm is CJK-aware and preserves Chinese / Japanese / Korean characters in IDs. Alphanumerics are lowercased, `+`, `.`, `_`, and `~` survive as-is (so `C++` becomes `c++`), and every other character collapses into a single `-`.
 
 Explicit heading IDs override the auto-generated one:
 
@@ -57,9 +57,9 @@ Explicit heading IDs override the auto-generated one:
 <!-- renders as: <h2 id="custom-id">My Section</h2> -->
 ```
 
-Heading IDs are unique across the page body and nested directives. Repeated IDs receive numeric suffixes in rendered document order (`name`, `name-1`, `name-2`). Authored IDs are reserved before generated heading and footnote IDs are allocated.
+Heading IDs are unique across the page body and nested directives. Repeated IDs receive numeric suffixes in rendered document order (`name`, `name-1`, `name-2`). IDs on raw HTML, images, code blocks and directive wrappers are reserved before heading and footnote IDs are allocated.
 
-Headings are also collected into a structured table of contents, exposed to post templates as the `toc` variable. See [Post templates](themes.md#post-templates-posthtml).
+Page-body headings populate the `toc` variable in post templates. Headings inside directives stay outside this table of contents. See [Post Templates](themes.md#post-templates-posthtml).
 
 Set `heading_numbering = true` in frontmatter to number headings and table-of-contents links, starting at `1`. A heading's `{numbering-start=0}` starts its local level at `0`, giving `2.0` under chapter `2`.
 
@@ -67,7 +67,7 @@ Set `heading_numbering = true` in frontmatter to number headings and table-of-co
 
 Standard Markdown image syntax is supported. kiln distinguishes between **block** and **inline** images:
 
-#### Block image
+#### Block Images
 
 A paragraph containing only a single image:
 
@@ -75,21 +75,21 @@ A paragraph containing only a single image:
 ![Alt text as caption](/path/to/image.jpg "Optional title")
 ```
 
-Renders as a `<figure>` with `<figcaption>` (from the alt text). Images receive `loading="lazy"` automatically.
+Renders as a `<figure>` with a `<figcaption>` when alt text is present. Images receive `loading="lazy"` automatically.
 
-#### Inline image
+#### Inline Images
 
-An image appearing alongside other text in a paragraph:
+Images alongside paragraph text, or inside headings, table cells and tight lists, remain inline:
 
 ```markdown
 Here is an icon ![icon](/icon.png) in the middle of text.
 ```
 
-Renders as an img, optionally wrapped for a loading placeholder. See [Image Rendering](themes.md#image-rendering) for the theme contract.
+Renders as an `<img>`, optionally wrapped for a loading placeholder. See [Image Rendering](themes.md#image-rendering) for the theme contract.
 
 #### Image Attributes
 
-A [Pandoc-style attribute block](#pandoc-style-attributes) can follow the closing `)` to set id, classes, width, and height:
+A [Pandoc-style attribute block](#pandoc-style-attributes) can follow image syntax to set an ID, classes, width and height:
 
 ```markdown
 ![Photo](photo.jpg){#hero .wide width=800 height=600}
@@ -116,12 +116,7 @@ fn main() {
 ```
 ````
 
-Features:
-
-- CSS-class-based highlighting without inline styles, which requires a syntect theme stylesheet.
-- Line numbers are included automatically.
-- Language labels are canonicalized from syntax definitions (e.g., `rs` maps to `rust`).
-- Unrecognized languages fall back to plain text.
+Token colors use CSS classes and require a syntect theme stylesheet. Blocks include line numbers. Language aliases use the canonical label (e.g., `rs` becomes `rust`), and unrecognized languages fall back to plain text.
 
 Blocks use native disclosure and start open unless `collapse` is set. The site setting `params.code_max_lines` limits visible lines when supported by the theme. See [the code-block contract](themes.md#code-blocks) for styling hooks.
 
@@ -169,7 +164,7 @@ $$
 $$
 ```
 
-Math expressions render as KaTeX-compatible markup (`<span class="math math-inline">` / `<span class="math math-display">`). Themes load the [KaTeX](https://katex.org) CSS and JS for client-side rendering by gating on `"math" in assets.features`. See [Theming](themes.md#template-variables) for the page-scoped asset registry.
+The theme supplies [KaTeX](https://katex.org) for client-side rendering. See [Math and Diagrams](themes.md#math-and-diagrams) for the rendering contract.
 
 ### Mermaid Diagrams
 
@@ -195,35 +190,6 @@ Here is a claim[^1] that needs a source.
 Definitions can go anywhere within the page body or a directive body. Each body is a separate footnote scope, so references and definitions must share that scope. Labels match using Unicode case folding, and the first definition of a label is used. Unreferenced definitions are omitted.
 
 Notes render at the end of their scope, numbered by first reference in the body. References within reachable notes follow those in the body. Each reference links to its note, and each note links back to every rendered reference. Repeated references have numbered return links.
-
-### GFM Extensions
-
-[GitHub Flavored Markdown](https://github.github.com/gfm/) extensions are enabled:
-
-#### Tables
-
-```markdown
-| Left | Center | Right |
-| :--- | :----: | ----: |
-| a    |   b    |     c |
-```
-
-#### Strikethrough
-
-```markdown
-~~deleted text~~
-```
-
-#### Task lists
-
-```markdown
-- [x] Completed
-- [ ] Pending
-```
-
-#### Autolinks
-
-Wrap a URL or email address in angle brackets: `<https://example.com>` or `<name@example.com>`.
 
 ## Shortcodes
 
@@ -288,23 +254,7 @@ More warning content.
 ::::
 ```
 
-The closing fence must have at least as many colons as the opening fence it closes. A `:::` fence cannot close a `::::` block, but a `::::` fence can close a `:::` block.
-
-### Code Blocks Inside Directives
-
-Fenced code blocks inside directives work normally. The parser is aware of code fences and will not interpret `:::` inside a code block as a directive boundary:
-
-<!-- dprint-ignore -->
-````markdown
-::: callout
-Here is an example:
-
-```python
-print("Hello")
-```
-
-:::
-````
+The closing fence must have at least as many colons as the opening fence it closes. Code blocks and code spans retain literal `:::` text.
 
 ### Callouts
 

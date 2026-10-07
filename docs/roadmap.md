@@ -4,7 +4,7 @@ kiln powers [hakula.xyz](https://hakula.xyz). Its scope follows the site's publi
 
 ## Current Status
 
-The engine powers the site's content, assets and publishing workflow. Supported capabilities and their usage guides are listed in the [README](../README.md#highlights). [IgnIt](https://github.com/hakula139/IgnIt) owns the reader interface and its presentation features.
+Supported capabilities and their usage guides are listed in the [README](../README.md#highlights). [IgnIt](https://github.com/hakula139/IgnIt) owns the reader interface and its presentation features.
 
 ## Current Focus
 

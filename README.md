@@ -22,7 +22,7 @@ A static site generator written in Rust for [hakula.xyz](https://hakula.xyz), wi
 - Automatic image dimensions and blurred loading placeholders
 - Asset fingerprinting and optional HTML / CSS / JS minification
 
-### Theming & Development
+### Theming and Development
 
 - MiniJinja templates with site overrides and translatable theme strings
 - [IgnIt](https://github.com/hakula139/IgnIt) theme with responsive layouts and dark mode
@@ -30,14 +30,14 @@ A static site generator written in Rust for [hakula.xyz](https://hakula.xyz), wi
 
 ## Documentation
 
-| Document                         | Description                                             |
-| -------------------------------- | ------------------------------------------------------- |
-| [Roadmap](docs/roadmap.md)       | Current priorities and project scope                    |
-| [Content Guide](docs/content.md) | Content, frontmatter and Hugo migration                 |
-| [Assets](docs/assets.md)         | Publication, stylesheets, fingerprints, and live reload |
-| [Syntax Guide](docs/syntax.md)   | Markdown extensions and directives                      |
-| [Theming](docs/themes.md)        | Site configuration, themes and templates                |
-| [Benchmarks](docs/benchmarks.md) | Performance measurements and baseline comparisons       |
+| Document                                 | Description                                            |
+| ---------------------------------------- | ------------------------------------------------------ |
+| [Content](docs/content.md)               | Content, frontmatter and Hugo migration                |
+| [Syntax Reference](docs/syntax.md)       | Markdown extensions and directives                     |
+| [Assets and Stylesheets](docs/assets.md) | Publication, stylesheets, fingerprints and live reload |
+| [Themes](docs/themes.md)                 | Site configuration, themes and templates               |
+| [Benchmarks](docs/benchmarks.md)         | Performance measurements and baseline comparisons      |
+| [Roadmap](docs/roadmap.md)               | Current priorities and project scope                   |
 
 ## Installation
 
