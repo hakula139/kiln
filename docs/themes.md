@@ -1,567 +1,68 @@
 # Themes
 
-kiln uses a theme system that separates site content from presentation. Themes provide templates, stylesheet sources, public assets, and default parameters. Site-level files always take precedence over theme files when both exist at the same path.
+Themes provide templates, stylesheet sources, public assets and default parameters. Site files take precedence over theme files.
 
 ## Installation
 
-Add a theme to your site as a Git submodule:
+Add a theme to an initialized site repository and select its directory name in `config.toml`:
 
 ```bash
-cd my-site
 git submodule add https://github.com/hakula139/IgnIt.git themes/IgnIt
 ```
-
-Then set the theme in your site's `config.toml`:
 
 ```toml
 theme = "IgnIt"
 ```
 
-The `theme` value corresponds to the directory name under `themes/`.
+A theme can declare a minimum kiln version and a stylesheet processor. Check its README for installation requirements and supported `[params]` settings. [IgnIt](https://github.com/hakula139/IgnIt) uses Tailwind, whose installation is covered in [Processor Setup](assets.md#processor-setup).
 
-## Theme Structure
+## Site Configuration
 
-A theme lives in `themes/<name>/` and follows this layout:
+kiln reads `config.toml` from the site root. An absent file uses the defaults below.
 
-```text
-themes/IgnIt/
-├── assets/
-│   └── css/_src/style.css   # Shared stylesheet source
-├── static/                  # Root-level public files
-├── templates/               # MiniJinja templates
-│   ├── base.html            # Base layout
-│   ├── directives/          # Directive templates (optional)
-│   │   └── site.html        # Renders ::: site directives
-│   ├── archive.html         # Year-grouped archive page (e.g., /posts/, /tags/rust/)
-│   ├── home.html            # Home page with paginated post listing
-│   ├── overview.html        # Bucket overview page (e.g., /tags/, /sections/)
-│   ├── page.html            # Standalone page (about, etc.)
-│   └── post.html            # Post page template
-└── theme.toml               # Theme metadata and default parameters
-```
+| Setting            | Default                    | Purpose                                                     |
+| ------------------ | -------------------------- | ----------------------------------------------------------- |
+| `base_url`         | `"http://localhost:5456"`  | Published site URL, including a deployment path when needed |
+| `title`            | `"My Site"`                | Site title                                                  |
+| `description`      | `""`                       | Site description                                            |
+| `language`         | `"en"`                     | Active theme translation language                           |
+| `timezone`         | unset                      | IANA time zone for rendered timestamps, otherwise UTC       |
+| `enable_git_info`  | `false`                    | Derive missing page updates from Git history                |
+| `output_dir`       | `"public"`                 | Build destination, resolved relative to the site root       |
+| `theme`            | unset                      | Theme directory under `themes/`                             |
+| `[author]`         | empty fields               | `name`, `email` and `link`, available to templates          |
+| `[css]`            | inherited, otherwise plain | [Stylesheet processor](assets.md#processor-setup)           |
+| `[search]`         | disabled                   | [Pagefind indexing](../README.md#search)                    |
+| `[image]`          | size 16, quality 25        | [Image placeholders](#image-rendering)                      |
+| `[params]`         | theme defaults             | Theme settings and [renderer options](syntax.md)            |
+| `[[menu.<group>]]` | no entries                 | [Navigation menus](#navigation-menus)                       |
 
-### `theme.toml`
-
-Every theme must have a `theme.toml` at its root. It contains metadata and default parameters:
-
-```toml
-min_kiln_version = "0.1.0"
-
-[params]
-code_max_lines = 40
-emojis = true
-fontawesome = true
-```
-
-All fields are optional. kiln uses the following:
-
-| Field              | Description                                                  |
-| ------------------ | ------------------------------------------------------------ |
-| `min_kiln_version` | Minimum kiln version (semver). Build fails if unmet          |
-| `[css]`            | Stylesheet processor, inherited unless the site overrides it |
-| `[params]`         | Default parameters that sites can override                   |
-
-The theme name is inferred from the directory name (e.g., `themes/IgnIt/` → `"IgnIt"`).
-
-Additional fields (`name`, `description`, `license`, `[author]`, etc.) are ignored by kiln but recommended for discoverability:
-
-```toml
-name = "IgnIt"
-description = "A clean, feature-rich theme for kiln"
-license = "MIT"
-
-[author]
-name = "Hakula"
-link = "https://hakula.xyz"
-```
-
-See [Parameter Merging](#parameter-merging) for how `[params]` interacts with site config.
-
-## Override Model
-
-kiln merges site and theme files using a consistent rule: **site files take precedence**.
-
-### Templates
-
-When rendering, kiln looks for each template in this order:
-
-1. **Site** `templates/` directory (highest priority)
-2. **Theme** `templates/` directory (fallback)
-
-To override a theme template, place a file with the same name in your site's `templates/` directory:
-
-```text
-my-site/
-├── templates/
-│   └── post.html       # ← overrides theme's post.html
-└── themes/IgnIt/
-    └── templates/
-        ├── base.html   # used (no site override)
-        └── post.html   # overridden by site's version
-```
-
-This works for all templates, including directive templates under `templates/directives/`.
-
-### Assets and Stylesheets
-
-Themes use `assets/` for shared public files, `static/` for output-root files, and `assets/css/_src/style.css` for the shared stylesheet source. See [Assets and Stylesheets](assets.md) for overrides, processor configuration, template links, and live reload.
+`kiln build --base-url <url>` overrides `base_url`. `KILN_BASE_URL` supplies the override when the flag is absent. An empty override uses the configuration value. The final URL must be absolute with a host and contain no query or fragment. Templates receive a normalized `config.base_url` without a trailing slash. `kiln serve` uses its local server URL.
 
 ### Parameter Merging
 
-The `[params]` table is merged recursively. Site values take precedence over theme defaults:
+Site `[params]` values override theme defaults recursively. Missing keys inherit the theme value, nested tables merge, and arrays replace the entire theme array. A type mismatch fails configuration loading.
 
 ```toml
 # theme.toml
 [params]
-code_max_lines = 40
 emojis = true
-fontawesome = true
 
-[params.social]
-github = ""
-twitter = ""
+[params.home]
+paginate = 10
 ```
 
-<!-- dprint-ignore -->
 ```toml
-# config.toml (site)
-theme = "IgnIt"
-
-[params]
-fontawesome = false           # overrides theme default
-
-[params.social]
-github = "hakula139"          # overrides theme default
-                              # twitter inherits "" from theme
+# config.toml
+[params.home]
+paginate = 5
 ```
 
-Merge rules:
+The site keeps `emojis = true` and uses five posts per home page. The engine reads `params.home.paginate` for home listings, `params.section.paginate` for post / section archives, and `params.paginate` as their fallback and the tag archive setting. The default is 10. Non-positive values fall through to the next setting or default.
 
-- **Scalars**: site value wins.
-- **Arrays**: site value wins (arrays are replaced entirely, not concatenated).
-- **Tables**: merged recursively. Site keys override matching theme keys, and theme-only keys are preserved.
-- **Missing keys**: theme defaults fill in any keys not present in the site config.
+### Navigation Menus
 
-## Creating a Theme
-
-The quickest way to create a new theme is with the built-in scaffolding command:
-
-```bash
-kiln init-theme my-theme
-```
-
-This creates the following structure under `themes/my-theme/`:
-
-```text
-themes/my-theme/
-├── assets/
-│   └── css/_src/style.css   # Starter plain CSS
-├── i18n/                    # Starter translation tables
-│   ├── en.toml
-│   └── zh-Hans.toml
-├── static/                  # Root-level public files
-├── templates/
-│   ├── base.html            # Minimal base layout with block inheritance
-│   └── post.html            # Post template extending base.html
-└── theme.toml               # Empty (all fields are optional)
-```
-
-Set `theme = "my-theme"` in your site's `config.toml` to use it. From there, customize the templates and add public assets as needed.
-
-### Manual Setup
-
-To create a theme manually instead:
-
-1. Create the theme directory structure:
-
-   ```bash
-   mkdir -p themes/my-theme/{assets/css/_src,templates,static}
-   ```
-
-2. Add an empty `theme.toml` (all fields are optional):
-
-   ```bash
-   touch themes/my-theme/theme.toml
-   ```
-
-3. Create a `templates/base.html` with the base layout. Use [MiniJinja](https://github.com/mitsuhiko/minijinja) template syntax with block inheritance:
-
-   ```html
-   <!DOCTYPE html>
-   <html lang="{{ config.language }}">
-     <head>
-       <meta charset="utf-8">
-       {% block title %}<title>{{ config.title }}</title>{% endblock %}
-       <link rel="stylesheet" href="{{ asset_url('/assets/css/site.css') | safe }}">
-       {% block head %}{% endblock %}
-     </head>
-     <body>
-       {% block body %}{% endblock %}
-     </body>
-   </html>
-   ```
-
-4. Create a `templates/post.html` that extends the base:
-
-   ```html
-   {% extends "base.html" %}
-
-   {% block title %}<title>{{ title }} - {{ config.title }}</title>{% endblock %}
-
-   {% block head %}
-   {% if page_css %}<link rel="stylesheet" href="{{ page_css | safe }}">{% endif %}
-   {% endblock %}
-
-   {% block body %}
-   <article>
-     <h1>{{ title }}</h1>
-     <div class="content">{{ content | safe }}</div>
-   </article>
-   {% endblock %}
-   ```
-
-5. Add your stylesheet at `themes/my-theme/assets/css/_src/style.css`.
-
-6. Set `theme = "my-theme"` in your site's `config.toml`.
-
-### Template Variables
-
-Templates receive the following variables during rendering:
-
-Whenever a template variable includes a page `date` or `updated`, kiln renders it as an ISO 8601 string in the site's configured `timezone` from `config.toml`. When `timezone` is unset, kiln uses UTC.
-
-#### Post templates (`post.html`)
-
-| Variable          | Type             | Description                                                      |
-| ----------------- | ---------------- | ---------------------------------------------------------------- |
-| `title`           | string           | Post title from frontmatter                                      |
-| `description`     | string           | Post description                                                 |
-| `url`             | string           | Canonical URL of the post                                        |
-| `featured_image`  | object or `none` | Featured image (see below)                                       |
-| `page_css`        | string or `none` | Fingerprint URL to the compiled page stylesheet (if any)         |
-| `date`            | string or `none` | Publication date (ISO 8601)                                      |
-| `updated`         | string or `none` | Last update (ISO 8601; see [frontmatter](syntax.md#frontmatter)) |
-| `tags`            | list of objects  | Tags with `name` and `url` fields                                |
-| `section`         | object or `none` | Section the post belongs to (see below)                          |
-| `assets`          | object           | Page-scoped asset registry (see below)                           |
-| `content`         | string           | Rendered HTML content                                            |
-| `toc`             | string           | Rendered table of contents HTML                                  |
-| `config`          | object           | Site configuration                                               |
-| `config.base_url` | string           | Site base URL                                                    |
-| `config.title`    | string           | Site title                                                       |
-
-`assets` is populated by the renderer as it walks the page (and any nested directive bodies):
-
-| Field      | Type            | Description                                                                                                                                                           |
-| ---------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `features` | list of strings | Auto-detected runtime dependencies. Current values: `"math"` (set when the page contains math expressions), `"mermaid"` (set when a ` ```mermaid ` fence is present). |
-| `scripts`  | list of objects | Scripts registered via [`register_script(...)`](#register_scripturl-loaddefer-modulefalse). Each entry has `url`, `load` (string), and `module` (bool).               |
-
-Templates gate conditional CDN loads with membership tests on `assets.features`. Use the `assets is defined` guard when the include is shared with listing templates (`home.html`, `archive.html`, `overview.html`, `404.html`). Only `post.html` and `page.html` receive `assets`:
-
-```jinja
-{%- if assets is defined and "math" in assets.features %}
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16/dist/katex.min.css">
-{%- endif %}
-```
-
-#### Standalone page templates (`page.html`)
-
-Uses the same variables as `post.html` (see above). The `page.html` template is used for standalone pages (e.g., "About Me") that live outside the `posts/` directory. If `page.html` is not present, standalone pages fall back to `post.html`.
-
-#### Home page templates (`home.html`)
-
-| Variable      | Type          | Description                                                            |
-| ------------- | ------------- | ---------------------------------------------------------------------- |
-| `title`       | string        | Site title (from `config.title`)                                       |
-| `description` | string        | Site description (from `config.description`)                           |
-| `url`         | string        | Canonical home page URL                                                |
-| `pages`       | list of pages | Posts for the current page (see page fields in overview section below) |
-| `pagination`  | object        | Pagination metadata (same structure as archive pages below)            |
-| `config`      | object        | Site configuration                                                     |
-
-Only posts appear on the home page, and standalone pages are excluded. The number of posts per page is configurable via `params.home.paginate` or `params.paginate` (default: 10). If `home.html` is not present, no home page is generated.
-
-#### Archive page templates (`archive.html`)
-
-| Variable      | Type           | Description                                                    |
-| ------------- | -------------- | -------------------------------------------------------------- |
-| `kind`        | string         | Archive scope plural (e.g., `"posts"`, `"sections"`, `"tags"`) |
-| `singular`    | string         | Archive scope singular (e.g., `"post"`, `"section"`, `"tag"`)  |
-| `name`        | string         | Display name (e.g., `"Posts"`, `"Note"`, `"Rust"`)             |
-| `slug`        | string         | URL-safe slug (e.g., `"posts"`, `"note"`, `"rust"`)            |
-| `page_groups` | list of groups | Posts grouped by year, newest first                            |
-| `pagination`  | object         | Pagination metadata (see below)                                |
-| `config`      | object         | Site configuration                                             |
-
-Archive pages are generated for:
-
-- **Posts index** (`/posts/`): `kind="posts"`, `singular="post"`. Title from `content/posts/_index.md` or `"All Posts"`.
-- **Section archives** (`/posts/<slug>/`): `kind="sections"`, `singular="section"`. Title from `content/posts/<section>/_index.md` or titlecased slug.
-- **Tag archives** (`/tags/<slug>/`): `kind="tags"`, `singular="tag"`. Title from frontmatter or `content/tags/<slug>/_index.md`.
-
-Posts per page: `params.section.paginate` or `params.paginate` (default: 10) for posts / sections, and `params.paginate` (default: 10) for tags. If `archive.html` is not present, no archive pages are generated.
-
-#### Overview page templates (`overview.html`)
-
-| Variable   | Type            | Description                                                                    |
-| ---------- | --------------- | ------------------------------------------------------------------------------ |
-| `kind`     | string          | Overview scope plural (e.g., `"sections"`, `"tags"`)                           |
-| `singular` | string          | Overview scope singular (e.g., `"section"`, `"tag"`)                           |
-| `buckets`  | list of buckets | All buckets in this scope, sorted by page count descending then name ascending |
-| `config`   | object          | Site configuration                                                             |
-
-Each bucket in `buckets` has:
-
-| Field   | Type          | Description                                         |
-| ------- | ------------- | --------------------------------------------------- |
-| `name`  | string        | Display name (e.g., `"Rust"`)                       |
-| `slug`  | string        | URL-safe slug (e.g., `"rust"`)                      |
-| `url`   | string        | URL to the archive page (e.g., `"/tags/rust/"`)     |
-| `pages` | list of pages | All pages in this bucket, sorted by date descending |
-
-Use `bucket.pages | length` to get the page count.
-
-Each page in `pages` has:
-
-| Field            | Type             | Description                          |
-| ---------------- | ---------------- | ------------------------------------ |
-| `title`          | string           | Post title                           |
-| `url`            | string           | Canonical URL                        |
-| `date`           | string or `none` | Publication date                     |
-| `description`    | string           | Post description                     |
-| `featured_image` | object or `none` | Featured image (see below)           |
-| `tags`           | list of objects  | Tags with `name` and `url` fields    |
-| `section`        | object or `none` | Section with `name` and `url` fields |
-
-`featured_image` (when present) has:
-
-| Field      | Type             | Description                                                               |
-| ---------- | ---------------- | ------------------------------------------------------------------------- |
-| `src`      | string           | Resolved image path / URL                                                 |
-| `position` | string or `none` | CSS `object-position` value (e.g., `"top"`)                               |
-| `credit`   | object or `none` | Attribution metadata (see below)                                          |
-| `width`    | int or `none`    | Natural pixel width, stamped by the build-time image pipeline             |
-| `height`   | int or `none`    | Natural pixel height, stamped by the build-time image pipeline            |
-| `lqip_uri` | string or `none` | `data:image/webp;base64,...` placeholder for the `.lqip` wrapper backdrop |
-
-`width` / `height` / `lqip_uri` are populated for local, decodable images. Remote URLs and unresolvable paths leave these fields `none`, so templates should gate on their presence. See [Image Rendering](#image-rendering) for the wrapper shape and a CSS recipe.
-
-`credit` (when present) has:
-
-| Field    | Type             | Description                                          |
-| -------- | ---------------- | ---------------------------------------------------- |
-| `title`  | string or `none` | Title of the original work                           |
-| `author` | string or `none` | Author / artist name                                 |
-| `url`    | string or `none` | Link to the original work (e.g., Pixiv artwork page) |
-
-`section` and each tag entry have:
-
-| Field  | Type   | Description                                             |
-| ------ | ------ | ------------------------------------------------------- |
-| `name` | string | Display name (e.g., `"Rust"`, `"笔记"`)                 |
-| `url`  | string | Canonical URL (e.g., `"/tags/rust/"`, `"/posts/note/"`) |
-
-Each group in `page_groups` has:
-
-| Field   | Type          | Description                             |
-| ------- | ------------- | --------------------------------------- |
-| `key`   | string        | Group key (year, e.g., `"2026"`)        |
-| `pages` | list of pages | Pages in this group (same fields above) |
-
-The `pagination` object has:
-
-| Field          | Type             | Description                                  |
-| -------------- | ---------------- | -------------------------------------------- |
-| `current_page` | number           | Current page number (1-indexed)              |
-| `total_pages`  | number           | Total number of pages                        |
-| `base_url`     | string           | Base URL for page links (e.g., `/tags/rust`) |
-| `prev_url`     | string or `none` | URL to the previous page (if exists)         |
-| `next_url`     | string or `none` | URL to the next page (if exists)             |
-| `items`        | list of items    | Numbered page entries for display            |
-
-Each item in `items` has:
-
-| Field        | Type             | Description                                 |
-| ------------ | ---------------- | ------------------------------------------- |
-| `number`     | number or `none` | Page number, or `none` for ellipsis markers |
-| `url`        | string or `none` | Page URL, or `none` for ellipsis markers    |
-| `is_current` | boolean          | Whether this is the active page             |
-
-Items include the first page, last page, and pages within ±2 of the current page. Gaps between shown ranges are represented by a single ellipsis marker (`number: none`).
-
-To build a "jump to page" control, use `base_url`: page 1 is `{base_url}/`, page N is `{base_url}/page/{n}/`.
-
-The number of items per page is configurable via `paginate` in `[params]` (default: 10).
-
-#### Directive templates (`directives/<name>.html`)
-
-| Variable          | Type                  | Description                                |
-| ----------------- | --------------------- | ------------------------------------------ |
-| `name`            | string                | Directive name                             |
-| `positional_args` | list of strings       | Parsed positional arguments                |
-| `named_args`      | map (string → string) | Parsed named arguments (`key=value`)       |
-| `id`              | string or `none`      | Pandoc `#id` attribute                     |
-| `classes`         | list of strings       | Pandoc `.class` attributes                 |
-| `body_html`       | string                | Rendered HTML body of the directive block  |
-| `body_raw`        | string                | Raw markdown source of the directive body  |
-| `source_dir`      | string or `none`      | Page source directory (for `read_file`)    |
-| `config`          | object                | Site `Config` (`base_url`, `params`, etc.) |
-
-Don't reuse the names in the table above (e.g., `config`, `body_html`) or any `__`-prefixed key as directive arguments. The engine's binding shadows them, so your value never reaches the template.
-
-### Template Functions
-
-The following functions are available in all templates.
-
-#### `now()`
-
-Returns the current local timestamp as an ISO 8601 string (e.g., `"2026-03-29T23:00:00+08:00[Asia/Shanghai]"`):
-
-```html
-<footer>&copy; {{ now()[0:4] }} My Site</footer>
-```
-
-#### `read_file(filename)`
-
-Reads a file relative to the page's `source_dir`. Only available in directive templates (where `source_dir` is set). Useful for directives that reference co-located data files (e.g., CSV for score tables):
-
-```html
-{% set csv = read_file(positional_args[0]) %}
-```
-
-The return value is auto-escaped by MiniJinja. Use `| safe` if the content should be rendered as raw HTML. Path traversal (`..`) and absolute paths are rejected. Symlinks inside the source directory may refer to external files.
-
-#### `parse_csv(text)`
-
-Parses CSV text (RFC 4180) into a list of rows, where each row is a list of field strings. Handles quoted fields with embedded commas and escaped quotes. Useful with `read_file` for data-driven directive templates:
-
-```html
-{% set rows = parse_csv(read_file("scores.csv")) %}
-{% set headers = rows[0] %}
-{% for row in rows[1:] %}
-  <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
-{% endfor %}
-```
-
-#### `t(key, **kwargs)`
-
-Resolves a translatable string for the active language. See [Internationalization](#internationalization) for the full model.
-
-```html
-<a href="#top">{{ t("back_to_top") }}</a>
-<p>{{ t("page_counter", current=page, total=pages) }}</p>
-```
-
-When `kwargs` are supplied, Python-style `{name}` placeholders in the string are replaced with the corresponding values. Missing keys silently render as the key itself, so the same `t()` call accepts either a translation key (resolved from i18n tables) or a literal label.
-
-#### `asset_url(path)`
-
-Resolves a published root-relative path to its public URL. See [Fingerprints and Minification](assets.md#fingerprints-and-minification) for supported paths and hashing behavior.
-
-```jinja
-<script src="{{ asset_url('/assets/js/app.js') | safe }}"></script>
-```
-
-#### `register_script(url, load="defer", module=false)`
-
-Registers a `<script>` tag for the current page. Only callable from directive templates, since the renderer surfaces an error when called from a page-level template. Returns the empty string so the call can stand alone:
-
-```jinja
-{{ register_script(asset_url("/assets/js/score-table.js")) }}
-```
-
-The script appears once on the page no matter how many times the directive renders. Re-registering the same `(url, load, module)` triple is a no-op. Registering the same URL with different attributes is a build-time error, so a page never loads two conflicting tags for the same source. `load` accepts `"defer"` (default), `"async"`, or `"sync"`. Pass `module=true` for ES modules.
-
-Themes consume the registered scripts via the page's `assets.scripts` list. See [Post templates](#post-templates-posthtml).
-
-## Image Rendering
-
-kiln stamps natural pixel `width` / `height` and a base64 WebP placeholder (`lqip_uri`) onto every locally-resolvable image at build time. Themes consume the placeholder to paint a blurred backdrop while the full image loads, so layout doesn't shift and the slot is never visually empty.
-
-### Emitted HTML
-
-For inline images, the renderer wraps `<img>` in a `<span class="lqip">` whenever a placeholder was encoded:
-
-```html
-<span class="lqip" style="--lqip-uri:url('data:image/webp;base64,...')">
-  <img src="..." alt="..." width="..." height="..." loading="lazy" decoding="async" />
-</span>
-```
-
-For block images (a paragraph containing only one image), the wrapper sits inside `<figure>`, between the figure and any `<figcaption>`:
-
-```html
-<figure>
-  <span class="lqip" style="--lqip-uri:url('data:image/webp;base64,...')">
-    <img src="..." alt="..." width="..." height="..." loading="lazy" decoding="async" />
-  </span>
-  <figcaption>...</figcaption>
-</figure>
-```
-
-When no placeholder is available (remote URLs, unresolvable paths, undecodable formats like SVG), the wrapper is omitted and the bare `<img>` ships as-is, so themes should never assume the wrapper is present.
-
-### Stable contract
-
-The wrapper exposes two identifiers themes can rely on across kiln releases:
-
-| Token          | Meaning                                                            |
-| -------------- | ------------------------------------------------------------------ |
-| `class="lqip"` | Marks the placeholder wrapper. Use as a CSS selector hook.         |
-| `--lqip-uri`   | CSS custom property carrying the `data:image/webp;base64,...` URI. |
-
-User-supplied attributes (`id`, custom classes, manual `width` / `height`) land on the inner `<img>`, so existing `img` selectors keep matching.
-
-### Minimum-viable theme CSS
-
-The placeholder is meant to be rendered on a `::before` pseudo-element so the foreground bitmap stays unblurred. A vanilla-CSS minimum:
-
-<!-- dprint-ignore -->
-```css
-.lqip {
-  display: inline-block;
-  position: relative;
-}
-.lqip::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background-image: var(--lqip-uri);
-  background-size: cover;
-  filter: blur(20px);
-  z-index: -1;
-}
-```
-
-### Featured images in templates
-
-Auto-wrapping only covers `<img>` tags rendered from markdown. For featured images and other template-rendered images, gate on `featured_image.lqip_uri` and emit the wrapper manually:
-
-```jinja
-{% if featured_image.lqip_uri %}
-  <span class="lqip" style="--lqip-uri:url('{{ featured_image.lqip_uri | safe }}')">
-    <img src="{{ featured_image.src }}" ...>
-  </span>
-{% else %}
-  <img src="{{ featured_image.src }}" ...>
-{% endif %}
-```
-
-### Configuration
-
-Tune the placeholder size and quality via `[image]` in `config.toml`:
-
-<!-- dprint-ignore -->
-```toml
-[image]
-lqip_size = 16        # max placeholder dimension in pixels (default: 16)
-lqip_quality = 25     # WebP quality, 1-100 (default: 25)
-```
-
-## Navigation Menus
-
-Sites declare named menu groups under `[[menu.<group>]]`. Themes pick which groups they render and where. Group names are free-form: `main`, `social`, `footer`, or whatever your theme expects.
+Menu group names are chosen by the theme. Entries are sorted by `weight` ascending within each group.
 
 ```toml
 [[menu.main]]
@@ -573,78 +74,290 @@ weight = 1
 [[menu.social]]
 name = "GitHub"
 url = "https://github.com/example"
-icon = "fab fa-github"
-weight = 1
 external = true
 ```
 
-| Field      | Type      | Notes                                                                                      |
-| ---------- | --------- | ------------------------------------------------------------------------------------------ |
-| `name`     | `string`  | Required. Resolved via `t()`, so it accepts an i18n key or a literal label.                |
-| `url`      | `string`  | Required. Site-relative or absolute URL.                                                   |
-| `icon`     | `string?` | Optional. Free-form CSS class (FontAwesome by convention) for the theme to render.         |
-| `weight`   | `i64`     | Sort order ascending. Default `0`. Negative weights float to the front.                    |
-| `external` | `bool`    | Marks an external link. Themes typically add `target="_blank"` and `rel`. Default `false`. |
+| Field      | Default  | Contract                                                           |
+| ---------- | -------- | ------------------------------------------------------------------ |
+| `name`     | required | Translation key or literal label, resolved by the theme with `t()` |
+| `url`      | required | Link destination                                                   |
+| `icon`     | unset    | Theme-specific icon identifier                                     |
+| `weight`   | `0`      | Sort order, with lower values first                                |
+| `external` | `false`  | External-link presentation hint for the theme                      |
 
-Each group is sorted independently by `weight` at config load time. Themes access groups by name, e.g.:
+Themes access a group through `config.menu.<group>` and should document the group names they support.
 
-```jinja
-{%- set social = config.menu.social | default([]) %}
-{%- for item in social %}
-<a href="{{ item.url | safe }}" title="{{ t(item.name) }}">
-  <i class="{{ item.icon }}"></i>
-</a>
-{%- endfor %}
-```
+## Override Model
 
-Document the group names a theme expects in the theme's README so site authors know which buckets to populate.
+### Templates
 
-## Internationalization
+A file in the site's `templates/` overrides the same path in the theme's `templates/`. This applies to page templates, included partials and `directives/<name>.html`.
 
-kiln supports translatable strings via a layered i18n system. Themes ship defaults per language and sites can override any string.
+### Assets and Stylesheets
 
-### File Layout
+Use the shared [asset contract](assets.md) for publication precedence, stylesheet entries, processor configuration, template links and live reload. A site stylesheet can import the theme entry to extend its styles.
+
+### Internationalization
+
+The active language is `config.language`. Translation filenames use language tags such as `en`, `zh-Hans` or `ja`.
 
 ```text
 themes/my-theme/i18n/
-├── en.toml        # Ultimate fallback (required if any other file exists)
-└── zh-Hans.toml   # Additional language (BCP 47 tag)
+├── en.toml        # English fallback
+└── zh-Hans.toml   # Active-language strings
 
-my-site/i18n/
-└── zh-Hans.toml   # Site-level overrides for the active language
+i18n/
+└── zh-Hans.toml   # Site overrides
 ```
 
-The active language comes from `language` in `config.toml` (default `"en"`). Language tags follow [BCP 47](https://www.rfc-editor.org/info/bcp47) (e.g., `en`, `zh-Hans`, `ja`).
-
-### Resolution Order
-
-For each key, kiln merges three tables in descending precedence:
-
-1. `<site>/i18n/<language>.toml` — site-level override
-2. `<theme>/i18n/<language>.toml` — theme strings for the active language
-3. `<theme>/i18n/en.toml` — theme English fallback
-
-If the theme has no `i18n/` directory at all, site-only i18n is also supported. If a theme ships any `i18n/*.toml` file other than `en.toml`, the loader requires `en.toml` as the ultimate fallback.
-
-### File Format
-
-i18n files are flat TOML tables of string values:
+Each file is a flat TOML table of string values. Nested tables are rejected.
 
 ```toml
 all_posts = "All Posts"
-back_to_top = "Back to Top"
 page_counter = "Page {current} of {total}"
 ```
 
-Nested tables are rejected.
+For each key, lookup follows site active language → theme active language → theme English fallback. A theme shipping translations must provide the exact filename `en.toml`. Site-only translations are supported when the theme has no translation directory.
 
-### Template Usage
+Use `{{ t("all_posts") }}` to look up a key and `{{ t("page_counter", current=1, total=3) }}` to substitute named placeholders. `{{` and `}}` in a translation escape literal braces.
 
-- `{{ t("key") }}` — look up a string for the active language.
-- `{{ t("key", name=value) }}` — interpolate keyword arguments into Python-style `{name}` placeholders. `{{` / `}}` escape to literal braces.
+#### Missing-Key Behavior
 
-Dates render as plain ISO `YYYY-MM-DD` regardless of the active language. When a template receives a full timestamp, slice it with `{{ page.date[:10] }}`.
+A missing key renders as the key itself. This lets menu labels and similar values contain either a translation key or literal text.
 
-### Missing-Key Behavior
+## Creating a Theme
 
-A missing key silently renders as the key itself. The literal-fallback path is intentional, so call sites that may receive either a translation key or a plain label (like the `name` field on menu items, see [Navigation Menus](#navigation-menus)) stay uniform. Genuine typos surface as visibly wrong text in the rendered output.
+```bash
+kiln init-theme my-theme
+```
+
+Select `theme = "my-theme"` in the site configuration. The scaffold supplies a base template, a post template, a plain CSS entry and example translations. Add the page types and assets your theme needs.
+
+### Theme Structure
+
+```text
+themes/my-theme/
+├── assets/
+│   └── css/_src/style.css   # Shared stylesheet entry
+├── i18n/
+│   └── en.toml             # Translation fallback
+├── static/                 # Output-root files
+├── templates/
+│   ├── base.html
+│   ├── post.html
+│   └── directives/
+└── theme.toml
+```
+
+Every selected theme must have `theme.toml`, even if empty. Its supported settings are:
+
+```toml
+min_kiln_version = "0.4.0-rc.4"
+
+[css]
+processor = "plain"
+
+[params]
+emojis = true
+```
+
+`min_kiln_version` is a minimum semantic version. Other theme metadata, such as a name, license or author, can describe the theme but is not consumed by kiln.
+
+### Template Variables
+
+Post, standalone, home, archive and overview templates share `title`, `description`, canonical `url` and `config`.
+
+MiniJinja auto-escapes strings. Apply `| safe` to generated HTML such as `content`, `toc` and `body_html`. Dates are ISO 8601 timestamps in the configured time zone, or UTC. Templates may use `date[:10]` when only the date is wanted.
+
+#### Post templates (`post.html`)
+
+| Variable               | Contract                                              |
+| ---------------------- | ----------------------------------------------------- |
+| `title`, `description` | Page title and description                            |
+| `url`                  | Canonical page URL                                    |
+| `date`, `updated`      | Publication / modification timestamps, or `none`      |
+| `featured_image`       | Resolved image metadata, or `none`                    |
+| `license`              | Authored page license, or `none`                      |
+| `page_css`             | Fingerprinted owning-page stylesheet URL, or `none`   |
+| `tags`                 | Linked terms with `name` and `url`                    |
+| `section`              | Linked section, or `none`                             |
+| `content`, `toc`       | Rendered page HTML and table of contents              |
+| `assets`               | Detected features and registered scripts              |
+| `config`               | Site configuration, including merged theme parameters |
+
+#### Standalone page templates (`page.html`)
+
+Standalone pages use the post variables. When `page.html` is absent, kiln uses `post.html`.
+
+#### Home page templates (`home.html`)
+
+Receives `title`, `description`, `url`, `config`, the current slice of `pages`, and `pagination`. Only posts appear here. Posts with a frontmatter `weight` are pinned first, ordered by ascending weight. Remaining posts are newest first. No home page is generated when this template is absent.
+
+#### Archive page templates (`archive.html`)
+
+| Variable           | Contract                                             |
+| ------------------ | ---------------------------------------------------- |
+| `kind`, `singular` | Archive scope, such as `"tags"` and `"tag"`          |
+| `name`, `slug`     | Display title and URL slug                           |
+| `page_groups`      | Current page's entries grouped by year, newest first |
+| `pagination`       | Navigation for this archive                          |
+| `config`           | Site configuration                                   |
+
+Archives cover `/posts/`, `/posts/<section>/` and `/tags/<slug>/`. Tagged standalone pages appear in tag archives. Pinning does not change archive or feed order. No archives are generated when this template is absent.
+
+#### Overview page templates (`overview.html`)
+
+Receives the common metadata, `kind`, `singular` and `buckets` for `/sections/` or `/tags/`. Each bucket has `name`, `slug`, `url` and its date-sorted `pages`. Use `bucket.pages | length` for the count. No overviews are generated when this template is absent.
+
+#### Error page templates (`404.html`)
+
+Receives `title` and `config`. The output is `404.html`. Generation is skipped when this template is absent.
+
+#### Shared Listing Types
+
+Each entry in `pages`, `bucket.pages` or `page_groups[].pages` has:
+
+| Field                         | Contract                           |
+| ----------------------------- | ---------------------------------- |
+| `title`, `description`, `url` | Page metadata and canonical URL    |
+| `date`                        | Publication timestamp, or `none`   |
+| `pinned`                      | Whether frontmatter sets a weight  |
+| `featured_image`              | Resolved image metadata, or `none` |
+| `tags`                        | Linked terms with `name` and `url` |
+| `section`                     | Linked section, or `none`          |
+
+A page group has `key` (the year, or an empty string for undated entries) and `pages`.
+
+The `pagination` object contains `current_page`, `total_pages`, `base_url`, `prev_url`, `next_url` and `items`. Previous / next URLs are `none` at the respective boundaries. Each item contains `number`, `url` and `is_current`. Gaps are represented by `number = none` and `url = none`.
+
+Controls include the first and last pages plus pages within two of the current page. For a page-jump control, page one is `{base_url}/` and later pages use `{base_url}/page/{n}/`.
+
+#### Featured Images
+
+`featured_image` contains authored `src`, `position` and `credit`, plus build-resolved `width`, `height` and `lqip_uri`. `credit` contains optional `title`, `author` and `url`. Relative image sources resolve against the owning page URL. Local resolvable images receive dimensions, and supported decodable images can receive a placeholder. Gate rendering on optional fields.
+
+#### Page Assets
+
+`assets.features` contains `"math"` and / or `"mermaid"` when required. `assets.scripts` contains registered script declarations with `url`, `load` and `module`. Only post and standalone page templates receive `assets`.
+
+A shared partial can check presence before loading a runtime:
+
+```jinja
+{% if assets is defined and "math" in assets.features %}
+  <link rel="stylesheet" href="https://cdn.example.com/katex.css">
+{% endif %}
+```
+
+Themes supply KaTeX rendering, Mermaid initialization and registered script tags. Keep these runtimes conditional on the page's declarations.
+
+#### Directive templates (`directives/<name>.html`)
+
+| Variable                | Contract                                 |
+| ----------------------- | ---------------------------------------- |
+| `name`                  | Directive name                           |
+| `positional_args`       | Positional argument strings              |
+| `named_args`            | Named argument string values             |
+| `id`, `classes`         | Authored `#id` and `.class` tokens       |
+| `body_html`, `body_raw` | Rendered body HTML and original Markdown |
+| `source_dir`            | Page source directory, or `none`         |
+| `config`                | Site configuration                       |
+
+Arguments remain nested in `named_args`, so `named_args.id` and the outer `id` are separate values. Use `body_html | safe` for rendered content. `body_raw` is available to data-driven components that interpret their own input.
+
+### Template Functions
+
+| Function                                                          | Availability        |
+| ----------------------------------------------------------------- | ------------------- |
+| `now()`, `parse_csv(text)`, `t(key, **kwargs)`, `asset_url(path)` | All templates       |
+| `read_file(filename)`, `register_script(url, ...)`                | Directive templates |
+
+#### `now()`
+
+Returns the current local timestamp as an ISO 8601 string.
+
+#### `read_file(filename)`
+
+Reads a file relative to the directive's page source directory. Absolute paths and `..` components are rejected. Source-directory symlinks may point to external files. The returned text is auto-escaped.
+
+#### `parse_csv(text)`
+
+Returns a list of rows, each a list of field strings. Quoted commas and escaped quotes are supported.
+
+```jinja
+{% for row in parse_csv(read_file(positional_args[0])) %}
+  <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+{% endfor %}
+```
+
+#### `t(key, **kwargs)`
+
+Looks up and interpolates a translation. See [Internationalization](#internationalization).
+
+#### `asset_url(path)`
+
+Resolves a published site-root-relative path to its public URL, fingerprinting CSS / JS. See [Fingerprints and Minification](assets.md#fingerprints-and-minification).
+
+#### `register_script(url, load="defer", module=false)`
+
+Registers a script for the current page and returns an empty string:
+
+```jinja
+{{ register_script(asset_url('/assets/js/widget.js')) }}
+```
+
+Repeated identical declarations produce one script in registration order. Conflicting attributes for the same URL fail the build. `load` accepts `"defer"`, `"async"` or `"sync"`. `module = true` supports `"defer"` or `"async"` and rejects `"sync"`, since module scripts cannot execute synchronously. The theme renders each declaration with the corresponding script attributes.
+
+## Rendered Content
+
+### Code Blocks
+
+Highlighted code uses `<details class="code-block" data-lang="...">`, a `<summary class="code-header">`, and a `.code-body > .highlight` containing line numbers and code. The header contains either `.code-lang` or `.code-title` and a `.copy-btn`. Themes provide styling and copy behavior. Native disclosure controls the open state.
+
+A positive `code_max_lines` adds `data-max-lines` and sets `--max-lines` on `.code-body`. Themes use that value to limit the highlighted area. Zero omits the limit.
+
+Authored IDs and classes belong to the outer details element. Per-line highlighting uses `.line.hl` and `.line-number.hl`. See [Fence Attributes](syntax.md#fence-attributes) for authoring.
+
+### Callouts and Divs
+
+Callouts use `<details class="callout <type>">`, `.callout-title`, and `.callout-body > .callout-body-inner`. Authored IDs and classes belong to the details element. Generic directives use a div with the directive name and authored classes. See [Directives](syntax.md#directives) for syntax.
+
+## Image Rendering
+
+Markdown images receive lazy loading and asynchronous decoding. A paragraph containing only one image becomes a figure with a caption from its alt text. Authored IDs / classes belong to the figure for block images and the img for inline images. Width / height always belong to the img.
+
+Locally resolvable images receive natural dimensions. Supported decoded images also receive a small WebP placeholder. When present, an `.lqip` span wraps the img and exposes the placeholder as the `--lqip-uri` CSS custom property. It sits inside the figure for block images.
+
+```html
+<span class="lqip" style="--lqip-uri:url('data:image/webp;base64,...')">
+  <img src="photo.webp" alt="Photo" width="800" height="600" loading="lazy" decoding="async">
+</span>
+```
+
+Themes can paint the placeholder behind the foreground image:
+
+```css
+.lqip {
+  display: inline-block;
+  position: relative;
+  isolation: isolate;
+}
+
+.lqip::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--lqip-uri) center / cover;
+  filter: blur(20px);
+}
+```
+
+Template-rendered featured images need their own wrapper, gated on `featured_image.lqip_uri`. Remote, unresolved or undecodable images may lack a placeholder, so keep the bare img path available.
+
+```toml
+[image]
+lqip_size = 16
+lqip_quality = 25
+```
+
+`lqip_size` is the positive maximum placeholder dimension in pixels. `lqip_quality` is WebP quality from 1 to 100. These are also the defaults shown above.
