@@ -29,7 +29,7 @@
     };
 
     kiln-tailwindcss = {
-      url = "github:hakula139/kiln-tailwindcss";
+      url = "github:hakula139/kiln-tailwindcss/v0.1.2";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.flake-utils.follows = "flake-utils";
     };
@@ -55,7 +55,7 @@
           overlays = [ rust-overlay.overlays.default ];
         };
 
-        rustToolchain = pkgs.rust-bin.stable.latest.default.override {
+        rustToolchain = (pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml).override {
           extensions = [
             "llvm-tools-preview"
             "rust-analyzer"
@@ -64,24 +64,13 @@
         };
 
         cssCompiler = kiln-tailwindcss.packages.${system}.default;
-        pagefind = pkgs.callPackage ./packages/pagefind { };
 
         # Some workspace dependencies require a newer Rust version than nixpkgs provides.
-        kiln = pkgs.callPackage ./packages/kiln {
+        kiln = pkgs.callPackage ./package.nix {
           inherit cssCompiler;
-          inherit ((pkgs.lib.importTOML ./Cargo.toml).workspace.package) version;
-          cargoLock.lockFile = ./Cargo.lock;
           rustPlatform = pkgs.makeRustPlatform {
             cargo = rustToolchain;
             rustc = rustToolchain;
-          };
-          src = pkgs.lib.fileset.toSource {
-            root = ./.;
-            fileset = pkgs.lib.fileset.unions [
-              ./Cargo.toml
-              ./Cargo.lock
-              ./crates
-            ];
           };
         };
 
@@ -183,12 +172,13 @@
             ++ [
               rustToolchain
               cssCompiler
-              pagefind
             ]
             ++ (with pkgs; [
+              cargo-llvm-cov
               dav1d
               git-cliff
               nodejs_24
+              pagefind
               pkg-config
               pnpm
               unzip
@@ -206,8 +196,8 @@
         # ----------------------------------------------------------------------
         packages = {
           default = kiln;
-          inherit kiln pagefind;
-          kiln-tailwindcss = cssCompiler;
+          inherit kiln;
+          inherit (pkgs) pagefind;
         };
 
         # ----------------------------------------------------------------------

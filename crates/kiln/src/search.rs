@@ -78,7 +78,6 @@ mod tests {
     // ── run_pagefind ──
 
     #[test]
-    #[ignore = "requires Pagefind on PATH"]
     fn run_pagefind_indexes_site() {
         let dir = tempfile::Builder::new()
             .prefix("pagefind site & (test) ")

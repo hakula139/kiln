@@ -10,7 +10,6 @@ on:
       - Cargo.lock
       - Cargo.toml
       - crates/kiln/Cargo.toml
-      - crates/kiln/tests/fixtures/example.avif
       - npm/**
   workflow_dispatch:
 
@@ -53,9 +52,8 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up AVIF
+        if: matrix.variant.name == 'extended'
         uses: ./.github/actions/setup-avif
-        with:
-          enabled: ${{ matrix.variant.name == 'extended' }}
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -156,8 +154,6 @@ jobs:
       - name: Set up AVIF
         if: runner.os != 'Windows'
         uses: ./.github/actions/setup-avif
-        with:
-          enabled: true
 
       - name: Download npm packages
         uses: actions/download-artifact@v7
