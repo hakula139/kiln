@@ -86,7 +86,9 @@ mod tests {
     #[cfg(unix)]
     use std::os::unix::fs::symlink;
 
-    use indoc::{formatdoc, indoc};
+    #[cfg(unix)]
+    use indoc::formatdoc;
+    use indoc::indoc;
 
     use super::*;
     use crate::content::page::PageKind;
