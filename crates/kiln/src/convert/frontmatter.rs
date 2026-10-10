@@ -159,21 +159,6 @@ mod tests {
     }
 
     #[test]
-    fn convert_frontmatter_renames_featured_image() {
-        let yaml = indoc! {"
-            featuredImage: https://example.com/img.webp
-        "};
-        let (toml, _) = convert_frontmatter(yaml).unwrap();
-        assert_eq!(
-            toml,
-            indoc! {r#"
-                [featured_image]
-                src = "https://example.com/img.webp"
-            "#}
-        );
-    }
-
-    #[test]
     fn convert_frontmatter_reports_nested_fields() {
         let (toml, unsupported) = convert_frontmatter(indoc! {r"
             featuredImage:

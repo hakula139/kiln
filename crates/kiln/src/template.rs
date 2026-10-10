@@ -284,7 +284,7 @@ mod tests {
     }
 
     #[test]
-    fn new_rejects_no_dirs() {
+    fn new_without_directories_returns_error() {
         let err = TemplateEngine::new(None, None, &test_i18n())
             .unwrap_err()
             .to_string();
@@ -295,7 +295,7 @@ mod tests {
     }
 
     #[test]
-    fn new_rejects_nonexistent_theme_dir() {
+    fn new_nonexistent_theme_directory_returns_error() {
         let err = TemplateEngine::new(None, Some(Path::new("/nonexistent/path")), &test_i18n())
             .unwrap_err()
             .to_string();
@@ -505,7 +505,7 @@ mod tests {
     }
 
     #[test]
-    fn render_404_returns_none_without_template() {
+    fn render_404_missing_template_returns_none() {
         let dir = tempfile::tempdir().unwrap();
         let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
         let config = Config::default();
@@ -607,7 +607,7 @@ mod tests {
     }
 
     #[test]
-    fn render_directive_returns_none_for_missing_template() {
+    fn render_directive_missing_template_returns_none() {
         let dir = tempfile::tempdir().unwrap();
         let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
         assert!(
@@ -623,7 +623,7 @@ mod tests {
     }
 
     #[test]
-    fn render_directive_rejects_path_traversal() {
+    fn render_directive_path_traversal_returns_none() {
         let dir = tempfile::tempdir().unwrap();
         let directives_dir = dir.path().join("directives");
         test_fs::create_dir_all(&directives_dir).unwrap();
@@ -724,7 +724,7 @@ mod tests {
     // ── render_required_template ──
 
     #[test]
-    fn render_required_template_failures_return_error() {
+    fn render_required_template_failure_returns_error() {
         let name = "post.html";
         for (source, kind, phase) in [
             (None, minijinja::ErrorKind::TemplateNotFound, "load"),
@@ -1051,10 +1051,10 @@ mod tests {
     fn tpl_register_script_conflicting_attributes_returns_error() {
         let (_dir, engine) = engine_with_directive(
             "widget",
-            r#"
-            {{- register_script("/js/widget.js") -}}
-            {{- register_script("/js/widget.js", module=true) -}}
-            "#,
+            indoc! {r#"
+                {{- register_script("/js/widget.js") -}}
+                {{- register_script("/js/widget.js", module=true) -}}
+            "#},
         );
         let assets = AssetsHandle::default();
         let err = format!(
@@ -1106,7 +1106,7 @@ mod tests {
     }
 
     #[test]
-    fn tpl_register_script_invalid_keyword_arguments_return_error() {
+    fn tpl_register_script_invalid_keyword_argument_returns_error() {
         for (template, message) in [
             (r#"{{ register_script("/x.js", bogus=true) }}"#, "bogus"),
             (

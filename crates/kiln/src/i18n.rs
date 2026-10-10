@@ -274,13 +274,6 @@ mod tests {
 
     // ── load ──
 
-    fn write_file(path: &Path, contents: &str) {
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).unwrap();
-        }
-        fs::write(path, contents).unwrap();
-    }
-
     #[test]
     fn load_language_en_loads_en_toml_as_sole_source() {
         let site = tempfile::tempdir().unwrap();
@@ -429,7 +422,7 @@ mod tests {
     }
 
     #[test]
-    fn load_non_string_values_return_error() {
+    fn load_non_string_value_returns_error() {
         for contents in [r#"nested = { key = "value" }"#, "count = 42"] {
             let site = tempfile::tempdir().unwrap();
             let theme = tempfile::tempdir().unwrap();
@@ -475,20 +468,6 @@ mod tests {
     }
 
     // ── t ──
-
-    fn make_i18n(pairs: &[(&str, &str)]) -> I18n {
-        let mut strings = HashMap::new();
-        for (k, v) in pairs {
-            strings.insert((*k).to_owned(), (*v).to_owned());
-        }
-        I18n {
-            inner: Arc::new(Inner {
-                strings,
-                language: "en".to_owned(),
-                warned: Mutex::new(HashSet::new()),
-            }),
-        }
-    }
 
     #[test]
     fn t_hit_returns_value() {
@@ -576,5 +555,26 @@ mod tests {
             key: "bad".to_owned(),
             partial: "unclosed tail".to_owned(),
         }));
+    }
+
+    fn write_file(path: &Path, contents: &str) {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        fs::write(path, contents).unwrap();
+    }
+
+    fn make_i18n(pairs: &[(&str, &str)]) -> I18n {
+        let strings = pairs
+            .iter()
+            .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
+            .collect();
+        I18n {
+            inner: Arc::new(Inner {
+                strings,
+                language: "en".to_owned(),
+                warned: Mutex::new(HashSet::new()),
+            }),
+        }
     }
 }

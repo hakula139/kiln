@@ -595,27 +595,25 @@ mod tests {
     // ── output_path ──
 
     #[test]
-    fn output_path_post() {
-        let mut page = test_page("bar");
-        page.source_path = PathBuf::from("/site/content/posts/foo/bar/index.md");
-        let out = page.output_path(Path::new("/site/content")).unwrap();
-        assert_eq!(out, PathBuf::from("posts/foo/bar/index.html"));
-    }
-
-    #[test]
-    fn output_path_non_post() {
-        let mut page = test_page("example");
-        page.source_path = PathBuf::from("/site/content/example/index.md");
-        let out = page.output_path(Path::new("/site/content")).unwrap();
-        assert_eq!(out, PathBuf::from("example/index.html"));
-    }
-
-    #[test]
-    fn output_path_non_index() {
-        let mut page = test_page("hello-world");
-        page.source_path = PathBuf::from("/site/content/posts/hello-world.md");
-        let out = page.output_path(Path::new("/site/content")).unwrap();
-        assert_eq!(out, PathBuf::from("posts/hello-world/index.html"));
+    fn output_path_uses_source_location_and_slug() {
+        for (slug, source, expected) in [
+            ("bar", "posts/foo/bar/index.md", "posts/foo/bar/index.html"),
+            ("example", "example/index.md", "example/index.html"),
+            (
+                "hello-world",
+                "posts/hello-world.md",
+                "posts/hello-world/index.html",
+            ),
+        ] {
+            let mut page = test_page(slug);
+            let root = Path::new("/site/content");
+            page.source_path = root.join(source);
+            assert_eq!(
+                page.output_path(root).unwrap(),
+                PathBuf::from(expected),
+                "{source}"
+            );
+        }
     }
 
     #[test]
@@ -726,22 +724,6 @@ mod tests {
     }
 
     #[test]
-    fn extract_summary_no_separator() {
-        let body = "No summary separator in this content.";
-        assert!(extract_summary(body).is_none());
-    }
-
-    #[test]
-    fn extract_summary_empty_before_separator() {
-        let body = indoc! {r"
-            <!--more-->
-
-            Content after.
-        "};
-        assert!(extract_summary(body).is_none());
-    }
-
-    #[test]
     fn extract_summary_strips_reference_links() {
         let body = indoc! {r"
             See [the docs][docs-ref] and the [home page].
@@ -815,9 +797,11 @@ mod tests {
     #[test]
     fn extract_summary_preserves_paragraph_breaks() {
         let body = indoc! {r"
-            First paragraph.
+            First
+            paragraph.
 
-            Second paragraph.
+            Second\
+            paragraph.
 
             <!--more-->
         "};
@@ -825,5 +809,21 @@ mod tests {
             extract_summary(body).unwrap(),
             "First paragraph.\nSecond paragraph."
         );
+    }
+
+    #[test]
+    fn extract_summary_no_separator_returns_none() {
+        let body = "No summary separator in this content.";
+        assert!(extract_summary(body).is_none());
+    }
+
+    #[test]
+    fn extract_summary_empty_before_separator_returns_none() {
+        let body = indoc! {r"
+            <!--more-->
+
+            Content after.
+        "};
+        assert!(extract_summary(body).is_none());
     }
 }

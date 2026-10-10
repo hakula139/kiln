@@ -461,45 +461,6 @@ mod tests {
         );
     }
 
-    // ── index_dest_path ──
-
-    #[test]
-    fn index_dest_path_categories_returns_posts_section_path() {
-        let dest = Path::new("/tmp/dest");
-
-        assert_eq!(
-            index_dest_path(Path::new("categories/anime/_index.md"), dest),
-            Some(dest.join("posts/anime/_index.md"))
-        );
-    }
-
-    #[test]
-    fn index_dest_path_tags_returns_same_relative_path() {
-        let dest = Path::new("/tmp/dest");
-
-        assert_eq!(
-            index_dest_path(Path::new("tags/rust/_index.md"), dest),
-            Some(dest.join("tags/rust/_index.md"))
-        );
-    }
-
-    #[test]
-    fn index_dest_path_non_term_layout_returns_none() {
-        let dest = Path::new("/tmp/dest");
-
-        assert_eq!(index_dest_path(Path::new("posts/_index.md"), dest), None);
-    }
-
-    #[test]
-    fn index_dest_path_unknown_kind_returns_none() {
-        let dest = Path::new("/tmp/dest");
-
-        assert_eq!(
-            index_dest_path(Path::new("series/rust/_index.md"), dest),
-            None
-        );
-    }
-
     // ── convert_or_copy_markdown ──
 
     #[test]

@@ -117,21 +117,23 @@ mod tests {
             language: "en".into(),
             last_build_date: Some("Sun, 15 Mar 2026 10:00:00 +0000".into()),
         };
-        let items = vec![
+        let mut items = vec![
             make_item(
                 "Post A",
                 "https://example.com/post-a/",
                 Some("2026-03-15T10:00:00Z"),
             ),
-            make_item(
-                "Post B",
-                "https://example.com/post-b/",
-                Some("2026-03-10T08:00:00Z"),
-            ),
+            make_item("Post B", "https://example.com/post-b/", None),
         ];
+
+        items[0].description = "A summary of the post";
 
         let xml = generate_rss(&channel, items, DEFAULT_FEED_LIMIT);
 
+        assert!(first_item(&xml).contains("<description>A summary of the post</description>"));
+        let second_item = xml.split("<item>").nth(2).unwrap();
+        assert!(!second_item.contains("<description>"));
+        assert!(!second_item.contains("<pubDate>"));
         assert!(xml.starts_with(r#"<?xml version="1.0""#));
         assert!(xml.contains("<title>Test Site</title>"));
         assert!(xml.contains("<link>https://example.com/</link>"));
@@ -192,57 +194,19 @@ mod tests {
 
         let xml = generate_rss(&channel, items, 3);
 
-        assert!(xml.contains("Post 1"));
-        assert!(xml.contains("Post 3"));
-        assert!(!xml.contains("Post 4"), "should stop at limit");
-    }
-
-    #[test]
-    fn generate_rss_includes_item_description() {
-        let channel = Channel {
-            title: "Site".into(),
-            link: "https://example.com/".into(),
-            feed_url: "https://example.com/index.xml".into(),
-            description: String::new(),
-            language: "en".into(),
-            last_build_date: None,
-        };
-        let mut item = make_item("Post", "https://example.com/post/", None);
-        item.description = "A summary of the post";
-
-        let xml = generate_rss(&channel, [item], DEFAULT_FEED_LIMIT);
-
-        let item_xml = first_item(&xml);
-        assert!(
-            item_xml.contains("<description>A summary of the post</description>"),
-            "should include non-empty description inside item, xml:\n{xml}"
-        );
-    }
-
-    #[test]
-    fn generate_rss_omits_empty_description_and_missing_date() {
-        let channel = Channel {
-            title: "Site".into(),
-            link: "https://example.com/".into(),
-            feed_url: "https://example.com/index.xml".into(),
-            description: String::new(),
-            language: "en".into(),
-            last_build_date: None,
-        };
-        let items = vec![make_item("Post", "https://example.com/post/", None)];
-
-        let xml = generate_rss(&channel, items, DEFAULT_FEED_LIMIT);
-
-        let item = first_item(&xml);
-        assert!(
-            item.contains("<title>Post</title>"),
-            "item should contain its title, xml:\n{xml}"
-        );
-        assert!(!item.contains("<pubDate>"));
-        assert!(
-            !item.contains("<description>"),
-            "should omit empty description from item, xml:\n{xml}"
-        );
+        let titles: Vec<_> = xml
+            .split("<item>")
+            .skip(1)
+            .map(|item| {
+                item.split("<title>")
+                    .nth(1)
+                    .unwrap()
+                    .split("</title>")
+                    .next()
+                    .unwrap()
+            })
+            .collect();
+        assert_eq!(titles, ["Post 1", "Post 2", "Post 3"]);
     }
 
     // ── format_rfc2822 ──

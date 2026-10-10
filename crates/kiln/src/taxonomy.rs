@@ -157,12 +157,6 @@ mod tests {
     use super::*;
     use crate::test_utils::test_page;
 
-    fn make_page(title: &str, tags: &[&str]) -> Page {
-        let mut page = test_page(title);
-        page.frontmatter.tags = tags.iter().map(|s| (*s).to_owned()).collect();
-        page
-    }
-
     // ── build_taxonomies ──
 
     #[test]
@@ -342,5 +336,11 @@ mod tests {
             r#"tag slug collision on "alpha-beta": "Alpha & Beta" (3 pages) and "Alpha Beta" (2 pages)"#,
             "should name the slug, both terms, and each term's total page count"
         );
+    }
+
+    fn make_page(title: &str, tags: &[&str]) -> Page {
+        let mut page = test_page(title);
+        page.frontmatter.tags = tags.iter().map(|s| (*s).to_owned()).collect();
+        page
     }
 }
