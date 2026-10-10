@@ -29,6 +29,25 @@ A static site generator written in Rust for [hakula.xyz](https://hakula.xyz), wi
 
 ## Installation
 
+### Via npm
+
+Install Node.js 20 or newer, for example with [fnm](https://github.com/Schniz/fnm), then choose one kiln variant:
+
+```bash
+fnm install --latest --use
+npm install -g @kiln-ssg/kiln@next
+```
+
+Use `@kiln-ssg/kiln-extended@next` for AVIF loading placeholders, with the same [dav1d requirements](#prebuilt-binary) as the extended archive. Both packages install the `kiln` command. Uninstall the current variant before switching. Prereleases use the `next` npm tag.
+
+Add optional tools to the same installation command when your site needs them:
+
+```bash
+npm install -g @kiln-ssg/kiln@next @kiln-ssg/tailwindcss@0.1.2 pagefind@1.5.2
+```
+
+Install the Tailwind processor when your site or theme compiles Tailwind CSS. Pagefind is required only when search is enabled. Omit either package when unused. npm selects the binary for Linux x86_64 (glibc), Apple Silicon, or Windows x86_64.
+
 ### Prebuilt binary
 
 Download the latest release for your platform from [Releases](https://github.com/hakula139/kiln/releases/latest):
@@ -49,7 +68,7 @@ unzip kiln-x86_64-pc-windows-msvc.zip
 kiln --version
 ```
 
-From 0.5.0 onward, the default archive needs no dav1d, and `kiln-extended-<target>` provides AVIF loading placeholders with [platform requirements](RELEASING.md#targets).
+From 0.5.0 onward, the default archive needs no dav1d, and `kiln-extended-<target>` provides AVIF loading placeholders. Extended Linux binaries need the system `libdav1d` package. On macOS, install it with `brew install dav1d`. Windows extended binaries include dav1d.
 
 The v0.4.0 Linux and macOS binaries require dav1d at runtime.
 
@@ -85,7 +104,7 @@ inputs.kiln.url = "github:hakula139/kiln";
 
 ## First Site
 
-After installing kiln, create a site with [IgnIt](https://github.com/hakula139/IgnIt). Use a kiln version meeting the theme's `min_kiln_version`. Nix includes its Tailwind processor. For other installations, follow [Processor Setup](docs/assets.md#processor-setup).
+After installing kiln, create a site with [IgnIt](https://github.com/hakula139/IgnIt). Use a kiln version meeting the theme's `min_kiln_version`. The Nix package includes the Tailwind processor. For other installations, follow [Processor Setup](docs/assets.md#processor-setup).
 
 ```bash
 git init my-site

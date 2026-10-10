@@ -139,7 +139,7 @@
               enable = true;
               name = "prettier";
               entry = nodeHook "prettier-write" "prettier --write --ignore-unknown";
-              files = "\\.json$";
+              files = "\\.(cjs|js|json|mjs|ya?ml)$";
             };
 
             dprint-write = {
@@ -191,6 +191,7 @@
               nodejs_24
               pkg-config
               pnpm
+              unzip
             ])
             # libiconv resolves onig_sys / libwebp-sys link errors on darwin.
             ++ pkgs.lib.optional pkgs.stdenv.isDarwin pkgs.libiconv;

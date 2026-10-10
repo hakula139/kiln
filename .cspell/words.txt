@@ -27,6 +27,7 @@ katex
 kwarg
 kwargs
 lanczos
+libc
 libdav
 libiconv
 libwebp
