@@ -85,8 +85,8 @@ jobs:
         with:
           node-version: '24'
 
-      - name: Install CSS processor
-        run: npm install --global @kiln-ssg/tailwindcss@0.1.2
+      - name: Install build tools
+        run: npm install --global @kiln-ssg/tailwindcss@0.1.2 pagefind@1.5.2
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -105,7 +105,7 @@ jobs:
         run: cargo clippy --locked --all-targets --features "${{ matrix.features }}" -- -D warnings
 
       - name: Test
-        run: cargo test --features "${{ matrix.features }}"
+        run: cargo test --features "${{ matrix.features }}" -- --include-ignored
 
       - name: Test benchmark workloads
         run: cargo test --bench performance --features "${{ matrix.features }}"
@@ -129,7 +129,7 @@ jobs:
         uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Generate coverage
-        run: nix develop -c cargo llvm-cov --locked --all-features --ignore-filename-regex 'main\.rs' --lcov --output-path lcov.info
+        run: nix develop -c cargo llvm-cov --locked --all-features --ignore-filename-regex 'main\.rs' --lcov --output-path lcov.info -- --include-ignored
 
       - name: Upload to Codecov
         uses: codecov/codecov-action@v7
