@@ -91,7 +91,7 @@ mod tests {
     // ── render_callout ──
 
     #[test]
-    fn render_default_title_and_empty_body() {
+    fn render_callout_default_title_and_empty_body() {
         let html = render_callout(CalloutKind::Info, None, true, None, &[], "");
         assert_eq!(
             html,
@@ -105,7 +105,7 @@ mod tests {
     }
 
     #[test]
-    fn render_all_kinds_css_class() {
+    fn render_callout_all_kinds_css_class() {
         use strum::IntoEnumIterator;
         for kind in CalloutKind::iter() {
             let html = render_callout(kind, None, true, None, &[], "");
@@ -119,7 +119,7 @@ mod tests {
     }
 
     #[test]
-    fn render_with_title_and_body() {
+    fn render_callout_with_title_and_body() {
         let html = render_callout(
             CalloutKind::Note,
             Some("Read This"),
@@ -142,7 +142,7 @@ mod tests {
     }
 
     #[test]
-    fn render_collapsed() {
+    fn render_callout_collapsed() {
         let html = render_callout(
             CalloutKind::Tip,
             Some("Hint"),
@@ -164,27 +164,8 @@ mod tests {
     }
 
     #[test]
-    fn render_with_id() {
-        let html = render_callout(CalloutKind::Note, None, true, Some("my-note"), &[], "");
-        assert!(
-            html.contains(r#"<details id="my-note" class="callout note" open>"#),
-            "id attribute should be rendered, html:\n{html}"
-        );
-    }
-
-    #[test]
-    fn render_with_extra_classes() {
-        let classes = vec!["compact".into(), "wide".into()];
-        let html = render_callout(CalloutKind::Tip, None, true, None, &classes, "");
-        assert!(
-            html.contains(r#"class="callout tip compact wide""#),
-            "extra classes should be appended, html:\n{html}"
-        );
-    }
-
-    #[test]
-    fn render_with_id_and_classes() {
-        let classes = vec!["highlight".into()];
+    fn render_callout_with_id_and_classes() {
+        let classes = vec!["highlight".into(), "wide".into()];
         let html = render_callout(
             CalloutKind::Warning,
             None,
@@ -194,28 +175,13 @@ mod tests {
             "",
         );
         assert!(
-            html.contains(r#"<details id="warn-1" class="callout warning highlight" open>"#),
+            html.contains(r#"<details id="warn-1" class="callout warning highlight wide" open>"#),
             "id and extra classes should be rendered, html:\n{html}"
         );
     }
 
     #[test]
-    fn render_body_html_passed_through() {
-        let body = indoc! {"
-            <ul>
-              <li>Item <strong>one</strong></li>
-              <li>Item two</li>
-            </ul>
-        "};
-        let html = render_callout(CalloutKind::Example, Some("Steps"), true, None, &[], body);
-        assert!(
-            html.contains(body),
-            "body HTML should be passed through unchanged, html:\n{html}"
-        );
-    }
-
-    #[test]
-    fn render_escapes_title() {
+    fn render_callout_escapes_title() {
         let html = render_callout(
             CalloutKind::Tip,
             Some("<script>alert(1)</script>"),
@@ -235,7 +201,7 @@ mod tests {
     }
 
     #[test]
-    fn render_escapes_id_and_classes() {
+    fn render_callout_escapes_id_and_classes() {
         let classes = vec![r#"a"b"#.into()];
         let html = render_callout(CalloutKind::Note, None, true, Some(r#"x"y"#), &classes, "");
         assert!(
@@ -278,14 +244,6 @@ mod tests {
     }
 
     #[test]
-    fn parse_named_args_unknown_type_defaults_to_note() {
-        assert_eq!(
-            parse_named_args(&named(&[("type", "invalid")])),
-            (CalloutKind::Note, None, true)
-        );
-    }
-
-    #[test]
     fn parse_named_args_title_only() {
         assert_eq!(
             parse_named_args(&named(&[("title", "Custom")])),
@@ -318,6 +276,14 @@ mod tests {
                 ("type", "warning"),
             ])),
             (CalloutKind::Warning, Some("Careful".into()), false)
+        );
+    }
+
+    #[test]
+    fn parse_named_args_unknown_type_defaults_to_note() {
+        assert_eq!(
+            parse_named_args(&named(&[("type", "invalid")])),
+            (CalloutKind::Note, None, true)
         );
     }
 

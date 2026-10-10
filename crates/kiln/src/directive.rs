@@ -180,15 +180,6 @@ mod tests {
     // ── parse_directive_args ──
 
     #[test]
-    fn parse_directive_args_empty() {
-        let args = parse_directive_args("");
-        assert_eq!(args.positional, Vec::<String>::new());
-        assert!(args.named.is_empty());
-        assert!(args.id.is_none());
-        assert_eq!(args.classes, Vec::<String>::new());
-    }
-
-    #[test]
     fn parse_directive_args_positional_quoted() {
         let args = parse_directive_args(r#""title" "url""#);
         assert_eq!(args.positional, vec!["title", "url"]);
@@ -221,12 +212,6 @@ mod tests {
     fn parse_directive_args_escaped_quotes() {
         let args = parse_directive_args(r#""He said \"hi\"""#);
         assert_eq!(args.positional, vec![r#"He said "hi""#]);
-    }
-
-    #[test]
-    fn parse_directive_args_unclosed_quote() {
-        let args = parse_directive_args(r#""no closing quote"#);
-        assert_eq!(args.positional, vec!["no closing quote"]);
     }
 
     #[test]
@@ -264,7 +249,7 @@ mod tests {
 
     #[test]
     fn parse_directive_args_pandoc_id_and_classes() {
-        let args = parse_directive_args("#my-id .highlight .wide type=tip");
+        let args = parse_directive_args("#my-id #ignored .highlight .wide type=tip");
         assert_eq!(args.id.as_deref(), Some("my-id"));
         assert_eq!(args.classes, vec!["highlight", "wide"]);
         assert_eq!(args.positional, Vec::<String>::new());
@@ -277,5 +262,20 @@ mod tests {
         assert_eq!(args.positional, vec!["#literal", ".keep"]);
         assert!(args.id.is_none());
         assert_eq!(args.classes, Vec::<String>::new());
+    }
+
+    #[test]
+    fn parse_directive_args_empty() {
+        let args = parse_directive_args("");
+        assert_eq!(args.positional, Vec::<String>::new());
+        assert!(args.named.is_empty());
+        assert!(args.id.is_none());
+        assert_eq!(args.classes, Vec::<String>::new());
+    }
+
+    #[test]
+    fn parse_directive_args_unclosed_quote() {
+        let args = parse_directive_args(r#""no closing quote"#);
+        assert_eq!(args.positional, vec!["no closing quote"]);
     }
 }

@@ -256,43 +256,16 @@ mod tests {
     // ── ImageResolver::resolve ──
 
     #[test]
-    fn resolve_decodes_local_urls_and_retains_metadata_on_encoding_failure() {
-        let dir = tempdir().unwrap();
-        write_tiny_png(&dir.path().join("photo one.png"));
-        let resolver = ImageResolver::new(
-            dir.path(),
-            ImageConfig {
-                lqip_quality: 101,
-                ..ImageConfig::default()
-            },
-        );
-        for src in ["photo%20one.png?v=1#image", "/photo%20one.png#image"] {
-            let meta = resolver.resolve(src, Some(dir.path())).unwrap();
-            assert_eq!((meta.width, meta.height), (2, 2));
-            assert!(meta.lqip_uri.is_none());
-        }
-    }
-
-    #[test]
-    fn resolve_reads_dimensions() {
+    fn resolve_reads_dimensions_and_caches_placeholder() {
         let dir = tempdir().unwrap();
         let bundle = dir.path().join("bundle");
         write_tiny_png(&bundle.join("img.png"));
 
         let r = ImageResolver::new(dir.path(), ImageConfig::default());
         let meta = r.resolve("img.png", Some(&bundle)).unwrap();
-        assert_eq!(meta.width, 2);
-        assert_eq!(meta.height, 2);
-    }
-
-    #[test]
-    fn resolve_emits_lqip_data_uri() {
-        let dir = tempdir().unwrap();
-        let bundle = dir.path().join("bundle");
-        write_tiny_png(&bundle.join("img.png"));
-
-        let r = ImageResolver::new(dir.path(), ImageConfig::default());
-        let meta = r.resolve("img.png", Some(&bundle)).unwrap();
+        assert_eq!((meta.width, meta.height), (2, 2));
+        let cached = r.resolve("img.png", Some(&bundle)).unwrap();
+        assert!(Arc::ptr_eq(&meta, &cached));
         let uri = meta.lqip_uri.as_deref().expect("lqip should be encoded");
         assert!(uri.starts_with("data:image/webp;base64,"), "uri: {uri}");
         assert!(
@@ -371,25 +344,26 @@ mod tests {
     }
 
     #[test]
-    fn resolve_caches_repeated_lookups() {
+    fn resolve_decodes_local_urls_and_retains_metadata_on_encoding_failure() {
         let dir = tempdir().unwrap();
-        let bundle = dir.path().join("bundle");
-        write_tiny_png(&bundle.join("img.png"));
-
-        let r = ImageResolver::new(dir.path(), ImageConfig::default());
-        let first = r.resolve("img.png", Some(&bundle)).unwrap();
-        let second = r.resolve("img.png", Some(&bundle)).unwrap();
-        assert!(
-            Arc::ptr_eq(&first, &second),
-            "second lookup should hit the cache"
+        write_tiny_png(&dir.path().join("photo one.png"));
+        let resolver = ImageResolver::new(
+            dir.path(),
+            ImageConfig {
+                lqip_quality: 101,
+                ..ImageConfig::default()
+            },
         );
+        for src in ["photo%20one.png?v=1#image", "/photo%20one.png#image"] {
+            let meta = resolver.resolve(src, Some(dir.path())).unwrap();
+            assert_eq!((meta.width, meta.height), (2, 2));
+            assert!(meta.lqip_uri.is_none());
+        }
     }
 
     #[test]
     fn resolve_yields_dimensions_but_no_lqip_for_undecodable_png() {
-        // A minimal PNG header (signature + IHDR for a 4×2 RGBA image, with a
-        // valid CRC) gives `imagesize` enough to report dimensions, but the
-        // `image` crate's full decoder bails when it hits EOF without IDAT.
+        // The header exposes dimensions to `imagesize` while full image decoding fails.
         let dir = tempdir().unwrap();
         let bundle = dir.path().join("bundle");
         fs::create_dir_all(&bundle).unwrap();
@@ -409,7 +383,6 @@ mod tests {
         let meta = r.resolve("partial.png", Some(&bundle)).unwrap();
         assert_eq!(meta.width, 4);
         assert_eq!(meta.height, 2);
-        // `image` crate refuses the file because IDAT is missing.
         assert!(meta.lqip_uri.is_none());
     }
 

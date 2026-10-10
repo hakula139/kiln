@@ -141,27 +141,14 @@ mod tests {
     // ── PageAssets::register_script ──
 
     #[test]
-    fn register_script_adds_in_order() {
+    fn register_script_preserves_order_and_deduplicates_identical_tags() {
         let mut assets = PageAssets::default();
-        assets
-            .register_script(ScriptTag::deferred("/a.js"))
-            .unwrap();
-        assets
-            .register_script(ScriptTag::deferred("/b.js"))
-            .unwrap();
-        assert_eq!(assets.scripts.len(), 2);
-        assert_eq!(assets.scripts[0].url, "/a.js");
-        assert_eq!(assets.scripts[1].url, "/b.js");
-    }
-
-    #[test]
-    fn register_script_idempotent_on_identical_tag() {
-        let mut assets = PageAssets::default();
-        let tag = ScriptTag::deferred("/score.js");
-        assets.register_script(tag.clone()).unwrap();
-        assets.register_script(tag.clone()).unwrap();
-        assets.register_script(tag).unwrap();
-        assert_eq!(assets.scripts.len(), 1, "same tag should dedup");
+        let first = ScriptTag::deferred("/b.js");
+        let second = ScriptTag::deferred("/a.js");
+        for tag in [&first, &second, &first] {
+            assets.register_script(tag.clone()).unwrap();
+        }
+        assert_eq!(assets.scripts(), &[first, second]);
     }
 
     #[test]
@@ -202,48 +189,31 @@ mod tests {
     }
 
     #[test]
-    fn register_script_returns_error_on_conflicting_load_strategy() {
-        let mut assets = PageAssets::default();
-        assets
-            .register_script(ScriptTag::deferred("/x.js"))
-            .unwrap();
-        let err = assets
-            .register_script(ScriptTag {
-                url: "/x.js".into(),
-                load: LoadStrategy::Async,
-                module: false,
-            })
-            .unwrap_err()
-            .to_string();
-        assert_eq!(
-            err,
-            "script \"/x.js\" was already registered as (load=defer, module=false); \
-             cannot re-register as (load=async, module=false). \
-             Pick one set of attributes per URL.",
-        );
-        assert_eq!(assets.scripts.len(), 1, "conflicting tag must not be added");
-    }
-
-    #[test]
-    fn register_script_returns_error_on_conflicting_module_flag() {
-        let mut assets = PageAssets::default();
-        assets
-            .register_script(ScriptTag::deferred("/x.js"))
-            .unwrap();
-        let err = assets
-            .register_script(ScriptTag {
-                url: "/x.js".into(),
-                load: LoadStrategy::Defer,
-                module: true,
-            })
-            .unwrap_err()
-            .to_string();
-        assert_eq!(
-            err,
-            "script \"/x.js\" was already registered as (load=defer, module=false); \
-             cannot re-register as (load=defer, module=true). \
-             Pick one set of attributes per URL.",
-        );
+    fn register_script_conflicting_attributes_returns_error() {
+        for (load, module, attributes) in [
+            (LoadStrategy::Async, false, "load=async, module=false"),
+            (LoadStrategy::Defer, true, "load=defer, module=true"),
+        ] {
+            let mut assets = PageAssets::default();
+            let original = ScriptTag::deferred("/x.js");
+            assets.register_script(original.clone()).unwrap();
+            let error = assets
+                .register_script(ScriptTag {
+                    url: "/x.js".into(),
+                    load,
+                    module,
+                })
+                .unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                format!(
+                    "script \"/x.js\" was already registered as (load=defer, module=false); \
+                     cannot re-register as ({attributes}). \
+                     Pick one set of attributes per URL."
+                ),
+            );
+            assert_eq!(assets.scripts(), &[original]);
+        }
     }
 
     // ── PageAssets::add_feature ──

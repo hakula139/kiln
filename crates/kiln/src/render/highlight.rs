@@ -387,24 +387,15 @@ mod tests {
             html.contains(r#"<div class="highlight">"#),
             "should have highlight table, html:\n{html}"
         );
+        assert!(!html.contains("data-max-lines"));
+        assert!(!html.contains("code-title"));
+        assert!(!html.contains("collapsed"));
+        assert!(!html.contains("expanded"));
+        assert!(!html.contains("id="));
         assert!(
             html.ends_with("</details>\n"),
             "should end with closing tag, html:\n{html}"
         );
-    }
-
-    #[test]
-    fn highlight_code_no_attrs_omits_optional_chrome() {
-        let spec = CodeBlockSpec {
-            lang: Some("rs".into()),
-            ..CodeBlockSpec::default()
-        };
-        let html = highlight_with_spec("fn main() {}\n", &spec);
-        assert!(html.starts_with(r#"<details class="code-block" data-lang="rust" open>"#));
-        assert!(!html.contains("code-title"));
-        assert!(!html.contains("collapsed"));
-        assert!(!html.contains("expanded"));
-        assert!(!html.contains(r"id="));
     }
 
     #[test]
@@ -461,19 +452,6 @@ mod tests {
     }
 
     // ── highlight_code (title) ──
-
-    #[test]
-    fn highlight_code_no_title_keeps_lang_pill() {
-        let html = highlight("rs", "fn main() {}\n");
-        assert!(
-            !html.contains("code-title"),
-            "should not emit title span when no title, html:\n{html}"
-        );
-        assert!(
-            html.contains(r#"<span class="code-lang">Rust</span>"#),
-            "lang pill should appear when no title, html:\n{html}"
-        );
-    }
 
     #[test]
     fn highlight_code_title_replaces_lang_pill() {
@@ -822,29 +800,10 @@ mod tests {
         }
     }
 
-    #[test]
-    fn highlight_code_no_max_lines_omits_attr() {
-        let html = highlight("rs", "fn main() {}\n");
-        assert!(
-            !html.contains("data-max-lines"),
-            "should not have data-max-lines when None, html:\n{html}"
-        );
-    }
-
     // ── highlight_code (language resolution) ──
 
     #[test]
     fn highlight_code_known_language() {
-        let html = highlight("rs", "fn main() {}\n");
-        assert!(
-            html.contains(r#"data-lang="rust""#),
-            "should canonicalize extension to name, html:\n{html}"
-        );
-        assert!(
-            html.contains(r#"<span class="code-lang">Rust</span>"#),
-            "display label should be proper-cased, html:\n{html}"
-        );
-
         let html = highlight("Rust", "fn main() {}\n");
         assert!(
             html.contains(r#"data-lang="rust""#),

@@ -41,7 +41,7 @@ mod tests {
     // ── render_div ──
 
     #[test]
-    fn render_with_name() {
+    fn render_div_with_name() {
         let html = render_div("compact-table", None, &[], "<p>Content</p>\n");
         assert_eq!(
             html,
@@ -53,7 +53,7 @@ mod tests {
     }
 
     #[test]
-    fn render_with_id() {
+    fn render_div_with_id() {
         let html = render_div("", Some("section-1"), &[], "<p>Content</p>\n");
         assert_eq!(
             html,
@@ -65,7 +65,7 @@ mod tests {
     }
 
     #[test]
-    fn render_with_extra_classes() {
+    fn render_div_with_extra_classes() {
         let classes = vec!["compact".into(), "wide".into()];
         let html = render_div("", None, &classes, "<p>Content</p>\n");
         assert_eq!(
@@ -78,7 +78,7 @@ mod tests {
     }
 
     #[test]
-    fn render_with_name_id_and_classes() {
+    fn render_div_with_name_id_and_classes() {
         let classes = vec!["extra".into(), "wide".into()];
         let html = render_div("wrapper", Some("main"), &classes, "<p>Body</p>\n");
         assert_eq!(
@@ -91,13 +91,13 @@ mod tests {
     }
 
     #[test]
-    fn render_without_attrs() {
+    fn render_div_without_attrs() {
         let html = render_div("", None, &[], "<p>Content</p>\n");
         assert_eq!(html, "<p>Content</p>\n");
     }
 
     #[test]
-    fn render_escapes_name() {
+    fn render_div_escapes_name() {
         let html = render_div("<script>", None, &[], "");
         assert!(
             html.contains(r#"class="&lt;script&gt;""#),
@@ -110,7 +110,7 @@ mod tests {
     }
 
     #[test]
-    fn render_escapes_id_and_classes() {
+    fn render_div_escapes_id_and_classes() {
         let classes = vec![r#"a"b"#.into()];
         let html = render_div("", Some(r#"x"y"#), &classes, "");
         assert!(

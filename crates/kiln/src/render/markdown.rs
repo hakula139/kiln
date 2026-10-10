@@ -761,49 +761,36 @@ mod tests {
 
     #[test]
     fn render_markdown_inline_math() {
-        let out = render("$x^2$");
-        assert!(
-            out.html
-                .contains(r#"<span class="math math-inline">\(x^2\)</span>"#),
-            "html:\n{}",
-            out.html
-        );
-    }
-
-    #[test]
-    fn render_markdown_inline_math_with_underscores() {
-        let out = render("The matrix $a_{ij}$ is symmetric.");
-        assert!(
-            out.html.contains("a_{ij}"),
-            "underscores in inline math preserved, html:\n{}",
-            out.html
-        );
+        for (input, expected) in [
+            (
+                "$x^2$",
+                r#"<p><span class="math math-inline">\(x^2\)</span></p>"#,
+            ),
+            (
+                "The matrix $a_{ij}$ is symmetric.",
+                r#"<p>The matrix <span class="math math-inline">\(a_{ij}\)</span> is symmetric.</p>"#,
+            ),
+        ] {
+            let out = render(input);
+            assert!(out.html.contains(expected), "{}", out.html);
+        }
     }
 
     #[test]
     fn render_markdown_display_math() {
-        let out = render("$$E=mc^2$$");
-        assert!(
-            out.html
-                .contains(r#"<span class="math math-display">\[E=mc^2\]</span>"#),
-            "html:\n{}",
-            out.html
-        );
-    }
-
-    #[test]
-    fn render_markdown_display_math_with_underscores() {
-        let out = render("$$a_{ij} + b_{ij}$$");
-        assert!(
-            out.html.contains("a_{ij} + b_{ij}"),
-            "underscores in math should not become emphasis, html:\n{}",
-            out.html
-        );
-        assert!(
-            !out.html.contains("<em>"),
-            "no emphasis tags inside math, html:\n{}",
-            out.html
-        );
+        for (input, expected) in [
+            (
+                "$$E=mc^2$$",
+                r#"<span class="math math-display">\[E=mc^2\]</span>"#,
+            ),
+            (
+                "$$a_{ij} + b_{ij}$$",
+                r#"<span class="math math-display">\[a_{ij} + b_{ij}\]</span>"#,
+            ),
+        ] {
+            let out = render(input);
+            assert!(out.html.contains(expected), "{}", out.html);
+        }
     }
 
     #[test]
@@ -819,89 +806,51 @@ mod tests {
     // ── render_markdown: code blocks ──
 
     #[test]
-    fn render_markdown_code_block() {
-        let md = indoc! {"
-            ```
-            fn main() {}
-            ```
-        "};
-        let out = render(md);
-        assert!(
-            out.html.contains(r#"class="highlight""#),
-            "no-lang code block should still have highlight wrapper, html:\n{}",
-            out.html
-        );
-        assert!(
-            out.html.contains(r#"data-lang="plaintext""#),
-            "no-lang code block should normalize to plaintext, html:\n{}",
-            out.html
-        );
+    fn render_markdown_plaintext_code_blocks() {
+        for md in [
+            indoc! {"
+                ```
+                fn main() {}
+                ```
+            "},
+            "    fn main() {}",
+        ] {
+            let out = render(md);
+            assert!(out.html.contains(r#"class="highlight""#), "{}", out.html);
+            assert!(
+                out.html.contains(r#"data-lang="plaintext""#),
+                "{}",
+                out.html
+            );
+            assert!(out.html.contains("fn main() {}"), "{}", out.html);
+        }
     }
 
     #[test]
-    fn render_markdown_indented_code_block() {
-        let md = "    fn main() {}\n";
-        let out = render(md);
-        assert!(
-            out.html.contains(r#"class="highlight""#),
-            "indented code block should have highlight wrapper, html:\n{}",
-            out.html
-        );
-        assert!(
-            out.html.contains(r#"data-lang="plaintext""#),
-            "indented code block should normalize to plaintext, html:\n{}",
-            out.html
-        );
-    }
-
-    #[test]
-    fn render_markdown_code_block_with_language() {
-        let md = indoc! {"
-            ```rust
-            fn main() {}
-            ```
-        "};
-        let out = render(md);
-        assert!(
-            out.html.contains(r#"class="highlight""#),
-            "should have highlight wrapper, html:\n{}",
-            out.html
-        );
-        assert!(
-            out.html.contains(r#"data-lang="rust""#),
-            "should have data-lang attribute, html:\n{}",
-            out.html
-        );
-        assert!(
-            out.html.contains("<span class="),
-            "should contain highlighted spans, html:\n{}",
-            out.html
-        );
-    }
-
-    #[test]
-    fn render_markdown_code_block_info_string_metadata() {
-        let md = indoc! {"
-            ```rust no_run
-            fn main() {}
-            ```
-        "};
-        let out = render(md);
-        assert!(
-            out.html.contains(r#"data-lang="rust""#),
-            "should extract language from info string, html:\n{}",
-            out.html
-        );
-        assert!(
-            !out.html.contains("no_run"),
-            "metadata after language should be stripped, html:\n{}",
-            out.html
-        );
-        assert!(
-            out.html.contains("<span class="),
-            "should contain highlighted spans, html:\n{}",
-            out.html
-        );
+    fn render_markdown_code_block_extracts_language_and_highlights_source() {
+        for md in [
+            indoc! {"
+                ```rust
+                fn main() {}
+                ```
+            "},
+            indoc! {"
+                ```rust no_run
+                fn main() {}
+                ```
+            "},
+        ] {
+            let out = render(md);
+            assert!(out.html.contains(r#"class="highlight""#), "{}", out.html);
+            assert!(out.html.contains(r#"data-lang="rust""#), "{}", out.html);
+            assert!(!out.html.contains("no_run"), "{}", out.html);
+            assert!(
+                out.html
+                    .contains(r#"<span class="source rust"><span class="meta function rust">"#),
+                "{}",
+                out.html
+            );
+        }
     }
 
     #[test]

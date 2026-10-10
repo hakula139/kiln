@@ -66,78 +66,46 @@ mod tests {
     // ── slugify ──
 
     #[test]
-    fn slugify_ascii() {
-        assert_eq!(slugify("Hello World"), "hello-world");
+    fn slugify_preserves_letters_and_url_safe_punctuation() {
+        for (input, expected) in [
+            ("Hello World", "hello-world"),
+            ("你好世界", "你好世界"),
+            ("Café Résumé", "café-résumé"),
+            ("1.1 Foobar - 测试文本", "1.1-foobar-测试文本"),
+            ("C++", "c++"),
+            (".NET", ".net"),
+            ("C/C++", "c-c++"),
+            ("C", "c"),
+        ] {
+            assert_eq!(slugify(input), expected, "{input}");
+        }
     }
 
     #[test]
-    fn slugify_cjk() {
-        assert_eq!(slugify("你好世界"), "你好世界");
-    }
-
-    #[test]
-    fn slugify_accented_latin() {
-        assert_eq!(slugify("Café Résumé"), "café-résumé");
-    }
-
-    #[test]
-    fn slugify_mixed() {
-        assert_eq!(slugify("1.1 Foobar - 测试文本"), "1.1-foobar-测试文本");
-    }
-
-    #[test]
-    fn slugify_preserves_url_safe_punctuation() {
-        assert_eq!(slugify("C++"), "c++");
-        assert_eq!(slugify(".NET"), ".net");
-        assert_eq!(slugify("C/C++"), "c-c++");
-        assert_eq!(slugify("C"), "c", "should stay distinct from C++");
-    }
-
-    #[test]
-    fn slugify_separates_on_unpreserved_punctuation() {
-        assert_eq!(slugify("CS:APP"), "cs-app");
-        assert_eq!(slugify("Rock & Roll"), "rock-roll");
-    }
-
-    #[test]
-    fn slugify_collapses_dashes() {
-        assert_eq!(slugify("a - - b"), "a-b");
-    }
-
-    #[test]
-    fn slugify_strips_leading_trailing() {
-        assert_eq!(slugify(" hello "), "hello");
-    }
-
-    #[test]
-    fn slugify_empty() {
-        assert_eq!(slugify(""), "");
-    }
-
-    #[test]
-    fn slugify_only_punctuation() {
-        assert_eq!(slugify("..."), "");
+    fn slugify_collapses_separators_and_trims_edges() {
+        for (input, expected) in [
+            ("CS:APP", "cs-app"),
+            ("Rock & Roll", "rock-roll"),
+            ("a - - b", "a-b"),
+            (" hello ", "hello"),
+            ("", ""),
+            ("...", ""),
+        ] {
+            assert_eq!(slugify(input), expected, "{input}");
+        }
     }
 
     // ── titlecase ──
 
     #[test]
-    fn titlecase_basic() {
-        assert_eq!(titlecase("hello-world"), "Hello World");
-    }
-
-    #[test]
-    fn titlecase_single_word() {
-        assert_eq!(titlecase("note"), "Note");
-    }
-
-    #[test]
-    fn titlecase_already_capitalized() {
-        assert_eq!(titlecase("VPS"), "VPS");
-    }
-
-    #[test]
-    fn titlecase_empty() {
-        assert_eq!(titlecase(""), "");
+    fn titlecase_capitalizes_words() {
+        for (input, expected) in [
+            ("hello-world", "Hello World"),
+            ("note", "Note"),
+            ("VPS", "VPS"),
+            ("", ""),
+        ] {
+            assert_eq!(titlecase(input), expected, "{input}");
+        }
     }
 }

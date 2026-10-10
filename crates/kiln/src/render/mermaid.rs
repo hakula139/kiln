@@ -30,14 +30,14 @@ mod tests {
     fn render_mermaid_wraps_source_in_pre_with_class() {
         let source = indoc! {"
             graph TD
-            A --> B
+                A --> B
         "};
         let html = render_mermaid(source);
         let expected = indoc! {r#"
             <pre class="mermaid" data-source="graph TD
-            A --&gt; B
+                A --&gt; B
             ">graph TD
-            A --&gt; B
+                A --&gt; B
             </pre>
         "#};
         assert_eq!(html, expected);
@@ -53,27 +53,6 @@ mod tests {
             indoc! {r#"
                 <pre class="mermaid" data-source="A[&quot;&lt;b&gt;&amp;&quot;]">A[&quot;&lt;b&gt;&amp;&quot;]</pre>
             "#},
-        );
-    }
-
-    #[test]
-    fn render_mermaid_preserves_dsl_whitespace() {
-        let source = indoc! {"
-            graph TB
-                A((36))
-                A --> B((8))
-        "};
-        let html = render_mermaid(source);
-        // Indentation and newlines are preserved verbatim because mermaid is
-        // whitespace-sensitive in some dialects (flowchart subgraphs).
-        let inner = indoc! {"
-            graph TB
-                A((36))
-                A --&gt; B((8))
-        "};
-        assert!(
-            html.contains(inner),
-            "indentation and newlines preserved, html:\n{html}",
         );
     }
 

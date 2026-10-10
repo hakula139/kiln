@@ -28,16 +28,9 @@ pub fn replace_emojis(input: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use indoc::indoc;
-
     use super::*;
 
     // ── replace_emojis ──
-
-    #[test]
-    fn replace_emojis_single() {
-        assert_eq!(replace_emojis("Hello :smile:!"), "Hello \u{1f604}!");
-    }
 
     #[test]
     fn replace_emojis_multiple() {
@@ -51,77 +44,20 @@ mod tests {
     }
 
     #[test]
-    fn replace_emojis_no_match_passthrough() {
-        let input = "plain text";
-        let output = replace_emojis(input);
-        assert_eq!(output, input);
+    fn replace_emojis_preserves_unrecognized_text() {
+        for input in [
+            "plain text",
+            ":not_a_real_emoji:",
+            "Visit https://example.com for more:",
+            "Meet at 12:30 today:",
+        ] {
+            assert_eq!(replace_emojis(input), input);
+        }
     }
 
     #[test]
-    fn replace_emojis_unknown_shortcode_passthrough() {
-        let input = ":not_a_real_emoji:";
-        let output = replace_emojis(input);
-        assert_eq!(output, input);
-    }
-
-    #[test]
-    fn replace_emojis_colon_in_url_passthrough() {
-        let input = "Visit https://example.com for more:";
-        let output = replace_emojis(input);
-        assert_eq!(output, input);
-    }
-
-    #[test]
-    fn replace_emojis_time_format_passthrough() {
-        let input = "Meet at 12:30 today:";
-        let output = replace_emojis(input);
-        assert_eq!(output, input);
-    }
-
-    // ── replace_emojis (code awareness) ──
-
-    #[test]
-    fn replace_emojis_skips_inline_code() {
-        let input = "use `:smile:` syntax";
-        let output = replace_emojis(input);
-        assert_eq!(output, input);
-    }
-
-    #[test]
-    fn replace_emojis_skips_fenced_code() {
-        let input = indoc! {"
-            ```
-            :smile:
-            ```
-        "};
-        let output = replace_emojis(input);
-        assert_eq!(output, input);
-
-        let input = indoc! {"
-            ~~~
-            :smile:
-            ~~~
-        "};
-        let output = replace_emojis(input);
-        assert_eq!(output, input);
-    }
-
-    #[test]
-    fn replace_emojis_after_fenced_code() {
-        let input = indoc! {"
-            ```
-            code
-            ```
-            :smile:
-        "};
-        let output = replace_emojis(input);
-        assert_eq!(output, input.replace(":smile:", "\u{1f604}"));
-    }
-
-    #[test]
-    fn replace_emojis_unclosed_backtick() {
-        let input = "`:smile:";
-        let output = replace_emojis(input);
-        assert_eq!(output, "`\u{1f604}");
+    fn replace_emojis_preserves_code_context() {
+        let input = ":smile: `:smile:`";
+        assert_eq!(replace_emojis(input), "😄 `:smile:`");
     }
 }

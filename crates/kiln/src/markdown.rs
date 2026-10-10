@@ -154,17 +154,6 @@ mod tests {
     // ── for_each_non_code_line ──
 
     #[test]
-    fn for_each_non_code_line_processes_normal_lines() {
-        let input = indoc! {"
-            a
-            b
-        "};
-        let mut out = String::new();
-        for_each_non_code_line(input, &mut out, |line, o| o.push_str(line));
-        assert_eq!(out, input);
-    }
-
-    #[test]
     fn for_each_non_code_line_skips_fenced_code() {
         let input = indoc! {"
             before
@@ -177,8 +166,18 @@ mod tests {
         let mut out = String::new();
         for_each_non_code_line(input, &mut out, |line, o| {
             processed.push(line.trim_end().to_string());
-            o.push_str(line);
+            o.push_str(&line.to_uppercase());
         });
         assert_eq!(processed, vec!["before", "after"]);
+        assert_eq!(
+            out,
+            indoc! {"
+                BEFORE
+                ```
+                code
+                ```
+                AFTER
+            "}
+        );
     }
 }

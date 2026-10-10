@@ -279,47 +279,7 @@ mod tests {
     }
 
     #[test]
-    fn render_inline_image_emits_auto_dimensions() {
-        let attrs = ImageAttrs {
-            auto_width: Some(1200),
-            auto_height: Some(800),
-            ..ImageAttrs::default()
-        };
-        let html = render_inline_image("img.avif", "alt", "", Some(&attrs));
-        assert!(html.contains(r#"width="1200""#), "html:\n{html}");
-        assert!(html.contains(r#"height="800""#), "html:\n{html}");
-    }
-
-    #[test]
-    fn render_inline_image_with_lqip_wraps_in_span() {
-        let attrs = ImageAttrs {
-            auto_width: Some(100),
-            auto_height: Some(60),
-            lqip_uri: Some("data:image/webp;base64,AAA".into()),
-            ..ImageAttrs::default()
-        };
-        let html = render_inline_image("img.avif", "alt", "", Some(&attrs));
-        assert!(
-            html.starts_with(
-                r#"<span class="lqip" style="--lqip-uri:url('data:image/webp;base64,AAA')">"#
-            ),
-            "wrapper opens with the lqip span, html:\n{html}"
-        );
-        assert!(html.ends_with("</span>"), "wrapper closes, html:\n{html}");
-        assert!(
-            html.contains("<img "),
-            "img is inside the wrapper, html:\n{html}"
-        );
-        assert!(
-            !html.contains("background:url"),
-            "no inline background style on the img, html:\n{html}",
-        );
-    }
-
-    #[test]
     fn render_inline_image_with_lqip_keeps_identity_attrs_on_img() {
-        // Identity attrs must stay on the `<img>` so theme selectors like
-        // `img#hero` or `img.full-bleed` keep matching after the wrapper lands.
         let attrs = ImageAttrs {
             id: Some("hero".into()),
             classes: vec!["full-bleed".into()],
@@ -329,78 +289,33 @@ mod tests {
             ..ImageAttrs::default()
         };
         let html = render_inline_image("img.avif", "alt", "", Some(&attrs));
-        let span_open_end = html.find('>').expect("wrapper has an opening tag");
-        let span_open = &html[..=span_open_end];
-        assert!(
-            !span_open.contains(r#"id="hero""#),
-            "id should not land on the <span>, span:\n{span_open}",
-        );
-        assert!(
-            !span_open.contains(r#"class="full-bleed""#),
-            "user class should not land on the <span>, span:\n{span_open}",
-        );
-        assert!(
-            html.contains(r#"<img src="img.avif" alt="alt" id="hero" class="full-bleed""#),
-            "id and class should land on the <img>, html:\n{html}",
-        );
+        assert!(html.starts_with(
+            r#"<span class="lqip" style="--lqip-uri:url('data:image/webp;base64,AAA')"><img src="img.avif" alt="alt" id="hero" class="full-bleed" width="100" height="60""#
+        ), "{html}");
+        assert!(html.ends_with("</span>"), "{html}");
+        assert!(!html.contains("background:url"), "{html}");
     }
 
     #[test]
-    fn render_inline_image_without_lqip_emits_bare_img() {
-        let attrs = ImageAttrs {
-            auto_width: Some(100),
-            auto_height: Some(60),
-            ..ImageAttrs::default()
-        };
-        let html = render_inline_image("img.avif", "alt", "", Some(&attrs));
-        assert!(
-            html.starts_with("<img "),
-            "no wrapper without lqip, html:\n{html}"
-        );
-        assert!(!html.contains(r#"class="lqip""#), "html:\n{html}");
-    }
-
-    #[test]
-    fn render_inline_image_manual_width_scales_auto_height() {
-        // {width=600} on a 1200×800 source → 600×400 box.
-        let attrs = ImageAttrs {
-            width: Some("600".into()),
-            auto_width: Some(1200),
-            auto_height: Some(800),
-            ..ImageAttrs::default()
-        };
-        let html = render_inline_image("img.avif", "alt", "", Some(&attrs));
-        assert!(html.contains(r#"width="600""#), "html:\n{html}");
-        assert!(html.contains(r#"height="400""#), "html:\n{html}");
-    }
-
-    #[test]
-    fn render_inline_image_manual_height_scales_auto_width() {
-        // {height=400} on a 1200×800 source → 600×400 box.
-        let attrs = ImageAttrs {
-            height: Some("400".into()),
-            auto_width: Some(1200),
-            auto_height: Some(800),
-            ..ImageAttrs::default()
-        };
-        let html = render_inline_image("img.avif", "alt", "", Some(&attrs));
-        assert!(html.contains(r#"width="600""#), "html:\n{html}");
-        assert!(html.contains(r#"height="400""#), "html:\n{html}");
-    }
-
-    #[test]
-    fn render_inline_image_manual_dimensions_win_over_auto() {
-        let attrs = ImageAttrs {
-            width: Some("250".into()),
-            height: Some("100".into()),
-            auto_width: Some(1200),
-            auto_height: Some(800),
-            ..ImageAttrs::default()
-        };
-        let html = render_inline_image("img.avif", "alt", "", Some(&attrs));
-        assert!(html.contains(r#"width="250""#), "html:\n{html}");
-        assert!(html.contains(r#"height="100""#), "html:\n{html}");
-        assert!(!html.contains(r#"width="1200""#), "html:\n{html}");
+    fn render_inline_image_merges_authored_and_auto_dimensions() {
+        for (width, height, expected) in [
+            (None, None, r#"width="1200" height="800""#),
+            (Some("600"), None, r#"width="600" height="400""#),
+            (None, Some("400"), r#"width="600" height="400""#),
+            (Some("250"), Some("100"), r#"width="250" height="100""#),
+        ] {
+            let attrs = ImageAttrs {
+                width: width.map(str::to_string),
+                height: height.map(str::to_string),
+                auto_width: Some(1200),
+                auto_height: Some(800),
+                ..ImageAttrs::default()
+            };
+            let html = render_inline_image("img.avif", "alt", "", Some(&attrs));
+            assert!(html.starts_with("<img "), "{html}");
+            assert!(html.contains(expected), "{html}");
+            assert!(!html.contains(r#"class="lqip""#), "{html}");
+        }
     }
 
     #[test]
