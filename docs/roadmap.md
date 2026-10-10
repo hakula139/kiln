@@ -63,7 +63,7 @@ The engine supplies content and template contracts. [IgnIt](https://github.com/h
 - Builds prepare output separately and publish it after rendering and optional search indexing succeed, preserving the previous output when a build fails.
 - `kiln serve` provides local preview, directory redirects, a custom 404 response and browser live reload after successful rebuilds. Preview builds use the local server URL and skip minification.
 - Rust unit / integration tests cover rendering and build behavior. [Benchmarks](benchmarks.md) cover representative rendering, discovery and full-build workloads.
-- Cargo and Nix installation paths, with Nix packages for the engine, Pagefind and the Tailwind processor. Release validation generates npm base / extended entry packages and platform binaries. npm publication remains pending the first release and registry setup.
+- Cargo and Nix installation paths, with Nix packages for the engine, Pagefind and the Tailwind processor. Release validation generates npm base / extended entry packages and platform binaries.
 
 Pagefind is an external executable when indexing is enabled. Live reload watches the source directories that exist at startup. Creating a new top-level source directory, switching themes, changing the output directory or changing imports outside watched trees requires restarting the server. Builds currently regenerate the site as a whole. See [Usage](../README.md#usage) and [Live Reload](assets.md#live-reload).
 
