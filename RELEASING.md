@@ -42,7 +42,7 @@ Any prose that should land in the changelog must come from a commit message: use
    git push origin vX.Y.Z
    ```
 
-7. After all [supported targets](#targets) build successfully, the workflow creates the GitHub Release from the matching changelog section and attaches the archives and SHA-256 checksums. Existing releases are preserved if the workflow is rerun.
+7. After the [supported targets](#targets) and npm packages pass validation, the workflow creates the GitHub Release from the matching changelog section and attaches the archives and SHA-256 checksums. When the npm channel is enabled, it then publishes the npm platform packages before the two entry packages. Stable versions use the `latest` npm tag and prereleases use `next`. A rerun fails on an existing release or npm version. Inspect the completed jobs before retrying a partially published release.
 
 ## Installing `git-cliff`
 
@@ -63,4 +63,18 @@ Each platform has two archives, both containing the `kiln` binary. `kiln-<target
 
 AVIF files are published and their dimensions are read in both variants. See [Building from Source](README.md#building-from-source) to enable placeholder decoding in a source build.
 
-Add new targets by extending the matrix in `release.yml`. Pull requests that change release configuration and manual runs build validation archives without publishing a release.
+Add new targets to the matrix in `release.yml` and the platform table in `npm/package.mjs`. Pull requests that change release configuration and manual runs build validation archives without publishing a release.
+
+## npm packages
+
+`npm/package.mjs` builds eight packages from the six release archives: `@kiln-ssg/kiln` and `@kiln-ssg/kiln-extended`, each with exact-version optional dependencies on its three platform packages. Versions come from `workspace.package.version`. Tag builds reject a mismatched version. The shared launcher delegates to the selected native binary without downloading files during installation.
+
+The npm channel is disabled until registry setup is complete. For the first npm release, publish the generated tarballs once using an npm account authorized for the `@kiln-ssg` scope. Publish the six platform packages before the entry packages, using `--access public` and `--tag next` for a prerelease. Configure each package's [trusted publisher](https://docs.npmjs.com/trusted-publishers/) for GitHub owner `hakula139`, repository `kiln`, and workflow `release.yml`, with permission to run `npm publish`. Enable subsequent tag publication with:
+
+```bash
+gh variable set NPM_PUBLISH_ENABLED --body true --repo hakula139/kiln
+```
+
+Subsequent tag builds authenticate with OIDC.
+
+Pull requests and manual workflow runs upload the eight tarballs as the `npm-packages` artifact without publishing to npm or GitHub Releases. Download that artifact to inspect packages or perform the first authenticated publication. The standalone archives remain available without Node.js.

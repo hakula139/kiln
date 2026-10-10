@@ -29,6 +29,27 @@ A static site generator written in Rust for [hakula.xyz](https://hakula.xyz), wi
 
 ## Installation
 
+### Via npm
+
+The npm channel starts with 0.5.0. These packages have not been published yet.
+
+Install Node.js 20 or newer, for example with [fnm](https://github.com/Schniz/fnm), then choose one kiln variant:
+
+```bash
+fnm install --latest --use
+npm install -g @kiln-ssg/kiln
+```
+
+Use `@kiln-ssg/kiln-extended` for AVIF loading placeholders, with the same [dav1d requirements](RELEASING.md#targets) as the extended archive. Both packages install the `kiln` command. Uninstall the current variant before switching. Prereleases use the `next` npm tag.
+
+Add optional tools to the same installation command when your site needs them:
+
+```bash
+npm install -g @kiln-ssg/kiln @kiln-ssg/tailwindcss@0.1.2 pagefind@1.5.2
+```
+
+The Tailwind processor is required by IgnIt. Pagefind is required only when search is enabled. Omit either package when unused. npm selects the binary for Linux x86_64 (glibc), Apple Silicon, or Windows x86_64.
+
 ### Prebuilt binary
 
 Download the latest release for your platform from [Releases](https://github.com/hakula139/kiln/releases/latest):

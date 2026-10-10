@@ -139,7 +139,7 @@
               enable = true;
               name = "prettier";
               entry = nodeHook "prettier-write" "prettier --write --ignore-unknown";
-              files = "\\.json$";
+              files = "\\.(json|cjs|mjs)$|^\\.github/.*\\.ya?ml$";
             };
 
             dprint-write = {

@@ -52,6 +52,9 @@ jobs:
       - name: Lint
         run: nix develop -c pnpm lint
 
+      - name: Test npm packaging
+        run: nix develop -c pnpm test
+
       - name: Spell check
         run: nix develop -c pnpm spellcheck
 
