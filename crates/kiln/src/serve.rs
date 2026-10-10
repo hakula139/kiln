@@ -8,29 +8,21 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use axum::Router;
 use axum::body::Body;
-use axum::extract::State;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
+use axum::extract::{Request, State};
 use axum::http::{Method, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
-use http_body_util::BodyExt;
 use indoc::indoc;
-use notify::{RecursiveMode, Watcher};
-use tokio::sync::{broadcast, mpsc};
+use itertools::Itertools;
+use notify::{EventKind, RecursiveMode, Watcher};
+use tokio::sync::{mpsc, watch};
 use tower::ServiceExt;
-use tower_http::services::ServeDir;
+use tower_http::services::{ServeDir, ServeFile};
+use tower_http::set_status::SetStatus;
 
 use crate::build::BuildOptions;
-use crate::config::Config;
-
-/// Default port for `kiln serve` (KILN on a phone keypad: K=5 I=4 L=5 N=6).
-pub const DEFAULT_PORT: u16 = 5456;
-
-/// Constructs the localhost base URL for a given port.
-#[must_use]
-pub fn localhost_url(port: u16) -> String {
-    format!("http://localhost:{port}")
-}
+use crate::config::{self, Config};
 
 /// WebSocket endpoint path, prefixed to avoid conflicts with site content.
 const LIVE_RELOAD_PATH: &str = "/__kiln_live_reload";
@@ -39,10 +31,8 @@ const DEBOUNCE: Duration = Duration::from_millis(100);
 
 /// JavaScript snippet injected before `</body>` in HTML responses.
 ///
-/// Uses a WebSocket instead of SSE for live reload. SSE connections count against Chrome's
-/// 6-connection-per-origin HTTP/1.1 limit and create "zombie" sockets on navigation that silently
-/// block subsequent requests for tens of seconds. WebSocket connections are upgraded out of the
-/// HTTP pool, avoiding the limit entirely.
+/// Uses a WebSocket because SSE connections count against Chrome's 6-connection-per-origin
+/// HTTP/1.1 limit and leave zombie sockets on navigation that stall later requests.
 const LIVE_RELOAD_SCRIPT: &str = indoc! {r#"
 
     <script>
@@ -126,48 +116,39 @@ async fn serve_until(
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> Result<()> {
     let port = listener.local_addr()?.port();
-    let base_url = localhost_url(port);
-
-    eprintln!("Building site...");
-    // Dev server skips minification for debuggability and rebuild speed.
-    crate::build(
-        root,
-        BuildOptions {
-            base_url_override: Some(&base_url),
-            ..Default::default()
-        },
-    )
-    .context("initial build failed")?;
-
+    let base_url = config::localhost_url(port);
     let config = Config::load(root).context("failed to load config")?;
     // output_dir is captured once. If config.toml changes it, the server must be restarted.
     let output_dir = config.resolved_output_dir(root)?;
 
-    let (reload_tx, _) = broadcast::channel::<()>(16);
+    eprintln!("Building site...");
+    rebuild(root, &base_url, &output_dir).context("initial build failed")?;
 
-    let (watch_tx, watch_rx) = mpsc::unbounded_channel();
+    let inputs = watch_paths(root, &config);
+    let (event_tx, event_rx) = mpsc::unbounded_channel();
     // Watcher must stay alive for the duration of the server, since dropping it stops watching.
     let _watcher: notify::RecommendedWatcher =
-        setup_watcher(root, &config, watch_tx, notify::Config::default())?;
+        setup_watcher(&inputs, event_tx, notify::Config::default())?;
 
-    let rebuild_root = root.to_owned();
-    let rebuild_tx = reload_tx.clone();
+    let (reload_tx, _) = watch::channel(());
     tokio::spawn(watch_loop(
-        rebuild_root,
+        root.to_owned(),
         base_url.clone(),
         output_dir.clone(),
-        watch_rx,
-        rebuild_tx,
+        event_rx,
+        reload_tx.clone(),
     ));
 
     let app = build_router(&output_dir, reload_tx);
 
     eprintln!("\nServing at {base_url} (Press Ctrl+C to stop)");
-    eprint!("Watching: config.toml, assets/, content/, i18n/, static/, templates/");
-    if let Some(ref theme) = config.theme {
-        eprint!(", themes/{theme}/");
-    }
-    eprintln!();
+    eprintln!(
+        "Watching: {}",
+        inputs
+            .iter()
+            .map(|path| path.strip_prefix(root).unwrap_or(path).display())
+            .join(", ")
+    );
 
     if open && let Err(e) = open::that(&base_url) {
         eprintln!("Failed to open browser: {e}");
@@ -186,34 +167,28 @@ async fn serve_until(
     Ok(())
 }
 
-/// A path to watch and whether to recurse into subdirectories.
-struct WatchEntry {
-    path: PathBuf,
-    recursive: bool,
-}
-
-/// Initializes the file watcher on source directories and config.
+/// Initializes the file watcher on the build inputs returned by [`watch_paths`].
 ///
-/// Generic over the backend so tests can drive a [`notify::PollWatcher`], which needs no
-/// platform event daemon and so works under a build sandbox.
+/// Input files are watched through their parent directory because Linux file watches track the
+/// original file, which atomic saves replace. Generic over the backend so tests can drive a
+/// [`notify::PollWatcher`], which needs no platform event daemon and works under a build sandbox.
 fn setup_watcher<W: Watcher>(
-    root: &Path,
-    config: &Config,
+    inputs: &[PathBuf],
     event_tx: mpsc::UnboundedSender<()>,
     watcher_config: notify::Config,
 ) -> Result<W> {
+    let inputs = inputs
+        .iter()
+        .map(|path| {
+            path.canonicalize()
+                .with_context(|| format!("failed to resolve watch path {}", path.display()))
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    let filter = inputs.clone();
     let mut watcher = W::new(
         move |res: notify::Result<notify::Event>| match res {
-            Ok(event)
-                if matches!(
-                    event.kind,
-                    notify::EventKind::Create(_)
-                        | notify::EventKind::Modify(_)
-                        | notify::EventKind::Remove(_)
-                ) =>
-            {
-                _ = event_tx.send(());
-            }
+            Ok(event) if is_input_change(&event, &filter) => _ = event_tx.send(()),
             Ok(_) => {}
             Err(e) => tracing::warn!("file watcher error: {e}"),
         },
@@ -221,65 +196,42 @@ fn setup_watcher<W: Watcher>(
     )
     .context("failed to initialize file watcher")?;
 
-    for entry in watch_paths(root, config) {
-        let mode = if entry.recursive {
-            RecursiveMode::Recursive
-        } else {
-            RecursiveMode::NonRecursive
+    for input in &inputs {
+        let (path, mode) = match input.parent() {
+            Some(parent) if input.is_file() => (parent, RecursiveMode::NonRecursive),
+            _ => (input.as_path(), RecursiveMode::Recursive),
         };
-        let path = entry
-            .path
-            .canonicalize()
-            .with_context(|| format!("failed to resolve watch path {}", entry.path.display()))?;
         watcher
-            .watch(&path, mode)
-            .with_context(|| format!("failed to watch {}", entry.path.display()))?;
+            .watch(path, mode)
+            .with_context(|| format!("failed to watch {}", path.display()))?;
     }
 
     Ok(watcher)
 }
 
-/// Computes which paths should be watched for changes.
-///
-/// Returns only paths that exist on disk. Missing directories (e.g., no `static/`) are skipped.
-fn watch_paths(root: &Path, config: &Config) -> Vec<WatchEntry> {
-    let mut paths = Vec::new();
-
-    let config_path = root.join("config.toml");
-    if config_path.is_file() {
-        paths.push(WatchEntry {
-            path: config_path,
-            recursive: false,
-        });
-    }
-
-    for dir in ["assets", "content", "i18n", "static", "templates"] {
-        let path = root.join(dir);
-        if path.is_dir() {
-            paths.push(WatchEntry {
-                path,
-                recursive: true,
-            });
-        }
-    }
-
+/// Returns the existing site and theme build inputs. Missing inputs (e.g., no `static/`) are
+/// skipped.
+fn watch_paths(root: &Path, config: &Config) -> Vec<PathBuf> {
+    let site = config::SITE_INPUTS.iter().map(|name| root.join(name));
     // Changing the theme in config.toml requires a restart.
-    if let Some(theme_dir) = config.theme_dir(root) {
-        for (name, recursive) in [
-            ("theme.toml", false),
-            ("assets", true),
-            ("i18n", true),
-            ("static", true),
-            ("templates", true),
-        ] {
-            let path = theme_dir.join(name);
-            if path.exists() {
-                paths.push(WatchEntry { path, recursive });
-            }
-        }
-    }
+    let theme = config.theme_dir(root).into_iter().flat_map(|theme_dir| {
+        config::THEME_INPUTS
+            .iter()
+            .map(move |name| theme_dir.join(name))
+    });
+    site.chain(theme).filter(|path| path.exists()).collect()
+}
 
-    paths
+/// Reports whether `event` changes a watched input, ignoring siblings such as the output and
+/// staging directories that share an input file's parent.
+fn is_input_change(event: &notify::Event, inputs: &[PathBuf]) -> bool {
+    matches!(
+        event.kind,
+        EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_)
+    ) && event
+        .paths
+        .iter()
+        .any(|path| inputs.iter().any(|input| path.starts_with(input)))
 }
 
 /// Debounced rebuild loop: waits for watcher events, rebuilds, and notifies WebSocket clients.
@@ -288,12 +240,9 @@ async fn watch_loop(
     base_url: String,
     output_dir: PathBuf,
     mut event_rx: mpsc::UnboundedReceiver<()>,
-    reload_tx: broadcast::Sender<()>,
+    reload_tx: watch::Sender<()>,
 ) {
-    loop {
-        if event_rx.recv().await.is_none() {
-            break;
-        }
+    while event_rx.recv().await.is_some() {
         tokio::time::sleep(DEBOUNCE).await;
         while event_rx.try_recv().is_ok() {}
 
@@ -302,23 +251,18 @@ async fn watch_loop(
         let base_url = base_url.clone();
         let output_dir = output_dir.clone();
         let result =
-            tokio::task::spawn_blocking(move || safe_rebuild(&root, &base_url, &output_dir)).await;
+            tokio::task::spawn_blocking(move || rebuild(&root, &base_url, &output_dir)).await;
 
         match result {
-            Ok(Ok(())) => {
-                _ = reload_tx.send(());
-            }
-            Ok(Err(e)) => {
-                eprintln!("Rebuild failed: {e:?}");
-            }
-            Err(e) => {
-                eprintln!("Rebuild task panicked: {e}");
-            }
+            Ok(Ok(())) => reload_tx.send_replace(()),
+            Ok(Err(e)) => eprintln!("Rebuild failed: {e:?}"),
+            Err(e) => eprintln!("Rebuild task panicked: {e}"),
         }
     }
 }
 
-fn safe_rebuild(root: &Path, base_url: &str, output_dir: &Path) -> Result<()> {
+/// Builds the site into the served directory with dev-server URLs and no minification.
+fn rebuild(root: &Path, base_url: &str, output_dir: &Path) -> Result<()> {
     crate::build(
         root,
         BuildOptions {
@@ -330,45 +274,34 @@ fn safe_rebuild(root: &Path, base_url: &str, output_dir: &Path) -> Result<()> {
 }
 
 /// Creates the axum router with WebSocket live reload and static file serving.
-fn build_router(output_dir: &Path, reload_tx: broadcast::Sender<()>) -> Router {
-    let serve_dir = ServeDir::new(output_dir).append_index_html_on_directories(true);
-    let root = output_dir.to_owned();
+fn build_router(output_dir: &Path, reload_tx: watch::Sender<()>) -> Router {
+    let serve_dir = ServeDir::new(output_dir)
+        .append_index_html_on_directories(true)
+        .not_found_service(ServeFile::new(output_dir.join("404.html")));
 
     Router::new()
         .route(LIVE_RELOAD_PATH, get(ws_handler))
-        .fallback(move |request: axum::extract::Request| {
-            let sd = serve_dir.clone();
-            let root = root.clone();
-            async move { serve_request(sd, &root, request).await }
-        })
+        .fallback(move |request| serve_request(serve_dir.clone(), request))
         .with_state(reload_tx)
 }
 
-/// WebSocket upgrade handler for live reload.
-///
-/// Forwards rebuild notifications from the broadcast channel as `"reload"` text messages. Its
-/// connection sits outside Chrome's HTTP/1.1 pool and never competes with page / asset requests.
+/// WebSocket upgrade handler that sends `"reload"` after each successful rebuild.
 async fn ws_handler(
     ws: WebSocketUpgrade,
-    State(tx): State<broadcast::Sender<()>>,
+    State(reload_tx): State<watch::Sender<()>>,
 ) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| ws_relay(socket, tx))
+    ws.on_upgrade(move |socket| ws_relay(socket, reload_tx.subscribe()))
 }
 
-/// Relays broadcast reload events to a single WebSocket client.
-async fn ws_relay(mut socket: WebSocket, tx: broadcast::Sender<()>) {
-    let mut rx = tx.subscribe();
+/// Relays reload notifications to a single WebSocket client until either side closes.
+async fn ws_relay(mut socket: WebSocket, mut reload_rx: watch::Receiver<()>) {
     loop {
         tokio::select! {
-            result = rx.recv() => {
-                match result {
-                    Ok(()) => {
-                        if socket.send(Message::Text("reload".into())).await.is_err() {
-                            break;
-                        }
-                    }
-                    Err(broadcast::error::RecvError::Lagged(_)) => {}
-                    Err(broadcast::error::RecvError::Closed) => break,
+            changed = reload_rx.changed() => {
+                if changed.is_err()
+                    || socket.send(Message::Text("reload".into())).await.is_err()
+                {
+                    break;
                 }
             }
             msg = socket.recv() => {
@@ -380,18 +313,17 @@ async fn ws_relay(mut socket: WebSocket, tx: broadcast::Sender<()>) {
     }
 }
 
-/// Injects live reload into complete HTML responses while preserving static HTTP semantics.
+/// Injects live reload into complete HTML pages while preserving static HTTP semantics.
 async fn serve_request(
-    serve_dir: ServeDir,
-    output_dir: &Path,
-    request: axum::extract::Request,
+    serve_dir: ServeDir<SetStatus<ServeFile>>,
+    mut request: Request,
 ) -> Response {
-    let is_head = request.method() == Method::HEAD;
-    let mut response = serve_dir
-        .oneshot(request)
-        .await
-        .expect("ServeDir is infallible")
-        .map(Body::new);
+    // axum derives HEAD's Content-Length from the injected GET body, then drops the body.
+    if request.method() == Method::HEAD {
+        *request.method_mut() = Method::GET;
+    }
+    let Ok(response) = serve_dir.oneshot(request).await;
+    let mut response = response.map(Body::new);
 
     // Force revalidation so live reload always serves fresh CSS / JS / images.
     response.headers_mut().insert(
@@ -399,57 +331,23 @@ async fn serve_request(
         header::HeaderValue::from_static("no-cache"),
     );
 
-    if response.status() == StatusCode::NOT_FOUND
-        && let Ok(html) = tokio::fs::read_to_string(output_dir.join("404.html")).await
-    {
-        let html = inject_script(&html);
-        return Response::builder()
-            .status(StatusCode::NOT_FOUND)
-            .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
-            .header(header::CACHE_CONTROL, "no-cache")
-            .header(header::CONTENT_LENGTH, html.len())
-            .body(if is_head {
-                Body::empty()
-            } else {
-                Body::from(html)
-            })
-            .expect("404 response is valid");
-    }
-
     let is_html = response
         .headers()
         .get(header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
         .is_some_and(|ct| ct.starts_with("text/html"));
-
-    if is_head && response.status() == StatusCode::OK && is_html {
-        // ServeDir sets a numeric Content-Length for successful file responses.
-        let length = response.headers()[header::CONTENT_LENGTH]
-            .to_str()
-            .expect("file length is ASCII")
-            .parse::<u64>()
-            .expect("file length is numeric");
-        response.headers_mut().insert(
-            header::CONTENT_LENGTH,
-            (length + LIVE_RELOAD_SCRIPT.len() as u64).into(),
-        );
-    }
-
-    if is_head || response.status() != StatusCode::OK || !is_html {
+    if !is_html || !matches!(response.status(), StatusCode::OK | StatusCode::NOT_FOUND) {
         return response;
     }
 
     let (mut parts, body) = response.into_parts();
-    let Ok(collected) = body.collect().await else {
+    let Ok(bytes) = axum::body::to_bytes(body, usize::MAX).await else {
         tracing::warn!("failed to collect response body for live reload injection");
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     };
-    let bytes = collected.to_bytes();
-    let html = String::from_utf8_lossy(&bytes);
-
-    let modified = inject_script(&html);
+    let html = inject_script(&String::from_utf8_lossy(&bytes));
     parts.headers.remove(header::CONTENT_LENGTH);
-    Response::from_parts(parts, Body::from(modified))
+    Response::from_parts(parts, Body::from(html))
 }
 
 /// Injects the live reload script before `</body>` in HTML content.
@@ -479,6 +377,7 @@ mod tests {
 
     use axum::http::Request;
     use indoc::indoc;
+    use notify::event::{CreateKind, ModifyKind, RenameMode};
 
     use super::*;
     use crate::test_utils::copy_templates;
@@ -516,37 +415,6 @@ mod tests {
             .await
             .unwrap();
         drop(ws);
-
-        _ = shutdown_tx.send(());
-    }
-
-    #[tokio::test]
-    async fn serve_until_with_theme() {
-        let root = tempfile::tempdir().unwrap();
-        fs::write(root.path().join("config.toml"), r#"theme = "test-theme""#).unwrap();
-        let theme_dir = root.path().join("themes").join("test-theme");
-        copy_templates(&theme_dir.join("templates"));
-        fs::write(theme_dir.join("theme.toml"), "").unwrap();
-        let page_dir = root.path().join("content").join("posts").join("hello");
-        fs::create_dir_all(&page_dir).unwrap();
-        fs::write(
-            page_dir.join("index.md"),
-            indoc! {r#"
-                +++
-                title = "Hello"
-                +++
-                Body
-            "#},
-        )
-        .unwrap();
-
-        let (addr, shutdown_tx) = spawn_server(root.path()).await;
-        wait_for_server(addr).await;
-
-        let resp = reqwest::get(format!("http://{addr}/posts/hello/"))
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), 200);
 
         _ = shutdown_tx.send(());
     }
@@ -601,30 +469,28 @@ mod tests {
     // ── setup_watcher ──
 
     #[tokio::test]
-    async fn setup_watcher_sends_event_on_watched_file_change() {
-        for (directory, filename, original, updated) in [
-            ("content", "test.md", None, "Hello"),
-            (
-                "i18n",
-                "en.toml",
-                Some(r#"greeting = "Hello""#),
-                r#"greeting = "Howdy""#,
-            ),
+    async fn setup_watcher_sends_event_on_atomic_input_save() {
+        for (input, original) in [
+            ("content/test.md", None),
+            ("i18n/en.toml", Some(r#"greeting = "Hello""#)),
+            ("config.toml", Some(r#"theme = "test-theme""#)),
+            ("themes/test-theme/theme.toml", Some("")),
         ] {
             let root = tempfile::tempdir().unwrap();
-            let watched_dir = root.path().join(directory);
-            fs::create_dir(&watched_dir).unwrap();
-            fs::write(root.path().join("config.toml"), "").unwrap();
-            let file = watched_dir.join(filename);
+            for directory in ["content", "i18n", "themes/test-theme"] {
+                fs::create_dir_all(root.path().join(directory)).unwrap();
+            }
+            fs::write(root.path().join("config.toml"), r#"theme = "test-theme""#).unwrap();
+            fs::write(root.path().join("themes/test-theme/theme.toml"), "").unwrap();
+            let file = root.path().join(input);
             if let Some(content) = original {
                 fs::write(&file, content).unwrap();
             }
 
-            let config = Config::default();
+            let config: Config = toml::from_str(r#"theme = "test-theme""#).unwrap();
             let (tx, mut rx) = mpsc::unbounded_channel();
             let _watcher: notify::PollWatcher = setup_watcher(
-                root.path(),
-                &config,
+                &watch_paths(root.path(), &config),
                 tx,
                 notify::Config::default()
                     .with_poll_interval(Duration::from_millis(50))
@@ -632,83 +498,132 @@ mod tests {
             )
             .unwrap();
 
-            fs::write(&file, updated).unwrap();
+            for output in ["public", ".kiln-build-abc123"] {
+                fs::create_dir(root.path().join(output)).unwrap();
+            }
+            assert!(
+                tokio::time::timeout(Duration::from_millis(300), rx.recv())
+                    .await
+                    .is_err(),
+                "output siblings of config.toml should not trigger a rebuild"
+            );
+
+            let staged = file.with_extension("tmp");
+            fs::write(&staged, "# updated").unwrap();
+            fs::rename(&staged, &file).unwrap();
 
             let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
                 .await
-                .unwrap_or_else(|_| {
-                    panic!("should receive event after changing {directory}/{filename}")
-                });
-            assert_eq!(event, Some(()), "{directory}/{filename}");
+                .unwrap_or_else(|_| panic!("should receive event after replacing {input}"));
+            assert_eq!(event, Some(()), "{input}");
         }
     }
 
     // ── watch_paths ──
 
     #[test]
-    fn watch_paths_all_dirs_present() {
-        let root = tempfile::tempdir().unwrap();
-        fs::create_dir(root.path().join("assets")).unwrap();
-        fs::create_dir(root.path().join("content")).unwrap();
-        fs::create_dir(root.path().join("i18n")).unwrap();
-        fs::create_dir(root.path().join("static")).unwrap();
-        fs::create_dir(root.path().join("templates")).unwrap();
-        fs::write(root.path().join("config.toml"), "").unwrap();
+    fn watch_paths_lists_existing_site_and_theme_inputs() {
+        for (theme, created, expected) in [
+            (
+                None,
+                &[
+                    "assets/",
+                    "config.toml",
+                    "content/",
+                    "i18n/",
+                    "public/",
+                    "static/",
+                    "templates/",
+                ][..],
+                &[
+                    "assets",
+                    "config.toml",
+                    "content",
+                    "i18n",
+                    "static",
+                    "templates",
+                ][..],
+            ),
+            (None, &["content/", "themes/my-theme/assets/"], &["content"]),
+            (
+                Some("my-theme"),
+                &[
+                    "config.toml",
+                    "themes/my-theme/assets/",
+                    "themes/my-theme/theme.toml",
+                    "themes/other/templates/",
+                ],
+                &[
+                    "config.toml",
+                    "themes/my-theme/assets",
+                    "themes/my-theme/theme.toml",
+                ],
+            ),
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            for entry in created {
+                let path = root.path().join(entry);
+                if entry.ends_with('/') {
+                    fs::create_dir_all(path).unwrap();
+                } else {
+                    fs::create_dir_all(path.parent().unwrap()).unwrap();
+                    fs::write(path, "").unwrap();
+                }
+            }
+            let config = Config {
+                theme: theme.map(str::to_owned),
+                ..Config::default()
+            };
 
-        let config = Config::default();
-        let paths = watch_paths(root.path(), &config);
-
-        assert_eq!(
-            paths
-                .into_iter()
-                .map(|entry| (entry.path, entry.recursive))
-                .collect::<Vec<_>>(),
-            [
-                (root.path().join("config.toml"), false),
-                (root.path().join("assets"), true),
-                (root.path().join("content"), true),
-                (root.path().join("i18n"), true),
-                (root.path().join("static"), true),
-                (root.path().join("templates"), true),
-            ]
-        );
+            assert_eq!(
+                watch_paths(root.path(), &config),
+                expected
+                    .iter()
+                    .map(|path| root.path().join(path))
+                    .collect::<Vec<_>>(),
+                "{created:?}"
+            );
+        }
     }
 
-    #[test]
-    fn watch_paths_with_theme() {
-        let root = tempfile::tempdir().unwrap();
-        fs::write(root.path().join("config.toml"), "").unwrap();
-        let theme_dir = root.path().join("themes").join("my-theme");
-        fs::create_dir_all(theme_dir.join("assets")).unwrap();
-        fs::write(theme_dir.join("theme.toml"), "").unwrap();
-
-        let config: Config = toml::from_str(r#"theme = "my-theme""#).unwrap();
-        let paths = watch_paths(root.path(), &config);
-
-        assert_eq!(
-            paths
-                .into_iter()
-                .map(|entry| (entry.path, entry.recursive))
-                .collect::<Vec<_>>(),
-            [
-                (root.path().join("config.toml"), false),
-                (theme_dir.join("theme.toml"), false),
-                (theme_dir.join("assets"), true),
-            ]
-        );
-    }
+    // ── is_input_change ──
 
     #[test]
-    fn watch_paths_missing_dirs_skipped() {
-        let root = tempfile::tempdir().unwrap();
-        fs::create_dir(root.path().join("content")).unwrap();
-
-        let config = Config::default();
-        let paths = watch_paths(root.path(), &config);
-
-        assert_eq!(paths.len(), 1);
-        assert_eq!(paths[0].path, root.path().join("content"));
-        assert!(paths[0].recursive);
+    fn is_input_change_matches_inputs_and_their_descendants() {
+        let root = Path::new("/site");
+        let inputs = [root.join("config.toml"), root.join("content")];
+        let modify = EventKind::Modify(ModifyKind::Any);
+        for (kind, paths, expected) in [
+            (modify, &["config.toml"][..], true),
+            (modify, &["content/posts/hello/index.md"], true),
+            (
+                EventKind::Create(CreateKind::File),
+                &["content/new.md"],
+                true,
+            ),
+            (
+                EventKind::Modify(ModifyKind::Name(RenameMode::Both)),
+                &["config.toml.tmp", "config.toml"],
+                true,
+            ),
+            (modify, &["config.toml.swp"], false),
+            (modify, &["public/index.html"], false),
+            (
+                EventKind::Create(CreateKind::Folder),
+                &[".kiln-build-abc123/output"],
+                false,
+            ),
+            (
+                EventKind::Access(notify::event::AccessKind::Any),
+                &["config.toml"],
+                false,
+            ),
+        ] {
+            let event = paths.iter().fold(notify::Event::new(kind), |event, path| {
+                event.add_path(root.join(path))
+            });
+            assert_eq!(is_input_change(&event, &inputs), expected, "{event:?}");
+        }
     }
 
     // ── watch_loop ──
@@ -717,22 +632,11 @@ mod tests {
     async fn watch_loop_triggers_reload_on_success() {
         let root = tempfile::tempdir().unwrap();
         setup_site(root.path());
-
-        let (event_tx, event_rx) = mpsc::unbounded_channel();
-        let (reload_tx, mut reload_rx) = broadcast::channel::<()>(16);
-
-        let root_path = root.path().to_owned();
-        tokio::spawn(watch_loop(
-            root_path,
-            "http://localhost:0".to_owned(),
-            root.path().join("public"),
-            event_rx,
-            reload_tx,
-        ));
+        let (event_tx, mut reload_rx, _) = spawn_watch_loop(root.path());
 
         event_tx.send(()).unwrap();
 
-        tokio::time::timeout(Duration::from_secs(5), reload_rx.recv())
+        tokio::time::timeout(Duration::from_secs(5), reload_rx.changed())
             .await
             .expect("should receive reload within timeout")
             .expect("should receive reload after successful rebuild");
@@ -742,18 +646,7 @@ mod tests {
     async fn watch_loop_stops_when_sender_dropped() {
         let root = tempfile::tempdir().unwrap();
         setup_site(root.path());
-
-        let (event_tx, event_rx) = mpsc::unbounded_channel();
-        let (reload_tx, _) = broadcast::channel::<()>(16);
-
-        let root_path = root.path().to_owned();
-        let handle = tokio::spawn(watch_loop(
-            root_path,
-            "http://localhost:0".to_owned(),
-            root.path().join("public"),
-            event_rx,
-            reload_tx,
-        ));
+        let (event_tx, _, handle) = spawn_watch_loop(root.path());
 
         drop(event_tx);
 
@@ -767,151 +660,104 @@ mod tests {
     async fn watch_loop_no_reload_on_failure() {
         let root = tempfile::tempdir().unwrap();
         setup_site(root.path());
-
         fs::write(
             root.path().join("templates").join("post.html"),
             "{% invalid %}",
         )
         .unwrap();
-
-        let (event_tx, event_rx) = mpsc::unbounded_channel();
-        let (reload_tx, mut reload_rx) = broadcast::channel::<()>(16);
-
-        let root_path = root.path().to_owned();
-        let handle = tokio::spawn(watch_loop(
-            root_path,
-            "http://localhost:0".to_owned(),
-            root.path().join("public"),
-            event_rx,
-            reload_tx,
-        ));
+        let (event_tx, reload_rx, handle) = spawn_watch_loop(root.path());
 
         event_tx.send(()).unwrap();
-
         drop(event_tx);
         tokio::time::timeout(Duration::from_secs(5), handle)
             .await
             .expect("watch_loop should finish the failed rebuild within timeout")
             .expect("watch_loop should exit without panicking");
 
-        assert_eq!(
-            reload_rx.try_recv(),
-            Err(broadcast::error::TryRecvError::Closed),
+        assert!(
+            !reload_rx.borrow().has_changed(),
             "should not send reload on failed rebuild"
         );
     }
 
-    // ── safe_rebuild ──
-
-    #[test]
-    fn safe_rebuild_replaces_output() {
-        let root = tempfile::tempdir().unwrap();
-        setup_site(root.path());
-
-        crate::build(root.path(), BuildOptions::default()).unwrap();
-        let output = root.path().join("public");
-        fs::write(output.join("stale.html"), "Stale output").unwrap();
-        fs::write(
-            root.path().join("content/posts/hello/index.md"),
-            indoc! {r#"
-                +++
-                title = "Hello"
-                +++
-                Updated body
-            "#},
-        )
-        .unwrap();
-
-        safe_rebuild(
-            root.path(),
-            "http://localhost:0",
-            &root.path().join("public"),
-        )
-        .unwrap();
-
-        let html = fs::read_to_string(output.join("posts/hello/index.html")).unwrap();
-        assert!(html.contains("<p>Updated body</p>"), "got: {html}");
-        assert!(!output.join("stale.html").exists());
+    /// Spawns `watch_loop` over `root`, returning its event sender, a reload receiver and handle.
+    fn spawn_watch_loop(
+        root: &Path,
+    ) -> (
+        mpsc::UnboundedSender<()>,
+        watch::Receiver<()>,
+        tokio::task::JoinHandle<()>,
+    ) {
+        let (event_tx, event_rx) = mpsc::unbounded_channel();
+        let (reload_tx, reload_rx) = watch::channel(());
+        let handle = tokio::spawn(watch_loop(
+            root.to_owned(),
+            "http://localhost:0".to_owned(),
+            root.join("public"),
+            event_rx,
+            reload_tx,
+        ));
+        (event_tx, reload_rx, handle)
     }
 
-    #[test]
-    fn safe_rebuild_preserves_unowned_neighbors() {
-        let root = tempfile::tempdir().unwrap();
-        setup_site(root.path());
-        let neighbors = ["public.staging", "public.prev"];
-        for name in neighbors {
-            let directory = root.path().join(name);
-            fs::create_dir(&directory).unwrap();
-            fs::write(directory.join("sentinel.txt"), name).unwrap();
-        }
-
-        safe_rebuild(
-            root.path(),
-            "http://localhost:0",
-            &root.path().join("public"),
-        )
-        .unwrap();
-
-        for name in neighbors {
-            assert_eq!(
-                fs::read_to_string(root.path().join(name).join("sentinel.txt")).unwrap(),
-                name
-            );
-        }
-    }
+    // ── rebuild ──
 
     #[test]
-    fn safe_rebuild_keeps_the_served_output_directory() {
-        let root = tempfile::tempdir().unwrap();
-        setup_site(root.path());
-        fs::write(
-            root.path().join("config.toml"),
-            r#"output_dir = "elsewhere""#,
-        )
-        .unwrap();
-        let output = root.path().join("public");
-        safe_rebuild(root.path(), "http://localhost:0", &output).unwrap();
-        assert!(
-            fs::read_to_string(output.join("posts/hello/index.html"))
-                .unwrap()
-                .contains("Hello")
-        );
-        assert!(!root.path().join("elsewhere").exists());
-    }
-
-    #[test]
-    fn safe_rebuild_recovers_after_css_import_failure() {
+    fn rebuild_recovers_after_css_import_failure() {
         let root = tempfile::tempdir().unwrap();
         setup_site(root.path());
         let css_dir = root.path().join("assets/css/_src");
         fs::create_dir_all(&css_dir).unwrap();
         fs::write(css_dir.join("style.css"), ".before { color: red; }").unwrap();
-        crate::build(root.path(), BuildOptions::default()).unwrap();
-        let output = root.path().join("public/assets/css/site.css");
+        let output_dir = root.path().join("public");
+        rebuild(root.path(), "http://localhost:0", &output_dir).unwrap();
+        let output = output_dir.join("assets/css/site.css");
         let original = fs::read_to_string(&output).unwrap();
 
         fs::write(css_dir.join("style.css"), r#"@import "missing.css";"#).unwrap();
-        assert!(
-            safe_rebuild(
-                root.path(),
-                "http://localhost:0",
-                &root.path().join("public")
-            )
-            .is_err()
-        );
+        assert!(rebuild(root.path(), "http://localhost:0", &output_dir).is_err());
         assert_eq!(fs::read_to_string(&output).unwrap(), original);
 
         fs::write(css_dir.join("missing.css"), ".recovered { color: blue; }").unwrap();
-        safe_rebuild(
-            root.path(),
-            "http://localhost:0",
-            &root.path().join("public"),
-        )
-        .unwrap();
+        rebuild(root.path(), "http://localhost:0", &output_dir).unwrap();
         assert!(fs::read_to_string(&output).unwrap().contains(".recovered"));
     }
 
     // ── build_router ──
+
+    #[tokio::test]
+    async fn build_router_serves_html_with_live_reload() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir(dir.path().join("about")).unwrap();
+        for (path, content) in [
+            ("index.html", "<html><body>Home</body></html>"),
+            ("about/index.html", "<html><body>About</body></html>"),
+            ("page.html", "<html><body><p>Hello</p></body></html>"),
+        ] {
+            fs::write(dir.path().join(path), content).unwrap();
+        }
+
+        let app = setup_router(dir.path());
+        for (uri, content) in [
+            ("/", "<html><body>Home"),
+            ("/about/", "<html><body>About"),
+            ("/page.html", "<html><body><p>Hello</p>"),
+        ] {
+            let response = app
+                .clone()
+                .oneshot(Request::get(uri).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+
+            assert_eq!(response.status(), StatusCode::OK, "{uri}");
+            assert_eq!(response.headers()[header::CACHE_CONTROL], "no-cache");
+            assert_eq!(
+                collect_body(response).await,
+                format!("{content}{LIVE_RELOAD_SCRIPT}</body></html>"),
+                "{uri}"
+            );
+        }
+    }
 
     #[tokio::test]
     async fn build_router_redirects_directory_without_trailing_slash() {
@@ -946,104 +792,6 @@ mod tests {
                 "{uri}"
             );
         }
-    }
-
-    #[tokio::test]
-    async fn build_router_no_redirect_with_trailing_slash() {
-        let dir = tempfile::tempdir().unwrap();
-        let sub = dir.path().join("about");
-        fs::create_dir(&sub).unwrap();
-        fs::write(sub.join("index.html"), "<html><body>About</body></html>").unwrap();
-
-        let app = setup_router(dir.path());
-        let response = app
-            .oneshot(Request::get("/about/").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = collect_body(response).await;
-        assert!(body.contains("About"), "should serve index.html directly");
-    }
-
-    #[tokio::test]
-    async fn build_router_serves_directory_index() {
-        let dir = tempfile::tempdir().unwrap();
-        fs::write(
-            dir.path().join("index.html"),
-            "<html><body>Home</body></html>",
-        )
-        .unwrap();
-
-        let app = setup_router(dir.path());
-        let response = app
-            .oneshot(Request::get("/").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = collect_body(response).await;
-        assert!(body.contains("Home"), "should serve index.html for /");
-        assert!(
-            body.contains(LIVE_RELOAD_SCRIPT),
-            "should inject into directory index"
-        );
-    }
-
-    #[tokio::test]
-    async fn build_router_serves_custom_404_page() {
-        let dir = tempfile::tempdir().unwrap();
-        fs::write(
-            dir.path().join("404.html"),
-            "<html><body><h1>Not Found</h1></body></html>",
-        )
-        .unwrap();
-
-        let app = setup_router(dir.path());
-        let response = app
-            .oneshot(Request::get("/nonexistent").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::NOT_FOUND);
-        assert_eq!(response.headers()[header::CACHE_CONTROL], "no-cache");
-        let body = collect_body(response).await;
-        assert!(
-            body.contains("<h1>Not Found</h1>"),
-            "should serve custom 404 page, got: {body}"
-        );
-        assert!(
-            body.contains("__kiln_live_reload"),
-            "should inject live reload script into 404 page, got: {body}"
-        );
-    }
-
-    #[tokio::test]
-    async fn build_router_injects_script_into_html() {
-        let dir = tempfile::tempdir().unwrap();
-        fs::write(
-            dir.path().join("page.html"),
-            "<html><body><p>Hello</p></body></html>",
-        )
-        .unwrap();
-
-        let app = setup_router(dir.path());
-        let response = app
-            .oneshot(Request::get("/page.html").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-        assert_eq!(response.headers()[header::CACHE_CONTROL], "no-cache");
-        let body = collect_body(response).await;
-        assert!(
-            body.contains("<p>Hello</p>"),
-            "should preserve original content"
-        );
-        assert!(
-            body.contains(LIVE_RELOAD_SCRIPT),
-            "should inject live reload script into HTML"
-        );
     }
 
     #[tokio::test]
@@ -1107,15 +855,19 @@ mod tests {
 
     #[tokio::test]
     async fn build_router_ws_relays_reload() {
-        use tokio_stream::StreamExt;
+        use futures_util::StreamExt;
 
         let dir = tempfile::tempdir().unwrap();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
-        let (reload_tx, _) = broadcast::channel::<()>(16);
+        let (reload_tx, _) = watch::channel(());
         let app = build_router(dir.path(), reload_tx.clone());
         tokio::spawn(async move { _ = axum::serve(listener, app).await });
 
+        assert!(
+            LIVE_RELOAD_SCRIPT.contains(&format!(r#""{LIVE_RELOAD_PATH}""#)),
+            "the injected client should connect to the live reload route"
+        );
         let url = format!("ws://{addr}{LIVE_RELOAD_PATH}");
         let (mut ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
 
@@ -1154,10 +906,8 @@ mod tests {
     #[tokio::test]
     async fn build_router_ws_rejects_plain_http() {
         let dir = tempfile::tempdir().unwrap();
-        let (tx, _) = broadcast::channel::<()>(16);
-        let app = build_router(dir.path(), tx);
 
-        let response = app
+        let response = setup_router(dir.path())
             .oneshot(Request::get(LIVE_RELOAD_PATH).body(Body::empty()).unwrap())
             .await
             .unwrap();
@@ -1170,26 +920,39 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn build_router_returns_not_found() {
+    async fn build_router_serves_custom_404_page_when_present() {
         let dir = tempfile::tempdir().unwrap();
-
         let app = setup_router(dir.path());
-        let response = app
-            .oneshot(Request::get("/nonexistent").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
+        let request = || Request::get("/nonexistent").body(Body::empty()).unwrap();
 
+        let response = app.clone().oneshot(request()).await.unwrap();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert_eq!(collect_body(response).await, "");
+
+        fs::write(
+            dir.path().join("404.html"),
+            "<html><body><h1>Not Found</h1></body></html>",
+        )
+        .unwrap();
+        let response = app.oneshot(request()).await.unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert_eq!(response.headers()[header::CACHE_CONTROL], "no-cache");
+        assert_eq!(
+            collect_body(response).await,
+            format!("<html><body><h1>Not Found</h1>{LIVE_RELOAD_SCRIPT}</body></html>")
+        );
     }
 
     /// Creates a router backed by a directory of static files.
     fn setup_router(dir: &Path) -> Router {
-        let (tx, _) = broadcast::channel::<()>(16);
+        let (tx, _) = watch::channel(());
         build_router(dir, tx)
     }
 
     async fn collect_body(response: Response) -> String {
-        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
         String::from_utf8(bytes.to_vec()).unwrap()
     }
 

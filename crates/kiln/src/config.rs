@@ -8,6 +8,22 @@ use serde::{Deserialize, Serialize};
 
 use crate::render::lqip::ImageConfig;
 
+/// Default port for `kiln serve` (KILN on a phone keypad: K=5 I=4 L=5 N=6).
+pub const DEFAULT_PORT: u16 = 5456;
+
+/// Site root entries that feed a build.
+pub(crate) const SITE_INPUTS: &[&str] = &[
+    "assets",
+    "config.toml",
+    "content",
+    "i18n",
+    "static",
+    "templates",
+];
+
+/// Theme directory entries that feed a build.
+pub(crate) const THEME_INPUTS: &[&str] = &["assets", "i18n", "static", "templates", "theme.toml"];
+
 /// Site-wide configuration loaded from `config.toml`.
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Config {
@@ -231,17 +247,16 @@ impl Config {
             canonical.display()
         );
 
-        for name in ["assets", "content", "i18n", "static", "templates"] {
+        for name in SITE_INPUTS {
             validate_input_tree(&root.join(name), &canonical)?;
         }
         validate_output_overlap(&root.join("themes"), &canonical)?;
         if let Some(theme) = self.theme_dir(root) {
-            for name in ["assets", "i18n", "static", "templates", "theme.toml"] {
+            for name in THEME_INPUTS {
                 validate_input_tree(&theme.join(name), &canonical)?;
             }
             validate_git_metadata(&theme, &canonical, true)?;
         }
-        validate_output_overlap(&root.join("config.toml"), &canonical)?;
         for ancestor in canonical_root.ancestors() {
             validate_git_metadata(ancestor, &canonical, ancestor == canonical_root)?;
         }
@@ -340,8 +355,13 @@ fn merge_params_at(
     Ok(())
 }
 
+/// Constructs the localhost base URL for a given port.
+pub(crate) fn localhost_url(port: u16) -> String {
+    format!("http://localhost:{port}")
+}
+
 fn default_base_url() -> String {
-    crate::serve::localhost_url(crate::serve::DEFAULT_PORT)
+    localhost_url(DEFAULT_PORT)
 }
 
 fn default_title() -> String {
@@ -442,7 +462,6 @@ mod tests {
     use indoc::indoc;
 
     use super::*;
-    use crate::serve::{DEFAULT_PORT, localhost_url};
 
     // ── Config::default ──
 
