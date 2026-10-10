@@ -59,6 +59,8 @@ Pages are excluded from the build when:
 - A file or enclosing directory name starts with `_`, which includes the `_index.md` listing metadata files
 - The file has no TOML frontmatter (`+++` delimiters)
 
+Symlinked files and directories under `content/` are followed, and a page's URL comes from the link's location. A broken or cyclic link fails the build unless its name starts with `_`.
+
 ## Frontmatter
 
 Each content file begins with a TOML frontmatter block delimited by `+++`:

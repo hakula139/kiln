@@ -1,9 +1,9 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use walkdir::WalkDir;
 
 use super::page::{Page, derive_page_kind};
+use crate::output::walk_directory;
 
 /// All content discovered from the content directory.
 #[derive(Debug)]
@@ -14,7 +14,8 @@ pub struct ContentSet {
 
 /// Walks the content directory, loading all non-draft markdown pages.
 ///
-/// Returns an empty collection when there is no content directory.
+/// Returns an empty collection when there is no content directory. Symlinked files and
+/// directories are followed like any other source tree.
 ///
 /// Excludes:
 /// - Files and directories whose names start with `_`
@@ -24,8 +25,8 @@ pub struct ContentSet {
 ///
 /// # Errors
 ///
-/// Returns an error if a content entry or markdown file cannot be read, or if frontmatter is
-/// invalid, including in draft pages.
+/// Returns an error if a content entry or markdown file cannot be read, including broken or
+/// cyclic public symlinks, or if frontmatter is invalid, including in draft pages.
 pub fn discover_content(root: &Path) -> Result<ContentSet> {
     let content_dir = root.join("content");
     if !content_dir.is_dir() {
@@ -37,11 +38,7 @@ pub fn discover_content(root: &Path) -> Result<ContentSet> {
 
     let mut pages = Vec::new();
 
-    for entry in WalkDir::new(&content_dir)
-        .follow_links(false)
-        .into_iter()
-        .filter_entry(|entry| entry.depth() == 0 || !super::is_private(entry.file_name()))
-    {
+    for entry in walk_directory(&content_dir, &|name| !super::is_private(name)) {
         let entry =
             entry.with_context(|| format!("failed to read entry in {}", content_dir.display()))?;
 
@@ -323,6 +320,65 @@ mod tests {
         assert_eq!(
             error.downcast_ref::<std::io::Error>().unwrap().kind(),
             std::io::ErrorKind::InvalidData,
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn discover_content_follows_symlinks() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().unwrap();
+        let external = tempfile::tempdir().unwrap();
+        for (path, title) in [
+            ("bundle/index.md", "Linked Bundle"),
+            ("standalone.md", "Linked File"),
+        ] {
+            write_test_file(
+                external.path(),
+                path,
+                &format!("+++\ntitle = \"{title}\"\n+++\n"),
+            );
+        }
+        write_test_file(external.path(), "bundle/image.png", "image");
+        let posts = root.path().join("content/posts");
+        std::fs::create_dir_all(&posts).unwrap();
+        symlink(external.path().join("bundle"), posts.join("bundle")).unwrap();
+        symlink(
+            external.path().join("standalone.md"),
+            posts.join("standalone.md"),
+        )
+        .unwrap();
+        symlink(external.path().join("missing"), posts.join("_broken")).unwrap();
+
+        let set = discover_content(root.path()).unwrap();
+
+        assert_eq!(
+            set.pages
+                .iter()
+                .map(|page| (page.frontmatter.title.as_str(), page.source_path.clone()))
+                .collect::<Vec<_>>(),
+            [
+                ("Linked Bundle", posts.join("bundle/index.md")),
+                ("Linked File", posts.join("standalone.md")),
+            ]
+        );
+        assert_eq!(set.pages[0].assets, [posts.join("bundle/image.png")]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn discover_content_broken_symlink_returns_error() {
+        let root = tempfile::tempdir().unwrap();
+        let content_dir = root.path().join("content");
+        std::fs::create_dir(&content_dir).unwrap();
+        let link = content_dir.join("broken.md");
+        std::os::unix::fs::symlink(content_dir.join("missing.md"), &link).unwrap();
+
+        let error = discover_content(root.path()).unwrap_err();
+        assert_eq!(
+            error.downcast_ref::<walkdir::Error>().unwrap().path(),
+            Some(link.as_path())
         );
     }
 }
