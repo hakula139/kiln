@@ -179,8 +179,8 @@ jobs:
           done
 
   publish:
-    name: Publish
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    name: Publish GitHub Release
+    if: github.event_name == 'push'
     needs: test-npm
     runs-on: ubuntu-latest
     permissions:
@@ -212,7 +212,7 @@ jobs:
 
   publish-npm:
     name: Publish npm
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && vars.NPM_PUBLISH_ENABLED == 'true'
+    if: vars.NPM_PUBLISH_ENABLED == 'true'
     needs: publish
     runs-on: ubuntu-latest
     permissions:
@@ -236,8 +236,8 @@ jobs:
             tag=next
           fi
           for package in npm-packages/*-{darwin-arm64,linux-x64-gnu,win32-x64-msvc}-*.tgz; do
-            npm publish "$package" --access public --tag "$tag"
+            npm publish "$package" --tag "$tag"
           done
           for variant in kiln kiln-extended; do
-            npm publish "npm-packages/kiln-ssg-$variant-${GITHUB_REF_NAME#v}.tgz" --access public --tag "$tag"
+            npm publish "npm-packages/kiln-ssg-$variant-${GITHUB_REF_NAME#v}.tgz" --tag "$tag"
           done

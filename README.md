@@ -31,8 +31,6 @@ A static site generator written in Rust for [hakula.xyz](https://hakula.xyz), wi
 
 ### Via npm
 
-The npm packages for 0.5.0-alpha.1 have not been published yet.
-
 Install Node.js 20 or newer, for example with [fnm](https://github.com/Schniz/fnm), then choose one kiln variant:
 
 ```bash
