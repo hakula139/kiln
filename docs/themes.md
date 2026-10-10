@@ -37,7 +37,9 @@ kiln reads `config.toml` from the site root. An absent file uses the defaults be
 | `[params]`         | theme defaults             | Theme settings and [renderer options](syntax.md)            |
 | `[[menu.<group>]]` | no entries                 | [Navigation menus](#navigation-menus)                       |
 
-`kiln build --base-url <url>` overrides `base_url`. `KILN_BASE_URL` supplies the override when the flag is absent. An empty override uses the configuration value. The final URL must be absolute with a host and contain no query or fragment. Templates receive a normalized `config.base_url` without a trailing slash. `kiln serve` uses its local server URL.
+For `kiln build`, the base URL comes from `--base-url`, then `KILN_BASE_URL`, then configuration. An empty override uses configuration. `kiln serve` uses its local server URL.
+
+The URL must be absolute with a host and no query or fragment. Templates receive `config.base_url` without a trailing slash.
 
 ### Parameter Merging
 
@@ -58,7 +60,15 @@ paginate = 10
 paginate = 5
 ```
 
-The site keeps `emojis = true` and uses five posts per home page. The engine reads `params.home.paginate` for home listings, `params.section.paginate` for post / section archives, and `params.paginate` as their fallback and the tag archive setting. The default is 10. Non-positive values fall through to the next setting or default.
+The site keeps `emojis = true` and uses five posts per home page. Pagination settings follow this precedence:
+
+| Listing          | Setting → fallback → default                       |
+| ---------------- | -------------------------------------------------- |
+| Home             | `params.home.paginate` → `params.paginate` → 10    |
+| Posts / sections | `params.section.paginate` → `params.paginate` → 10 |
+| Tags             | `params.paginate` → 10                             |
+
+Non-positive values fall through to the next setting.
 
 ### Navigation Menus
 
@@ -246,7 +256,17 @@ Controls include the first and last pages plus pages within two of the current p
 
 #### Featured Images
 
-`featured_image` contains `src`, `position` and `credit`, plus optional `width`, `height` and `lqip_uri`. `credit` contains optional `title`, `author` and `url`. `src` is a prepared absolute URL, ready to use in image elements and metadata. Dimensions and placeholders, when available, come from the published image. Gate rendering on optional fields.
+`featured_image.src` is a prepared absolute URL, ready for image elements and metadata. Dimensions and placeholders, when available, come from the published image.
+
+| Field             | Contract                                                       |
+| ----------------- | -------------------------------------------------------------- |
+| `src`             | Public image URL                                               |
+| `position`        | Optional image-position hint                                   |
+| `credit`          | Optional attribution with optional `title`, `author` and `url` |
+| `width`, `height` | Optional natural dimensions                                    |
+| `lqip_uri`        | Optional loading placeholder                                   |
+
+Gate rendering on optional fields.
 
 #### Page Assets
 
@@ -303,7 +323,9 @@ Registers a script for the current page and returns an empty string:
 {{ register_script(asset_url('/assets/js/widget.js')) }}
 ```
 
-Repeated identical declarations produce one script in registration order. Conflicting attributes for the same URL fail the build. `load` accepts `"defer"`, `"async"` or `"sync"`. `module = true` supports `"defer"` or `"async"` and rejects `"sync"`, since module scripts cannot execute synchronously. The theme renders each declaration with the corresponding script attributes.
+Repeated identical declarations produce one script in registration order. Conflicting attributes for the same URL fail the build.
+
+`load` accepts `"defer"`, `"async"` or `"sync"`. Module scripts (`module=true`) support `"defer"` or `"async"`, since they cannot execute synchronously. The theme renders the corresponding script attributes.
 
 ## Rendered Content
 
@@ -321,7 +343,9 @@ Callouts use `<details class="callout <type>">`, `.callout-title`, and `.callout
 
 ### Math and Diagrams
 
-Math uses `<span class="math math-inline">` with `\(...\)` delimiters or `<span class="math math-display">` with `\[...\]`. Mermaid uses `<pre class="mermaid">` with its original source mirrored in `data-source`, allowing themes to render it again after a color-mode change. Load and initialize the corresponding runtime using the [page's declared features](#page-assets).
+Math uses `<span class="math math-inline">` with `\(...\)` delimiters or `<span class="math math-display">` with `\[...\]`.
+
+Mermaid uses `<pre class="mermaid">` with its original source mirrored in `data-source`, allowing themes to render it again after a color-mode change. Load and initialize each runtime using the [page's declared features](#page-assets).
 
 ### Image Rendering
 

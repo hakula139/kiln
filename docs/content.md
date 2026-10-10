@@ -118,7 +118,10 @@ enable_git_info = true
 
 The Git fallback requires the `git` executable on `PATH` and full repository history, including in CI. When they are unavailable or the checkout is shallow, `updated` has no Git-derived value.
 
-Each tag has an archive at `/tags/<slug>/`, using the same [slug rules as headings](syntax.md#headings). Spellings that differ only in case (`Rust` and `rust`) merge there, using the first spelling as the default display name. A tag's `content/tags/<slug>/_index.md` can override that title. When two tags differ beyond case yet slugify alike (`Rock & Roll` and `Rock Roll`), one URL cannot serve both, so the build fails with a `tag slug collision` error naming the slug, both tags, and their page counts.
+Each tag has an archive at `/tags/<slug>/`, using the [heading slug rules](syntax.md#headings). A tag's `content/tags/<slug>/_index.md` can override its display title.
+
+- Spellings differing only in case (`Rust` and `rust`) share an archive, using the first spelling as its default title.
+- Distinct tags with the same slug (`Rock & Roll` and `Rock Roll`) fail the build with a `tag slug collision` diagnostic.
 
 On the home page, posts with a `weight` precede unweighted posts and use ascending weight. Archives and feeds remain date-sorted.
 
@@ -136,12 +139,14 @@ content/posts/note/my-post/
 └── index.md                 # Page content
 ```
 
-Public non-Markdown files owned by a bundle are copied beside its rendered HTML. Underscore-prefixed files and directories are private. Nested bundles own their own files, including when excluded from the build. Excluded bundles do not publish their assets. Published assets retain their relative paths:
+Public non-Markdown files owned by a bundle are copied beside its rendered HTML, retaining their relative paths:
 
 | Source                                          | Output URL                               |
 | ----------------------------------------------- | ---------------------------------------- |
 | `content/posts/note/my-post/cover.webp`         | `/posts/note/my-post/cover.webp`         |
 | `content/posts/note/my-post/assets/diagram.svg` | `/posts/note/my-post/assets/diagram.svg` |
+
+Underscore-prefixed files and directories are private. Nested bundles own their own files, and excluded bundles do not publish their assets.
 
 ### Referencing Co-Located Assets
 
@@ -162,7 +167,7 @@ src = "cover.webp"
 +++
 ```
 
-This resolves to `/posts/note/my-post/cover.webp` in templates and listing pages. Absolute paths (starting with `/`) and external URLs are used as-is.
+Templates and listings receive a prepared absolute URL, using the published image's fingerprint and the deployment prefix. See [Referencing Assets](assets.md#referencing-assets) for root-relative and external URL behavior.
 
 ### Per-Page CSS
 
@@ -200,6 +205,15 @@ Configure a kiln destination with a theme, then migrate from a separate Hugo sit
 kiln convert --source /path/to/hugo --dest /path/to/kiln
 ```
 
-The converter writes `content/`, copies `static/`, translates supported YAML frontmatter to TOML and converts admonition, image and Mermaid shortcodes. Other standalone shortcodes become directives requiring matching theme templates. Existing destination files are preserved. Source and destination roots must not overlap. Category indexes become section indexes under `posts/`, tag indexes retain their location, and other Hugo section indexes are skipped.
+The converter preserves existing destination files. Source and destination roots must not overlap.
 
-Configuration, theme templates and unsupported Hugo features require manual migration. Unsupported metadata produces omission warnings. Malformed recognized frontmatter and unsupported content-bearing shortcodes fail conversion. Review the resulting content and run `kiln build` before publishing. Files without recognized frontmatter are copied unchanged and need TOML frontmatter to become published pages.
+It migrates:
+
+- `content/`, translating supported YAML frontmatter to TOML.
+- `static/`, copied into the destination.
+- Admonition, image and Mermaid shortcodes into native equivalents. Other standalone shortcodes become directives requiring matching theme templates.
+- Category indexes into post-section indexes. Tag indexes retain their location, and other Hugo section indexes are skipped.
+
+Migrate configuration, theme templates and unsupported Hugo features manually. Review omission warnings for unsupported metadata. Malformed recognized frontmatter and unsupported content-bearing shortcodes fail conversion.
+
+Files without recognized frontmatter are copied unchanged and need TOML frontmatter before publication. Review the resulting content and run `kiln build` before deploying.

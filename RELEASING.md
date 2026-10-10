@@ -25,4 +25,11 @@
    git push origin vX.Y.Z
    ```
 
-Watch the [Release workflow](https://github.com/hakula139/kiln/actions/workflows/release.yml) and verify the published assets. Stable npm releases use `latest`, and prereleases use `next`. Published npm versions are immutable, so inspect completed publication jobs before retrying a failed release.
+## Verify publication
+
+Watch the [Release workflow](https://github.com/hakula139/kiln/actions/workflows/release.yml) and check:
+
+- GitHub release notes, base / extended archives and their checksums.
+- npm packages and the version installed by each entry package. Stable releases use `latest`, and prereleases use `next`.
+
+npm versions are immutable. Inspect completed publication jobs before retrying a failed release.
