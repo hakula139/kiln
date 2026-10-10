@@ -30,5 +30,6 @@ runs:
       run: |
         choco install --no-progress pkgconfiglite
         vcpkg install dav1d:x64-windows-static-md
+
         $vcpkgInstalled = "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows-static-md"
         "PKG_CONFIG_PATH=$vcpkgInstalled\lib\pkgconfig" | Out-File -FilePath $env:GITHUB_ENV -Append
