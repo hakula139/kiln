@@ -88,6 +88,10 @@ jobs:
       - name: Install CSS processor
         run: npm install --global @kiln-ssg/tailwindcss@0.1.2
 
+      - name: Install Pagefind
+        if: runner.os == 'Windows'
+        run: npm install --global pagefind@1.5.2
+
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -106,6 +110,10 @@ jobs:
 
       - name: Test
         run: cargo test --features "${{ matrix.features }}"
+
+      - name: Test npm Pagefind
+        if: runner.os == 'Windows'
+        run: cargo test --test search --features "${{ matrix.features }}" -- --ignored
 
       - name: Test benchmark workloads
         run: cargo test --bench performance --features "${{ matrix.features }}"
