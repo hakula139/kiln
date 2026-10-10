@@ -1333,18 +1333,10 @@ mod tests {
                 theme.path().join(".git/generated"),
             ] {
                 let error = config.validate_output_dir(&root, &output).unwrap_err();
-                assert!(
-                    error.to_string().contains("overlaps project input"),
-                    "{}: {error}",
-                    output.display()
-                );
+                assert!(error.to_string().contains("overlaps project input"));
             }
             for output in [theme.path(), theme.path().parent().unwrap()] {
-                assert!(
-                    config.validate_output_dir(&root, output).is_err(),
-                    "{}",
-                    output.display()
-                );
+                assert!(config.validate_output_dir(&root, output).is_err());
             }
         }
     }
