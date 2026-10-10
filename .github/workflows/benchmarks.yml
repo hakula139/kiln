@@ -103,8 +103,7 @@ jobs:
               CRITERION_HOME="$GITHUB_WORKSPACE/results/$revision/criterion" \
               CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target/$revision" \
                 nix develop "$GITHUB_WORKSPACE/head" -c \
-                cargo bench --bench performance -- \
-                --color never --save-baseline measured
+                cargo bench --bench performance -- --color never --save-baseline measured
             ) 2>&1 | tee "results/measure-$revision.log"
           done
 
