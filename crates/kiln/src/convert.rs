@@ -1,10 +1,11 @@
 mod frontmatter;
 mod shortcode;
 
+use std::collections::HashMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result, bail, ensure};
 use walkdir::WalkDir;
 
 use crate::content::is_markdown;
@@ -13,21 +14,19 @@ use crate::content::is_markdown;
 ///
 /// Converts `source/content` into `dest/content` and copies any `source/static` to `dest/static`.
 ///
-/// Hugo category index files (`categories/<slug>/_index.md`) are converted to kiln section indexes
-/// at `posts/<slug>/_index.md`. Tag index files (`tags/<slug>/_index.md`) are converted in place.
-/// Other `_index.md` files (Hugo section files) are skipped since kiln derives sections from
-/// directory structure.
+/// `_index.md` files are kept where kiln reads archive titles: `posts/`, `posts/<slug>/` and
+/// `tags/<slug>/`. Hugo category indexes (`categories/<slug>/_index.md`) become section indexes
+/// at `posts/<slug>/_index.md`. Other `_index.md` files are skipped with a warning.
 ///
 /// Existing files in `dest` are never overwritten.
 ///
 /// # Errors
 ///
-/// Returns an error if `source/content` is missing or any file fails to read, convert, or write.
+/// Returns an error if `source/content` is missing, two indexes map to the same destination, or
+/// any file fails to read, convert, or write.
 pub fn convert(source: &Path, dest: &Path) -> Result<()> {
-    let content_source = source.join("content");
-    let content_dest = dest.join("content");
     ensure!(
-        content_source.is_dir(),
+        source.join("content").is_dir(),
         "convert source must contain content/: {}",
         source.display()
     );
@@ -49,7 +48,7 @@ pub fn convert(source: &Path, dest: &Path) -> Result<()> {
         );
     }
 
-    convert_tree(&content_source, &content_dest, true)?;
+    convert_tree(&source.join("content"), &dest.join("content"), true)?;
     let static_source = source.join("static");
     if static_source.is_dir() {
         convert_tree(&static_source, &dest.join("static"), false)?;
@@ -72,6 +71,8 @@ fn resolve_destination(path: &Path) -> Result<PathBuf> {
 }
 
 fn convert_tree(source: &Path, dest: &Path, markdown: bool) -> Result<()> {
+    let resolved_dest = resolve_destination(dest)?;
+    let mut index_sources = HashMap::new();
     for entry in WalkDir::new(source).follow_links(false) {
         let entry = entry?;
         if entry.file_type().is_dir() {
@@ -79,24 +80,31 @@ fn convert_tree(source: &Path, dest: &Path, markdown: bool) -> Result<()> {
         }
 
         let relative = entry.path().strip_prefix(source)?;
-        let destination = if markdown
-            && is_markdown(relative)
+        let markdown_file = markdown && is_markdown(relative);
+        let destination = if markdown_file
             && relative.file_stem().is_some_and(|stem| stem == "_index")
         {
-            let Some(path) = index_dest_path(relative, dest) else {
+            let Some(index) = index_destination(relative) else {
                 tracing::warn!(path = %entry.path().display(), "section index requires manual migration and was omitted");
                 continue;
             };
-            path
+            if let Some(previous) = index_sources.insert(index.clone(), relative.to_owned()) {
+                bail!(
+                    "{} and {} both convert to {}",
+                    previous.display(),
+                    relative.display(),
+                    index.display()
+                );
+            }
+            dest.join(index)
         } else {
             dest.join(relative)
         };
         if fs::symlink_metadata(&destination).is_ok() {
             continue;
         }
-        let resolved = resolve_destination(&destination)?;
         ensure!(
-            resolved.starts_with(resolve_destination(dest)?),
+            resolve_destination(&destination)?.starts_with(&resolved_dest),
             "conversion destination escapes its root: {}",
             destination.display()
         );
@@ -104,7 +112,7 @@ fn convert_tree(source: &Path, dest: &Path, markdown: bool) -> Result<()> {
             fs::create_dir_all(parent)?;
         }
 
-        if markdown && is_markdown(relative) {
+        if markdown_file {
             convert_or_copy_markdown(entry.path(), &destination)?;
         } else {
             fs::copy(entry.path(), &destination)?;
@@ -113,21 +121,18 @@ fn convert_tree(source: &Path, dest: &Path, markdown: bool) -> Result<()> {
     Ok(())
 }
 
-/// Computes the destination path for an `_index.md` file, or `None` to skip.
+/// Returns the content-relative destination of an `_index.md` file, or `None` to skip it.
 ///
+/// - `posts/_index.md`, `posts/<slug>/_index.md` and `tags/<slug>/_index.md` → unchanged
 /// - `categories/<slug>/_index.md` → `posts/<slug>/_index.md` (section index)
-/// - `tags/<slug>/_index.md` → `tags/<slug>/_index.md` (tag term index)
-/// - Everything else → `None` (skipped)
-fn index_dest_path(rel_path: &Path, dest: &Path) -> Option<PathBuf> {
-    let components: Vec<_> = rel_path.components().collect();
-    if components.len() != 3 {
-        return None;
-    }
-    let kind = components[0].as_os_str().to_str().unwrap_or("");
-    let slug = components[1].as_os_str();
-    match kind {
-        "categories" => Some(dest.join("posts").join(slug).join("_index.md")),
-        "tags" => Some(dest.join("tags").join(slug).join("_index.md")),
+fn index_destination(relative: &Path) -> Option<PathBuf> {
+    let components: Vec<_> = relative.components().map(Component::as_os_str).collect();
+    match components[..] {
+        [kind, _] if kind == "posts" => Some(relative.to_owned()),
+        [kind, _, _] if kind == "posts" || kind == "tags" => Some(relative.to_owned()),
+        [kind, slug, file] if kind == "categories" => {
+            Some(Path::new("posts").join(slug).join(file))
+        }
         _ => None,
     }
 }
@@ -159,19 +164,14 @@ fn convert_markdown_file(yaml_fm: &str, body: &str, dest: &Path) -> Result<()> {
     let converted_body = shortcode::convert_shortcodes(body)
         .with_context(|| format!("failed to convert shortcodes for {}", dest.display()))?;
 
-    let mut output = String::with_capacity(toml_fm.len() + converted_body.len() + 10);
-    output.push_str("+++\n");
-    output.push_str(&toml_fm);
-    output.push_str("+++\n");
-    output.push_str(&converted_body);
-
+    let output = format!("+++\n{toml_fm}+++\n{converted_body}");
     fs::write(dest, output).with_context(|| format!("failed to write {}", dest.display()))?;
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use indoc::indoc;
+    use indoc::{formatdoc, indoc};
 
     use super::*;
 
@@ -206,17 +206,6 @@ mod tests {
                 title: About
                 ---
                 About page
-            "},
-        )
-        .unwrap();
-
-        // Create Hugo section file (should be skipped).
-        fs::write(
-            content_source.join("posts/_index.md"),
-            indoc! {r"
-                ---
-                title: Section
-                ---
             "},
         )
         .unwrap();
@@ -256,94 +245,89 @@ mod tests {
                 About page
             "#}
         );
-
-        assert!(!dest.join("content/posts/_index.md").exists());
     }
 
     #[test]
-    fn convert_category_index_to_section_index() {
+    fn convert_maps_indexes_to_archive_title_paths() {
         let dir = tempfile::tempdir().unwrap();
         let source = dir.path().join("source");
         let dest = dir.path().join("dest");
         let content_source = source.join("content");
 
-        // Category _index.md → should become section index at posts/<slug>/.
-        let cat_dir = content_source.join("categories/anime");
-        fs::create_dir_all(&cat_dir).unwrap();
-        fs::write(
-            cat_dir.join("_index.md"),
-            indoc! {r"
-                ---
-                title: 动画
-                ---
-            "},
-        )
-        .unwrap();
-
-        // Tag _index.md → should be converted in place.
-        let tag_dir = content_source.join("tags/rust");
-        fs::create_dir_all(&tag_dir).unwrap();
-        fs::write(
-            tag_dir.join("_index.md"),
-            indoc! {r"
-                ---
-                title: Rust
-                ---
-            "},
-        )
-        .unwrap();
-
-        // Section _index.md → should be skipped.
-        fs::create_dir_all(content_source.join("posts")).unwrap();
-        fs::write(
-            content_source.join("posts/_index.md"),
-            indoc! {r"
-                ---
-                title: Posts
-                ---
-            "},
-        )
-        .unwrap();
-
-        // Unknown kind _index.md → should be skipped.
-        let other_dir = content_source.join("other/slug");
-        fs::create_dir_all(&other_dir).unwrap();
-        fs::write(
-            other_dir.join("_index.md"),
-            indoc! {r"
-                ---
-                title: Other
-                ---
-            "},
-        )
-        .unwrap();
+        for (path, title) in [
+            ("posts/_index.md", "Posts"),
+            ("posts/notes/_index.md", "Notes"),
+            ("categories/anime/_index.md", "动画"),
+            ("tags/rust/_index.md", "Rust"),
+            ("other/slug/_index.md", "Other"),
+            ("posts/notes/deeper/_index.md", "Deeper"),
+        ] {
+            let index = content_source.join(path);
+            fs::create_dir_all(index.parent().unwrap()).unwrap();
+            fs::write(
+                index,
+                formatdoc! {"
+                    ---
+                    title: {title}
+                    ---
+                "},
+            )
+            .unwrap();
+        }
 
         convert(&source, &dest).unwrap();
 
-        let section = fs::read_to_string(dest.join("content/posts/anime/_index.md")).unwrap();
-        assert_eq!(
-            section,
-            indoc! {r#"
-                +++
-                title = "动画"
-                +++
-            "#}
+        for (path, title) in [
+            ("posts/_index.md", "Posts"),
+            ("posts/notes/_index.md", "Notes"),
+            ("posts/anime/_index.md", "动画"),
+            ("tags/rust/_index.md", "Rust"),
+        ] {
+            assert_eq!(
+                fs::read_to_string(dest.join("content").join(path)).unwrap(),
+                formatdoc! {r#"
+                    +++
+                    title = "{title}"
+                    +++
+                "#},
+                "{path}"
+            );
+        }
+        for path in [
+            "categories/anime/_index.md",
+            "other/slug/_index.md",
+            "posts/notes/deeper/_index.md",
+        ] {
+            assert!(!dest.join("content").join(path).exists(), "{path}");
+        }
+    }
+
+    #[test]
+    fn convert_colliding_section_indexes_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source");
+        for path in ["posts/anime/_index.md", "categories/anime/_index.md"] {
+            let index = source.join("content").join(path);
+            fs::create_dir_all(index.parent().unwrap()).unwrap();
+            fs::write(
+                index,
+                indoc! {"
+                    ---
+                    title: Anime
+                    ---
+                "},
+            )
+            .unwrap();
+        }
+
+        let error = convert(&source, &dir.path().join("dest")).unwrap_err();
+        assert!(
+            error.to_string().ends_with(&format!(
+                "both convert to {}",
+                Path::new("posts/anime/_index.md").display()
+            )),
+            "{error}"
         );
-        assert!(!dest.join("content/categories/anime/_index.md").exists());
-
-        let tag = fs::read_to_string(dest.join("content/tags/rust/_index.md")).unwrap();
-        assert_eq!(
-            tag,
-            indoc! {r#"
-                +++
-                title = "Rust"
-                +++
-            "#}
-        );
-
-        assert!(!dest.join("content/posts/_index.md").exists());
-
-        assert!(!dest.join("content/other/slug/_index.md").exists());
     }
 
     #[test]
@@ -371,6 +355,10 @@ mod tests {
         fs::create_dir_all(&dest_post_dir).unwrap();
         fs::write(dest_post_dir.join("index.md"), "existing markdown").unwrap();
         fs::write(dest_post_dir.join("image.webp"), "existing image").unwrap();
+        fs::create_dir_all(source.join("static")).unwrap();
+        fs::create_dir_all(dest.join("static")).unwrap();
+        fs::write(source.join("static/logo.webp"), "new static").unwrap();
+        fs::write(dest.join("static/logo.webp"), "existing static").unwrap();
 
         for (source_path, dest_path, source_content, dest_content) in [
             (
@@ -422,24 +410,8 @@ mod tests {
             fs::read_to_string(dest.join("content/tags/topic/_index.md")).unwrap(),
             "Existing tag"
         );
-    }
-
-    #[test]
-    fn convert_does_not_overwrite_existing_static_files() {
-        let dir = tempfile::tempdir().unwrap();
-        let source = dir.path().join("source");
-        let dest = dir.path().join("dest");
-
-        fs::create_dir_all(source.join("content")).unwrap();
-        fs::create_dir_all(source.join("static/images")).unwrap();
-        fs::create_dir_all(dest.join("static/images")).unwrap();
-        fs::write(source.join("static/images/logo.webp"), "new static").unwrap();
-        fs::write(dest.join("static/images/logo.webp"), "existing static").unwrap();
-
-        convert(&source, &dest).unwrap();
-
         assert_eq!(
-            fs::read_to_string(dest.join("static/images/logo.webp")).unwrap(),
+            fs::read_to_string(dest.join("static/logo.webp")).unwrap(),
             "existing static",
             "should not overwrite existing static asset"
         );
