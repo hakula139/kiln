@@ -107,8 +107,6 @@ mod tests {
         assert!(theme_dir.join("templates").join("base.html").exists());
         assert!(theme_dir.join("templates").join("post.html").exists());
         assert!(theme_dir.join("static").is_dir());
-        assert!(theme_dir.join("i18n").join("en.toml").exists());
-        assert!(theme_dir.join("i18n").join("zh-Hans.toml").exists());
 
         let base = fs::read_to_string(theme_dir.join("templates").join("base.html")).unwrap();
         assert!(
@@ -120,27 +118,7 @@ mod tests {
             post.contains(r#"{% extends "base.html" %}"#),
             "post.html should extend base.html"
         );
-    }
 
-    #[test]
-    fn init_theme_scaffolds_i18n_files() {
-        let root = tempfile::tempdir().unwrap();
-        init_theme(root.path(), "my-theme").unwrap();
-
-        let i18n_dir = root.path().join("themes").join("my-theme").join("i18n");
-        let en = fs::read_to_string(i18n_dir.join("en.toml")).unwrap();
-        assert!(
-            en.contains(r#"all_posts = "All Posts""#),
-            "en.toml should include example keys, got:\n{en}"
-        );
-
-        let zh = fs::read_to_string(i18n_dir.join("zh-Hans.toml")).unwrap();
-        assert!(
-            zh.contains(r#"all_posts = "全部文章""#),
-            "zh-Hans.toml should include localized example keys, got:\n{zh}"
-        );
-
-        let theme_dir = root.path().join("themes").join("my-theme");
         let site = tempfile::tempdir().unwrap();
         let en_i18n = crate::i18n::I18n::load(site.path(), Some(&theme_dir), "en").unwrap();
         assert_eq!(en_i18n.t("all_posts").as_ref(), "All Posts");

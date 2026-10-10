@@ -334,9 +334,18 @@ mod tests {
         assert_eq!(fs::read(root.join("image.png")).unwrap(), png);
         assert_eq!(fs::read(root.join("vendor.min.css")).unwrap(), already_min);
 
-        assert!(fs::read(root.join("page.html")).unwrap().len() < html.len());
-        assert!(fs::read(root.join("style.css")).unwrap().len() < css.len());
-        assert!(fs::read(root.join("sub").join("app.js")).unwrap().len() < js.len());
+        assert_eq!(
+            fs::read_to_string(root.join("page.html")).unwrap(),
+            "<!doctypehtml><body><p>Hello world"
+        );
+        assert_eq!(
+            fs::read_to_string(root.join("style.css")).unwrap(),
+            ".foo{color:red;margin:0}"
+        );
+        assert_eq!(
+            fs::read_to_string(root.join("sub/app.js")).unwrap(),
+            "const x=3;console.log(3);"
+        );
     }
 
     #[test]
@@ -426,7 +435,10 @@ mod tests {
             fs::read_to_string(dir.path().join("index.html")).unwrap(),
             html
         );
-        assert!(fs::read(dir.path().join("style.css")).unwrap().len() < css.len());
+        assert_eq!(
+            fs::read_to_string(dir.path().join("style.css")).unwrap(),
+            ".foo{color:red;margin:0}"
+        );
     }
 
     // ── minify_output_dir_excluding ──
@@ -446,7 +458,10 @@ mod tests {
             fs::read_to_string(dir.path().join("keep.css")).unwrap(),
             original
         );
-        assert!(fs::read(dir.path().join("minify.css")).unwrap().len() < original.len());
+        assert_eq!(
+            fs::read_to_string(dir.path().join("minify.css")).unwrap(),
+            ".foo{color:red;margin:0}"
+        );
     }
 
     // ── classify ──
@@ -458,6 +473,14 @@ mod tests {
         assert_eq!(classify(Path::new("a/style.css")), Some(AssetKind::Css));
         assert_eq!(classify(Path::new("a/app.js")), Some(AssetKind::Js));
         assert_eq!(classify(Path::new("a/app.mjs")), Some(AssetKind::Js));
+    }
+
+    #[test]
+    fn classify_matches_case_insensitively() {
+        assert_eq!(classify(Path::new("a/INDEX.HTML")), Some(AssetKind::Html),);
+        assert_eq!(classify(Path::new("a/Style.CSS")), Some(AssetKind::Css));
+        assert_eq!(classify(Path::new("a/App.MJS")), Some(AssetKind::Js));
+        assert_eq!(classify(Path::new("a/vendor.MIN.JS")), None);
     }
 
     #[test]
@@ -473,18 +496,10 @@ mod tests {
         assert_eq!(classify(Path::new("a/README")), None);
     }
 
-    #[test]
-    fn classify_matches_case_insensitively() {
-        assert_eq!(classify(Path::new("a/INDEX.HTML")), Some(AssetKind::Html),);
-        assert_eq!(classify(Path::new("a/Style.CSS")), Some(AssetKind::Css));
-        assert_eq!(classify(Path::new("a/App.MJS")), Some(AssetKind::Js));
-        assert_eq!(classify(Path::new("a/vendor.MIN.JS")), None);
-    }
-
     // ── minify_html_bytes ──
 
     #[test]
-    fn minify_html_strips_whitespace_and_comments() {
+    fn minify_html_bytes_strips_whitespace_and_comments() {
         let input = indoc! {r"
             <!DOCTYPE html>
             <html>
@@ -512,7 +527,7 @@ mod tests {
     // ── minify_css_bytes ──
 
     #[test]
-    fn minify_css_shrinks_valid_stylesheet() {
+    fn minify_css_bytes_shrinks_valid_stylesheet() {
         let input = indoc! {r"
             .foo {
                 color: #ff0000;
@@ -534,7 +549,7 @@ mod tests {
     }
 
     #[test]
-    fn minify_css_returns_none_on_invalid_utf8() {
+    fn minify_css_bytes_invalid_utf8_returns_none() {
         let path = PathBuf::from("broken.css");
         // `0xff 0xfe 0xfd` is not a valid UTF-8 sequence and hits the early
         // UTF-8 guard before lightningcss ever sees the bytes.
@@ -542,7 +557,7 @@ mod tests {
     }
 
     #[test]
-    fn minify_css_returns_none_on_parse_error() {
+    fn minify_css_bytes_parse_error_returns_none() {
         let path = PathBuf::from("broken.css");
         // `@@@` is lexically invalid, and lightningcss fails with an unexpected-end-of-input error.
         assert_eq!(minify_css_bytes(b"@@@", &path), None);
@@ -551,7 +566,7 @@ mod tests {
     // ── minify_js_bytes ──
 
     #[test]
-    fn minify_js_shrinks_valid_source() {
+    fn minify_js_bytes_shrinks_valid_source() {
         let input = indoc! {r"
             const greeting = 'hello';
             function greet(name) {
@@ -570,7 +585,7 @@ mod tests {
     }
 
     #[test]
-    fn minify_js_preserves_classic_globals_for_mixed_case_extensions() {
+    fn minify_js_bytes_preserves_classic_globals_for_mixed_case_extensions() {
         let input = indoc! {r"
             var sharedValue = 1 + 2;
             function readSharedValue() {
@@ -588,7 +603,7 @@ mod tests {
     }
 
     #[test]
-    fn minify_js_recognizes_modules_for_mixed_case_extensions() {
+    fn minify_js_bytes_recognizes_modules_for_mixed_case_extensions() {
         for name in ["App.JS", "App.MJS", "App.mJs"] {
             let output = minify_js_bytes(b"export const value = 1 + 2;", Path::new(name)).unwrap();
             assert_eq!(
@@ -600,24 +615,18 @@ mod tests {
     }
 
     #[test]
-    fn minify_js_returns_none_on_parse_error() {
+    fn minify_js_bytes_parse_error_returns_none() {
         let path = PathBuf::from("broken.js");
         assert_eq!(minify_js_bytes(b"function () { ]]]", &path), None);
     }
 
     #[test]
-    fn minify_js_returns_none_on_invalid_utf8() {
+    fn minify_js_bytes_invalid_utf8_returns_none() {
         let path = PathBuf::from("broken.js");
         assert_eq!(minify_js_bytes(&[0xff, 0xfe, 0xfd], &path), None);
     }
 
     // ── Display for MinifyStats ──
-
-    #[test]
-    fn display_for_empty_pass_shows_zero() {
-        let stats = MinifyStats::default();
-        assert_eq!(format!("{stats}"), "minified 0 files");
-    }
 
     #[test]
     fn display_reports_counts_and_savings() {
@@ -631,6 +640,12 @@ mod tests {
             format!("{stats}"),
             "minified 4 files, 3 shrunk (2.0 KB → 512 B, -75.0%)",
         );
+    }
+
+    #[test]
+    fn display_for_empty_pass_shows_zero() {
+        let stats = MinifyStats::default();
+        assert_eq!(format!("{stats}"), "minified 0 files");
     }
 
     #[test]

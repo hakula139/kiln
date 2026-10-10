@@ -357,17 +357,20 @@ mod tests {
                 graph TB
                   A --> B
                 {{< /mermaid >}}
+                {{< widget #anchor .class >}}
                 {{< widget title="A \"quote\" >}} B" >}}
             "#})
             .unwrap(),
-            indoc! {r#"
+            indoc! {r##"
                 ```mermaid
                 graph TB
                   A --> B
                 ```
+                ::: widget {"#anchor" ".class"}
+                :::
                 ::: widget {title="A \"quote\" >}} B"}
                 :::
-            "#}
+            "##}
         );
     }
 

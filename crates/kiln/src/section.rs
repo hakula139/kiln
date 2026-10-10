@@ -57,11 +57,13 @@ mod tests {
     // ── collect_sections ──
 
     #[test]
-    fn collect_sections_basic() {
+    fn collect_sections_groups_posts_and_excludes_other_pages() {
         let pages = vec![
             make_page("Post 1", Some("note")),
             make_page("Post 2", Some("note")),
             make_page("Post 3", Some("essay")),
+            test_page("About"),
+            make_page("Orphan", None),
         ];
         let dir = tempfile::tempdir().unwrap();
         let content_dir = dir.path().join("content");
@@ -133,33 +135,6 @@ mod tests {
     }
 
     #[test]
-    fn collect_sections_excludes_standalone_pages() {
-        let pages = vec![
-            make_page("Post 1", Some("note")),
-            make_standalone("About Me"),
-        ];
-        let dir = tempfile::tempdir().unwrap();
-        let content_dir = dir.path().join("content");
-        fs::create_dir_all(&content_dir).unwrap();
-
-        let sections = collect_sections(&pages, &content_dir).unwrap();
-        assert_eq!(sections.len(), 1);
-        assert_eq!(sections[0].slug, "note");
-    }
-
-    #[test]
-    fn collect_sections_excludes_orphan_posts() {
-        let pages = vec![make_page("Post 1", Some("note")), make_page("Orphan", None)];
-        let dir = tempfile::tempdir().unwrap();
-        let content_dir = dir.path().join("content");
-        fs::create_dir_all(&content_dir).unwrap();
-
-        let sections = collect_sections(&pages, &content_dir).unwrap();
-        assert_eq!(sections.len(), 1);
-        assert_eq!(sections[0].slug, "note");
-    }
-
-    #[test]
     fn collect_sections_empty() {
         let dir = tempfile::tempdir().unwrap();
         let sections = collect_sections(&[], dir.path()).unwrap();
@@ -173,9 +148,5 @@ mod tests {
         };
         page.source_path = PathBuf::from(format!("content/posts/{title}/index.md"));
         page
-    }
-
-    fn make_standalone(title: &str) -> Page {
-        test_page(title)
     }
 }

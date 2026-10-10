@@ -306,7 +306,7 @@ mod tests {
     use crate::test_utils::PermissionGuard;
     use crate::test_utils::test_page;
 
-    // ── from_file: basic ──
+    // ── from_file ──
 
     #[test]
     fn from_file_basic() {
@@ -332,6 +332,60 @@ mod tests {
         assert_eq!(page.frontmatter.title, "Test");
         assert_eq!(page.slug, "test");
         assert_eq!(page.summary.unwrap(), "Summary here.");
+    }
+
+    #[test]
+    fn from_file_page_bundle_discovers_assets_recursively() {
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = dir.path().join("content").join("posts").join("hello");
+        let assets_dir = bundle.join("assets");
+        fs::create_dir_all(&assets_dir).unwrap();
+        fs::write(
+            bundle.join("index.md"),
+            indoc! {r#"
+                +++
+                title = "Hello"
+                +++
+                Body
+            "#},
+        )
+        .unwrap();
+        fs::write(bundle.join("cover.webp"), "fake-webp").unwrap();
+        fs::write(assets_dir.join("screenshot.webp"), "fake-webp").unwrap();
+        fs::write(assets_dir.join("data.json"), "{}").unwrap();
+        fs::write(bundle.join("notes.md"), "other markdown").unwrap();
+        fs::write(assets_dir.join("notes.md"), "nested markdown").unwrap();
+
+        let page = Page::from_file(&bundle.join("index.md")).unwrap();
+        let relative_paths: Vec<_> = page
+            .assets
+            .iter()
+            .map(|p| p.strip_prefix(&bundle).unwrap())
+            .collect();
+        assert_eq!(
+            relative_paths,
+            ["assets/data.json", "assets/screenshot.webp", "cover.webp"].map(Path::new)
+        );
+    }
+
+    #[test]
+    fn from_file_non_index_has_no_assets() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("standalone.md");
+        fs::write(
+            &file,
+            indoc! {r#"
+                +++
+                title = "Standalone"
+                +++
+                Body
+            "#},
+        )
+        .unwrap();
+        fs::write(dir.path().join("image.png"), "fake-png").unwrap();
+
+        let page = Page::from_file(&file).unwrap();
+        assert_eq!(page.assets, Vec::<PathBuf>::new());
     }
 
     #[test]
@@ -364,87 +418,6 @@ mod tests {
             err.contains("failed to parse"),
             "should report parse failure, got: {err}"
         );
-    }
-
-    // ── from_file: asset discovery ──
-
-    #[test]
-    fn from_file_page_bundle_discovers_assets_recursively() {
-        let dir = tempfile::tempdir().unwrap();
-        let bundle = dir.path().join("content").join("posts").join("hello");
-        let assets_dir = bundle.join("assets");
-        fs::create_dir_all(&assets_dir).unwrap();
-        fs::write(
-            bundle.join("index.md"),
-            indoc! {r#"
-                +++
-                title = "Hello"
-                +++
-                Body
-            "#},
-        )
-        .unwrap();
-        fs::write(bundle.join("cover.webp"), "fake-webp").unwrap();
-        fs::write(assets_dir.join("screenshot.webp"), "fake-webp").unwrap();
-        fs::write(assets_dir.join("data.json"), "{}").unwrap();
-
-        let page = Page::from_file(&bundle.join("index.md")).unwrap();
-        let relative_paths: Vec<_> = page
-            .assets
-            .iter()
-            .map(|p| p.strip_prefix(&bundle).unwrap())
-            .collect();
-        assert_eq!(
-            relative_paths,
-            ["assets/data.json", "assets/screenshot.webp", "cover.webp"].map(Path::new)
-        );
-    }
-
-    #[test]
-    fn from_file_page_bundle_excludes_markdown() {
-        let dir = tempfile::tempdir().unwrap();
-        let bundle = dir.path().join("hello");
-        fs::create_dir_all(&bundle).unwrap();
-        fs::write(
-            bundle.join("index.md"),
-            indoc! {r#"
-                +++
-                title = "Hello"
-                +++
-                Body
-            "#},
-        )
-        .unwrap();
-        fs::write(bundle.join("notes.md"), "other markdown").unwrap();
-        fs::write(bundle.join("image.png"), "fake-png").unwrap();
-
-        let page = Page::from_file(&bundle.join("index.md")).unwrap();
-        let relative_paths: Vec<_> = page
-            .assets
-            .iter()
-            .map(|p| p.strip_prefix(&bundle).unwrap().to_str().unwrap())
-            .collect();
-        assert_eq!(relative_paths, vec!["image.png"]);
-    }
-
-    #[test]
-    fn from_file_non_index_has_no_assets() {
-        let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("standalone.md");
-        fs::write(
-            &file,
-            indoc! {r#"
-                +++
-                title = "Standalone"
-                +++
-                Body
-            "#},
-        )
-        .unwrap();
-        fs::write(dir.path().join("image.png"), "fake-png").unwrap();
-
-        let page = Page::from_file(&file).unwrap();
-        assert_eq!(page.assets, Vec::<PathBuf>::new());
     }
 
     #[cfg(unix)]
@@ -622,27 +595,25 @@ mod tests {
     // ── output_path ──
 
     #[test]
-    fn output_path_post() {
-        let mut page = test_page("bar");
-        page.source_path = PathBuf::from("/site/content/posts/foo/bar/index.md");
-        let out = page.output_path(Path::new("/site/content")).unwrap();
-        assert_eq!(out, PathBuf::from("posts/foo/bar/index.html"));
-    }
-
-    #[test]
-    fn output_path_non_post() {
-        let mut page = test_page("example");
-        page.source_path = PathBuf::from("/site/content/example/index.md");
-        let out = page.output_path(Path::new("/site/content")).unwrap();
-        assert_eq!(out, PathBuf::from("example/index.html"));
-    }
-
-    #[test]
-    fn output_path_non_index() {
-        let mut page = test_page("hello-world");
-        page.source_path = PathBuf::from("/site/content/posts/hello-world.md");
-        let out = page.output_path(Path::new("/site/content")).unwrap();
-        assert_eq!(out, PathBuf::from("posts/hello-world/index.html"));
+    fn output_path_uses_source_location_and_slug() {
+        for (slug, source, expected) in [
+            ("bar", "posts/foo/bar/index.md", "posts/foo/bar/index.html"),
+            ("example", "example/index.md", "example/index.html"),
+            (
+                "hello-world",
+                "posts/hello-world.md",
+                "posts/hello-world/index.html",
+            ),
+        ] {
+            let mut page = test_page(slug);
+            let root = Path::new("/site/content");
+            page.source_path = root.join(source);
+            assert_eq!(
+                page.output_path(root).unwrap(),
+                PathBuf::from(expected),
+                "{source}"
+            );
+        }
     }
 
     #[test]
@@ -695,97 +666,47 @@ mod tests {
     // ── derive_page_kind ──
 
     #[test]
-    fn derive_page_kind_section_post_deep() {
-        let kind = derive_page_kind(
-            Path::new("/site/content/posts/note/deep/nested/index.md"),
-            Path::new("/site/content"),
-        );
-        assert_eq!(
-            kind,
-            PageKind::Post {
-                section: Some("note".into())
-            }
-        );
-    }
-
-    #[test]
-    fn derive_page_kind_section_post_shallow() {
-        let kind = derive_page_kind(
-            Path::new("/site/content/posts/note/my-post/index.md"),
-            Path::new("/site/content"),
-        );
-        assert_eq!(
-            kind,
-            PageKind::Post {
-                section: Some("note".into())
-            }
-        );
-    }
-
-    #[test]
-    fn derive_page_kind_section_post_non_bundle() {
-        let kind = derive_page_kind(
-            Path::new("/site/content/posts/note/hello.md"),
-            Path::new("/site/content"),
-        );
-        assert_eq!(
-            kind,
-            PageKind::Post {
-                section: Some("note".into())
-            }
-        );
-    }
-
-    #[test]
-    fn derive_page_kind_orphan_post_bundle() {
-        let kind = derive_page_kind(
-            Path::new("/site/content/posts/hello/index.md"),
-            Path::new("/site/content"),
-        );
-        assert_eq!(kind, PageKind::Post { section: None });
-    }
-
-    #[test]
-    fn derive_page_kind_orphan_post_non_bundle() {
-        let kind = derive_page_kind(
-            Path::new("/site/content/posts/hello.md"),
-            Path::new("/site/content"),
-        );
-        assert_eq!(kind, PageKind::Post { section: None });
-    }
-
-    #[test]
-    fn derive_page_kind_non_post() {
-        let kind = derive_page_kind(
-            Path::new("/site/content/about-me/index.md"),
-            Path::new("/site/content"),
-        );
-        assert_eq!(kind, PageKind::Page);
-    }
-
-    #[test]
-    fn derive_page_kind_outside_content_dir() {
-        let kind = derive_page_kind(Path::new("/other/path/page.md"), Path::new("/site/content"));
-        assert_eq!(kind, PageKind::Page);
+    fn derive_page_kind_classifies_content_paths() {
+        for (path, expected) in [
+            (
+                "posts/note/deep/nested/index.md",
+                PageKind::Post {
+                    section: Some("note".into()),
+                },
+            ),
+            (
+                "posts/note/my-post/index.md",
+                PageKind::Post {
+                    section: Some("note".into()),
+                },
+            ),
+            (
+                "posts/note/hello.md",
+                PageKind::Post {
+                    section: Some("note".into()),
+                },
+            ),
+            ("posts/hello/index.md", PageKind::Post { section: None }),
+            ("posts/hello.md", PageKind::Post { section: None }),
+            ("about-me/index.md", PageKind::Page),
+            ("/other/path/page.md", PageKind::Page),
+        ] {
+            let root = Path::new("/site/content");
+            assert_eq!(derive_page_kind(&root.join(path), root), expected, "{path}");
+        }
     }
 
     // ── derive_slug ──
 
     #[test]
-    fn derive_slug_page_bundle() {
-        let path = Path::new("content/posts/foo/bar/index.md");
-        assert_eq!(derive_slug(path).unwrap(), "bar");
-    }
-
-    #[test]
-    fn derive_slug_non_index() {
-        let path = Path::new("content/posts/hello-world.md");
-        assert_eq!(derive_slug(path).unwrap(), "hello-world");
-    }
-
-    #[test]
-    fn derive_slug_bare_index_returns_none() {
-        assert!(derive_slug(Path::new("index.md")).is_none());
+    fn derive_slug_uses_bundle_directory_or_file_stem() {
+        for (path, expected) in [
+            ("content/posts/foo/bar/index.md", Some("bar")),
+            ("content/posts/hello-world.md", Some("hello-world")),
+            ("index.md", None),
+        ] {
+            assert_eq!(derive_slug(Path::new(path)).as_deref(), expected, "{path}");
+        }
     }
 
     // ── extract_summary ──
@@ -800,22 +721,6 @@ mod tests {
             Full content here.
         "};
         assert_eq!(extract_summary(body).unwrap(), "This is the summary.");
-    }
-
-    #[test]
-    fn extract_summary_no_separator() {
-        let body = "No summary separator in this content.";
-        assert!(extract_summary(body).is_none());
-    }
-
-    #[test]
-    fn extract_summary_empty_before_separator() {
-        let body = indoc! {r"
-            <!--more-->
-
-            Content after.
-        "};
-        assert!(extract_summary(body).is_none());
     }
 
     #[test]
@@ -892,9 +797,11 @@ mod tests {
     #[test]
     fn extract_summary_preserves_paragraph_breaks() {
         let body = indoc! {r"
-            First paragraph.
+            First
+            paragraph.
 
-            Second paragraph.
+            Second\
+            paragraph.
 
             <!--more-->
         "};
@@ -902,5 +809,21 @@ mod tests {
             extract_summary(body).unwrap(),
             "First paragraph.\nSecond paragraph."
         );
+    }
+
+    #[test]
+    fn extract_summary_no_separator_returns_none() {
+        let body = "No summary separator in this content.";
+        assert!(extract_summary(body).is_none());
+    }
+
+    #[test]
+    fn extract_summary_empty_before_separator_returns_none() {
+        let body = indoc! {r"
+            <!--more-->
+
+            Content after.
+        "};
+        assert!(extract_summary(body).is_none());
     }
 }
