@@ -5,7 +5,7 @@ use std::sync::LazyLock;
 use crate::config::{Config, ImageConfig};
 use crate::content::frontmatter::Frontmatter;
 use crate::content::page::{Page, PageKind};
-use crate::i18n::I18n;
+use crate::i18n::{I18n, Language};
 use crate::render::lqip::ImageResolver;
 use crate::render::pipeline::{RenderedPage, render_page};
 use crate::render::{PageResources, RenderOptions};
@@ -34,7 +34,12 @@ pub(crate) fn test_i18n() -> I18n {
         r#"all_posts = "All Posts""#,
     )
     .unwrap();
-    I18n::load(Path::new("/nonexistent-site"), Some(dir.path()), "en").unwrap()
+    I18n::load(
+        Path::new("/nonexistent-site"),
+        Some(dir.path()),
+        &Language::default(),
+    )
+    .unwrap()
 }
 
 /// Creates a minimal standalone `Page` with the given title and an empty body.

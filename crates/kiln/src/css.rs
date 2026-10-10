@@ -20,6 +20,7 @@ use crate::static_assets::publication::PublishedAssets;
 use crate::url::{join_site_url, path_url};
 
 pub(crate) const ENTRY: &str = "assets/css/_src/style.css";
+
 struct Stylesheet {
     source: PathBuf,
     page: Option<PathBuf>,

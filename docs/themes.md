@@ -26,7 +26,7 @@ kiln reads `config.toml` from the site root. An absent file uses the defaults be
 | `title`            | `"My Site"`                | Site title                                                  |
 | `description`      | `""`                       | Site description                                            |
 | `language`         | `"en"`                     | Active theme translation language                           |
-| `timezone`         | `"UTC"`                    | IANA time zone for rendered timestamps                      |
+| `timezone`         | `"UTC"`                    | Time zone: IANA name, fixed offset or POSIX TZ string       |
 | `enable_git_info`  | `false`                    | Derive missing page updates from Git history                |
 | `output_dir`       | `"public"`                 | Build destination, resolved relative to the site root       |
 | `theme`            | unset                      | Theme directory under `themes/`                             |

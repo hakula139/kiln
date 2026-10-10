@@ -7,6 +7,7 @@ use jiff::tz::TimeZone;
 use serde::{Deserialize, Serialize};
 
 use crate::content::{is_single_component, read_optional};
+use crate::i18n::Language;
 use crate::url::BaseUrl;
 
 /// Default port for `kiln serve` (KILN on a phone keypad: K=5 I=4 L=5 N=6).
@@ -35,10 +36,10 @@ pub struct Config {
 
     pub description: String,
 
-    /// Active BCP 47 language tag, which selects translation files.
-    pub language: String,
+    pub language: Language,
 
-    /// Time zone for rendered dates, as an IANA name such as `Asia/Shanghai`.
+    /// Time zone for rendered dates: an IANA name such as `Asia/Shanghai`, a fixed offset such as
+    /// `+08:00`, or a POSIX TZ string.
     #[serde(with = "jiff::fmt::serde::tz::required")]
     pub timezone: TimeZone,
 
@@ -122,7 +123,6 @@ pub struct MenuItem {
 
     pub url: String,
 
-    #[serde(default)]
     pub icon: Option<String>,
 
     /// Sort order (ascending). Items without a weight default to 0.
@@ -152,7 +152,7 @@ impl Default for Config {
                 .expect("the dev server URL is a valid base URL"),
             title: String::from("My Site"),
             description: String::new(),
-            language: String::from("en"),
+            language: Language::default(),
             timezone: TimeZone::UTC,
             enable_git_info: false,
             output_dir: PathBuf::from("public"),
@@ -192,7 +192,6 @@ impl Config {
             None => Self::default(),
         };
 
-        validate_language(&config.language)?;
         config
             .image
             .validate()
@@ -228,20 +227,8 @@ pub(crate) fn localhost_url(port: u16) -> String {
     format!("http://localhost:{port}")
 }
 
-/// Validates the tag shape before it is interpolated into translation filenames.
-fn validate_language(language: &str) -> Result<()> {
-    ensure!(
-        language.starts_with(|c: char| c.is_ascii_alphabetic())
-            && language
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '-'),
-        "invalid language tag `{language}`: expected BCP 47 shape (ASCII letters / digits / hyphens)",
-    );
-    Ok(())
-}
-
 impl ImageConfig {
-    pub(crate) fn validate(&self) -> Result<()> {
+    fn validate(&self) -> Result<()> {
         ensure!(
             self.lqip_size > 0,
             "image.lqip_size must be greater than zero"
@@ -310,7 +297,7 @@ fn merge_params(site: &mut toml::Table, theme_defaults: toml::Table, prefix: &st
 
 #[cfg(test)]
 mod tests {
-    use indoc::indoc;
+    use indoc::{formatdoc, indoc};
 
     use super::*;
     use crate::test_utils::write_test_file;
@@ -326,7 +313,7 @@ mod tests {
             localhost_url(DEFAULT_PORT).parse().unwrap()
         );
         assert_eq!(config.title, "My Site");
-        assert_eq!(config.language, "en");
+        assert_eq!(config.language, Language::default());
         assert_eq!(config.timezone, TimeZone::UTC);
         assert_eq!(config.output_dir, Path::new("public"));
         assert_eq!(config.theme, None);
@@ -445,37 +432,58 @@ mod tests {
     }
 
     #[test]
+    fn load_accepts_offset_and_posix_time_zones() {
+        let date: jiff::Timestamp = "2026-07-01T00:00:00Z".parse().unwrap();
+        for (time_zone, offset) in [("+08:00", "+08"), ("EST5EDT,M3.2.0,M11.1.0", "-04")] {
+            let root = tempfile::tempdir().unwrap();
+            write_test_file(
+                root.path(),
+                "config.toml",
+                &format!("timezone = {time_zone:?}"),
+            );
+            let config = Config::load(root.path()).unwrap();
+            assert_eq!(config.timezone.to_offset(date).to_string(), offset);
+        }
+    }
+
+    #[test]
     fn load_invalid_config_returns_error() {
         for (contents, expected) in [
             ("{{invalid toml", "failed to parse config.toml"),
             ("enable_gitinfo = true", "unknown field `enable_gitinfo`"),
-            ("[analytics]\nenabled = true", "unknown field `analytics`"),
-            ("[search]\nenable = true", "unknown field `enable`"),
             (
-                "[author]\nemail = \"a@example.com\"",
+                "analytics = { enabled = true }",
+                "unknown field `analytics`",
+            ),
+            ("search = { enable = true }", "unknown field `enable`"),
+            (
+                r#"author = { email = "a@example.com" }"#,
                 "unknown field `email`",
             ),
             (
-                "[[menu.main]]\nname = \"A\"\nurl = \"/\"\nbadge = \"x\"",
+                r#"menu.main = [{ name = "A", url = "/", badge = "x" }]"#,
                 "unknown field `badge`",
             ),
             (
-                "[css]\nprocessor = \"unknown\"",
+                r#"css = { processor = "unknown" }"#,
                 "unknown variant `unknown`",
             ),
-            ("[image]\nlqip = false", "unknown field `lqip`"),
-            ("[image]\nlqip_quality = 0", "image.lqip_quality"),
-            ("[image]\nlqip_size = 0", "image.lqip_size"),
-            ("timezone = \"Mars/Base\"", "Mars/Base"),
-            ("base_url = \"example.com\"", "invalid base_url"),
+            ("image = { lqip = false }", "unknown field `lqip`"),
+            ("image = { lqip_quality = 0 }", "image.lqip_quality"),
+            ("image = { lqip_size = 0 }", "image.lqip_size"),
+            (r#"timezone = "Mars/Base""#, "Mars/Base"),
             (
-                "base_url = \"https://example.com/?preview=1\"",
+                r#"base_url = "example.com""#,
+                "invalid base_url: relative URL without a base",
+            ),
+            (
+                r#"base_url = "https://example.com/?preview=1""#,
                 "must not contain a query",
             ),
-            ("language = \"\"", "invalid language tag"),
-            ("language = \"../etc/passwd\"", "invalid language tag"),
-            ("language = \"1en\"", "invalid language tag"),
-            ("language = \"en_US\"", "invalid language tag"),
+            (r#"language = """#, "invalid language tag"),
+            (r#"language = "../etc/passwd""#, "invalid language tag"),
+            (r#"language = "1en""#, "invalid language tag"),
+            (r#"language = "en_US""#, "invalid language tag"),
         ] {
             let root = tempfile::tempdir().unwrap();
             write_test_file(root.path(), "config.toml", contents);
@@ -556,12 +564,15 @@ mod tests {
         );
         for (site, expected) in [
             ("", CssProcessor::Tailwind),
-            ("[css]\nprocessor = \"plain\"", CssProcessor::Plain),
+            (r#"css = { processor = "plain" }"#, CssProcessor::Plain),
         ] {
             write_test_file(
                 root.path(),
                 "config.toml",
-                &format!("theme = \"test-theme\"\n{site}"),
+                &formatdoc! {r#"
+                    theme = "test-theme"
+                    {site}
+                "#},
             );
             assert_eq!(
                 Config::load(root.path()).unwrap().css.processor,
@@ -588,7 +599,7 @@ mod tests {
             ),
             (
                 "test-theme",
-                Some("[css]\nengine = \"plain\""),
+                Some(r#"css = { engine = "plain" }"#),
                 "unknown field `engine`",
             ),
         ] {
@@ -607,12 +618,12 @@ mod tests {
         for (site, theme, expected) in [
             (
                 r#"key = "site""#,
-                "[params.key]\nfoo = \"bar\"",
+                r#"params.key = { foo = "bar" }"#,
                 "param `key` has type `string` in site config but `table` in theme",
             ),
             (
                 "comments.provider.enabled = true",
-                "[params]\ncomments.provider.enabled = \"yes\"",
+                r#"params.comments.provider.enabled = "yes""#,
                 "param `comments.provider.enabled` has type `boolean` in site config but `string` in theme",
             ),
         ] {
@@ -620,7 +631,12 @@ mod tests {
             write_test_file(
                 root.path(),
                 "config.toml",
-                &format!("theme = \"test-theme\"\n[params]\n{site}"),
+                &formatdoc! {r#"
+                    theme = "test-theme"
+
+                    [params]
+                    {site}
+                "#},
             );
             write_test_file(root.path(), "themes/test-theme/theme.toml", theme);
             assert_eq!(Config::load(root.path()).unwrap_err().to_string(), expected);

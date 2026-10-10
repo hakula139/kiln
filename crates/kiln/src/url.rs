@@ -51,10 +51,12 @@ impl FromStr for BaseUrl {
 }
 
 impl TryFrom<String> for BaseUrl {
-    type Error = anyhow::Error;
+    type Error = String;
 
-    fn try_from(input: String) -> anyhow::Result<Self> {
-        input.parse()
+    fn try_from(input: String) -> Result<Self, String> {
+        input
+            .parse()
+            .map_err(|error: anyhow::Error| format!("{error:#}"))
     }
 }
 

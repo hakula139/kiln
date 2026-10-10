@@ -97,6 +97,7 @@ pub fn init_theme(root: &Path, name: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::i18n::{I18n, Language};
 
     // ── init_theme ──
 
@@ -123,9 +124,10 @@ mod tests {
         );
 
         let site = tempfile::tempdir().unwrap();
-        let en_i18n = crate::i18n::I18n::load(site.path(), Some(&theme_dir), "en").unwrap();
+        let en_i18n = I18n::load(site.path(), Some(&theme_dir), &Language::default()).unwrap();
         assert_eq!(en_i18n.t("all_posts").as_ref(), "All Posts");
-        let zh_i18n = crate::i18n::I18n::load(site.path(), Some(&theme_dir), "zh-Hans").unwrap();
+        let zh_i18n =
+            I18n::load(site.path(), Some(&theme_dir), &"zh-Hans".parse().unwrap()).unwrap();
         assert_eq!(zh_i18n.t("all_posts").as_ref(), "全部文章");
     }
 

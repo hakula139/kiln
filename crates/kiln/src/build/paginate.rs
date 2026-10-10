@@ -13,7 +13,7 @@ pub(super) fn write_paginated<T, F>(
     items: &[T],
     per_page: usize,
     base_path: &Path,
-    prefix: &str,
+    deployment_prefix: &str,
     output_dir: &Path,
     mut render: F,
 ) -> Result<usize>
@@ -23,7 +23,7 @@ where
     let paginator = Paginator::new(items, per_page);
 
     let page_count = paginator.total_pages();
-    let url = join_site_url(prefix, &directory_url(base_path));
+    let url = join_site_url(deployment_prefix, &directory_url(base_path));
     for page_num in 1..=page_count {
         let page_items = paginator.page_items(page_num);
         let pagination = PaginationVars::new(&url, page_num, page_count);

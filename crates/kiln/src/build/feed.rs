@@ -23,7 +23,7 @@ pub(super) fn build_feeds(
         link: base_url.site_url(""),
         feed_url: base_url.site_url("index.xml"),
         description: ctx.config.description.clone(),
-        language: ctx.config.language.clone(),
+        language: ctx.config.language.as_str().to_owned(),
         last_build_date: newest_date(listed_posts),
     };
     let xml = feed::generate_rss(&main_channel, feed_items(listed_posts), DEFAULT_FEED_LIMIT);
@@ -45,19 +45,18 @@ fn write_bucket_feed(
 ) -> Result<()> {
     let base_url = &ctx.config.base_url;
     let directory = bucket.base_path();
-    let directory_url = directory_url(&directory);
+    let listing_url = directory_url(&directory);
     let channel = Channel {
         title: format!("{} - {}", bucket.name, ctx.config.title),
-        link: base_url.site_url(&directory_url),
-        feed_url: base_url.site_url(&format!("{directory_url}index.xml")),
+        link: base_url.site_url(&listing_url),
+        feed_url: base_url.site_url(&format!("{listing_url}index.xml")),
         description: ctx.config.description.clone(),
-        language: ctx.config.language.clone(),
+        language: ctx.config.language.as_str().to_owned(),
         last_build_date: newest_date(&bucket.pages),
     };
     let xml = feed::generate_rss(&channel, feed_items(&bucket.pages), DEFAULT_FEED_LIMIT);
     let dest = output_dir.join(directory).join("index.xml");
-    write_output(&dest, &xml)
-        .with_context(|| format!("failed to write RSS feed for {directory_url}"))
+    write_output(&dest, &xml).with_context(|| format!("failed to write RSS feed for {listing_url}"))
 }
 
 /// Returns the RFC 2822 date of the newest page, for `lastBuildDate`.

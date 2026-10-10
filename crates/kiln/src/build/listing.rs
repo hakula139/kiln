@@ -324,7 +324,7 @@ pub(super) fn format_page_date(date: Timestamp, time_zone: &TimeZone) -> String 
 /// Returns the grouping year for a page date in the configured site time zone.
 #[must_use]
 pub(super) fn page_year(date: Timestamp, time_zone: &TimeZone) -> String {
-    date.to_zoned(time_zone.clone()).year().to_string()
+    time_zone.to_datetime(date).year().to_string()
 }
 
 #[cfg(test)]

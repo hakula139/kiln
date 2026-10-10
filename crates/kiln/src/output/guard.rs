@@ -119,7 +119,6 @@ fn canonicalize_via_parent(path: &Path) -> Result<PathBuf> {
             Component::ParentDir => {
                 resolved.pop();
             }
-            Component::CurDir => {}
             component => {
                 resolved.push(component);
                 if resolved.exists() || resolved.is_symlink() {

@@ -5,7 +5,7 @@ use indoc::indoc;
 use scraper::{Html, Selector};
 
 use kiln::config::Config;
-use kiln::i18n::I18n;
+use kiln::i18n::{I18n, Language};
 use kiln::render::lqip::ImageResolver;
 use kiln::render::pipeline::render_page;
 use kiln::render::{PageResources, RenderOptions};
@@ -18,7 +18,7 @@ use super::fixtures::{PROSE, Site};
 pub(super) fn benchmarks(criterion: &mut Criterion) {
     let site = Site::new(0, PROSE, 0);
     let config = Config::load(site.root()).unwrap();
-    let i18n = I18n::load(site.root(), None, "en").unwrap();
+    let i18n = I18n::load(site.root(), None, &Language::default()).unwrap();
     let engine = TemplateEngine::new(Some(&site.root().join("templates")), None, &i18n).unwrap();
     let options = RenderOptions::default();
     let resolver = ImageResolver::new(&site.root().join("static"), config.image.clone());
