@@ -26,9 +26,16 @@ impl PageIds {
         }
     }
 
-    /// Returns a reserved authored `id` on its first claim and a fresh suffixed ID afterward.
-    pub(super) fn claim(&mut self, id: &str) -> String {
-        if self.claimed.insert(id.to_owned()) {
+    /// Claims an explicit heading `id` unless another authored element or heading reserved it.
+    pub(super) fn claim(&mut self, id: &str) {
+        if self.used.insert(id.to_owned()) {
+            self.claimed.insert(id.to_owned());
+        }
+    }
+
+    /// Returns a claimed heading `id` once, and a suffixed ID for every other request.
+    pub(super) fn allocate_claimed(&mut self, id: &str) -> String {
+        if self.claimed.remove(id) {
             id.to_owned()
         } else {
             self.allocate(id)

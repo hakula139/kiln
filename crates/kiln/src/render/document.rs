@@ -1,11 +1,10 @@
 use std::borrow::Borrow;
 use std::collections::{BTreeSet, HashMap};
 use std::ops::Range;
+use std::vec;
 
 use itertools::Either;
-use pulldown_cmark::{
-    CodeBlockKind, Event, HeadingLevel, Parser, Tag, TagEnd, TextMergeWithOffset,
-};
+use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, LinkType, Parser, Tag, TagEnd};
 
 use super::assets::Feature;
 use super::code_block::{CodeBlockSpec, parse_fence_info};
@@ -38,11 +37,10 @@ pub(super) struct MarkdownDocument {
 impl MarkdownDocument {
     pub(super) fn parse(content: &str, options: &RenderOptions) -> Self {
         let (content, image_attrs) = extract_image_attrs(content);
-        let events = TextMergeWithOffset::new(
-            Parser::new_ext(&content, markdown_options()).into_offset_iter(),
-        )
-        .map(|(event, range)| (event.into_static(), range));
-        let (body, notes) = Notes::extract(expand_shortcodes(events, options));
+        let events = Parser::new_ext(&content, markdown_options())
+            .into_offset_iter()
+            .map(|(event, range)| (event.into_static(), range));
+        let (body, notes) = Notes::extract(expand_shortcodes(events, &content, options));
         let headings = collect_headings(body.iter().chain(notes.events()));
         Self {
             body,
@@ -105,7 +103,7 @@ struct MarkdownRenderer<'a> {
     resources: &'a PageResources<'a>,
     options: &'a RenderOptions,
     features: &'a mut BTreeSet<Feature>,
-    headings: std::vec::IntoIter<TocEntry>,
+    headings: vec::IntoIter<TocEntry>,
 }
 
 impl MarkdownRenderer<'_> {
@@ -276,18 +274,35 @@ fn enrich_image_attrs(base: Option<&ImageAttrs>, meta: Option<&ImageMeta>) -> Op
 }
 
 /// Expands enabled emoji and icon shortcodes in text outside code blocks.
+/// Expands shortcodes in text outside code blocks and autolinks.
 fn expand_shortcodes(
     events: impl Iterator<Item = Spanned>,
+    source: &str,
     options: &RenderOptions,
 ) -> impl Iterator<Item = Spanned> {
     let (emojis, icons) = (options.emojis, options.fontawesome);
-    let mut in_code_block = false;
+    let mut literal = false;
     events.flat_map(move |(event, range)| {
         match &event {
-            Event::Start(Tag::CodeBlock(_)) => in_code_block = true,
-            Event::End(TagEnd::CodeBlock) => in_code_block = false,
-            Event::Text(text) if !in_code_block && (emojis || icons) && text.contains(':') => {
-                return Either::Right(expand_text(text, &range, emojis, icons).into_iter());
+            Event::Start(
+                Tag::CodeBlock(_)
+                | Tag::Link {
+                    link_type: LinkType::Autolink | LinkType::Email,
+                    ..
+                },
+            ) => literal = true,
+            Event::End(TagEnd::CodeBlock | TagEnd::Link) => literal = false,
+            Event::Text(text) if !literal && (emojis || icons) && text.contains(':') => {
+                // A backslash escape leaves its character at the start of the next text event.
+                let escaped = source[..range.start]
+                    .bytes()
+                    .rev()
+                    .take_while(|&byte| byte == b'\\')
+                    .count()
+                    % 2
+                    == 1;
+                let expanded = expand_text(text, &range, escaped, emojis, icons);
+                return Either::Right(expanded.into_iter());
             }
             _ => {}
         }
@@ -295,11 +310,19 @@ fn expand_shortcodes(
     })
 }
 
-/// Splits a text event around shortcodes. Emoji stay text, while icons become inline HTML.
-fn expand_text(text: &str, range: &Range<usize>, emojis: bool, icons: bool) -> Vec<Spanned> {
+/// Splits a text event around shortcodes, keeping an `escaped` first character literal. Emoji stay
+/// text, while icons become inline HTML.
+fn expand_text(
+    text: &str,
+    range: &Range<usize>,
+    escaped: bool,
+    emojis: bool,
+    icons: bool,
+) -> Vec<Spanned> {
     let mut events = Vec::new();
+    let (literal, mut rest) = text.split_at(usize::from(escaped));
     let mut plain = String::with_capacity(text.len());
-    let mut rest = text;
+    plain.push_str(literal);
     while let Some(colon) = rest.find(':') {
         plain.push_str(&rest[..colon]);
         rest = &rest[colon..];
@@ -354,7 +377,7 @@ fn collect_headings<'a>(events: impl Iterator<Item = &'a Spanned>) -> Vec<TocEnt
                     id: explicit_id
                         .take()
                         .unwrap_or_else(|| slugify_or(&text, "section")),
-                    title: std::mem::take(&mut text),
+                    title: text.trim().to_owned(),
                 });
             }
             _ if in_heading => push_plain_text(&mut text, event),
@@ -557,9 +580,11 @@ mod tests {
     fn render_document_expands_shortcodes_only_in_text() {
         let out = render_test_page(
             indoc! {r#"
-                ## Hi :smile:
+                ## :(fas fa-star): Hi :smile:
 
                 文 :unknown: :x::smile: 尾 :(fas fa-link): `:smile:` $:smile:$ [a](/b/:smile:) <span title=":smile:"></span>
+
+                :white_check_mark: :+1: \:smile: &#58;smile: \\:smile: <https://example.com/:smile:>
 
                 <style>a:link:hover{}</style>
 
@@ -580,8 +605,15 @@ mod tests {
             )),
             "{html}"
         );
+        assert!(
+            html.contains(concat!(
+                r"<p>✅ 👍 :smile: :smile: \😄 ",
+                r#"<a href="https://example.com/:smile:">https://example.com/:smile:</a></p>"#,
+            )),
+            "{html}"
+        );
         assert!(html.contains("<style>a:link:hover{}</style>"), "{html}");
-        assert_eq!(html.matches('😄').count(), 2, "{html}");
+        assert_eq!(html.matches('😄').count(), 3, "{html}");
         assert!(out.toc_html.contains(r##"<a href="#hi">Hi 😄</a>"##));
     }
 
@@ -689,12 +721,7 @@ mod tests {
         );
         let positions = ["before", "after", "note-heading"]
             .map(|id| out.toc_html.find(&format!(r##"href="#{id}""##)).unwrap());
-        assert!(
-            positions.is_sorted(),
-            "toc:
-{}",
-            out.toc_html
-        );
+        assert!(positions.is_sorted(), "toc:\n{}", out.toc_html);
     }
 
     #[test]

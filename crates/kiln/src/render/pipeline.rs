@@ -57,7 +57,11 @@ pub fn render_page(
     let mut document =
         renderer.prepare_fragment(raw_content, parse_directives(raw_content), 0, 0, &mut 1);
     let mut ids = PageIds::default();
-    document.reserve_authored_ids(&mut ids, &placeholder_prefix);
+    let mut heading_ids = Vec::new();
+    document.reserve_authored_ids(&mut ids, &mut heading_ids, &placeholder_prefix);
+    for id in heading_ids {
+        ids.claim(id);
+    }
     let mut numbers = heading_numbering.then(HeadingNumbers::default);
     document.allocate_headings(&mut ids, &mut numbers, &placeholder_prefix)?;
     let toc_html = render_toc_html(&document.markdown.headings);
@@ -87,12 +91,18 @@ struct PreparedDocument {
 }
 
 impl PreparedDocument {
-    fn reserve_authored_ids(&self, ids: &mut PageIds, prefix: &str) {
+    /// Reserves authored non-heading IDs and collects explicit heading IDs in document order.
+    fn reserve_authored_ids<'a>(
+        &'a self,
+        ids: &mut PageIds,
+        heading_ids: &mut Vec<&'a str>,
+        prefix: &str,
+    ) {
         let mut raw_html = String::new();
         let mut events = self.markdown.events();
         while let Some((event, range)) = events.next() {
             match event {
-                Event::Start(Tag::Heading { id: Some(id), .. }) => ids.reserve(id),
+                Event::Start(Tag::Heading { id: Some(id), .. }) => heading_ids.push(id),
                 Event::Start(Tag::Image { .. }) => {
                     if let Some(id) = self
                         .markdown
@@ -121,7 +131,7 @@ impl PreparedDocument {
                         if let Some(id) = &block.args.identity.id {
                             ids.reserve(id);
                         }
-                        document.reserve_authored_ids(ids, prefix);
+                        document.reserve_authored_ids(ids, heading_ids, prefix);
                     } else {
                         raw_html.push_str(html);
                     }
@@ -153,7 +163,7 @@ impl PreparedDocument {
                         .next()
                         .expect("collect_headings yields one entry per heading");
                     heading.id = if id.is_some() {
-                        ids.claim(&heading.id)
+                        ids.allocate_claimed(&heading.id)
                     } else {
                         ids.allocate(&heading.id)
                     };
@@ -620,6 +630,32 @@ mod tests {
         );
         for id in ["dup", "dup-1", "dup-3"] {
             assert!(page.toc_html.contains(&format!(r##"href="#{id}""##)));
+        }
+    }
+
+    #[test]
+    fn render_page_explicit_heading_ids_yield_to_other_authored_ids() {
+        let page = render(indoc! {r#"
+            <div id="y"></div>
+
+            ## C {#y}
+
+            ## D {#late}
+
+            ::: callout {#late}
+            Body.
+            :::
+        "#});
+        for heading in [r#"<h2 id="y-1">C</h2>"#, r#"<h2 id="late-1">D</h2>"#] {
+            assert!(page.content_html.contains(heading), "{}", page.content_html);
+        }
+        for id in ["y", "late"] {
+            assert_eq!(
+                page.content_html.matches(&format!(r#"id="{id}""#)).count(),
+                1,
+                "{id}: {}",
+                page.content_html
+            );
         }
     }
 
@@ -1131,6 +1167,25 @@ mod tests {
         );
     }
 
+    // ── restore_directives ──
+
+    #[test]
+    fn restore_directives_keeps_unmatched_placeholder_text() {
+        let html = indoc! {"
+            a <!--p-x-->
+            <!--p-1-->
+            <!--p-0-->
+            b"};
+        assert_eq!(
+            restore_directives(html, "<!--p-", &["F\n".to_owned()]),
+            indoc! {"
+                a <!--p-x-->
+                <!--p-1-->
+                F
+                b"}
+        );
+    }
+
     // ── render_directive_block ──
 
     #[test]
@@ -1301,25 +1356,6 @@ mod tests {
             page.content_html.contains("<table>"),
             "table should be rendered inside div, html:\n{}",
             page.content_html
-        );
-    }
-
-    // ── restore_directives ──
-
-    #[test]
-    fn restore_directives_keeps_unmatched_placeholder_text() {
-        let html = indoc! {"
-            a <!--p-x-->
-            <!--p-1-->
-            <!--p-0-->
-            b"};
-        assert_eq!(
-            restore_directives(html, "<!--p-", &["F\n".to_owned()]),
-            indoc! {"
-                a <!--p-x-->
-                <!--p-1-->
-                F
-                b"}
         );
     }
 }

@@ -4,14 +4,13 @@ use super::heading::render_number;
 use crate::html::{escape, writeln_indented};
 
 /// A heading collected at parse time for the table of contents.
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct TocEntry {
-    pub level: HeadingLevel,
+    pub(super) level: HeadingLevel,
     /// The optional hierarchical number, separate from the authored title.
-    pub number: Option<String>,
+    pub(super) number: Option<String>,
     /// The authored ID, or a deduplicated slug of the title once IDs are allocated.
-    pub id: String,
-    pub title: String,
+    pub(super) id: String,
+    pub(super) title: String,
 }
 
 /// Renders `TocEntry` values into a nested `<nav>` / `<ul>` / `<li>` / `<a>` structure.
