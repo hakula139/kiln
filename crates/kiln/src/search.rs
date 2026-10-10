@@ -72,9 +72,34 @@ pub fn run_pagefind(output_dir: &Path, binary: Option<&str>) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use super::*;
 
     // ── run_pagefind ──
+
+    #[test]
+    #[ignore = "requires Pagefind on PATH"]
+    fn run_pagefind_indexes_site() {
+        let dir = tempfile::Builder::new()
+            .prefix("pagefind site & (test) ")
+            .tempdir()
+            .unwrap();
+        fs::write(
+            dir.path().join("index.html"),
+            r#"<html lang="en"><body><main data-pagefind-body>Searchable example</main></body></html>"#,
+        )
+        .unwrap();
+
+        run_pagefind(dir.path(), None).unwrap();
+
+        assert!(dir.path().join("pagefind/pagefind.js").is_file());
+        let entry: serde_yaml::Value = serde_yaml::from_slice(
+            &fs::read(dir.path().join("pagefind/pagefind-entry.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(entry["languages"]["en"]["page_count"].as_u64(), Some(1));
+    }
 
     #[test]
     fn run_pagefind_missing_binary_returns_error() {
