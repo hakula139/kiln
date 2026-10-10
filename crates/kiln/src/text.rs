@@ -1,3 +1,5 @@
+use itertools::Itertools;
+
 /// Non-alphanumeric characters kept literally, because they carry meaning in technology names
 /// (`C++`, `.NET`) and stay safe unescaped in a URL path. `#` cannot join them since it delimits
 /// a URL fragment.
@@ -55,19 +57,16 @@ pub(crate) fn slugify_or(text: &str, fallback: &str) -> String {
 /// Converts a hyphenated slug to titlecase (e.g., "hello-world" → "Hello World").
 #[must_use]
 pub fn titlecase(s: &str) -> String {
-    s.split('-')
-        .map(|word| {
-            let mut chars = word.chars();
-            match chars.next() {
-                None => String::new(),
-                Some(c) => {
-                    let upper: String = c.to_uppercase().collect();
-                    upper + chars.as_str()
-                }
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
+    s.split('-').map(capitalize).join(" ")
+}
+
+/// Uppercases the first character of `word`.
+#[must_use]
+pub(crate) fn capitalize(word: &str) -> String {
+    let mut chars = word.chars();
+    chars.next().map_or_else(String::new, |first| {
+        first.to_uppercase().chain(chars).collect()
+    })
 }
 
 #[cfg(test)]

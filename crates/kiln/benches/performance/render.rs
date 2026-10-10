@@ -74,7 +74,7 @@ fn verify_render(name: &str, html: &str) {
         ("h2", "Benchmark heading")
     } else {
         (
-            "code[data-lang=rust]",
+            "[data-lang=rust] code",
             indoc! {r#"
                 fn main() {
                     println!("Example");

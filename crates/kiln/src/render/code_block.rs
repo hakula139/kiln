@@ -1,66 +1,52 @@
 use std::ops::RangeInclusive;
 
-use crate::attrs::{find_attr_block_end, parse_pandoc_attrs};
+use crate::attrs::parse_pandoc_attrs;
 
-/// Attributes extracted from a fenced code block's Pandoc-style `{...}` block.
-#[derive(Debug, Clone, Default)]
+/// Attributes extracted from a fenced code block's info string.
+#[derive(Debug, Default)]
 pub(crate) struct CodeBlockSpec {
     pub lang: Option<String>,
     pub id: Option<String>,
     pub classes: Vec<String>,
     pub title: Option<String>,
     pub highlight: Vec<RangeInclusive<usize>>,
-    pub collapse: Option<bool>,
-    pub max_lines: Option<usize>,
+    pub disclosure: Disclosure,
 }
 
-/// Parses a fence info-string into a `CodeBlockSpec`.
-///
-/// The info-string format is `lang {#id .class key=value ...}`. The language is the first
-/// whitespace-delimited word. The `{...}` payload (if present) is parsed as Pandoc attrs.
-/// Content outside `{...}` (after the language) is ignored.
-#[must_use]
-pub(crate) fn parse_fence_info(info: &str, default_max_lines: Option<usize>) -> CodeBlockSpec {
-    let trimmed = info.trim();
-    let Some(lang_token) = trimmed.split_ascii_whitespace().next() else {
-        return CodeBlockSpec {
-            max_lines: default_max_lines,
-            ..CodeBlockSpec::default()
-        };
-    };
-
-    let after_lang = trimmed[lang_token.len()..].trim_start();
-    let payload = extract_brace_payload(after_lang);
-    parse_code_block_attrs(Some(lang_token.to_string()), payload, default_max_lines)
+/// Authored disclosure state of a code block.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Disclosure {
+    /// Open, limited by the site's `code_max_lines`.
+    #[default]
+    Auto,
+    Collapse,
+    /// Open without a line limit.
+    Expand,
 }
 
-/// Extracts the content between the first `{` and the next unquoted `}`.
-fn extract_brace_payload(s: &str) -> &str {
-    let Some(open) = s.find('{') else { return "" };
-    let inner = &s[open + 1..];
-    let close = find_attr_block_end(inner).unwrap_or(inner.len());
-    &inner[..close]
-}
-
-/// Parses a pandoc-attrs payload into a `CodeBlockSpec`.
-fn parse_code_block_attrs(
-    lang: Option<String>,
-    payload: &str,
-    default_max_lines: Option<usize>,
-) -> CodeBlockSpec {
-    if payload.is_empty() {
-        return CodeBlockSpec {
-            lang,
-            max_lines: default_max_lines,
-            ..CodeBlockSpec::default()
-        };
+impl CodeBlockSpec {
+    pub(crate) fn is_mermaid(&self) -> bool {
+        self.lang
+            .as_deref()
+            .is_some_and(|lang| lang.eq_ignore_ascii_case("mermaid"))
     }
+}
 
-    let pandoc = parse_pandoc_attrs(payload);
+/// Parses a fence info string of the form `lang {#id .class key=value ...}`.
+///
+/// The language ends at the first whitespace or `{`. Only the first `{...}` block after it is read.
+#[must_use]
+pub(crate) fn parse_fence_info(info: &str) -> CodeBlockSpec {
+    let info = info.trim();
+    let (lang, rest) = info.split_at(
+        info.find(|c: char| c == '{' || c.is_whitespace())
+            .unwrap_or(info.len()),
+    );
+    let attrs = parse_pandoc_attrs(rest.find('{').map_or("", |open| &rest[open + 1..]));
 
     let mut title = None;
     let mut highlight = Vec::new();
-    for (key, value) in &pandoc.named {
+    for (key, value) in &attrs.named {
         match *key {
             "title" => title = Some(value.to_string()),
             "highlight" => highlight = parse_highlight_ranges(value),
@@ -68,30 +54,21 @@ fn parse_code_block_attrs(
         }
     }
 
-    let collapse = if pandoc.positional.iter().any(|word| word == "collapse") {
-        Some(true)
-    } else if pandoc.positional.iter().any(|word| word == "expand") {
-        Some(false)
+    let disclosure = if attrs.positional.iter().any(|word| word == "collapse") {
+        Disclosure::Collapse
+    } else if attrs.positional.iter().any(|word| word == "expand") {
+        Disclosure::Expand
     } else {
-        None
-    };
-
-    // Explicit collapse / expand wins over the site default, so the renderer reads `max_lines`
-    // directly without re-checking `collapse`.
-    let max_lines = if collapse.is_some() {
-        None
-    } else {
-        default_max_lines
+        Disclosure::Auto
     };
 
     CodeBlockSpec {
-        lang,
-        id: pandoc.id.map(str::to_string),
-        classes: pandoc.classes.into_iter().map(str::to_string).collect(),
+        lang: (!lang.is_empty()).then(|| lang.to_owned()),
+        id: attrs.id.map(str::to_owned),
+        classes: attrs.classes.into_iter().map(str::to_owned).collect(),
         title,
         highlight,
-        collapse,
-        max_lines,
+        disclosure,
     }
 }
 
@@ -119,72 +96,81 @@ fn parse_highlight_ranges(input: &str) -> Vec<RangeInclusive<usize>> {
 mod tests {
     use super::*;
 
+    // ── is_mermaid ──
+
+    #[test]
+    fn is_mermaid_matches_lang_case_insensitively() {
+        for (info, expected) in [
+            ("mermaid", true),
+            ("Mermaid {#flow}", true),
+            ("mermaid-js", false),
+            ("", false),
+        ] {
+            assert_eq!(parse_fence_info(info).is_mermaid(), expected, "{info}");
+        }
+    }
+
     // ── parse_fence_info ──
 
     #[test]
     fn parse_fence_info_lang_only() {
-        let spec = parse_fence_info("rust", Some(40));
+        let spec = parse_fence_info("rust");
         assert_eq!(spec.lang.as_deref(), Some("rust"));
+        assert!(spec.id.is_none());
+        assert_eq!(spec.classes, Vec::<String>::new());
         assert!(spec.title.is_none());
         assert_eq!(spec.highlight, Vec::<RangeInclusive<usize>>::new());
-        assert!(spec.collapse.is_none());
-        assert_eq!(spec.max_lines, Some(40));
-    }
-
-    #[test]
-    fn parse_fence_info_lang_with_title() {
-        let spec = parse_fence_info(r#"rust {title="src/main.rs"}"#, Some(40));
-        assert_eq!(spec.lang.as_deref(), Some("rust"));
-        assert_eq!(spec.title.as_deref(), Some("src/main.rs"));
+        assert_eq!(spec.disclosure, Disclosure::Auto);
     }
 
     #[test]
     fn parse_fence_info_all_attrs() {
         let spec = parse_fence_info(
-            r#"rust {#my-id .special title="main.rs" highlight="1,3-5" collapse}"#,
-            Some(40),
+            r#"rust {#my-id .special .wide title="main.rs" highlight="1,3-5" collapse}"#,
         );
         assert_eq!(spec.lang.as_deref(), Some("rust"));
         assert_eq!(spec.id.as_deref(), Some("my-id"));
-        assert_eq!(spec.classes, vec!["special"]);
+        assert_eq!(spec.classes, ["special", "wide"]);
         assert_eq!(spec.title.as_deref(), Some("main.rs"));
-        assert_eq!(spec.highlight, vec![1..=1, 3..=5]);
-        assert_eq!(spec.collapse, Some(true));
-        // Explicit collapse / expand always overrides the site default.
-        assert_eq!(spec.max_lines, None);
+        assert_eq!(spec.highlight, [1..=1, 3..=5]);
+        assert_eq!(spec.disclosure, Disclosure::Collapse);
     }
 
     #[test]
-    fn parse_fence_info_id_and_class_propagate() {
-        let spec = parse_fence_info("js {#snippet .wide .dark}", None);
-        assert_eq!(spec.id.as_deref(), Some("snippet"));
-        assert_eq!(spec.classes, vec!["wide", "dark"]);
+    fn parse_fence_info_disclosure_flags() {
+        for (info, expected) in [
+            ("rust {expand}", Disclosure::Expand),
+            ("rust {expand collapse}", Disclosure::Collapse),
+            (r#"rust {title="please collapse this"}"#, Disclosure::Auto),
+        ] {
+            assert_eq!(parse_fence_info(info).disclosure, expected, "{info}");
+        }
+    }
+
+    #[test]
+    fn parse_fence_info_attrs_without_separated_lang() {
+        for (info, lang) in [
+            (r#"{title="T"}"#, None),
+            (r#"rust{title="T"}"#, Some("rust")),
+            (r#"  {.rust title="T"} "#, None),
+        ] {
+            let spec = parse_fence_info(info);
+            assert_eq!(spec.lang.as_deref(), lang, "{info}");
+            assert_eq!(spec.title.as_deref(), Some("T"), "{info}");
+        }
     }
 
     #[test]
     fn parse_fence_info_quoted_brace_in_title() {
-        let spec = parse_fence_info(r#"rust {title="a}b.rs" highlight="2"} ignored"#, None);
+        let spec = parse_fence_info(r#"rust {title="a}b.rs" highlight="2"} ignored {.x}"#);
         assert_eq!(spec.title.as_deref(), Some("a}b.rs"));
         assert_eq!(spec.highlight, vec![2..=2]);
-    }
-
-    #[test]
-    fn parse_fence_info_escaped_quote_before_brace() {
-        let spec = parse_fence_info(r#"rust {title="a\"}b.rs" highlight="3"}"#, None);
-        assert_eq!(spec.title.as_deref(), Some("a\"}b.rs"));
-        assert_eq!(spec.highlight, vec![3..=3]);
-    }
-
-    #[test]
-    fn parse_fence_info_escaped_backslash_before_closing_quote() {
-        let spec = parse_fence_info(r#"rust {title="dir\\" highlight="4"} ignored"#, None);
-        assert_eq!(spec.title.as_deref(), Some(r"dir\"));
-        assert_eq!(spec.highlight, vec![4..=4]);
+        assert_eq!(spec.classes, Vec::<String>::new());
     }
 
     #[test]
     fn parse_fence_info_quotes_in_unquoted_tokens() {
-        let spec = parse_fence_info(r#"rust {#a"b .c"d .last title=e"f highlight=2}"#, None);
+        let spec = parse_fence_info(r#"rust {#a"b .c"d .last title=e"f highlight=2}"#);
         assert_eq!(spec.id.as_deref(), Some("a\"b"));
         assert_eq!(spec.classes, ["c\"d", "last"]);
         assert_eq!(spec.title.as_deref(), Some("e\"f"));
@@ -193,79 +179,37 @@ mod tests {
 
     #[test]
     fn parse_fence_info_unicode_whitespace_before_quoted_value() {
-        let spec = parse_fence_info("rust {title=\"a}b\"　highlight=2}", None);
+        let spec = parse_fence_info("rust {title=\"a}b\"\u{3000}highlight=2}");
         assert_eq!(spec.title.as_deref(), Some("a}b"));
         assert_eq!(spec.highlight, vec![2..=2]);
     }
 
     #[test]
-    fn parse_fence_info_collapse_clears_max_lines() {
-        let spec = parse_fence_info("rust {collapse}", Some(40));
-        assert_eq!(spec.collapse, Some(true));
-        assert_eq!(spec.max_lines, None);
-    }
-
-    #[test]
-    fn parse_fence_info_expand_clears_max_lines() {
-        let spec = parse_fence_info("rust {expand}", Some(40));
-        assert_eq!(spec.collapse, Some(false));
-        assert_eq!(spec.max_lines, None);
-    }
-
-    #[test]
-    fn parse_fence_info_collapse_keyword_inside_quoted_value_ignored() {
-        // Bare-word extraction must respect quoting so `collapse` inside the title does not leak.
-        let spec = parse_fence_info(r#"rust {title="please collapse this"}"#, Some(40));
-        assert_eq!(spec.title.as_deref(), Some("please collapse this"));
-        assert!(spec.collapse.is_none());
-        assert_eq!(spec.max_lines, Some(40));
-    }
-
-    #[test]
-    fn parse_fence_info_trailing_content_after_braces_ignored() {
-        let spec = parse_fence_info(r#"rust {title="T"} ignored"#, Some(40));
+    fn parse_fence_info_ignores_unbraced_words_and_unknown_attrs() {
+        let spec = parse_fence_info(r#"rust no_run {title="T" unknown="val" foo=bar}"#);
+        assert_eq!(spec.lang.as_deref(), Some("rust"));
         assert_eq!(spec.title.as_deref(), Some("T"));
-    }
+        assert_eq!(spec.highlight, Vec::<RangeInclusive<usize>>::new());
+        assert_eq!(spec.disclosure, Disclosure::Auto);
 
-    #[test]
-    fn parse_fence_info_no_braces_discards_trailing() {
-        let spec = parse_fence_info("rust no_run playground", Some(40));
+        let spec = parse_fence_info("rust no_run playground");
         assert_eq!(spec.lang.as_deref(), Some("rust"));
         assert!(spec.title.is_none());
     }
 
     #[test]
-    fn parse_fence_info_unknown_attrs_discarded() {
-        let spec = parse_fence_info(r#"rust {title="T" unknown="val" foo=bar}"#, None);
-        assert_eq!(spec.title.as_deref(), Some("T"));
-        assert_eq!(spec.highlight, Vec::<RangeInclusive<usize>>::new());
-        assert!(spec.collapse.is_none());
-    }
-
-    #[test]
-    fn parse_fence_info_empty() {
-        let spec = parse_fence_info("", Some(40));
-        assert!(spec.lang.is_none());
-        assert!(spec.title.is_none());
-        assert_eq!(spec.max_lines, Some(40));
-    }
-
-    #[test]
     fn parse_fence_info_unclosed_braces() {
-        let spec = parse_fence_info("rust {title=main.rs highlight=1", None);
+        let spec = parse_fence_info("rust {title=main.rs highlight=1");
         assert_eq!(spec.title.as_deref(), Some("main.rs"));
         assert_eq!(spec.highlight, vec![1..=1]);
-
-        let spec = parse_fence_info(r#"rust {title="a}b.rs" highlight="2""#, None);
-        assert_eq!(spec.title.as_deref(), Some("a}b.rs"));
-        assert_eq!(spec.highlight, vec![2..=2]);
     }
 
     #[test]
-    fn parse_fence_info_unclosed_quote() {
-        let spec = parse_fence_info(r#"rust {title="a}b.rs"#, None);
-        assert_eq!(spec.title.as_deref(), Some("a}b.rs"));
-        assert_eq!(spec.highlight, Vec::<RangeInclusive<usize>>::new());
+    fn parse_fence_info_empty_returns_default() {
+        let spec = parse_fence_info("  ");
+        assert!(spec.lang.is_none());
+        assert!(spec.title.is_none());
+        assert_eq!(spec.disclosure, Disclosure::Auto);
     }
 
     // ── parse_highlight_ranges ──

@@ -1,21 +1,17 @@
+use indoc::formatdoc;
+
 use crate::html::escape;
 
-/// Wraps a Mermaid diagram source in a `<pre class="mermaid">` block ready
-/// for client-side rendering by mermaid.js.
+/// Wraps a Mermaid diagram source in a `<pre class="mermaid">` block for mermaid.js.
 ///
-/// The DSL is emitted twice:
-///
-/// - As the element's inner text, where mermaid.js reads it on first render.
-/// - In `data-source`, so a theme-toggle handler can restore the source
-///   after mermaid replaces the inner content with `<svg>`.
-///
-/// Both copies are HTML-escaped for safety in inner-text and attribute-value contexts.
+/// The escaped source appears both as inner text, where mermaid.js reads it, and in `data-source`,
+/// so a theme toggle can restore it after mermaid replaces the content with `<svg>`.
 #[must_use]
 pub(super) fn render_mermaid(source: &str) -> String {
     let escaped = escape(source);
-    let mut html = format!(r#"<pre class="mermaid" data-source="{escaped}">{escaped}</pre>"#);
-    html.push('\n');
-    html
+    formatdoc! {r#"
+        <pre class="mermaid" data-source="{escaped}">{escaped}</pre>
+    "#}
 }
 
 #[cfg(test)]

@@ -116,7 +116,7 @@ fn main() {
 ```
 ````
 
-Token colors use CSS classes and require a syntect theme stylesheet. Blocks include line numbers. Language aliases use the canonical label (e.g., `rs` becomes `rust`), and unrecognized languages fall back to plain text.
+Token colors use CSS classes and require a syntect theme stylesheet. Blocks include line numbers. Language tags match a syntax by file extension or name, ignoring case (e.g., `rs` or `Rust`), and unrecognized tags fall back to plain text.
 
 Blocks use native disclosure and start open unless `collapse` is set. The site setting `params.code_max_lines` limits visible lines when supported by the theme. See [the code-block contract](themes.md#code-blocks) for styling hooks.
 
@@ -143,12 +143,10 @@ Recognized keys:
 
 Bare flags:
 
-| Flag       | Effect                                                                           |
-| ---------- | -------------------------------------------------------------------------------- |
-| `collapse` | Forces the block into the collapsed state regardless of the site default         |
-| `expand`   | Forces the block into the expanded state, suppressing any `code_max_lines` clamp |
-
-Either flag wins over the site-level `code_max_lines` default. The language tag is preserved on `data-lang` for syntax CSS even when a `title` is set.
+| Flag       | Effect                                                         |
+| ---------- | -------------------------------------------------------------- |
+| `collapse` | Starts the block collapsed, without the `code_max_lines` limit |
+| `expand`   | Removes the `code_max_lines` limit                             |
 
 ### Math (KaTeX)
 

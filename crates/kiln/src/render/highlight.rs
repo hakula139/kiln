@@ -1,56 +1,65 @@
+use std::fmt::Write;
+use std::num::NonZeroUsize;
 use std::sync::LazyLock;
 
-use syntect::html::{ClassStyle, ClassedHTMLGenerator, line_tokens_to_classed_spans};
+use itertools::Itertools;
+use syntect::html::{ClassStyle, line_tokens_to_classed_spans};
 use syntect::parsing::{ParseState, ScopeStack, ScopeStackOp, SyntaxReference, SyntaxSet};
 use syntect::util::LinesWithEndings;
 
 use tracing::{debug, warn};
 
-use super::code_block::CodeBlockSpec;
+use super::code_block::{CodeBlockSpec, Disclosure};
 use crate::html::{escape, indent, writeln_indented};
+use crate::text::capitalize;
 
 static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(two_face::syntax::extra_newlines);
 
 /// Highlights a code block with line numbers and a header (language pill or title, copy button).
 ///
-/// Empty and unrecognized fence tags normalize to `plaintext`. The display label is derived from
-/// the author's input by [`display_label`], not from syntect's internal name.
+/// `max_lines` applies unless the fence sets `collapse` or `expand`. Unrecognized languages render
+/// as plain text, and the display label comes from the author's token via [`display_label`].
 #[must_use]
-pub(super) fn highlight_code(code: &str, spec: &CodeBlockSpec) -> String {
-    highlight_with(&SYNTAX_SET, code, spec)
+pub(super) fn highlight_code(
+    code: &str,
+    spec: &CodeBlockSpec,
+    max_lines: Option<NonZeroUsize>,
+) -> String {
+    highlight_with(&SYNTAX_SET, code, spec, max_lines)
 }
 
-fn highlight_with(syntax_set: &SyntaxSet, code: &str, spec: &CodeBlockSpec) -> String {
-    let lang = spec.lang.as_deref().unwrap_or("");
-    let (syntax, effective_lang, display_label) = find_syntax(syntax_set, lang);
-
-    let highlighted = if spec.highlight.is_empty() {
-        highlight_all(syntax_set, syntax, code)
-    } else {
-        String::new()
-    };
-    let line_count = code.lines().count().max(1);
-
-    let mut html =
-        String::with_capacity(highlighted.len() + line_count * 8 + 2 * effective_lang.len() + 512);
-
-    let escaped_lang = escape(&effective_lang);
+fn highlight_with(
+    syntax_set: &SyntaxSet,
+    code: &str,
+    spec: &CodeBlockSpec,
+    max_lines: Option<NonZeroUsize>,
+) -> String {
+    let lang = spec.lang.as_deref().unwrap_or("").to_ascii_lowercase();
+    let syntax = syntax_set.find_syntax_by_token(&lang).unwrap_or_else(|| {
+        if !lang.is_empty() {
+            debug!(lang, "unrecognized language, falling back to plain text");
+        }
+        syntax_set.find_syntax_plain_text()
+    });
+    let mut html = String::new();
 
     // ── Wrapper open ──
 
-    let mut wrapper_classes = String::from("code-block");
-    for cls in &spec.classes {
-        wrapper_classes.push(' ');
-        wrapper_classes.push_str(&escape(cls));
-    }
-
+    let classes = std::iter::once("code-block")
+        .chain(spec.classes.iter().map(String::as_str))
+        .map(escape)
+        .join(" ");
     let id_attr = spec
         .id
-        .as_ref()
+        .as_deref()
         .map(|id| format!(r#" id="{}""#, escape(id)))
         .unwrap_or_default();
-
-    let open_attr = if spec.collapse == Some(true) {
+    let lang_attr = if lang.is_empty() {
+        String::new()
+    } else {
+        format!(r#" data-lang="{}""#, escape(&lang))
+    };
+    let open_attr = if spec.disclosure == Disclosure::Collapse {
         ""
     } else {
         " open"
@@ -58,13 +67,10 @@ fn highlight_with(syntax_set: &SyntaxSet, code: &str, spec: &CodeBlockSpec) -> S
     writeln_indented!(
         &mut html,
         0,
-        r#"<details class="{wrapper_classes}"{id_attr} data-lang="{escaped_lang}"{open_attr}>"#
+        r#"<details class="{classes}"{id_attr}{lang_attr}{open_attr}>"#
     );
 
     // ── Header ──
-    //
-    // Title (when present) replaces the language pill so the header shows one label. `data-lang`
-    // on the wrapper still drives syntax CSS.
 
     writeln_indented!(&mut html, 1, r#"<summary class="code-header">"#);
     if let Some(title) = &spec.title {
@@ -79,7 +85,7 @@ fn highlight_with(syntax_set: &SyntaxSet, code: &str, spec: &CodeBlockSpec) -> S
             &mut html,
             2,
             r#"<span class="code-lang">{}</span>"#,
-            escape(&display_label)
+            escape(&display_label(&lang))
         );
     }
     writeln_indented!(
@@ -91,45 +97,15 @@ fn highlight_with(syntax_set: &SyntaxSet, code: &str, spec: &CodeBlockSpec) -> S
 
     // ── Code body ──
 
-    let max_lines_attr = spec
-        .max_lines
-        .filter(|&n| n > 0)
+    let max_lines_attr = max_lines
+        .filter(|_| spec.disclosure == Disclosure::Auto)
         .map(|n| format!(r#" data-max-lines="{n}" style="--max-lines: {n}""#))
         .unwrap_or_default();
     writeln_indented!(&mut html, 1, r#"<div class="code-body"{max_lines_attr}>"#);
-
-    // ── Highlight table ──
-
     writeln_indented!(&mut html, 2, r#"<div class="highlight">"#);
     writeln_indented!(&mut html, 3, "<table>");
     writeln_indented!(&mut html, 4, "<tr>");
-
-    if spec.highlight.is_empty() {
-        let line_numbers: String = (1..=line_count)
-            .map(|i| i.to_string())
-            .collect::<Vec<_>>()
-            .join("\n");
-        writeln_indented!(
-            &mut html,
-            5,
-            r#"<td class="line-numbers"><pre>{line_numbers}</pre></td>"#
-        );
-        writeln_indented!(
-            &mut html,
-            5,
-            r#"<td class="code"><pre><code class="language-{escaped_lang}" data-lang="{escaped_lang}">{highlighted}</code></pre></td>"#
-        );
-    } else {
-        emit_highlighted_lines(
-            &mut html,
-            syntax_set,
-            syntax,
-            code,
-            &escaped_lang,
-            &spec.highlight,
-        );
-    }
-
+    write_rows(&mut html, syntax_set, syntax, code, spec);
     writeln_indented!(&mut html, 4, "</tr>");
     writeln_indented!(&mut html, 3, "</table>");
     writeln_indented!(&mut html, 2, "</div>");
@@ -138,63 +114,46 @@ fn highlight_with(syntax_set: &SyntaxSet, code: &str, spec: &CodeBlockSpec) -> S
     html
 }
 
-fn highlight_all(syntax_set: &SyntaxSet, syntax: &SyntaxReference, code: &str) -> String {
-    let mut generator =
-        ClassedHTMLGenerator::new_with_class_style(syntax, syntax_set, ClassStyle::Spaced);
-
-    for line in LinesWithEndings::from(code) {
-        if let Err(e) = generator.parse_html_for_line_which_includes_newline(line) {
-            warn!(lang = syntax.name, error = %e, "syntax highlighting failed, falling back to plain text");
-            return escape(code);
-        }
-    }
-
-    generator.finalize()
-}
-
-/// Emits line-numbers and code columns with per-line `<span>` wrappers for highlight support.
-fn emit_highlighted_lines(
+/// Writes the line-number and code cells, one `<span>` per line so highlighted lines can be marked.
+fn write_rows(
     html: &mut String,
     syntax_set: &SyntaxSet,
     syntax: &SyntaxReference,
     code: &str,
-    escaped_lang: &str,
-    ranges: &[std::ops::RangeInclusive<usize>],
+    spec: &CodeBlockSpec,
 ) {
-    use std::fmt::Write as _;
-
     let lines = highlight_lines(syntax_set, syntax, code);
-    let is_highlighted = |line_no: usize| ranges.iter().any(|r| r.contains(&line_no));
-
-    indent(html, 5);
-    _ = write!(html, r#"<td class="line-numbers"><pre>"#);
-    for i in 1..=lines.len() {
-        if i > 1 {
-            html.push('\n');
+    let hl = |line_no: usize| {
+        if spec.highlight.iter().any(|range| range.contains(&line_no)) {
+            " hl"
+        } else {
+            ""
         }
-        let hl = if is_highlighted(i) { " hl" } else { "" };
-        _ = write!(html, r#"<span class="line-number{hl}">{i}</span>"#);
-    }
-    _ = writeln!(html, "</pre></td>");
+    };
 
     indent(html, 5);
-    _ = write!(
+    _ = writeln!(
         html,
-        r#"<td class="code"><pre><code class="language-{escaped_lang}" data-lang="{escaped_lang}">"#
+        r#"<td class="line-numbers"><pre>{}</pre></td>"#,
+        (1..=lines.len()).format_with("\n", |i, f| f(&format_args!(
+            r#"<span class="line-number{}">{i}</span>"#,
+            hl(i)
+        )))
     );
-    let last_idx = lines.len().saturating_sub(1);
-    for (idx, line) in lines.iter().enumerate() {
-        let line_no = idx + 1;
-        let hl = if is_highlighted(line_no) { " hl" } else { "" };
-        _ = write!(html, r#"<span class="line{hl}">{line}</span>"#);
-        if idx < last_idx {
-            html.push('\n');
-        }
-    }
-    if code.ends_with('\n') {
-        html.push('\n');
-    }
-    _ = writeln!(html, "</code></pre></td>");
+
+    indent(html, 5);
+    _ = writeln!(
+        html,
+        r#"<td class="code"><pre><code>{}{}</code></pre></td>"#,
+        lines
+            .iter()
+            .zip(1..)
+            .format_with("\n", |(line, i), f| f(&format_args!(
+                r#"<span class="line{}">{line}</span>"#,
+                hl(i)
+            ))),
+        if code.ends_with('\n') { "\n" } else { "" }
+    );
 }
 
 fn highlight_lines(syntax_set: &SyntaxSet, syntax: &SyntaxReference, code: &str) -> Vec<String> {
@@ -242,55 +201,12 @@ fn highlight_line(
     Ok(html)
 }
 
-/// Resolves a markdown language token to a syntect `SyntaxReference`, a canonical HTML-safe label,
-/// and a human-readable display label.
+/// Derives a human-readable display label from the lowercased fence token.
 ///
-/// Lookup order: file extension → exact name → case-insensitive name → plain-text fallback.
-fn find_syntax<'a>(syntax_set: &'a SyntaxSet, lang: &str) -> (&'a SyntaxReference, String, String) {
-    let display = display_label(lang);
-
-    if !lang.is_empty() {
-        let syntax = syntax_set
-            .find_syntax_by_extension(lang)
-            .or_else(|| syntax_set.find_syntax_by_name(lang))
-            .or_else(|| {
-                syntax_set
-                    .syntaxes()
-                    .iter()
-                    .find(|s| s.name.eq_ignore_ascii_case(lang))
-            });
-
-        if let Some(s) = syntax {
-            return (s, canonical_lang(&s.name), display);
-        }
-        debug!(lang, "unrecognized language, falling back to plain text");
-    }
-
-    (
-        syntax_set.find_syntax_plain_text(),
-        "plaintext".into(),
-        display,
-    )
-}
-
-/// Returns a canonical HTML-safe label from a syntect syntax name.
-///
-/// Lowercases and replaces spaces with hyphens. "Plain Text" maps to the web-standard `plaintext`.
-fn canonical_lang(syntax_name: &str) -> String {
-    if syntax_name == "Plain Text" {
-        return "plaintext".into();
-    }
-    syntax_name.to_ascii_lowercase().replace(' ', "-")
-}
-
-/// Derives a human-readable display label from the author's fence token.
-///
-/// Author-driven so the label tracks the input. syntect's internal name is often verbose
-/// (`"Bourne Again Shell (bash)"`) and inconsistently cased. Per-block overrides go through the
-/// `title="..."` fence attribute instead.
+/// syntect's internal names are often verbose (`"Bourne Again Shell (bash)"`) and inconsistently
+/// cased. Per-block overrides go through the `title="..."` fence attribute instead.
 fn display_label(lang: &str) -> String {
-    let lower = lang.to_ascii_lowercase();
-    let mapped: &str = match lower.as_str() {
+    let mapped: &str = match lang {
         "" | "plain" | "plaintext" | "text" => "Plain Text",
 
         // Short alias → canonical name (sorted by output).
@@ -317,130 +233,99 @@ fn display_label(lang: &str) -> String {
 
         // ALL-CAPS acronyms, where output is just the input uppercased.
         "asm" | "css" | "csv" | "html" | "http" | "ini" | "json" | "php" | "scss" | "sql"
-        | "toml" | "tsv" | "wasm" | "xml" | "yaml" | "yml" => return lower.to_uppercase(),
+        | "toml" | "tsv" | "wasm" | "xml" | "yaml" | "yml" => return lang.to_uppercase(),
 
-        _ => return capitalize_first(&lower),
+        _ => return capitalize(lang),
     };
     mapped.to_string()
-}
-
-/// Uppercases the first ASCII character of a string.
-fn capitalize_first(s: &str) -> String {
-    let mut chars = s.chars();
-    match chars.next() {
-        Some(c) => {
-            let mut result = String::with_capacity(s.len());
-            result.push(c.to_ascii_uppercase());
-            result.push_str(chars.as_str());
-            result
-        }
-        None => String::new(),
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
 
-    use indoc::{formatdoc, indoc};
+    use indoc::indoc;
     use syntect::parsing::syntax_definition::{Context, MatchOperation, MatchPattern, Pattern};
     use syntect::parsing::{Scope, SyntaxDefinition, SyntaxSetBuilder};
 
     use super::*;
+    use crate::render::code_block::parse_fence_info;
 
-    fn highlight(lang: &str, code: &str) -> String {
-        highlight_code(
-            code,
-            &CodeBlockSpec {
-                lang: Some(lang.to_string()),
-                ..CodeBlockSpec::default()
-            },
-        )
+    fn highlight(info: &str, code: &str) -> String {
+        highlight_code(code, &parse_fence_info(info), None)
     }
 
-    fn highlight_with_spec(code: &str, spec: &CodeBlockSpec) -> String {
-        highlight_code(code, spec)
+    /// Returns the rendered code text and each row's text and `hl` flag.
+    fn rendered_rows(html: &str) -> (String, Vec<(String, bool)>) {
+        let fragment = scraper::Html::parse_fragment(html);
+        let code = scraper::Selector::parse(".code code").unwrap();
+        let line = scraper::Selector::parse(".code .line").unwrap();
+        let text = fragment.select(&code).next().unwrap().text().collect();
+        let rows = fragment
+            .select(&line)
+            .map(|row| {
+                (
+                    row.text().collect(),
+                    row.value().classes().any(|class| class == "hl"),
+                )
+            })
+            .collect();
+        (text, rows)
     }
 
-    // ── highlight_code (structure) ──
+    /// Returns whether each row contains an element matching `selector`.
+    fn rows_matching(html: &str, selector: &str) -> Vec<bool> {
+        let fragment = scraper::Html::parse_fragment(html);
+        let line = scraper::Selector::parse(".code .line").unwrap();
+        let selector = scraper::Selector::parse(selector).unwrap();
+        fragment
+            .select(&line)
+            .map(|row| row.select(&selector).next().is_some())
+            .collect()
+    }
+
+    fn rows(expected: &[(&str, bool)]) -> Vec<(String, bool)> {
+        expected
+            .iter()
+            .map(|&(text, hl)| (text.to_owned(), hl))
+            .collect()
+    }
+
+    // ── highlight_code ──
 
     #[test]
-    fn highlight_code_structure() {
-        let html = highlight("rs", "fn main() {}\n");
-        assert!(
-            html.starts_with(r#"<details class="code-block" data-lang="rust" open>"#),
-            "should start with code-block wrapper with data-lang, html:\n{html}"
-        );
-        assert!(
-            html.contains(r#"<summary class="code-header">"#),
-            "should have code-header, html:\n{html}"
-        );
-        assert!(
-            html.contains(r#"<span class="code-lang">Rust</span>"#),
-            "should have display label, html:\n{html}"
-        );
-        assert!(
-            html.contains(r#"<button class="copy-btn" aria-label="Copy code">Copy</button>"#),
-            "should have copy button, html:\n{html}"
-        );
-        assert!(
-            html.contains(r#"<div class="code-body">"#),
-            "should have code-body, html:\n{html}"
-        );
-        assert!(
-            html.contains(r#"<div class="highlight">"#),
-            "should have highlight table, html:\n{html}"
-        );
-        assert!(!html.contains("data-max-lines"));
-        assert!(!html.contains("code-title"));
-        assert!(!html.contains("collapsed"));
-        assert!(!html.contains("expanded"));
-        assert!(!html.contains("id="));
-        assert!(
-            html.ends_with("</details>\n"),
-            "should end with closing tag, html:\n{html}"
-        );
-    }
-
-    #[test]
-    fn highlight_code_line_numbers() {
-        let html = highlight(
-            "txt",
-            indoc! {"
-                line 1
-                line 2
-                line 3
-            "},
-        );
-        assert!(
-            html.contains(indoc! {r#"
-                <td class="line-numbers"><pre>1
-                2
-                3</pre></td>"#
-            }),
-            "should have 3 line numbers, html:\n{html}"
-        );
-    }
-
-    #[test]
-    fn highlight_code_propagates_id_and_classes() {
-        let spec = CodeBlockSpec {
-            lang: Some("rs".into()),
-            id: Some("my-code".into()),
-            classes: vec!["wide".into(), "dark".into()],
-            ..CodeBlockSpec::default()
-        };
-        let html = highlight_with_spec("fn main() {}\n", &spec);
-        assert!(
-            html.contains(r#"<details class="code-block wide dark" id="my-code""#),
-            "should propagate id and classes, html:\n{html}"
+    fn highlight_code_renders_details_table() {
+        assert_eq!(
+            highlight("text {#my-code .wide}", "a <b>\n\nc\n"),
+            indoc! {r#"
+                <details class="code-block wide" id="my-code" data-lang="text" open>
+                  <summary class="code-header">
+                    <span class="code-lang">Plain Text</span>
+                    <button class="copy-btn" aria-label="Copy code">Copy</button>
+                  </summary>
+                  <div class="code-body">
+                    <div class="highlight">
+                      <table>
+                        <tr>
+                          <td class="line-numbers"><pre><span class="line-number">1</span>
+                <span class="line-number">2</span>
+                <span class="line-number">3</span></pre></td>
+                          <td class="code"><pre><code><span class="line"><span class="text plain">a &lt;b&gt;</span></span>
+                <span class="line"><span class="text plain"></span></span>
+                <span class="line"><span class="text plain">c</span></span>
+                </code></pre></td>
+                        </tr>
+                      </table>
+                    </div>
+                  </div>
+                </details>
+            "#}
         );
     }
 
     #[test]
     fn highlight_code_escapes_custom_classes() {
-        let spec = crate::render::code_block::parse_fence_info(r#"rs {.a"b .x&copy;}"#, None);
-        let html = highlight_with_spec("fn main() {}\n", &spec);
+        let html = highlight(r#"rs {.a"b .x&copy;}"#, "fn main() {}\n");
         let fragment = scraper::Html::parse_fragment(&html);
         let selector = scraper::Selector::parse(".code-block").unwrap();
         let wrapper = fragment.select(&selector).next().unwrap();
@@ -449,59 +334,64 @@ mod tests {
             wrapper.value().attrs().collect::<Vec<_>>(),
             vec![
                 ("class", r#"code-block a"b x&copy;"#),
-                ("data-lang", "rust"),
+                ("data-lang", "rs"),
                 ("open", "")
             ]
         );
     }
 
-    // ── highlight_code (title) ──
-
     #[test]
     fn highlight_code_title_replaces_lang_pill() {
-        let spec = CodeBlockSpec {
-            lang: Some("rs".into()),
-            title: Some("src/main.rs".into()),
-            ..CodeBlockSpec::default()
-        };
-        let html = highlight_with_spec("fn main() {}\n", &spec);
+        let html = highlight(r#"html {title="<script>.js"}"#, "<div></div>\n");
         assert!(
-            html.contains(r#"<span class="code-title">src/main.rs</span>"#),
-            "should contain title span, html:\n{html}"
+            html.starts_with(indoc! {r#"
+                <details class="code-block" data-lang="html" open>
+                  <summary class="code-header">
+                    <span class="code-title">&lt;script&gt;.js</span>
+                    <button"#}),
+            "{html}"
         );
-        assert!(
-            !html.contains(r#"<span class="code-lang">"#),
-            "lang pill should be suppressed when title is set, html:\n{html}"
-        );
-        assert!(
-            html.contains(r#"data-lang="rust""#),
-            "wrapper should still carry data-lang for syntax CSS, html:\n{html}"
-        );
+        assert!(!html.contains("code-lang"), "{html}");
     }
 
     #[test]
-    fn highlight_code_title_html_escaped() {
-        let spec = CodeBlockSpec {
-            lang: Some("html".into()),
-            title: Some("<script>.js".into()),
-            ..CodeBlockSpec::default()
-        };
-        let html = highlight_with_spec("<div></div>\n", &spec);
-        assert!(
-            html.contains(r#"<span class="code-title">&lt;script&gt;.js</span>"#),
-            "title should be HTML-escaped, html:\n{html}"
-        );
+    fn highlight_code_lang_token_selects_syntax_and_label() {
+        for (info, data_lang, label, scope) in [
+            ("Rust", Some("rust"), "Rust", "source rust"),
+            ("ts", Some("ts"), "TypeScript", "source ts"),
+            ("bash", Some("bash"), "Shell", "source shell bash"),
+            ("c++", Some("c++"), "C++", "source c++"),
+            ("Unknown", Some("unknown"), "Unknown", "text plain"),
+            ("<script>", Some("<script>"), "<script>", "text plain"),
+            ("", None, "Plain Text", "text plain"),
+        ] {
+            let html = highlight(info, "x\n");
+            let fragment = scraper::Html::parse_fragment(&html);
+            let select = |selector| {
+                let selector = scraper::Selector::parse(selector).unwrap();
+                fragment.select(&selector).next().unwrap()
+            };
+
+            assert_eq!(
+                select(".code-block").value().attr("data-lang"),
+                data_lang,
+                "{info}"
+            );
+            assert_eq!(
+                select(".code-lang").text().collect::<String>(),
+                label,
+                "{info}"
+            );
+            assert_eq!(
+                select(".line > span").value().attr("class"),
+                Some(scope),
+                "{info}"
+            );
+        }
     }
 
-    // ── highlight_code (highlight ranges) ──
-
     #[test]
-    fn highlight_code_emits_highlight_class() {
-        let spec = CodeBlockSpec {
-            lang: Some("txt".into()),
-            highlight: std::iter::once(2..=2).collect(),
-            ..CodeBlockSpec::default()
-        };
+    fn highlight_code_marks_highlighted_rows() {
         let code = indoc! {"
             first line
             second line
@@ -509,64 +399,31 @@ mod tests {
         "};
         let crlf = code.replace('\n', "\r\n");
         for code in [code, code.trim_end(), &crlf] {
-            let html = highlight_with_spec(code, &spec);
-            let fragment = scraper::Html::parse_fragment(&html);
-            let selector = scraper::Selector::parse(".code .line").unwrap();
-            let code_selector = scraper::Selector::parse(".code code").unwrap();
-            let rendered_code = fragment.select(&code_selector).next().unwrap();
-            let lines: Vec<_> = fragment
-                .select(&selector)
-                .map(|line| {
-                    (
-                        line.text().collect::<String>(),
-                        line.value().classes().any(|class| class == "hl"),
-                    )
-                })
-                .collect();
+            let html = highlight(r#"txt {highlight="2-3"}"#, code);
 
             assert_eq!(
-                rendered_code.text().collect::<String>(),
-                code.replace("\r\n", "\n")
-            );
-            assert_eq!(
-                lines,
-                vec![
-                    ("first line".to_owned(), false),
-                    ("second line".to_owned(), true),
-                    ("third line".to_owned(), false),
-                ]
-            );
-            assert!(
-                html.contains(r#"<span class="line-number hl">2</span>"#),
-                "line-number 2 should have hl class, html:\n{html}"
+                rendered_rows(&html),
+                (
+                    code.replace("\r\n", "\n"),
+                    rows(&[
+                        ("first line", false),
+                        ("second line", true),
+                        ("third line", true)
+                    ])
+                )
             );
             assert!(
-                html.contains(r#"<span class="line-number">1</span>"#),
-                "line-number 1 should NOT have hl class, html:\n{html}"
+                html.contains(indoc! {r#"
+                    <pre><span class="line-number">1</span>
+                    <span class="line-number hl">2</span>
+                    <span class="line-number hl">3</span></pre>"#}),
+                "{html}"
             );
         }
     }
 
     #[test]
-    fn highlight_code_highlight_range() {
-        let spec = CodeBlockSpec {
-            lang: Some("txt".into()),
-            highlight: std::iter::once(1..=2).collect(),
-            ..CodeBlockSpec::default()
-        };
-        let html = highlight_with_spec("a\nb\nc\n", &spec);
-        assert!(html.contains(r#"<span class="line-number hl">1</span>"#));
-        assert!(html.contains(r#"<span class="line-number hl">2</span>"#));
-        assert!(html.contains(r#"<span class="line-number">3</span>"#));
-    }
-
-    #[test]
     fn highlight_code_preserves_multiline_syntax_scopes() {
-        let spec = CodeBlockSpec {
-            lang: Some("rust".into()),
-            highlight: std::iter::once(2..=3).collect(),
-            ..CodeBlockSpec::default()
-        };
         let code = indoc! {"
             /* first
             middle <&>
@@ -575,77 +432,73 @@ mod tests {
         "};
         let crlf = code.replace('\n', "\r\n");
         for code in [code, code.trim_end(), &crlf] {
-            let html = highlight_with_spec(code, &spec);
-            let fragment = scraper::Html::parse_fragment(&html);
-            let selector = scraper::Selector::parse(".code .line").unwrap();
-            let comment = scraper::Selector::parse(".comment.block").unwrap();
-            let lines: Vec<_> = fragment
-                .select(&selector)
-                .map(|line| {
-                    (
-                        line.text().collect::<String>(),
-                        line.value().classes().any(|class| class == "hl"),
-                        line.select(&comment).next().is_some(),
-                    )
-                })
-                .collect();
+            let html = highlight(r#"rust {highlight="2-3"}"#, code);
 
-            let code_selector = scraper::Selector::parse(".code code").unwrap();
-            let rendered_code = fragment.select(&code_selector).next().unwrap();
             assert_eq!(
-                rendered_code.text().collect::<String>(),
-                code.replace("\r\n", "\n")
+                rendered_rows(&html),
+                (
+                    code.replace("\r\n", "\n"),
+                    rows(&[
+                        ("/* first", false),
+                        ("middle <&>", true),
+                        ("last */", true),
+                        ("let value = 1;", false),
+                    ])
+                )
             );
             assert_eq!(
-                lines,
-                vec![
-                    ("/* first".to_owned(), false, true),
-                    ("middle <&>".to_owned(), true, true),
-                    ("last */".to_owned(), true, true),
-                    ("let value = 1;".to_owned(), false, false),
-                ]
+                rows_matching(&html, ".comment.block"),
+                [true, true, true, false]
             );
         }
     }
 
     #[test]
-    fn highlight_code_preserves_empty_highlighted_lines() {
-        let spec = CodeBlockSpec {
-            highlight: std::iter::once(1..=1).collect(),
-            ..CodeBlockSpec::default()
-        };
+    fn highlight_code_preserves_empty_rows() {
         for (code, expected) in [
-            ("", vec![("", true)]),
-            ("\n", vec![("", true)]),
-            ("first\n\n", vec![("first", true), ("", false)]),
-            ("first\r\n\r\n", vec![("first", true), ("", false)]),
+            ("", rows(&[("", true)])),
+            ("\n", rows(&[("", true)])),
+            ("first\n\n", rows(&[("first", true), ("", false)])),
+            ("first\r\n\r\n", rows(&[("first", true), ("", false)])),
         ] {
-            let html = highlight_with_spec(code, &spec);
-            let fragment = scraper::Html::parse_fragment(&html);
-            let selector = scraper::Selector::parse(".code .line").unwrap();
-            let lines: Vec<_> = fragment
-                .select(&selector)
-                .map(|line| {
-                    (
-                        line.text().collect::<String>(),
-                        line.value().classes().any(|class| class == "hl"),
-                    )
-                })
-                .collect();
-
-            let code_selector = scraper::Selector::parse(".code code").unwrap();
-            let rendered_code = fragment.select(&code_selector).next().unwrap();
+            let html = highlight(r#"{highlight="1"}"#, code);
             assert_eq!(
-                rendered_code.text().collect::<String>(),
-                code.replace("\r\n", "\n")
-            );
-            assert_eq!(
-                lines,
-                expected
-                    .into_iter()
-                    .map(|(text, highlighted)| (text.to_owned(), highlighted))
-                    .collect::<Vec<_>>(),
+                rendered_rows(&html),
+                (code.replace("\r\n", "\n"), expected),
                 "{code:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn highlight_code_disclosure_controls_open_state_and_line_limit() {
+        for (info, open, max_lines) in [
+            ("rust", true, Some("40")),
+            ("rust {collapse}", false, None),
+            ("rust {expand}", true, None),
+        ] {
+            let html = highlight_code(
+                "fn main() {}\n",
+                &parse_fence_info(info),
+                NonZeroUsize::new(40),
+            );
+            let fragment = scraper::Html::parse_fragment(&html);
+            let select = |selector| {
+                let selector = scraper::Selector::parse(selector).unwrap();
+                fragment.select(&selector).next().unwrap()
+            };
+
+            assert_eq!(
+                select(".code-block").value().attr("open").is_some(),
+                open,
+                "{info}"
+            );
+            let body = select(".code-body");
+            assert_eq!(body.value().attr("data-max-lines"), max_lines, "{info}");
+            assert_eq!(
+                body.value().attr("style"),
+                max_lines.map(|n| format!("--max-lines: {n}")).as_deref(),
+                "{info}"
             );
         }
     }
@@ -692,234 +545,20 @@ mod tests {
             after
         "};
         let crlf = code.replace('\n', "\r\n");
+        let spec = parse_fence_info(r#"example {highlight="2"}"#);
 
-        for highlighted in [false, true] {
-            let spec = CodeBlockSpec {
-                lang: Some("example".into()),
-                highlight: if highlighted {
-                    std::iter::once(2..=2).collect()
-                } else {
-                    Vec::new()
-                },
-                ..CodeBlockSpec::default()
-            };
-            for code in [code, code.trim_end(), &crlf] {
-                let html = highlight_with(&syntax_set, code, &spec);
-                let fragment = scraper::Html::parse_fragment(&html);
-                let selector = scraper::Selector::parse(".code code").unwrap();
-                let rendered_code = fragment.select(&selector).next().unwrap();
+        for code in [code, code.trim_end(), &crlf] {
+            let html = highlight_with(&syntax_set, code, &spec, None);
 
-                assert_eq!(
-                    rendered_code.text().collect::<String>(),
-                    code.replace("\r\n", "\n")
-                );
-                if highlighted {
-                    let selector = scraper::Selector::parse(".line").unwrap();
-                    let scope = scraper::Selector::parse(".source.example").unwrap();
-                    let rows: Vec<_> = rendered_code
-                        .select(&selector)
-                        .map(|row| {
-                            (
-                                row.text().collect::<String>(),
-                                row.value().classes().any(|class| class == "hl"),
-                                row.select(&scope).next().is_some(),
-                            )
-                        })
-                        .collect();
-                    assert_eq!(
-                        rows,
-                        vec![
-                            ("before".to_owned(), false, true),
-                            ("<missing&>".to_owned(), true, false),
-                            ("after".to_owned(), false, true),
-                        ]
-                    );
-                }
-            }
-        }
-    }
-
-    // ── highlight_code (collapse / expand) ──
-
-    #[test]
-    fn highlight_code_disclosure_states() {
-        for (info, expected_wrapper, expected_max_lines) in [
-            (
-                "rust",
-                r#"<details class="code-block" data-lang="rust" open>"#,
-                true,
-            ),
-            (
-                "rust {collapse}",
-                r#"<details class="code-block" data-lang="rust">"#,
-                false,
-            ),
-            (
-                "rust {expand}",
-                r#"<details class="code-block" data-lang="rust" open>"#,
-                false,
-            ),
-        ] {
-            let spec = super::super::code_block::parse_fence_info(info, Some(40));
-            let html = highlight_with_spec("fn main() {}\n", &spec);
             assert_eq!(
-                html.contains(r#"data-max-lines="40""#),
-                expected_max_lines,
-                "{info}"
+                rendered_rows(&html),
+                (
+                    code.replace("\r\n", "\n"),
+                    rows(&[("before", false), ("<missing&>", true), ("after", false)])
+                )
             );
-            assert_eq!(
-                html.lines().take(5).collect::<Vec<_>>().join("\n"),
-                formatdoc! {r#"
-                    {expected_wrapper}
-                      <summary class="code-header">
-                        <span class="code-lang">Rust</span>
-                        <button class="copy-btn" aria-label="Copy code">Copy</button>
-                      </summary>
-                "#}
-                .trim_end(),
-                "{info}"
-            );
-            assert!(html.ends_with("</details>\n"));
+            assert_eq!(rows_matching(&html, ".source.example"), [true, false, true]);
         }
-    }
-
-    // ── highlight_code (max lines) ──
-
-    #[test]
-    fn highlight_code_max_lines() {
-        for limit in [0, 10, 40] {
-            let spec = CodeBlockSpec {
-                max_lines: Some(limit),
-                ..CodeBlockSpec::default()
-            };
-            let html = highlight_code("code", &spec);
-            if limit == 0 {
-                assert!(!html.contains("data-max-lines"));
-                assert!(!html.contains("--max-lines"));
-            } else {
-                assert!(html.contains(&format!(
-                    r#"data-max-lines="{limit}" style="--max-lines: {limit}""#
-                )));
-            }
-        }
-    }
-
-    // ── highlight_code (language resolution) ──
-
-    #[test]
-    fn highlight_code_known_language() {
-        let html = highlight("Rust", "fn main() {}\n");
-        assert!(
-            html.contains(r#"data-lang="rust""#),
-            "should canonicalize to lowercase, html:\n{html}"
-        );
-    }
-
-    #[test]
-    fn highlight_code_text_alias() {
-        let html = highlight("text", "hello\n");
-        assert!(
-            html.contains(r#"data-lang="plaintext""#),
-            "should normalize 'text' to plaintext, html:\n{html}"
-        );
-        assert!(
-            html.contains(r#"<span class="code-lang">Plain Text</span>"#),
-            "display label should be Plain Text, html:\n{html}"
-        );
-    }
-
-    #[test]
-    fn highlight_code_two_face_languages() {
-        let html = highlight("ts", "const x = 1;\n");
-        assert!(
-            html.contains(r#"data-lang="typescript""#),
-            "should resolve ts to TypeScript, html:\n{html}"
-        );
-
-        let html = highlight("toml", "[table]\n");
-        assert!(
-            html.contains(r#"data-lang="toml""#),
-            "should resolve toml, html:\n{html}"
-        );
-    }
-
-    #[test]
-    fn highlight_code_special_chars_in_language() {
-        let html = highlight("c++", "int main() {}\n");
-        assert!(
-            html.contains(r#"data-lang="c++""#),
-            "should preserve special chars, html:\n{html}"
-        );
-        assert!(
-            html.contains(r#"<span class="code-lang">C++</span>"#),
-            "display label should preserve special punctuation, html:\n{html}"
-        );
-    }
-
-    #[test]
-    fn highlight_code_display_label_independent_of_syntect_name() {
-        // syntect names bash as "Bourne Again Shell (bash)", which display_label sidesteps.
-        let html = highlight("bash", "echo hi\n");
-        assert!(
-            html.contains(r#"<span class="code-lang">Shell</span>"#),
-            "display label should come from display_label, html:\n{html}"
-        );
-    }
-
-    #[test]
-    fn highlight_code_empty_language() {
-        let html = highlight("", "hello\n");
-        assert!(
-            html.contains(r#"data-lang="plaintext""#),
-            "should default to plaintext, html:\n{html}"
-        );
-        assert!(
-            html.contains(r#"<span class="code-lang">Plain Text</span>"#),
-            "display label should be Plain Text, html:\n{html}"
-        );
-    }
-
-    #[test]
-    fn highlight_code_empty_input() {
-        let html = highlight("rs", "");
-        assert!(
-            html.contains(r#"data-lang="rust""#),
-            "should still resolve language, html:\n{html}"
-        );
-        assert!(
-            html.contains("<pre>1</pre>"),
-            "should have single line number, html:\n{html}"
-        );
-    }
-
-    #[test]
-    fn highlight_code_unknown_language() {
-        let html = highlight("Unknown", "hello\n");
-        assert!(
-            html.contains(r#"data-lang="plaintext""#),
-            "should normalize unrecognized token to plaintext, html:\n{html}"
-        );
-        assert!(
-            html.contains(r#"<span class="code-lang">Unknown</span>"#),
-            "display label should title-case the lowercased token, html:\n{html}"
-        );
-    }
-
-    #[test]
-    fn highlight_code_html_chars_in_language() {
-        let html = highlight("<script>", "alert(1)\n");
-        assert!(
-            html.contains(r#"data-lang="plaintext""#),
-            "should normalize to plaintext, html:\n{html}"
-        );
-        assert!(
-            html.contains(r#"<span class="code-lang">&lt;script&gt;</span>"#),
-            "display label should be escaped, html:\n{html}"
-        );
-        assert!(
-            !html.contains("<script>"),
-            "raw script tag must not appear, html:\n{html}"
-        );
     }
 
     // ── display_label ──
@@ -983,25 +622,5 @@ mod tests {
         assert_eq!(display_label("go"), "Go");
         assert_eq!(display_label("dockerfile"), "Dockerfile");
         assert_eq!(display_label("unknown-lang"), "Unknown-lang");
-    }
-
-    #[test]
-    fn display_label_input_case_insensitive() {
-        assert_eq!(display_label("RUST"), "Rust");
-        assert_eq!(display_label("Rust"), "Rust");
-        assert_eq!(display_label("BASH"), "Shell");
-        assert_eq!(display_label("GraphQL"), "GraphQL");
-    }
-
-    // ── capitalize_first ──
-
-    #[test]
-    fn capitalize_first_basic() {
-        assert_eq!(capitalize_first("rust"), "Rust");
-    }
-
-    #[test]
-    fn capitalize_first_empty() {
-        assert_eq!(capitalize_first(""), "");
     }
 }

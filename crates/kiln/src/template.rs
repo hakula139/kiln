@@ -244,7 +244,7 @@ mod tests {
     use crate::content::frontmatter::FeaturedImage;
     use crate::directive::DirectiveArgs;
     use crate::pagination::PaginationVars;
-    use crate::render::assets::PageAssets;
+    use crate::render::assets::{LoadStrategy, PageAssets};
     use crate::template::vars::{
         ArchivePageVars, BucketSummary, ErrorPageVars, HomePageVars, LinkedTerm, OverviewPageVars,
         PageGroup, PageMetadata, PageSummary, PostTemplateVars,
@@ -350,7 +350,11 @@ mod tests {
         vars.assets
             .add_feature(crate::render::assets::Feature::Math);
         vars.assets
-            .register_script(crate::render::assets::ScriptTag::deferred("/script.js"))
+            .register_script(crate::render::assets::ScriptTag {
+                url: "/script.js".into(),
+                load: LoadStrategy::Defer,
+                module: false,
+            })
             .unwrap();
 
         assert_eq!(
