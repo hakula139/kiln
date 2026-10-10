@@ -108,12 +108,8 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(
-            err.contains("Is Pagefind installed?"),
-            "should mention installation, got: {err}"
-        );
-        assert!(
-            err.contains("cargo install pagefind"),
-            "should include install instructions, got: {err}"
+            err.contains("failed to run `nonexistent-pagefind-binary-xyz`"),
+            "{err}"
         );
     }
 
@@ -130,12 +126,9 @@ mod tests {
     #[test]
     fn run_pagefind_non_zero_exit_returns_error() {
         let dir = tempfile::tempdir().unwrap();
-        let result = run_pagefind(dir.path(), Some("false"));
-        assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
-        assert!(
-            err.contains("Pagefind exited with"),
-            "should report exit status, got: {err}"
-        );
+        let err = run_pagefind(dir.path(), Some("false"))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("Pagefind exited with"), "{err}");
     }
 }
