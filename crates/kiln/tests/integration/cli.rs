@@ -1,11 +1,12 @@
 use std::fs;
 use std::path::Path;
+use std::process::Command;
 
 use indoc::{formatdoc, indoc};
 
-use super::support::{TestSite, kiln, stylesheet_urls};
+use super::support::{TestSite, stylesheet_urls};
 
-// ── build ──
+// ── build: CLI ──
 
 #[test]
 fn build_base_url_argument_and_environment_precedence() {
@@ -286,7 +287,7 @@ fn enable_search(site: &TestSite, script: &str) {
     );
 }
 
-// ── convert ──
+// ── convert: CLI ──
 
 #[test]
 fn convert_relative_source_and_new_destination() {
@@ -435,4 +436,13 @@ fn init_theme_scaffold_builds_styled_post() {
     };
     assert!(shared.contains(".site"), "{shared}");
     assert!(page.contains(".page"), "{page}");
+}
+
+// ── CLI command ──
+
+/// Returns a `kiln` command isolated from the caller's base URL and log filter.
+fn kiln() -> Command {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_kiln"));
+    command.env_remove("KILN_BASE_URL").env_remove("RUST_LOG");
+    command
 }

@@ -24,8 +24,7 @@ pub fn copy_templates(dest: &Path) {
     }
 }
 
-/// RAII guard that restores filesystem permissions on drop. Prevents `TempDir::drop` failures
-/// from leftover restricted permissions when the test panics.
+/// Restores a path's original permissions on drop, so `TempDir` cleanup survives a failed test.
 #[cfg(unix)]
 pub struct PermissionGuard {
     path: PathBuf,

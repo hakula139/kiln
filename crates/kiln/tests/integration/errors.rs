@@ -37,7 +37,7 @@ fn build_missing_templates_returns_error() {
 #[test]
 fn build_failure_preserves_previous_output_returns_error() {
     type BreakSite = fn(&TestSite);
-    let cases: [(&str, Option<&str>, BreakSite); 10] = [
+    let cases: &[(&str, Option<&str>, BreakSite)] = &[
         ("failed to render", None, |site| {
             site.write("templates/post.html", "{% invalid %}");
         }),
@@ -84,7 +84,7 @@ fn build_failure_preserves_previous_output_returns_error() {
         ("base_url", Some("https://example.com/?q=1"), |_| {}),
         ("base_url", Some("https://example.com/#page"), |_| {}),
     ];
-    for (expected, base_url_override, break_site) in cases {
+    for (index, &(expected, base_url_override, break_site)) in cases.iter().enumerate() {
         let site = TestSite::new("");
         site.titled_page("posts/hello", "Hello");
         site.build().unwrap();
@@ -98,8 +98,15 @@ fn build_failure_preserves_previous_output_returns_error() {
             })
             .unwrap_err();
 
-        assert!(format!("{error:#}").contains(expected), "{error:#}");
-        assert_eq!(site.read("posts/hello/index.html"), previous, "{expected}");
+        assert!(
+            format!("{error:#}").contains(expected),
+            "case {index}: {error:#}"
+        );
+        assert_eq!(
+            site.read("posts/hello/index.html"),
+            previous,
+            "case {index}: {expected}, {base_url_override:?}"
+        );
     }
 }
 

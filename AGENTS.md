@@ -199,7 +199,7 @@ Follows global CLAUDE.md commit / branch / PR conventions, plus:
 ### Testing
 
 - Unit tests in the same file as the code they test (`#[cfg(test)]` module).
-- Integration tests for cross-module behavior are modules of the single `tests/build/` binary, so the library links once. Set up sites with its `support::TestSite`.
+- Integration tests for cross-module behavior are modules of the single `tests/integration/` binary, so the library links once. Set up sites with its `support::TestSite`.
 - Group tests by function under `// ── function_name ──` section headers, following production function order. When several sections cover one function, qualify each with a topic after a colon, as in `// ── build: listings ──`. Within each section, place portable tests before platform-specific tests, ordering each group as happy path → variants → edge / error cases.
 - Test name prefixes match the section's function name. Name after the scenario. Error-case suffixes: `_returns_error`, `_returns_none`, `_returns_false`.
 - Use `indoc!` for multi-line test inputs.

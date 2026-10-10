@@ -2,7 +2,6 @@ use std::fs;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use indoc::{formatdoc, indoc};
 use scraper::{Html, Selector};
@@ -78,7 +77,7 @@ impl TestSite {
         )
     }
 
-    /// Writes a solid black PNG, so images of different sizes have different bytes.
+    /// Writes a solid black PNG whose bytes, and so its fingerprint, depend only on its size.
     pub(super) fn write_png(&self, rel_path: &str, width: u32, height: u32) -> &Self {
         let path = self.path(rel_path);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -128,15 +127,6 @@ impl TestSite {
     }
 }
 
-// ── CLI ──
-
-/// Returns a `kiln` command isolated from the caller's base URL and log filter.
-pub(super) fn kiln() -> Command {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_kiln"));
-    command.env_remove("KILN_BASE_URL").env_remove("RUST_LOG");
-    command
-}
-
 // ── Listing fixtures ──
 
 /// Creates a site with posts in two sections and a tagged standalone page, where the oldest
@@ -174,60 +164,11 @@ pub(super) fn listing_site() -> TestSite {
     site
 }
 
-/// Writes posts 1 to 3 under `post_dir` on consecutive days, each tagged with `tag` if given.
-pub(super) fn write_paginated_posts(site: &TestSite, post_dir: &str, tag: Option<&str>) {
-    let tags = tag.map_or_else(String::new, |tag| format!(r#"tags = ["{tag}"]"#));
-    for i in 1..=3 {
-        site.page(
-            &format!("{post_dir}/post-{i}"),
-            &formatdoc! {r#"
-                +++
-                title = "Post {i}"
-                date = "2026-01-0{i}T00:00:00Z"
-                {tags}
-                +++
-                Body
-            "#},
-        );
-    }
-}
-
-pub(super) fn assert_paginated_listing(
-    output_dir: &Path,
-    page1_links: &[&str],
-    page2_links: &[&str],
-    navigation_urls: Option<(&str, &str)>,
-) {
-    let html1 = fs::read_to_string(output_dir.join("index.html")).unwrap();
-    let html2 = fs::read_to_string(output_dir.join("page/2/index.html")).unwrap();
-
-    assert_eq!(listing_links(&html1), page1_links);
-    assert_eq!(listing_links(&html2), page2_links);
-    assert!(html1.contains("Page 1 / 2"));
-    assert!(html2.contains("Page 2 / 2"));
-    assert!(!output_dir.join("page/3/index.html").exists());
-    if let Some((next_url, prev_url)) = navigation_urls {
-        assert!(html1.contains(&format!(r#"<a href="{next_url}">Next →</a>"#)));
-        assert!(html2.contains(&format!(r#"<a href="{prev_url}">← Prev</a>"#)));
-        assert!(!html1.contains("← Prev"));
-        assert!(!html2.contains("Next →"));
-    }
-}
-
 // ── Output inspection ──
 
 /// Returns the content fingerprint kiln embeds in published asset names.
 pub(super) fn fingerprint(bytes: impl AsRef<[u8]>) -> String {
     hex::encode(Sha256::digest(bytes))[..12].to_owned()
-}
-
-/// Returns every link directly inside a list item, serialized in document order.
-pub(super) fn listing_links(html: &str) -> Vec<String> {
-    let selector = Selector::parse("li > a").unwrap();
-    Html::parse_document(html)
-        .select(&selector)
-        .map(|link| link.html())
-        .collect()
 }
 
 /// Returns the URL of the only stylesheet linked from `html`.

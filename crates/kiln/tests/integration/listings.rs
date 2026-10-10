@@ -1,8 +1,9 @@
-use indoc::{formatdoc, indoc};
+use std::fs;
 
-use super::support::{
-    TestSite, assert_paginated_listing, listing_links, listing_site, write_paginated_posts,
-};
+use indoc::{formatdoc, indoc};
+use scraper::{Html, Selector};
+
+use super::support::{TestSite, listing_site};
 
 // ── build: listings ──
 
@@ -208,7 +209,8 @@ fn build_home_pagination() {
     site.build().unwrap();
 
     assert_paginated_listing(
-        &site.output(""),
+        &site,
+        "",
         &[
             r#"<a href="http://localhost:5456/posts/note/post-3/">Post 3</a>"#,
             r#"<a href="http://localhost:5456/posts/note/post-2/">Post 2</a>"#,
@@ -241,7 +243,8 @@ fn build_posts_index_and_section_pagination() {
     site.build().unwrap();
 
     assert_paginated_listing(
-        &site.output("posts"),
+        &site,
+        "posts",
         &[
             r#"<a href="https://example.com/posts/review/other/">Other Post</a>"#,
             r#"<a href="https://example.com/posts/note/post-3/">Post 3</a>"#,
@@ -253,7 +256,8 @@ fn build_posts_index_and_section_pagination() {
         Some(("/posts/page/2/", "/posts/")),
     );
     assert_paginated_listing(
-        &site.output("posts/note"),
+        &site,
+        "posts/note",
         &[
             r#"<a href="https://example.com/posts/note/post-3/">Post 3</a>"#,
             r#"<a href="https://example.com/posts/note/post-2/">Post 2</a>"#,
@@ -297,7 +301,8 @@ fn build_tag_archive_pagination() {
     site.build().unwrap();
 
     assert_paginated_listing(
-        &site.output("tags/rust"),
+        &site,
+        "tags/rust",
         &[
             r#"<a href="https://example.com/posts/post-3/">Post 3</a>"#,
             r#"<a href="https://example.com/posts/post-2/">Post 2</a>"#,
@@ -355,6 +360,59 @@ fn build_zero_paginate_falls_back_to_defaults() {
             Some(("/tags/example/page/2/", "/tags/example/")),
         ),
     ] {
-        assert_paginated_listing(&site.output(path), &page1, &page2, navigation);
+        assert_paginated_listing(&site, path, &page1, &page2, navigation);
     }
+}
+
+/// Writes posts 1 to 3 under `post_dir` on consecutive days, each tagged with `tag` if given.
+fn write_paginated_posts(site: &TestSite, post_dir: &str, tag: Option<&str>) {
+    let tags = tag.map_or_else(String::new, |tag| format!(r#"tags = ["{tag}"]"#));
+    for i in 1..=3 {
+        site.page(
+            &format!("{post_dir}/post-{i}"),
+            &formatdoc! {r#"
+                +++
+                title = "Post {i}"
+                date = "2026-01-0{i}T00:00:00Z"
+                {tags}
+                +++
+                Body
+            "#},
+        );
+    }
+}
+
+/// Asserts that the listing published under `dir` has exactly two pages with the given links,
+/// and, when given, next / previous links between them.
+fn assert_paginated_listing(
+    site: &TestSite,
+    dir: &str,
+    page1_links: &[&str],
+    page2_links: &[&str],
+    navigation_urls: Option<(&str, &str)>,
+) {
+    let output = site.output(dir);
+    let html1 = fs::read_to_string(output.join("index.html")).unwrap();
+    let html2 = fs::read_to_string(output.join("page/2/index.html")).unwrap();
+
+    assert_eq!(listing_links(&html1), page1_links, "{dir}");
+    assert_eq!(listing_links(&html2), page2_links, "{dir}");
+    assert!(html1.contains("Page 1 / 2"));
+    assert!(html2.contains("Page 2 / 2"));
+    assert!(!output.join("page/3/index.html").exists());
+    if let Some((next_url, prev_url)) = navigation_urls {
+        assert!(html1.contains(&format!(r#"<a href="{next_url}">Next →</a>"#)));
+        assert!(html2.contains(&format!(r#"<a href="{prev_url}">← Prev</a>"#)));
+        assert!(!html1.contains("← Prev"));
+        assert!(!html2.contains("Next →"));
+    }
+}
+
+/// Returns every link directly inside a list item, serialized in document order.
+fn listing_links(html: &str) -> Vec<String> {
+    let selector = Selector::parse("li > a").unwrap();
+    Html::parse_document(html)
+        .select(&selector)
+        .map(|link| link.html())
+        .collect()
 }

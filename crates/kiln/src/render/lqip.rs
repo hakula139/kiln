@@ -334,8 +334,8 @@ mod tests {
         assert_eq!((meta.width, meta.height), (8, 6));
         let placeholder = meta
             .lqip_uri
-            .as_ref()
-            .map(|_| decode_placeholder(&meta).dimensions());
+            .is_some()
+            .then(|| decode_placeholder(&meta).dimensions());
         assert_eq!(placeholder, cfg!(feature = "avif").then_some((4, 3)));
     }
 
