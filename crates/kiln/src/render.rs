@@ -17,12 +17,13 @@ mod toc;
 
 use std::ops::Range;
 use std::path::Path;
+use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use pulldown_cmark::Event;
 use serde::Deserialize;
 
-use self::lqip::ImageResolver;
+use self::lqip::{ImageMeta, ImageResolver};
 use crate::static_assets::StaticAssetManifest;
 
 type Spanned = (Event<'static>, Range<usize>);
@@ -37,10 +38,14 @@ pub struct PageResources<'a> {
 }
 
 impl PageResources<'_> {
-    pub(super) fn markdown_image_url(&self, src: &str) -> String {
-        self.assets
-            .resolve(src, self.page_url, self.deployment_prefix)
-            .unwrap_or_else(|| src.to_owned())
+    pub(crate) fn resolve_image(&self, src: &str) -> (String, Option<Arc<ImageMeta>>) {
+        match self
+            .assets
+            .resolve_local(src, self.page_url, self.deployment_prefix)
+        {
+            Some(asset) => (asset.url, self.images.resolve(asset.original_url, None)),
+            None => (src.to_owned(), None),
+        }
     }
 }
 

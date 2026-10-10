@@ -22,6 +22,11 @@ pub struct StaticAssetManifest {
     fingerprinted_paths: BTreeSet<PathBuf>,
 }
 
+pub(crate) struct ResolvedAsset<'a> {
+    pub(crate) original_url: &'a str,
+    pub(crate) url: String,
+}
+
 impl StaticAssetManifest {
     /// Publishes content-hashed copies of supported assets.
     ///
@@ -98,8 +103,10 @@ impl StaticAssetManifest {
         Ok(())
     }
 
-    pub(crate) fn asset_url(&self, url: &str) -> Result<String> {
-        self.resolve(url, "/", "")
+    pub(crate) fn asset_url(&self, url: &str) -> Result<&str> {
+        self.urls
+            .get(url)
+            .map(String::as_str)
             .with_context(|| format!("asset_url: static asset not found: {url}"))
     }
 
@@ -107,6 +114,19 @@ impl StaticAssetManifest {
     pub(crate) fn resolve(&self, url: &str, page_url: &str, prefix: &str) -> Option<String> {
         if is_external(url) || url.starts_with('#') {
             return Some(url.to_owned());
+        }
+        self.resolve_local(url, page_url, prefix)
+            .map(|asset| asset.url)
+    }
+
+    pub(crate) fn resolve_local(
+        &self,
+        url: &str,
+        page_url: &str,
+        prefix: &str,
+    ) -> Option<ResolvedAsset<'_>> {
+        if is_external(url) || url.starts_with('#') {
+            return None;
         }
         let end = url.find(['?', '#']).unwrap_or(url.len());
         let (path, suffix) = url.split_at(end);
@@ -120,9 +140,11 @@ impl StaticAssetManifest {
             .filter(|path| path.starts_with('/'))?;
         let decoded = percent_decode_str(path).decode_utf8().ok()?;
         let key = format!("/{}", path_url(Path::new(decoded.trim_start_matches('/'))));
-        self.urls
-            .get(&key)
-            .map(|published| format!("{}{suffix}", join_site_url(prefix, published)))
+        let (original_url, published) = self.urls.get_key_value(&key)?;
+        Some(ResolvedAsset {
+            original_url,
+            url: format!("{}{suffix}", join_site_url(prefix, published)),
+        })
     }
 
     /// Returns relative paths of original fingerprinted assets and their generated copies.
@@ -253,6 +275,27 @@ mod tests {
     }
 
     #[test]
+    fn build_fingerprints_images_and_fonts() {
+        let dir = tempfile::tempdir().unwrap();
+        for name in ["photo.avif", "font.woff2"] {
+            fs::write(dir.path().join(name), "abc").unwrap();
+        }
+
+        let manifest = StaticAssetManifest::build(dir.path()).unwrap();
+
+        for (source, published) in [
+            ("/photo.avif", "/_assets/photo.ba7816bf8f01.avif"),
+            ("/font.woff2", "/_assets/font.ba7816bf8f01.woff2"),
+        ] {
+            assert_eq!(manifest.asset_url(source).unwrap(), published);
+            assert_eq!(
+                fs::read(dir.path().join(published.trim_start_matches('/'))).unwrap(),
+                b"abc"
+            );
+        }
+    }
+
+    #[test]
     fn build_keeps_control_file_urls_unchanged() {
         let dir = tempfile::tempdir().unwrap();
         fs::write(dir.path().join("_headers"), "image").unwrap();
@@ -296,14 +339,16 @@ mod tests {
         let first = StaticAssetManifest::build(dir.path())
             .unwrap()
             .asset_url("/app.js")
-            .unwrap();
+            .unwrap()
+            .to_owned();
 
         fs::remove_file(dir.path().join(first.trim_start_matches('/'))).unwrap();
         fs::write(dir.path().join("app.js"), "second").unwrap();
         let second = StaticAssetManifest::build(dir.path())
             .unwrap()
             .asset_url("/app.js")
-            .unwrap();
+            .unwrap()
+            .to_owned();
 
         assert_ne!(first, second);
     }
@@ -351,10 +396,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         fs::create_dir_all(dir.path().join("posts/a")).unwrap();
         fs::write(dir.path().join("posts/a/photo %.avif"), "abc").unwrap();
-        fs::write(dir.path().join("font.woff2"), "abc").unwrap();
         fs::create_dir_all(dir.path().join("blog/posts/a")).unwrap();
         fs::write(dir.path().join("blog/posts/a/photo %.avif"), "different").unwrap();
+
         let manifest = StaticAssetManifest::build(dir.path()).unwrap();
+
         let expected = "/blog/_assets/posts/a/photo%20%25.ba7816bf8f01.avif?x=1#view";
         for src in [
             "photo%20%25.avif?x=1#view",
@@ -366,21 +412,15 @@ mod tests {
                 Some(expected.into())
             );
         }
-        assert_eq!(
-            manifest.asset_url("/font.woff2?v=2").unwrap(),
-            "/_assets/font.ba7816bf8f01.woff2?v=2"
-        );
-        assert_eq!(
-            fs::read(dir.path().join("_assets/posts/a/photo %.ba7816bf8f01.avif")).unwrap(),
-            b"abc"
-        );
+
         for src in [
             "https://cdn.example.com/a.avif",
             "//cdn.example.com/a.avif",
             "data:image/png;base64,abc",
         ] {
-            assert_eq!(manifest.asset_url(src).unwrap(), src);
+            assert_eq!(manifest.resolve(src, "/", "").as_deref(), Some(src));
         }
+
         assert_eq!(manifest.resolve("missing.png", "/posts/a/", ""), None);
         assert_eq!(
             manifest.resolve("/posts/a/photo%20%25.avif", "/blog/posts/a/", "/blog"),

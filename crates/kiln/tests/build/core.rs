@@ -6,6 +6,7 @@ use scraper::{Html, Selector};
 use sha2::{Digest, Sha256};
 
 use kiln::build::{BuildOptions, build};
+use kiln::render::lqip::{ImageConfig, ImageResolver};
 
 use super::support::{copy_templates, listing_links, write_page, write_test_file};
 
@@ -368,6 +369,125 @@ fn build_fingerprints_bundle_assets_after_static_collisions() {
 }
 
 #[test]
+fn build_image_urls_and_metadata_share_published_paths() {
+    let root = tempfile::tempdir().unwrap();
+    write_image_identity_site(root.path());
+
+    for (featured, alias) in [
+        ("/shared.png?q=1#view", "/shared.png"),
+        ("../a/photo.png?q=1#view", "/a/photo.png"),
+    ] {
+        write_page(
+            root.path(),
+            "a",
+            &formatdoc! {r#"
+                +++
+                title = "Example"
+                slug = "b"
+                featured_image = {featured:?}
+                +++
+                ![Root](/blog/shared.png?q=1#view)
+
+                Inline ![Relative](../a/photo.png?q=1#view) image.
+
+                ![Relative block](../a/photo.png?q=1#view)
+
+                Inline ![Outside](/shared.png) image.
+
+                ![Outside prefix](/blogger/shared.png)
+            "#},
+        );
+
+        build(root.path(), BuildOptions::default()).unwrap();
+
+        let public = root.path().join("public");
+        let resolver = ImageResolver::new(&public, ImageConfig::default());
+        let expected: Vec<_> = [alias, "/shared.png", "/a/photo.png", "/a/photo.png"]
+            .iter()
+            .enumerate()
+            .map(|(index, alias)| {
+                let path = Path::new(alias.trim_start_matches('/'));
+                let bytes = fs::read(public.join(path)).unwrap();
+                let hash = hex::encode(Sha256::digest(&bytes));
+                let origin = if index == 0 {
+                    "https://example.com"
+                } else {
+                    ""
+                };
+                let meta = resolver.resolve(alias, None).unwrap();
+                (
+                    format!(
+                        "{origin}/blog/_assets/{}.{}.png?q=1#view",
+                        alias.trim_start_matches('/').strip_suffix(".png").unwrap(),
+                        &hash[..12]
+                    ),
+                    Some(meta.width.to_string()),
+                    Some(meta.height.to_string()),
+                    Some(format!(
+                        "--lqip-uri:url('{}')",
+                        meta.lqip_uri.as_ref().unwrap()
+                    )),
+                )
+            })
+            .chain([
+                ("/shared.png".into(), None, None, None),
+                ("/blogger/shared.png".into(), None, None, None),
+            ])
+            .collect();
+        let html = fs::read_to_string(public.join("b/index.html")).unwrap();
+        let document = Html::parse_document(&html);
+        let actual: Vec<_> = document
+            .select(&Selector::parse("img").unwrap())
+            .map(|image| {
+                let element = image.value();
+                let style = image
+                    .parent()
+                    .and_then(scraper::ElementRef::wrap)
+                    .and_then(|parent| parent.value().attr("style"));
+                (
+                    element.attr("src").unwrap().to_owned(),
+                    element.attr("width").map(str::to_owned),
+                    element.attr("height").map(str::to_owned),
+                    style.map(str::to_owned),
+                )
+            })
+            .collect();
+        assert_eq!(actual, expected);
+    }
+}
+
+fn write_image_identity_site(root: &Path) {
+    copy_templates(&root.join("templates"));
+    write_test_file(
+        root,
+        "config.toml",
+        r#"base_url = "https://example.com/blog""#,
+    );
+    write_test_file(
+        root,
+        "templates/page.html",
+        indoc! {r#"
+            <span style="--lqip-uri:url('{{ featured_image.lqip_uri | safe }}')">
+              <img src="{{ featured_image.src | safe }}" width="{{ featured_image.width }}" height="{{ featured_image.height }}">
+            </span>
+            {{ content | safe }}
+        "#},
+    );
+    for (path, width, height, color) in [
+        ("static/shared.png", 10, 20, [255, 0, 0, 255]),
+        ("static/blog/shared.png", 30, 40, [0, 255, 0, 255]),
+        ("content/a/photo.png", 8, 4, [0, 0, 255, 255]),
+        ("static/a/photo.png", 12, 6, [255, 255, 0, 255]),
+    ] {
+        let path = root.join(path);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        image::RgbaImage::from_pixel(width, height, image::Rgba(color))
+            .save(path)
+            .unwrap();
+    }
+}
+
+#[test]
 fn build_updates_managed_image_urls_and_retires_previous_fingerprints() {
     let root = tempfile::tempdir().unwrap();
     let public = root.path().join("public");
@@ -377,8 +497,9 @@ fn build_updates_managed_image_urls_and_retires_previous_fingerprints() {
         ("changed image", "/example/photo%20%25.avif?quality=1#view"),
         ("changed image", "photo%20%25.avif?quality=1#view"),
     ] {
-        write_image_site(root.path(), featured);
+        write_image_lifecycle_site(root.path(), featured);
         write_test_file(root.path(), "content/example/photo %.avif", bytes);
+
         build(
             root.path(),
             BuildOptions {
@@ -387,6 +508,7 @@ fn build_updates_managed_image_urls_and_retires_previous_fingerprints() {
             },
         )
         .unwrap();
+
         let hash = hex::encode(Sha256::digest(bytes.as_bytes()));
         let path = format!("_assets/example/photo %.{}.avif", &hash[..12]);
         let url = format!(
@@ -429,8 +551,10 @@ fn build_updates_managed_image_urls_and_retires_previous_fingerprints() {
             String::from_utf8_lossy(&css)
                 .contains(&format!("../..{}", url.strip_prefix("/blog").unwrap()))
         );
+
         let css_hash = hex::encode(Sha256::digest(&css));
         assert!(stylesheet.ends_with(&format!(".{}.css", &css_hash[..12])));
+
         if let Some((old_path, old_stylesheet)) = &previous {
             if old_path == &path {
                 assert_eq!(old_stylesheet, stylesheet);
@@ -443,7 +567,7 @@ fn build_updates_managed_image_urls_and_retires_previous_fingerprints() {
     }
 }
 
-fn write_image_site(root: &Path, featured: &str) {
+fn write_image_lifecycle_site(root: &Path, featured: &str) {
     copy_templates(&root.join("templates"));
     write_test_file(
         root,

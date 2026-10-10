@@ -194,7 +194,7 @@ fn build_reserved_asset_directory_preserves_previous_output() {
 }
 
 #[test]
-fn build_failed_render_preserves_previous_output() {
+fn build_failed_page_preparation_or_render_preserves_previous_output() {
     let root = tempfile::tempdir().unwrap();
     copy_templates(&root.path().join("templates"));
     write_page(
@@ -207,7 +207,9 @@ fn build_failed_render_preserves_previous_output() {
             Original body
         "#},
     );
+
     build(root.path(), BuildOptions::default()).unwrap();
+
     let output = root.path().join("public/posts/example/index.html");
     let previous = fs::read_to_string(&output).unwrap();
     fs::write(root.path().join("templates/post.html"), "{% invalid %}").unwrap();
@@ -227,7 +229,9 @@ fn build_failed_render_preserves_previous_output() {
             Updated body
         "#},
     );
+
     let error = build(root.path(), BuildOptions::default()).unwrap_err();
+
     assert!(format!("{error:#}").contains("invalid featured image URL"));
     assert_eq!(fs::read_to_string(output).unwrap(), previous);
 }

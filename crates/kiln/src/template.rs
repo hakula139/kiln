@@ -956,20 +956,25 @@ mod tests {
     #[test]
     fn tpl_asset_url_renders_prefixed_and_encoded_manifest_urls() {
         let static_dir = tempfile::tempdir().unwrap();
-        for path in ["shared.css", "shared.js", "page script.js"] {
-            test_fs::write(static_dir.path().join(path), "abc").unwrap();
-        }
         test_fs::create_dir(static_dir.path().join("blog")).unwrap();
-        test_fs::write(static_dir.path().join("blog/shared.css"), "different").unwrap();
+        for (path, content) in [
+            ("shared.css", "abc"),
+            ("blog/shared.css", "different"),
+            ("shared.js", "abc"),
+            ("page script.js", "abc"),
+        ] {
+            test_fs::write(static_dir.path().join(path), content).unwrap();
+        }
+
         let manifest = StaticAssetManifest::build(static_dir.path()).unwrap();
         let templates = tempfile::tempdir().unwrap();
         test_fs::write(
             templates.path().join("assets.html"),
             indoc! {r#"
                 <link rel="stylesheet" href="{{ asset_url('/shared.css') | safe }}">
+                <link rel="stylesheet" href="{{ asset_url('/blog/shared.css') | safe }}">
                 <script src="{{ asset_url('/shared.js') | safe }}"></script>
                 <script src="{{ asset_url('/page%20script.js') | safe }}"></script>
-                <link rel="stylesheet" href="{{ asset_url('/blog/shared.css') | safe }}">
             "#},
         )
         .unwrap();
@@ -991,9 +996,9 @@ mod tests {
                 .unwrap(),
             indoc! {r#"
                 <link rel="stylesheet" href="/blog/shared.ba7816bf8f01.css">
+                <link rel="stylesheet" href="/blog/blog/shared.9d6f965ac832.css">
                 <script src="/blog/shared.ba7816bf8f01.js"></script>
                 <script src="/blog/page%20script.ba7816bf8f01.js"></script>
-                <link rel="stylesheet" href="/blog/blog/shared.9d6f965ac832.css">
             "#}
             .trim_end(),
         );

@@ -286,10 +286,7 @@ pub(super) fn resolve_featured_image(
         return Ok(None);
     };
     let source = site_asset_url(&fi.src, resources.deployment_prefix);
-    let published = resources
-        .assets
-        .resolve(&source, resources.page_url, resources.deployment_prefix)
-        .unwrap_or(source);
+    let (published, meta) = resources.resolve_image(&source);
     let resolved_src = url::Url::parse(resources.page_url)?
         .join(&published)
         .with_context(|| format!("invalid featured image URL: {}", fi.src))?
@@ -298,7 +295,7 @@ pub(super) fn resolve_featured_image(
         src: resolved_src,
         ..fi.clone()
     };
-    if let Some(meta) = resources.images.resolve(&fi.src, resources.source_dir) {
+    if let Some(meta) = meta {
         out.width = Some(meta.width);
         out.height = Some(meta.height);
         out.lqip_uri.clone_from(&meta.lqip_uri);
@@ -552,7 +549,7 @@ mod tests {
             &PageResources {
                 source_dir: Some(&bundle),
                 images: &img_resolver,
-                assets: &StaticAssetManifest::default(),
+                assets: &StaticAssetManifest::build(dir.path()).unwrap(),
                 page_url: "https://example.com/posts/foo/",
                 deployment_prefix: "",
             },

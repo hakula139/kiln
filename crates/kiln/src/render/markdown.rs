@@ -1,5 +1,4 @@
 use std::collections::{BTreeSet, HashMap};
-use std::path::Path;
 
 use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Parser, Tag, TagEnd};
 use syntect::parsing::SyntaxSet;
@@ -11,7 +10,7 @@ use super::heading::render_number;
 use super::highlight::highlight_code;
 use super::image::{render_block_image, render_inline_image};
 use super::image_attrs::ImageAttrs;
-use super::lqip::ImageResolver;
+use super::lqip::ImageMeta;
 use super::mermaid::render_mermaid;
 use super::table::TableNowrap;
 use super::toc::TocEntry;
@@ -244,21 +243,9 @@ impl MarkdownRenderer<'_> {
         inner: &[Spanned],
     ) -> Event<'static> {
         let alt = extract_alt_text(inner);
-        let attrs = enrich_image_attrs(
-            self.image_attrs.get(&offset),
-            src,
-            self.resources.images,
-            self.resources.source_dir,
-        );
-        Event::Html(
-            render_inline_image(
-                &self.resources.markdown_image_url(src),
-                &alt,
-                title,
-                attrs.as_ref(),
-            )
-            .into(),
-        )
+        let (url, meta) = self.resources.resolve_image(src);
+        let attrs = enrich_image_attrs(self.image_attrs.get(&offset), meta.as_deref());
+        Event::Html(render_inline_image(&url, &alt, title, attrs.as_ref()).into())
     }
 }
 
@@ -296,35 +283,20 @@ fn try_render_block_image(
     }
 
     let alt = extract_alt_text(inner);
-    let enriched = enrich_image_attrs(
-        image_attrs.get(&byte_offset),
-        &src,
-        resources.images,
-        resources.source_dir,
-    );
-    Some(render_block_image(
-        &resources.markdown_image_url(&src),
-        &alt,
-        &title,
-        enriched.as_ref(),
-    ))
+    let (url, meta) = resources.resolve_image(&src);
+    let enriched = enrich_image_attrs(image_attrs.get(&byte_offset), meta.as_deref());
+    Some(render_block_image(&url, &alt, &title, enriched.as_ref()))
 }
 
 /// Merges authored `{...}` attrs with resolver-supplied on-disk metadata.
 /// Returns `None` only when neither side has anything to contribute.
-fn enrich_image_attrs(
-    base: Option<&ImageAttrs>,
-    src: &str,
-    image_resolver: &ImageResolver,
-    base_dir: Option<&Path>,
-) -> Option<ImageAttrs> {
-    let meta = image_resolver.resolve(src, base_dir);
+fn enrich_image_attrs(base: Option<&ImageAttrs>, meta: Option<&ImageMeta>) -> Option<ImageAttrs> {
     if base.is_none() && meta.is_none() {
         return None;
     }
     let mut attrs = base.cloned().unwrap_or_default();
     if let Some(meta) = meta {
-        attrs.fill_from_meta(&meta);
+        attrs.fill_from_meta(meta);
     }
     Some(attrs)
 }
@@ -416,12 +388,15 @@ fn transform_math<'a>(event: Event<'a>, features: &mut BTreeSet<Feature>) -> Eve
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
     use std::sync::LazyLock;
 
     use indoc::indoc;
     use syntect::parsing::SyntaxSet;
 
     use super::*;
+    use crate::render::lqip::ImageResolver;
+    use crate::static_assets::StaticAssetManifest;
 
     static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(two_face::syntax::extra_newlines);
 
@@ -452,7 +427,7 @@ mod tests {
     fn render_with_resolver(
         content: &str,
         resolver: &ImageResolver,
-        base_dir: &Path,
+        output_dir: &Path,
     ) -> MarkdownOutput {
         let (cleaned, attrs) = crate::render::image_attrs::extract_image_attrs(content);
         let mut features = BTreeSet::new();
@@ -462,9 +437,9 @@ mod tests {
             &SYNTAX_SET,
             &attrs,
             &PageResources {
-                source_dir: Some(base_dir),
+                source_dir: None,
                 images: resolver,
-                assets: &crate::static_assets::StaticAssetManifest::default(),
+                assets: &StaticAssetManifest::build(output_dir).unwrap(),
                 page_url: "/",
                 deployment_prefix: "",
             },
@@ -1084,11 +1059,10 @@ mod tests {
     #[test]
     fn render_markdown_resolver_stamps_dimensions_and_lqip_on_block_image() {
         let dir = tempfile::tempdir().unwrap();
-        let bundle = dir.path().join("bundle");
-        write_tiny_png(&bundle.join("img.png"));
+        write_tiny_png(&dir.path().join("img.png"));
 
         let resolver = ImageResolver::new(dir.path(), crate::render::lqip::ImageConfig::default());
-        let out = render_with_resolver("![alt](img.png)\n", &resolver, &bundle);
+        let out = render_with_resolver("![alt](img.png)\n", &resolver, dir.path());
 
         assert!(out.html.contains(r#"width="8""#), "html:\n{}", out.html);
         assert!(out.html.contains(r#"height="4""#), "html:\n{}", out.html);
@@ -1116,12 +1090,14 @@ mod tests {
     #[test]
     fn render_markdown_resolver_merges_with_authored_attrs_on_inline_image() {
         let dir = tempfile::tempdir().unwrap();
-        let bundle = dir.path().join("bundle");
-        write_tiny_png(&bundle.join("img.png"));
+        write_tiny_png(&dir.path().join("img.png"));
 
         let resolver = ImageResolver::new(dir.path(), crate::render::lqip::ImageConfig::default());
-        let out =
-            render_with_resolver("![a](img.png){width=4} ![b](img.png)\n", &resolver, &bundle);
+        let out = render_with_resolver(
+            "![a](img.png){width=4} ![b](img.png)\n",
+            &resolver,
+            dir.path(),
+        );
 
         let fragment = scraper::Html::parse_fragment(&out.html);
         let images = scraper::Selector::parse("img").unwrap();
@@ -1129,7 +1105,6 @@ mod tests {
             .select(&images)
             .map(|image| {
                 (
-                    image.value().attr("src"),
                     image.value().attr("alt"),
                     image.value().attr("width"),
                     image.value().attr("height"),
@@ -1140,8 +1115,8 @@ mod tests {
         assert_eq!(
             attrs,
             vec![
-                (Some("img.png"), Some("a"), Some("4"), Some("2")),
-                (Some("img.png"), Some("b"), Some("8"), Some("4")),
+                (Some("a"), Some("4"), Some("2")),
+                (Some("b"), Some("8"), Some("4")),
             ]
         );
         assert!(

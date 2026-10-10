@@ -136,7 +136,7 @@ impl Stylesheets {
             .map(|style| {
                 let path = format!("/{}", path_url(&style.output));
                 let hashed = manifest.asset_url(&path)?;
-                Ok(join_site_url(deployment_prefix, &hashed))
+                Ok(join_site_url(deployment_prefix, hashed))
             })
             .transpose()
     }
@@ -303,7 +303,9 @@ fn published_url(
                     source.display()
                 )
             })?;
-        manifest.asset_url(&format!("/{}", path_url(destination)))?
+        manifest
+            .asset_url(&format!("/{}", path_url(destination)))?
+            .to_owned()
     };
     let destination = percent_decode_str(destination_url.trim_start_matches('/')).decode_utf8()?;
     let relative = pathdiff::diff_paths(
