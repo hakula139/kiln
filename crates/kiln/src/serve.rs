@@ -171,7 +171,7 @@ async fn serve_until(
     Ok(())
 }
 
-/// Initializes the file watcher on the build inputs returned by [`watch_paths`].
+/// Initializes a file watcher on `inputs`.
 ///
 /// Input files are watched through their parent directory because Linux file watches track the
 /// original file, which atomic saves replace. Generic over the backend so tests can drive a
@@ -213,8 +213,7 @@ fn setup_watcher<W: Watcher>(
     Ok(watcher)
 }
 
-/// Returns the existing site and theme build inputs. Missing inputs (e.g., no `static/`) are
-/// skipped.
+/// Returns the existing site and theme build inputs.
 fn watch_paths(root: &Path, config: &Config) -> Vec<PathBuf> {
     let site = config::SITE_INPUTS.iter().map(|name| root.join(name));
     // Changing the theme in config.toml requires a restart.
@@ -530,7 +529,9 @@ mod tests {
                 "output siblings of config.toml should not trigger a rebuild"
             );
 
-            let staged = file.with_extension("tmp");
+            let staged = root
+                .path()
+                .join(format!(".{}.tmp", file.file_name().unwrap().display()));
             fs::write(&staged, "# updated").unwrap();
             fs::rename(&staged, &file).unwrap();
 

@@ -355,13 +355,13 @@ fn merge_params_at(
     Ok(())
 }
 
+fn default_base_url() -> String {
+    localhost_url(DEFAULT_PORT)
+}
+
 /// Constructs the localhost base URL for a given port.
 pub(crate) fn localhost_url(port: u16) -> String {
     format!("http://localhost:{port}")
-}
-
-fn default_base_url() -> String {
-    localhost_url(DEFAULT_PORT)
 }
 
 fn default_title() -> String {
