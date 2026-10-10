@@ -19,9 +19,6 @@ mod routes;
 #[path = "build/feeds.rs"]
 mod feeds;
 
-#[path = "build/sitemap.rs"]
-mod sitemap;
-
 #[path = "build/errors.rs"]
 mod errors;
 

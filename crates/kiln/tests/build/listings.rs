@@ -5,8 +5,8 @@ use indoc::{formatdoc, indoc};
 use kiln::build::{BuildOptions, build};
 
 use super::support::{
-    assert_paginated_listing, copy_templates, copy_templates_except, listing_links,
-    write_listing_site, write_page, write_paginated_posts, write_test_file,
+    assert_paginated_listing, copy_templates, listing_links, write_listing_site, write_page,
+    write_paginated_posts, write_test_file,
 };
 
 // ── build: home page ──
@@ -157,32 +157,6 @@ fn build_home_pagination() {
     );
 }
 
-#[test]
-fn build_skips_home_without_template() {
-    let root = tempfile::tempdir().unwrap();
-    fs::write(root.path().join("config.toml"), "").unwrap();
-    copy_templates_except(&root.path().join("templates"), &["home.html"]);
-
-    write_page(
-        root.path(),
-        "posts/note/hello",
-        indoc! {r#"
-            +++
-            title = "Hello"
-            +++
-            Body
-        "#},
-    );
-
-    build(root.path(), BuildOptions::default()).unwrap();
-
-    let home = root.path().join("public").join("index.html");
-    assert!(
-        !home.exists(),
-        "should NOT generate home page without home.html template"
-    );
-}
-
 // ── build: posts index ──
 
 #[test]
@@ -264,32 +238,6 @@ fn build_posts_index_pagination() {
         ],
         &[r#"<a href="https://example.com/posts/note/post-1/">Post 1</a>"#],
         Some(("/posts/page/2/", "/posts/")),
-    );
-}
-
-#[test]
-fn build_posts_index_generated_even_when_empty() {
-    let root = tempfile::tempdir().unwrap();
-    fs::write(root.path().join("config.toml"), "").unwrap();
-    copy_templates(&root.path().join("templates"));
-
-    write_page(
-        root.path(),
-        "about-me",
-        indoc! {r#"
-            +++
-            title = "About Me"
-            +++
-            Bio
-        "#},
-    );
-
-    build(root.path(), BuildOptions::default()).unwrap();
-
-    let posts_index = root.path().join("public").join("posts").join("index.html");
-    assert!(
-        posts_index.exists(),
-        "should generate /posts/index.html even with no posts"
     );
 }
 
@@ -447,37 +395,6 @@ fn build_section_pagination() {
     );
 }
 
-#[test]
-fn build_skips_archives_without_template() {
-    let root = tempfile::tempdir().unwrap();
-    fs::write(root.path().join("config.toml"), "").unwrap();
-    copy_templates_except(&root.path().join("templates"), &["archive.html"]);
-
-    write_page(
-        root.path(),
-        "posts/note/my-post",
-        indoc! {r#"
-            +++
-            title = "My Post"
-            +++
-            Body
-        "#},
-    );
-
-    build(root.path(), BuildOptions::default()).unwrap();
-
-    let section_index = root
-        .path()
-        .join("public")
-        .join("posts")
-        .join("note")
-        .join("index.html");
-    assert!(
-        !section_index.exists(),
-        "should NOT generate archive pages without archive.html template"
-    );
-}
-
 // ── build: sections index ──
 
 #[test]
@@ -528,36 +445,6 @@ fn build_sections_index_generates_page() {
     assert!(
         html.contains("Post A") && html.contains("Post B"),
         "should list section posts, html:\n{html}"
-    );
-}
-
-#[test]
-fn build_sections_index_skipped_without_overview_template() {
-    let root = tempfile::tempdir().unwrap();
-    fs::write(root.path().join("config.toml"), "").unwrap();
-    copy_templates_except(&root.path().join("templates"), &["overview.html"]);
-
-    write_page(
-        root.path(),
-        "posts/note/post-a",
-        indoc! {r#"
-            +++
-            title = "Post A"
-            +++
-            Body
-        "#},
-    );
-
-    build(root.path(), BuildOptions::default()).unwrap();
-
-    let sections_index = root
-        .path()
-        .join("public")
-        .join("sections")
-        .join("index.html");
-    assert!(
-        !sections_index.exists(),
-        "should NOT generate sections index without overview.html"
     );
 }
 
@@ -693,33 +580,6 @@ fn build_tag_archive_excludes_untagged_standalone_pages() {
     assert_eq!(
         listing_links(&html),
         [r#"<a href="http://localhost:5456/posts/note/hello/">Hello Post</a>"#]
-    );
-}
-
-#[test]
-fn build_generates_tags_index_without_tags() {
-    let root = tempfile::tempdir().unwrap();
-    fs::write(root.path().join("config.toml"), "").unwrap();
-    copy_templates(&root.path().join("templates"));
-
-    write_page(
-        root.path(),
-        "posts/hello",
-        indoc! {r#"
-            +++
-            title = "Hello"
-            +++
-            Body
-        "#},
-    );
-
-    build(root.path(), BuildOptions::default()).unwrap();
-
-    let output_dir = root.path().join("public");
-    let tags_index = output_dir.join("tags").join("index.html");
-    assert!(
-        tags_index.exists(),
-        "should generate /tags/index.html even with no tags"
     );
 }
 

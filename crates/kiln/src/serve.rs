@@ -1006,6 +1006,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert_eq!(response.headers()[header::CACHE_CONTROL], "no-cache");
         let body = collect_body(response).await;
         assert!(
             body.contains("<h1>Not Found</h1>"),
@@ -1033,6 +1034,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()[header::CACHE_CONTROL], "no-cache");
         let body = collect_body(response).await;
         assert!(
             body.contains("<p>Hello</p>"),
@@ -1056,6 +1058,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()[header::CACHE_CONTROL], "no-cache");
         let body = collect_body(response).await;
         assert_eq!(body, "body { color: red; }");
     }

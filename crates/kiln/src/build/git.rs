@@ -79,6 +79,34 @@ mod tests {
 
     use super::*;
 
+    // ── GitInfo::new ──
+
+    #[test]
+    fn git_info_new_resolves_nested_site_files() {
+        let dir = repo();
+        let site = dir.path().join("site");
+        fs::create_dir(&site).unwrap();
+        let source = site.join("post.md");
+        fs::write(&source, "post").unwrap();
+        git(dir.path(), &["add", "site/post.md"]);
+        commit(dir.path(), "2024-01-01T00:00:00+00:00");
+
+        let info = GitInfo::new(&site, true).unwrap();
+        assert_eq!(
+            info.last_modified(&source),
+            Some("2024-01-01T00:00:00Z".parse().unwrap())
+        );
+        assert!(GitInfo::new(&site, false).is_none());
+    }
+
+    fn repo() -> TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        git(dir.path(), &["init", "-q"]);
+        git(dir.path(), &["config", "user.name", "Example"]);
+        git(dir.path(), &["config", "user.email", "example@example.com"]);
+        dir
+    }
+
     fn git(root: &Path, args: &[&str]) {
         let output = Command::new("git")
             .args(args)
@@ -109,34 +137,6 @@ mod tests {
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
-    }
-
-    fn repo() -> TempDir {
-        let dir = tempfile::tempdir().unwrap();
-        git(dir.path(), &["init", "-q"]);
-        git(dir.path(), &["config", "user.name", "Example"]);
-        git(dir.path(), &["config", "user.email", "example@example.com"]);
-        dir
-    }
-
-    // ── GitInfo::new ──
-
-    #[test]
-    fn git_info_new_resolves_nested_site_files() {
-        let dir = repo();
-        let site = dir.path().join("site");
-        fs::create_dir(&site).unwrap();
-        let source = site.join("post.md");
-        fs::write(&source, "post").unwrap();
-        git(dir.path(), &["add", "site/post.md"]);
-        commit(dir.path(), "2024-01-01T00:00:00+00:00");
-
-        let info = GitInfo::new(&site, true).unwrap();
-        assert_eq!(
-            info.last_modified(&source),
-            Some("2024-01-01T00:00:00Z".parse().unwrap())
-        );
-        assert!(GitInfo::new(&site, false).is_none());
     }
 
     #[test]

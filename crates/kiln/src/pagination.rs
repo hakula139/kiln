@@ -157,8 +157,6 @@ mod tests {
 
     // ── Paginator ──
 
-    /// Exercises `total_pages`, `page_items` (full, partial, out-of-range),
-    /// and the page-0 guard in a single paginator instance.
     #[test]
     fn paginator_basic() {
         let items: Vec<i32> = (0..25).collect();
@@ -180,7 +178,7 @@ mod tests {
         let items: Vec<i32> = (0..20).collect();
         let p = Paginator::new(&items, 10);
         assert_eq!(p.total_pages(), 2);
-        assert_eq!(p.page_items(2).len(), 10);
+        assert_eq!(p.page_items(2), &(10..20).collect::<Vec<_>>());
     }
 
     #[test]
@@ -208,94 +206,65 @@ mod tests {
 
     #[test]
     fn pagination_vars_boundaries() {
-        let first = PaginationVars::new("/t", 1, 3);
-        assert!(first.prev_url.is_none());
-        assert_eq!(first.next_url.as_deref(), Some("/t/page/2/"));
-
-        let mid = PaginationVars::new("/t", 2, 3);
-        assert_eq!(mid.prev_url.as_deref(), Some("/t/"));
-        assert_eq!(mid.next_url.as_deref(), Some("/t/page/3/"));
-
-        let last = PaginationVars::new("/t", 3, 3);
-        assert_eq!(last.prev_url.as_deref(), Some("/t/page/2/"));
-        assert!(last.next_url.is_none());
-
-        let single = PaginationVars::new("/t", 1, 1);
-        assert!(single.prev_url.is_none());
-        assert!(single.next_url.is_none());
+        for (current, total, previous, next) in [
+            (1, 1, None, None),
+            (1, 3, None, Some("/t/page/2/")),
+            (2, 3, Some("/t/"), Some("/t/page/3/")),
+            (3, 3, Some("/t/page/2/"), None),
+        ] {
+            let vars = PaginationVars::new("/t/", current, total);
+            assert_eq!(vars.current_page, current);
+            assert_eq!(vars.total_pages, total);
+            assert_eq!(vars.base_url, "/t");
+            assert_eq!(vars.prev_url.as_deref(), previous);
+            assert_eq!(vars.next_url.as_deref(), next);
+        }
     }
 
     #[test]
-    fn pagination_vars_items_all_shown_when_few() {
-        let vars = PaginationVars::new("/t", 2, 4);
-        assert_eq!(vars.items.len(), 4);
-
-        assert_eq!(vars.items[0].number, Some(1));
-        assert_eq!(vars.items[0].url.as_deref(), Some("/t/"));
-        assert!(!vars.items[0].is_current);
-
-        assert_eq!(vars.items[1].number, Some(2));
-        assert_eq!(vars.items[1].url.as_deref(), Some("/t/page/2/"));
-        assert!(vars.items[1].is_current);
-
-        assert_eq!(vars.items[2].number, Some(3));
-        assert_eq!(vars.items[2].url.as_deref(), Some("/t/page/3/"));
-        assert!(!vars.items[2].is_current);
-
-        assert_eq!(vars.items[3].number, Some(4));
-        assert_eq!(vars.items[3].url.as_deref(), Some("/t/page/4/"));
-        assert!(!vars.items[3].is_current);
-    }
-
-    #[test]
-    fn pagination_vars_items_with_ellipsis() {
-        // 10 pages, current = 1 → show: 1 2 3 ... 10
-        let vars = PaginationVars::new("/t", 1, 10);
-        let numbers: Vec<Option<usize>> = vars.items.iter().map(|i| i.number).collect();
-        assert_eq!(
-            numbers,
-            vec![Some(1), Some(2), Some(3), None, Some(10)],
-            "should show first 3, ellipsis, last"
-        );
-        assert!(vars.items[0].is_current);
-        assert!(vars.items[3].url.is_none(), "ellipsis should have no URL");
-    }
-
-    #[test]
-    fn pagination_vars_items_middle_page() {
-        // 10 pages, current = 5 → show: 1 ... 3 4 5 6 7 ... 10
-        let vars = PaginationVars::new("/t", 5, 10);
-        let numbers: Vec<Option<usize>> = vars.items.iter().map(|i| i.number).collect();
-        assert_eq!(
-            numbers,
-            vec![
-                Some(1),
-                None,
-                Some(3),
-                Some(4),
-                Some(5),
-                Some(6),
-                Some(7),
-                None,
-                Some(10)
-            ]
-        );
-        assert!(vars.items[4].is_current);
-    }
-
-    #[test]
-    fn pagination_vars_items_last_page() {
-        // 10 pages, current = 10 → show: 1 ... 8 9 10
-        let vars = PaginationVars::new("/t", 10, 10);
-        let numbers: Vec<Option<usize>> = vars.items.iter().map(|i| i.number).collect();
-        assert_eq!(numbers, vec![Some(1), None, Some(8), Some(9), Some(10)]);
-        assert!(vars.items[4].is_current);
-    }
-
-    #[test]
-    fn pagination_vars_single_page_has_one_item() {
-        let vars = PaginationVars::new("/t", 1, 1);
-        assert_eq!(vars.items.len(), 1);
-        assert!(vars.items[0].is_current);
+    fn pagination_vars_windowed_items() {
+        for (current, total, numbers) in [
+            (1, 1, vec![Some(1)]),
+            (2, 4, vec![Some(1), Some(2), Some(3), Some(4)]),
+            (1, 10, vec![Some(1), Some(2), Some(3), None, Some(10)]),
+            (
+                5,
+                10,
+                vec![
+                    Some(1),
+                    None,
+                    Some(3),
+                    Some(4),
+                    Some(5),
+                    Some(6),
+                    Some(7),
+                    None,
+                    Some(10),
+                ],
+            ),
+            (10, 10, vec![Some(1), None, Some(8), Some(9), Some(10)]),
+        ] {
+            let vars = PaginationVars::new("/t", current, total);
+            let expected: Vec<_> = numbers
+                .into_iter()
+                .map(|number| {
+                    let url = number.map(|number| {
+                        if number == 1 {
+                            "/t/".to_owned()
+                        } else {
+                            format!("/t/page/{number}/")
+                        }
+                    });
+                    (number, url, number == Some(current))
+                })
+                .collect();
+            assert_eq!(
+                vars.items
+                    .into_iter()
+                    .map(|item| (item.number, item.url, item.is_current))
+                    .collect::<Vec<_>>(),
+                expected
+            );
+        }
     }
 }

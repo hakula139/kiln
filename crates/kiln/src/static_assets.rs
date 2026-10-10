@@ -282,7 +282,7 @@ mod tests {
     }
 
     #[test]
-    fn build_returns_error_on_fingerprinted_path_collision() {
+    fn build_fingerprinted_path_collision_returns_error() {
         let dir = tempfile::tempdir().unwrap();
         fs::write(dir.path().join("style.css"), "abc").unwrap();
         fs::write(dir.path().join("style.ba7816bf8f01.css"), "occupied").unwrap();
@@ -304,7 +304,7 @@ mod tests {
     // ── StaticAssetManifest::asset_url ──
 
     #[test]
-    fn asset_url_returns_error_for_missing_asset() {
+    fn asset_url_missing_asset_returns_error() {
         let manifest = StaticAssetManifest::default();
         let err = manifest
             .asset_url("/js/missing.js")
@@ -318,7 +318,7 @@ mod tests {
     }
 
     #[test]
-    fn asset_url_rejects_paths_outside_static_root() {
+    fn asset_url_outside_static_root_returns_error() {
         let manifest = StaticAssetManifest::default();
 
         for url in [
@@ -339,7 +339,7 @@ mod tests {
     // ── is_fingerprinted_copy ──
 
     #[test]
-    fn fingerprinted_copy_requires_matching_original() {
+    fn is_fingerprinted_copy_requires_matching_original() {
         let dir = tempfile::tempdir().unwrap();
         let fingerprinted = dir.path().join("app.ba7816bf8f01.js");
         fs::write(&fingerprinted, "abc").unwrap();

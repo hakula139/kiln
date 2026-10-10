@@ -444,10 +444,10 @@ mod tests {
     use super::*;
     use crate::serve::{DEFAULT_PORT, localhost_url};
 
-    // ── deserialization ──
+    // ── Config::default ──
 
     #[test]
-    fn defaults_when_empty() {
+    fn default_uses_site_defaults() {
         let config = Config::default();
         assert_eq!(config.base_url, localhost_url(DEFAULT_PORT));
         assert_eq!(config.title, "My Site");
@@ -477,6 +477,8 @@ mod tests {
             toml::to_string(&from_toml).unwrap(),
         );
     }
+
+    // ── deserialization ──
 
     #[test]
     fn overrides_from_toml() {
@@ -648,18 +650,18 @@ mod tests {
             dir.path().join("config.toml"),
             indoc! {r#"
                 [[menu.main]]
-                name = "B"
-                url = "/b/"
+                name = "A"
+                url = "/a/"
                 weight = 2
 
                 [[menu.main]]
-                name = "C"
-                url = "/c/"
+                name = "M"
+                url = "/m/"
                 weight = 3
 
                 [[menu.main]]
-                name = "A"
-                url = "/a/"
+                name = "Z"
+                url = "/z/"
                 weight = 1
 
                 [[menu.social]]
@@ -668,8 +670,8 @@ mod tests {
                 weight = 20
 
                 [[menu.social]]
-                name = "X"
-                url = "/x/"
+                name = "Z"
+                url = "/z/"
                 weight = 10
                 external = true
             "#},
@@ -685,8 +687,8 @@ mod tests {
             .iter()
             .map(|m| m.name.as_str())
             .collect();
-        assert_eq!(main, ["A", "B", "C"]);
-        assert_eq!(social, ["X", "Y"]);
+        assert_eq!(main, ["Z", "A", "M"]);
+        assert_eq!(social, ["Z", "Y"]);
         assert!(config.menu["social"][0].external);
         assert!(!config.menu["main"][0].external);
     }

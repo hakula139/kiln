@@ -59,6 +59,8 @@ fn build_routes_share_prefix_metadata_and_sitemap() {
         ]
     );
     assert!(sitemap.contains("<lastmod>2025-01-02T00:00:00Z</lastmod>"));
+    let robots = fs::read_to_string(output.join("robots.txt")).unwrap();
+    assert!(robots.contains("Sitemap: https://example.com/blog/sitemap.xml"));
     let feed = fs::read_to_string(output.join("index.xml")).unwrap();
     assert!(feed.contains("<pubDate>Mon, 01 Jan 2024 00:00:00 +0000</pubDate>"));
 }
@@ -70,11 +72,23 @@ fn build_sitemap_only_contains_emitted_html() {
         fs::remove_file(root.path().join(format!("templates/{template}.html"))).unwrap();
     }
     write_post(root.path(), "content/index.md", "Root page");
+    write_post(root.path(), "content/posts/note/item.md", "Section post");
     build(root.path(), BuildOptions::default()).unwrap();
     let xml = fs::read_to_string(root.path().join("public/sitemap.xml")).unwrap();
-    assert_eq!(xml.matches("<loc>").count(), 1);
+    assert_eq!(xml.matches("<loc>").count(), 2);
+    assert!(xml.contains("<loc>https://example.com/blog/posts/note/item/</loc>"));
+    for path in [
+        "posts/index.html",
+        "posts/note/index.html",
+        "tags/rust/index.html",
+        "sections/index.html",
+        "tags/index.html",
+    ] {
+        assert!(!root.path().join("public").join(path).exists(), "{path}");
+    }
     assert!(xml.contains("<loc>https://example.com/blog/</loc>"));
     fs::remove_file(root.path().join("content/index.md")).unwrap();
+    fs::remove_file(root.path().join("content/posts/note/item.md")).unwrap();
     build(root.path(), BuildOptions::default()).unwrap();
     let xml = fs::read_to_string(root.path().join("public/sitemap.xml")).unwrap();
     assert!(!xml.contains("<loc>"));
