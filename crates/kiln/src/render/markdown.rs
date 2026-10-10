@@ -4,7 +4,6 @@ use std::path::Path;
 use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Parser, Tag, TagEnd};
 use syntect::parsing::SyntaxSet;
 
-use super::Spanned;
 use super::assets::Feature;
 use super::code_block::{CodeBlockSpec, parse_fence_info};
 use super::footnote::Footnotes;
@@ -16,6 +15,7 @@ use super::lqip::ImageResolver;
 use super::mermaid::render_mermaid;
 use super::table::TableNowrap;
 use super::toc::TocEntry;
+use super::{PageResources, Spanned};
 use crate::html::escape;
 use crate::markdown::markdown_options;
 use crate::text::slugify;
@@ -61,8 +61,7 @@ pub(super) fn render_markdown(
     document: MarkdownDocument,
     syntax_set: &SyntaxSet,
     image_attrs: &HashMap<usize, ImageAttrs>,
-    image_resolver: &ImageResolver,
-    base_dir: Option<&Path>,
+    resources: &PageResources<'_>,
     settings: MarkdownSettings,
     features: &mut BTreeSet<Feature>,
 ) -> MarkdownOutput {
@@ -73,8 +72,7 @@ pub(super) fn render_markdown(
     let mut renderer = MarkdownRenderer {
         syntax_set,
         image_attrs,
-        image_resolver,
-        base_dir,
+        resources,
         settings,
         features,
         headings: &headings,
@@ -87,8 +85,7 @@ pub(super) fn render_markdown(
 struct MarkdownRenderer<'a> {
     syntax_set: &'a SyntaxSet,
     image_attrs: &'a HashMap<usize, ImageAttrs>,
-    image_resolver: &'a ImageResolver,
-    base_dir: Option<&'a Path>,
+    resources: &'a PageResources<'a>,
     settings: MarkdownSettings,
     features: &'a mut BTreeSet<Feature>,
     headings: &'a [TocEntry],
@@ -228,9 +225,7 @@ impl MarkdownRenderer<'_> {
                 .by_ref()
                 .take_while(|(event, _)| !matches!(event, Event::End(TagEnd::Paragraph)))
                 .collect();
-            if let Some(html) =
-                try_render_block_image(&body, self.image_attrs, self.image_resolver, self.base_dir)
-            {
+            if let Some(html) = try_render_block_image(&body, self.image_attrs, self.resources) {
                 output.push((Event::Html(html.into()), range));
             } else {
                 output.push((event, range.clone()));
@@ -252,10 +247,12 @@ impl MarkdownRenderer<'_> {
         let attrs = enrich_image_attrs(
             self.image_attrs.get(&offset),
             src,
-            self.image_resolver,
-            self.base_dir,
+            self.resources.images,
+            self.resources.source_dir,
         );
-        Event::Html(render_inline_image(src, &alt, title, attrs.as_ref()).into())
+        Event::Html(
+            render_inline_image(&self.resources.image_url(src), &alt, title, attrs.as_ref()).into(),
+        )
     }
 }
 
@@ -263,8 +260,7 @@ impl MarkdownRenderer<'_> {
 fn try_render_block_image(
     events: &[Spanned],
     image_attrs: &HashMap<usize, ImageAttrs>,
-    image_resolver: &ImageResolver,
-    base_dir: Option<&Path>,
+    resources: &PageResources<'_>,
 ) -> Option<String> {
     let (src, title, byte_offset) = match &events.first()?.0 {
         Event::Start(Tag::Image {
@@ -297,10 +293,15 @@ fn try_render_block_image(
     let enriched = enrich_image_attrs(
         image_attrs.get(&byte_offset),
         &src,
-        image_resolver,
-        base_dir,
+        resources.images,
+        resources.source_dir,
     );
-    Some(render_block_image(&src, &alt, &title, enriched.as_ref()))
+    Some(render_block_image(
+        &resources.image_url(&src),
+        &alt,
+        &title,
+        enriched.as_ref(),
+    ))
 }
 
 /// Merges authored `{...}` attrs with resolver-supplied on-disk metadata.
@@ -430,8 +431,13 @@ mod tests {
             document,
             &SYNTAX_SET,
             &HashMap::new(),
-            &EMPTY_RESOLVER,
-            None,
+            &PageResources {
+                source_dir: None,
+                images: &EMPTY_RESOLVER,
+                assets: &crate::static_assets::StaticAssetManifest::default(),
+                page_url: "/",
+                deployment_prefix: "",
+            },
             MarkdownSettings::default(),
             &mut features,
         )
@@ -449,8 +455,13 @@ mod tests {
             document,
             &SYNTAX_SET,
             &attrs,
-            resolver,
-            Some(base_dir),
+            &PageResources {
+                source_dir: Some(base_dir),
+                images: resolver,
+                assets: &crate::static_assets::StaticAssetManifest::default(),
+                page_url: "/",
+                deployment_prefix: "",
+            },
             MarkdownSettings::default(),
             &mut features,
         )

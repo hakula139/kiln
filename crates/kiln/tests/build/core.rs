@@ -1,4 +1,5 @@
 use std::fs;
+use std::path::Path;
 
 #[cfg(unix)]
 use indoc::formatdoc;
@@ -323,7 +324,7 @@ fn build_fingerprints_bundle_assets_after_static_collisions() {
     );
     for (name, bundle, shared) in [
         ("app.js", "console.log('bundle');", "console.log('static');"),
-        ("image.svg", "bundle-image", "static-image"),
+        ("image.avif", "bundle-image", "static-image"),
     ] {
         write_test_file(
             root.path(),
@@ -347,8 +348,17 @@ fn build_fingerprints_bundle_assets_after_static_collisions() {
 
     let public = root.path().join("public");
     assert_eq!(
-        fs::read_to_string(public.join("example/assets/image.svg")).unwrap(),
+        fs::read_to_string(public.join("example/assets/image.avif")).unwrap(),
         "bundle-image"
+    );
+    let image_hash = hex::encode(Sha256::digest(b"bundle-image"));
+    assert_eq!(
+        fs::read(public.join(format!(
+            "_assets/example/assets/image.{}.avif",
+            &image_hash[..12]
+        )))
+        .unwrap(),
+        b"bundle-image"
     );
     let js = fs::read_to_string(public.join("example/assets/app.js")).unwrap();
     assert!(js.contains("bundle") && !js.contains("static"), "{js}");
@@ -356,6 +366,133 @@ fn build_fingerprints_bundle_assets_after_static_collisions() {
     assert_eq!(
         fs::read_to_string(public.join(format!("example/assets/app.{}.js", &hash[..12]))).unwrap(),
         js
+    );
+}
+
+#[test]
+fn build_updates_managed_image_urls_and_retires_previous_fingerprints() {
+    let root = tempfile::tempdir().unwrap();
+    write_image_site(root.path());
+    let public = root.path().join("public");
+    let mut previous = None;
+    for bytes in ["original image", "changed image", "changed image"] {
+        write_test_file(root.path(), "content/example/photo %.avif", bytes);
+        build(
+            root.path(),
+            BuildOptions {
+                minify: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let hash = hex::encode(Sha256::digest(bytes.as_bytes()));
+        let path = format!("_assets/example/photo %.{}.avif", &hash[..12]);
+        let url = format!(
+            "/blog/_assets/example/photo%20%25.{}.avif?quality=1#view",
+            &hash[..12]
+        );
+        let html = fs::read_to_string(public.join("example/index.html")).unwrap();
+        let document = Html::parse_document(&html);
+        let images: Vec<_> = document
+            .select(&Selector::parse("img").unwrap())
+            .map(|image| image.value().attr("src").unwrap())
+            .collect();
+        assert_eq!(
+            images,
+            [
+                url.as_str(),
+                url.as_str(),
+                "//example.org/logo.svg",
+                url.as_str(),
+                url.as_str(),
+                "missing.avif",
+                "https://example.org/image.avif",
+                url.as_str(),
+            ]
+        );
+        assert_eq!(fs::read_to_string(public.join(&path)).unwrap(), bytes);
+        assert_eq!(
+            fs::read_to_string(public.join("example/photo %.avif")).unwrap(),
+            bytes
+        );
+        let stylesheet = document
+            .select(&Selector::parse("link").unwrap())
+            .next()
+            .unwrap()
+            .value()
+            .attr("href")
+            .unwrap();
+        let css = fs::read(public.join(stylesheet.strip_prefix("/blog/").unwrap())).unwrap();
+        assert!(
+            String::from_utf8_lossy(&css)
+                .contains(&format!("../..{}", url.strip_prefix("/blog").unwrap()))
+        );
+        let css_hash = hex::encode(Sha256::digest(&css));
+        assert!(stylesheet.ends_with(&format!(".{}.css", &css_hash[..12])));
+        if let Some((old_path, old_stylesheet)) = &previous {
+            if old_path == &path {
+                assert_eq!(old_stylesheet, stylesheet);
+            } else {
+                assert!(!public.join(old_path).exists());
+                assert_ne!(old_stylesheet, stylesheet);
+            }
+        }
+        previous = Some((path, stylesheet.to_owned()));
+    }
+}
+
+fn write_image_site(root: &Path) {
+    copy_templates(&root.join("templates"));
+    write_test_file(
+        root,
+        "config.toml",
+        r#"base_url = "https://example.com/blog""#,
+    );
+    write_test_file(
+        root,
+        "templates/page.html",
+        indoc! {r#"
+            <img id="featured" src="{{ featured_image.src }}">
+            <img id="template" src="{{ asset_url('photo%20%25.avif?quality=1#view') }}">
+            <img id="external" src="{{ asset_url('//example.org/logo.svg') }}">
+            <link rel="stylesheet" href="{{ asset_url('/assets/css/site.css') }}">
+            {{ content | safe }}
+        "#},
+    );
+    write_test_file(
+        root,
+        "templates/directives/link.html",
+        indoc! {r#"
+            {% set url = named_args.url %}
+            <a href="{{ url }}"><img src="{{ asset_url(named_args.logo) }}"></a>
+        "#},
+    );
+    write_page(
+        root,
+        "example",
+        indoc! {r#"
+            +++
+            title = "Example"
+            featured_image = "photo%20%25.avif?quality=1#view"
+            +++
+            ![Block](./photo%20%25.avif?quality=1#view)
+
+            Inline ![Inline](../example/photo%20%25.avif?quality=1#view) image.
+
+            ![Missing](missing.avif)
+
+            ![External](https://example.org/image.avif)
+
+            ::: box
+            ::: link {url="https://example.org/target/" logo="photo%20%25.avif?quality=1#view"}
+            :::
+            :::
+        "#},
+    );
+    write_test_file(
+        root,
+        "assets/css/_src/style.css",
+        r#".cover { background: url("/blog/example/photo%20%25.avif?quality=1#view"); }"#,
     );
 }
 

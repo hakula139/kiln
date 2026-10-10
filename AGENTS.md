@@ -101,7 +101,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 ├── section.rs           # Section struct, collect_sections() from page kinds, _index.md title loading
 ├── serve.rs             # Dev server with file watching, WebSocket live reload, script injection
 ├── sitemap.rs           # Sitemap XML + robots.txt generation
-├── static_assets.rs     # Published asset manifest + content-hashed CSS / JS URLs
+├── static_assets.rs     # Published asset manifest + content-hashed asset URLs
 ├── static_assets/
 │   └── publication.rs   # Static / bundle asset publication and source → output paths
 ├── taxonomy.rs          # TaxonomyKind, Taxonomy, Term, TaxonomySet, build_taxonomies()

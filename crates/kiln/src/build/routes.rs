@@ -12,6 +12,7 @@ use super::paginate::paginated_path;
 use crate::content::page::Page;
 use crate::pagination::Paginator;
 use crate::sitemap::SitemapEntry;
+use crate::static_assets::MEDIA_DIRECTORY;
 use crate::url::page_url;
 
 struct PlannedOutput {
@@ -146,6 +147,17 @@ impl RoutePlan {
         owner: String,
         sitemap: Option<SitemapEntry>,
     ) -> Result<()> {
+        if path.components().next().is_some_and(|component| {
+            component
+                .as_os_str()
+                .to_string_lossy()
+                .eq_ignore_ascii_case(MEDIA_DIRECTORY)
+        }) {
+            bail!(
+                "generated route {owner} uses reserved asset directory: {}",
+                path.display()
+            );
+        }
         if let Some(existing) = self.outputs.get(&path) {
             bail!(
                 "output route collision at {} between {} and {}",
@@ -231,6 +243,21 @@ mod tests {
         assert!(message.contains("first source"));
         assert!(message.contains("second source"));
         assert!(message.contains("collision"));
+    }
+
+    #[test]
+    fn insert_reserved_asset_directory_returns_error() {
+        let mut plan = RoutePlan {
+            outputs: BTreeMap::new(),
+        };
+        for path in [
+            "_assets/index.html",
+            "_ASSETS/index.html",
+            "_Assets/index.html",
+        ] {
+            let error = plan.insert(path.into(), "page".into(), None).unwrap_err();
+            assert!(error.to_string().contains("reserved asset directory"));
+        }
     }
 
     // ── RoutePlan::validate_assets ──

@@ -16,12 +16,33 @@ mod table;
 mod toc;
 
 use std::ops::Range;
+use std::path::Path;
 
 use anyhow::{Context, Result};
 use pulldown_cmark::Event;
 use serde::Deserialize;
 
+use self::lqip::ImageResolver;
+use crate::static_assets::StaticAssetManifest;
+
 type Spanned = (Event<'static>, Range<usize>);
+
+/// Source context and published assets used by a page and its nested directives.
+pub struct PageResources<'a> {
+    pub source_dir: Option<&'a Path>,
+    pub images: &'a ImageResolver,
+    pub assets: &'a StaticAssetManifest,
+    pub page_url: &'a str,
+    pub deployment_prefix: &'a str,
+}
+
+impl PageResources<'_> {
+    pub(super) fn image_url(&self, src: &str) -> String {
+        self.assets
+            .resolve(src, self.page_url, self.deployment_prefix)
+            .unwrap_or_else(|| src.to_owned())
+    }
+}
 
 /// Feature flags and settings for the render pipeline.
 #[derive(Debug, Clone, Default, Deserialize)]

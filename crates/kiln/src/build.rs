@@ -30,9 +30,9 @@ use crate::css::Stylesheets;
 use crate::i18n::I18n;
 use crate::minify::{self, MinifyStats};
 use crate::output::{OutputTransaction, write_output};
-use crate::render::RenderOptions;
 use crate::render::lqip::ImageResolver;
 use crate::render::pipeline::render_page;
+use crate::render::{PageResources, RenderOptions};
 use crate::search;
 use crate::section::collect_sections;
 use crate::static_assets::StaticAssetManifest;
@@ -121,7 +121,8 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
         &output_dir,
     )?;
     let stylesheets = Stylesheets::discover(root, &config, &content.content_dir, &content.pages)?;
-    stylesheets.compile(root, &config, &assets, &output_dir)?;
+    let mut static_assets = StaticAssetManifest::build_media(&output_dir)?;
+    stylesheets.compile(root, &config, &assets, &static_assets, &output_dir)?;
 
     let minify_stats = if minify {
         eprintln!("Minifying...");
@@ -130,8 +131,9 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
         None
     };
 
-    let static_assets =
-        StaticAssetManifest::build(&output_dir).context("failed to fingerprint static assets")?;
+    static_assets
+        .fingerprint_code(&output_dir)
+        .context("failed to fingerprint static assets")?;
     let template_engine = TemplateEngine::new_with_assets(
         Some(&site_templates),
         theme_templates.as_deref(),
@@ -316,8 +318,13 @@ fn build_page(
         &ctx.template_engine,
         &ctx.config,
         &options,
-        page.source_path.parent(),
-        &ctx.image_resolver,
+        &PageResources {
+            source_dir: page.source_path.parent(),
+            images: &ctx.image_resolver,
+            assets: &ctx.static_assets,
+            page_url: &prepared.summary.url,
+            deployment_prefix: &ctx.deployment_prefix,
+        },
     )
     .with_context(|| format!("failed to render {}", page.source_path.display()))?;
 

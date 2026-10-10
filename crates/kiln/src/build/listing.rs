@@ -105,12 +105,18 @@ fn prepare_page(
         &page.source_path,
         ctx.git_info.as_ref(),
     );
-    let featured_image = resolve_featured_image(
+    let mut featured_image = resolve_featured_image(
         page.frontmatter.featured_image.as_ref(),
         &url,
         &ctx.image_resolver,
         page.source_path.parent(),
     );
+    if let Some(image) = &mut featured_image {
+        image.src = ctx
+            .static_assets
+            .resolve(&image.src, &url, &ctx.deployment_prefix)
+            .unwrap_or_else(|| image.src.clone());
+    }
     Ok(PreparedPage {
         output_path,
         summary: PageSummary {

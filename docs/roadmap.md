@@ -36,7 +36,7 @@ Home, archive, overview and 404 generation depend on the corresponding templates
 - Shared `assets/`, output-root `static/` files and bundle-local assets, with defined site / theme override precedence.
 - Shared and page-owned stylesheet entries, local imports, CSS nesting and source-relative asset URL resolution. Page CSS is linked only from its owning page.
 - Built-in plain CSS processing and optional Tailwind compilation through the external processor. Page entries can reuse shared theme definitions without duplicating the shared stylesheet.
-- Content-hashed CSS / JS URLs, including compiled stylesheets, with template helpers that account for deployment path prefixes.
+- Content-hashed raster image, font and CSS / JS URLs. Markdown images, featured images, compiled CSS dependencies and template helpers resolve published assets with deployment path prefixes. Image fingerprints do not require a decoder.
 - Optional HTML / CSS / JS minification in Rust. Files already named `*.min.css` or `*.min.js` are preserved, and unsupported inputs retain their original bytes with a warning.
 - Natural dimensions for resolvable local images and small WebP loading placeholders for supported decodable formats. Featured images expose the same metadata to page and listing templates.
 - Optional native AVIF decoding for placeholders. AVIF publication and dimension reads work without that feature, and the Nix package enables it by default.

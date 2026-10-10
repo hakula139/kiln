@@ -178,6 +178,22 @@ fn build_asset_copy_permission_denied_returns_error() {
 // ── build: publication ──
 
 #[test]
+fn build_reserved_asset_directory_preserves_previous_output() {
+    let root = tempfile::tempdir().unwrap();
+    setup_site_with_page(root.path());
+    build(root.path(), BuildOptions::default()).unwrap();
+    let page = root.path().join("public/posts/hello/index.html");
+    let previous = fs::read(&page).unwrap();
+    fs::create_dir_all(root.path().join("static/_assets")).unwrap();
+    fs::write(root.path().join("static/_assets/occupied.png"), "occupied").unwrap();
+
+    let error = build(root.path(), BuildOptions::default()).unwrap_err();
+
+    assert!(format!("{error:#}").contains("reserved asset directory"));
+    assert_eq!(fs::read(page).unwrap(), previous);
+}
+
+#[test]
 fn build_failed_render_preserves_previous_output() {
     let root = tempfile::tempdir().unwrap();
     copy_templates(&root.path().join("templates"));

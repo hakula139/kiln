@@ -6,9 +6,10 @@ use scraper::{Html, Selector};
 
 use kiln::config::Config;
 use kiln::i18n::I18n;
-use kiln::render::RenderOptions;
 use kiln::render::lqip::ImageResolver;
 use kiln::render::pipeline::render_page;
+use kiln::render::{PageResources, RenderOptions};
+use kiln::static_assets::StaticAssetManifest;
 use kiln::template::TemplateEngine;
 
 use super::fixtures::{PROSE, Site};
@@ -21,6 +22,14 @@ pub(super) fn benchmarks(criterion: &mut Criterion) {
     let engine = TemplateEngine::new(Some(&site.root().join("templates")), None, &i18n).unwrap();
     let options = RenderOptions::default();
     let resolver = ImageResolver::new(&site.root().join("static"), config.image.clone());
+    let manifest = StaticAssetManifest::default();
+    let resources = PageResources {
+        source_dir: None,
+        images: &resolver,
+        assets: &manifest,
+        page_url: "/",
+        deployment_prefix: "",
+    };
     let syntax_set = two_face::syntax::extra_newlines();
     let code = indoc! {r#"
         ```rust
@@ -32,16 +41,8 @@ pub(super) fn benchmarks(criterion: &mut Criterion) {
     .repeat(20);
     let mut group = criterion.benchmark_group("render");
     for (name, input) in [("prose", PROSE.repeat(20)), ("highlighted_code", code)] {
-        let expected = render_page(
-            &input,
-            &syntax_set,
-            &engine,
-            &config,
-            &options,
-            None,
-            &resolver,
-        )
-        .unwrap();
+        let expected =
+            render_page(&input, &syntax_set, &engine, &config, &options, &resources).unwrap();
         verify_render(name, &expected.content_html);
         group.throughput(Throughput::Bytes(input.len().try_into().unwrap()));
         group.bench_with_input(
@@ -55,8 +56,7 @@ pub(super) fn benchmarks(criterion: &mut Criterion) {
                         &engine,
                         &config,
                         &options,
-                        None,
-                        &resolver,
+                        &resources,
                     )
                     .unwrap()
                 });

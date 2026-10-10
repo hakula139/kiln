@@ -2,16 +2,18 @@ pub(crate) mod publication;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
+use percent_encoding::percent_decode_str;
 use sha2::{Digest, Sha256};
 use walkdir::WalkDir;
 
 use crate::output::copy_file;
-use crate::url::path_url;
+use crate::url::{join_site_url, path_url};
 
 const FINGERPRINT_LENGTH: usize = 12;
+pub(crate) const MEDIA_DIRECTORY: &str = "_assets";
 
 /// Content-addressed URLs for static assets and canonical page stylesheets.
 #[derive(Clone, Debug, Default)]
@@ -21,49 +23,65 @@ pub struct StaticAssetManifest {
 }
 
 impl StaticAssetManifest {
-    /// Builds the manifest and writes fingerprinted CSS / JS copies into `output_dir`.
+    /// Publishes content-hashed copies of supported assets.
     ///
     /// # Errors
     ///
-    /// Returns an error if the directory cannot be read, an asset cannot be copied, or a generated
-    /// fingerprinted path conflicts with an existing file.
+    /// Returns an error for unreadable files or conflicting generated paths.
     pub fn build(output_dir: &Path) -> Result<Self> {
+        let mut manifest = Self::build_media(output_dir)?;
+        manifest.fingerprint_code(output_dir)?;
+        Ok(manifest)
+    }
+
+    pub(crate) fn build_media(output_dir: &Path) -> Result<Self> {
+        for entry in fs::read_dir(output_dir)? {
+            if entry?
+                .file_name()
+                .to_string_lossy()
+                .eq_ignore_ascii_case(MEDIA_DIRECTORY)
+            {
+                bail!("reserved asset directory conflicts with published files: {MEDIA_DIRECTORY}");
+            }
+        }
         let mut manifest = Self::default();
-        let entries = WalkDir::new(output_dir)
+        manifest.collect(output_dir, false)?;
+        Ok(manifest)
+    }
+
+    pub(crate) fn fingerprint_code(&mut self, output_dir: &Path) -> Result<()> {
+        self.collect(output_dir, true)
+    }
+
+    fn collect(&mut self, output_dir: &Path, code: bool) -> Result<()> {
+        let paths = WalkDir::new(output_dir)
             .follow_links(false)
             .sort_by_file_name()
             .into_iter()
+            .filter_entry(|entry| entry.path() != output_dir.join(MEDIA_DIRECTORY))
             .filter_map(|entry| match entry {
                 Ok(entry) if entry.file_type().is_file() => Some(Ok(entry.into_path())),
                 Ok(_) => None,
                 Err(error) => Some(Err(error)),
             })
             .collect::<std::result::Result<Vec<_>, _>>()
-            .with_context(|| {
-                format!(
-                    "failed to collect static assets in {}",
-                    output_dir.display()
-                )
-            })?;
-
-        for path in entries {
-            let relative = path.strip_prefix(output_dir).with_context(|| {
-                format!(
-                    "static asset {} is not under {}",
-                    path.display(),
-                    output_dir.display()
-                )
-            })?;
-            let url = format!("/{}", path_url(relative));
-            if !is_fingerprintable(relative) {
-                manifest.urls.insert(url.clone(), url);
+            .context("failed to collect published assets")?;
+        for path in paths {
+            let relative = path.strip_prefix(output_dir)?;
+            if code && !is_code(relative) {
                 continue;
             }
-            manifest.fingerprinted_paths.insert(relative.to_owned());
-
+            let url = format!("/{}", path_url(relative));
+            if !code && !is_media(relative) {
+                self.urls.insert(url.clone(), url);
+                continue;
+            }
             let bytes = fs::read(&path)
                 .with_context(|| format!("failed to read static asset {}", path.display()))?;
-            let fingerprinted = fingerprinted_path(relative, &bytes)?;
+            let mut fingerprinted = fingerprinted_path(relative, &bytes)?;
+            if !code {
+                fingerprinted = Path::new(MEDIA_DIRECTORY).join(fingerprinted);
+            }
             let target = output_dir.join(&fingerprinted);
             if target.exists() {
                 bail!(
@@ -72,23 +90,39 @@ impl StaticAssetManifest {
                 );
             }
             copy_file(&path, &target)?;
-
-            let fingerprinted_url = format!("/{}", path_url(&fingerprinted));
-            manifest.urls.insert(url, fingerprinted_url);
-            manifest.fingerprinted_paths.insert(fingerprinted);
+            self.urls
+                .insert(url, format!("/{}", path_url(&fingerprinted)));
+            self.fingerprinted_paths.insert(relative.to_owned());
+            self.fingerprinted_paths.insert(fingerprinted);
         }
-
-        Ok(manifest)
+        Ok(())
     }
 
-    pub(crate) fn asset_url(&self, url: &str) -> std::result::Result<String, minijinja::Error> {
-        validate_url(url)?;
-        self.urls.get(url).cloned().ok_or_else(|| {
-            minijinja::Error::new(
-                minijinja::ErrorKind::InvalidOperation,
-                format!("asset_url: static asset not found: {url}"),
-            )
-        })
+    pub(crate) fn asset_url(&self, url: &str) -> Result<String> {
+        self.resolve(url, "/", "")
+            .with_context(|| format!("asset_url: static asset not found: {url}"))
+    }
+
+    /// Resolves a published URL against a page's output URL, retaining its query and fragment.
+    pub(crate) fn resolve(&self, url: &str, page_url: &str, prefix: &str) -> Option<String> {
+        if is_external(url) || url.starts_with('#') {
+            return Some(url.to_owned());
+        }
+        let end = url.find(['?', '#']).unwrap_or(url.len());
+        let (path, suffix) = url.split_at(end);
+        let base = url::Url::parse(page_url)
+            .or_else(|_| url::Url::parse("https://kiln.invalid/")?.join(page_url))
+            .ok()?;
+        let resolved = base.join(path).ok()?;
+        let path = resolved
+            .path()
+            .strip_prefix(prefix.trim_end_matches('/'))
+            .filter(|path| path.starts_with('/'))?;
+        let decoded = percent_decode_str(path).decode_utf8().ok()?;
+        let key = format!("/{}", path_url(Path::new(decoded.trim_start_matches('/'))));
+        self.urls
+            .get(&key)
+            .map(|published| format!("{}{suffix}", join_site_url(prefix, published)))
     }
 
     /// Returns relative paths of original fingerprinted assets and their generated copies.
@@ -97,47 +131,44 @@ impl StaticAssetManifest {
     }
 }
 
-fn validate_url(url: &str) -> std::result::Result<(), minijinja::Error> {
-    let invalid = || {
-        minijinja::Error::new(
-            minijinja::ErrorKind::InvalidOperation,
-            format!(
-                "asset_url requires a root-relative static path without a query or fragment: {url}"
-            ),
-        )
-    };
-
-    let Some(relative) = url.strip_prefix('/') else {
-        return Err(invalid());
-    };
-    if relative.is_empty() || url.contains('?') || url.contains('#') {
-        return Err(invalid());
-    }
-    if Path::new(relative)
-        .components()
-        .any(|component| !matches!(component, Component::Normal(_)))
-    {
-        return Err(invalid());
-    }
-
-    Ok(())
+pub(crate) fn is_external(url: &str) -> bool {
+    url.starts_with("//") || url::Url::parse(url).is_ok()
 }
 
-fn is_fingerprintable(path: &Path) -> bool {
+fn is_code(path: &Path) -> bool {
+    matches!(extension(path).as_str(), "css" | "js" | "mjs")
+}
+
+fn is_media(path: &Path) -> bool {
+    matches!(
+        extension(path).as_str(),
+        "avif"
+            | "bmp"
+            | "gif"
+            | "ico"
+            | "jpeg"
+            | "jpg"
+            | "png"
+            | "webp"
+            | "otf"
+            | "ttf"
+            | "woff"
+            | "woff2"
+    )
+}
+
+fn extension(path: &Path) -> String {
     path.extension()
         .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| {
-            extension.eq_ignore_ascii_case("css")
-                || extension.eq_ignore_ascii_case("js")
-                || extension.eq_ignore_ascii_case("mjs")
-        })
+        .unwrap_or_default()
+        .to_ascii_lowercase()
 }
 
 pub(crate) fn is_fingerprinted_copy(path: &Path) -> Result<bool> {
     let Some(extension) = path.extension().and_then(|extension| extension.to_str()) else {
         return Ok(false);
     };
-    if !is_fingerprintable(path) {
+    if !is_code(path) {
         return Ok(false);
     }
     let Some((original_stem, fingerprint)) = path
@@ -222,17 +253,13 @@ mod tests {
     }
 
     #[test]
-    fn build_keeps_other_static_urls_unchanged() {
+    fn build_keeps_control_file_urls_unchanged() {
         let dir = tempfile::tempdir().unwrap();
-        fs::create_dir_all(dir.path().join("images")).unwrap();
-        fs::write(dir.path().join("images/logo.webp"), "image").unwrap();
+        fs::write(dir.path().join("_headers"), "image").unwrap();
 
         let manifest = StaticAssetManifest::build(dir.path()).unwrap();
 
-        assert_eq!(
-            manifest.asset_url("/images/logo.webp").unwrap(),
-            "/images/logo.webp"
-        );
+        assert_eq!(manifest.asset_url("/_headers").unwrap(), "/_headers");
     }
 
     #[test]
@@ -317,23 +344,48 @@ mod tests {
         );
     }
 
-    #[test]
-    fn asset_url_outside_static_root_returns_error() {
-        let manifest = StaticAssetManifest::default();
+    // ── StaticAssetManifest::resolve ──
 
-        for url in [
-            "js/app.js",
-            "//example.com/app.js",
-            "/../app.js",
-            "/app.js?v=1",
-            "/app.js#module",
+    #[test]
+    fn resolve_published_resources_with_page_paths_and_suffixes() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("posts/a")).unwrap();
+        fs::write(dir.path().join("posts/a/photo %.avif"), "abc").unwrap();
+        fs::write(dir.path().join("font.woff2"), "abc").unwrap();
+        fs::create_dir_all(dir.path().join("blog/posts/a")).unwrap();
+        fs::write(dir.path().join("blog/posts/a/photo %.avif"), "different").unwrap();
+        let manifest = StaticAssetManifest::build(dir.path()).unwrap();
+        let expected = "/blog/_assets/posts/a/photo%20%25.ba7816bf8f01.avif?x=1#view";
+        for src in [
+            "photo%20%25.avif?x=1#view",
+            "../a/photo%20%25.avif?x=1#view",
+            "/blog/posts/a/photo%20%25.avif?x=1#view",
         ] {
-            let err = manifest.asset_url(url).unwrap_err().to_string();
-            assert!(
-                err.contains("requires a root-relative static path"),
-                "url {url:?} produced: {err}"
+            assert_eq!(
+                manifest.resolve(src, "https://example.com/blog/posts/a/", "/blog/"),
+                Some(expected.into())
             );
         }
+        assert_eq!(
+            manifest.asset_url("/font.woff2?v=2").unwrap(),
+            "/_assets/font.ba7816bf8f01.woff2?v=2"
+        );
+        assert_eq!(
+            fs::read(dir.path().join("_assets/posts/a/photo %.ba7816bf8f01.avif")).unwrap(),
+            b"abc"
+        );
+        for src in [
+            "https://cdn.example.com/a.avif",
+            "//cdn.example.com/a.avif",
+            "data:image/png;base64,abc",
+        ] {
+            assert_eq!(manifest.asset_url(src).unwrap(), src);
+        }
+        assert_eq!(manifest.resolve("missing.png", "/posts/a/", ""), None);
+        assert_eq!(
+            manifest.resolve("/posts/a/photo%20%25.avif", "/blog/posts/a/", "/blog"),
+            None
+        );
     }
 
     // ── is_fingerprinted_copy ──
