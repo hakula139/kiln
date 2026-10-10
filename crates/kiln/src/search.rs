@@ -35,9 +35,8 @@ pub fn run_pagefind(output_dir: &Path, binary: Option<&str>) -> Result<()> {
 
             Install with one of:
 
-              cargo install pagefind
               npm install -g pagefind
-              npx pagefind --site <dir>
+              cargo install pagefind --features extended
 
             See https://pagefind.app/docs/installation/ for details."}
     })?;

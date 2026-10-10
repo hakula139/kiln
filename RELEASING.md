@@ -16,8 +16,8 @@
    ```
 
    `--prepend` preserves previous sections. `--output CHANGELOG.md` replaces the file. Review the generated section.
-3. Add `[X.Y.Z]: https://github.com/hakula139/kiln/compare/<previous-tag>..vX.Y.Z` above the existing footer links. Use the previous stable tag for a stable release and the previous tag for a prerelease.
-4. Verify the version and changelog diff, then commit it as `chore(release): vX.Y.Z`. Once the release is approved, tag and push that commit:
+3. `--prepend` writes only the new section, so add `[X.Y.Z]: https://github.com/hakula139/kiln/compare/<previous-tag>..vX.Y.Z` above the existing footer links by hand. Use the previous stable tag for a stable release and the previous tag for a prerelease.
+4. Verify that the diff contains only the version and changelog updates, then commit it as `chore(release): vX.Y.Z`. Pushing the tag starts the Release workflow and is hard to undo, so get approval for the tag push separately from the version bump:
 
    ```bash
    git tag vX.Y.Z
@@ -30,6 +30,6 @@
 Watch the [Release workflow](https://github.com/hakula139/kiln/actions/workflows/release.yml) and check:
 
 - GitHub release notes, base / extended archives and their checksums.
-- npm packages and the version installed by each entry package. Stable releases use `latest`, and prereleases use `next`.
+- npm packages and the version installed by each entry package. Stable releases use `latest`, and prereleases use `next`. The workflow publishes to npm only when the repository variable `NPM_PUBLISH_ENABLED` is `true`.
 
 npm versions are immutable. Inspect completed publication jobs before retrying a failed release.

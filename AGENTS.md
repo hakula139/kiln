@@ -25,14 +25,13 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 
 ```text
 .
-├── assets/        # Shared files published under /assets/
-├── config.toml    # Site configuration (TOML)
-├── content/       # Markdown content (posts, standalone pages)
-├── crates/kiln/   # SSG engine: library (lib.rs) + CLI binary (main.rs)
-├── public/        # Build output (configurable via output_dir)
-├── static/        # Files copied to output root (favicons, manifests)
-├── templates/     # MiniJinja templates (site overrides theme)
-└── themes/        # Themes (git submodules), each with templates/, assets/, and static/
+├── .agents/       # Agent skills (release procedure)
+├── .cspell/       # Project spelling dictionary
+├── .github/       # CI, release and benchmark workflows, plus shared setup actions
+├── crates/kiln/   # SSG engine: library (lib.rs) + CLI binary (main.rs), tests and benches
+├── docs/          # User guides, benchmarks and roadmap
+├── npm/           # npm launcher and release packaging script
+└── packages/      # Nix package definitions used by flake.nix
 ```
 
 ### Crate Structure (`crates/kiln/src/`)
@@ -237,11 +236,11 @@ Append to `devShells.default.packages` in `flake.nix`. `*-sys` crates that use `
 Run after implementation and before review:
 
 ```bash
-cargo fmt --all --check                            # formatting
+cargo fmt --all --check                                                                # formatting
 cargo build
-cargo clippy --all-targets -- -D warnings          # zero warnings (pedantic lints)
-cargo test
-cargo llvm-cov --ignore-filename-regex 'main\.rs'  # check test coverage
+cargo clippy --all-targets --all-features -- -D warnings                               # zero warnings (pedantic lints)
+cargo test --all-features -- --include-ignored
+cargo llvm-cov --all-features --ignore-filename-regex 'main\.rs' -- --include-ignored  # check test coverage
 ```
 
 ## Code Review
