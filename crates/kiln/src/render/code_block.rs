@@ -284,7 +284,10 @@ mod tests {
 
     #[test]
     fn parse_highlight_ranges_malformed_skipped() {
-        assert_eq!(parse_highlight_ranges("1,bad,3"), vec![1..=1, 3..=3]);
+        assert_eq!(
+            parse_highlight_ranges("1,bad,x-2,2-x,3"),
+            vec![1..=1, 3..=3]
+        );
     }
 
     #[test]

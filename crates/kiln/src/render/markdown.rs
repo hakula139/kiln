@@ -761,49 +761,36 @@ mod tests {
 
     #[test]
     fn render_markdown_inline_math() {
-        let out = render("$x^2$");
-        assert!(
-            out.html
-                .contains(r#"<span class="math math-inline">\(x^2\)</span>"#),
-            "html:\n{}",
-            out.html
-        );
-    }
-
-    #[test]
-    fn render_markdown_inline_math_with_underscores() {
-        let out = render("The matrix $a_{ij}$ is symmetric.");
-        assert!(
-            out.html.contains("a_{ij}"),
-            "underscores in inline math preserved, html:\n{}",
-            out.html
-        );
+        for (input, expected) in [
+            (
+                "$x^2$",
+                r#"<p><span class="math math-inline">\(x^2\)</span></p>"#,
+            ),
+            (
+                "The matrix $a_{ij}$ is symmetric.",
+                r#"<p>The matrix <span class="math math-inline">\(a_{ij}\)</span> is symmetric.</p>"#,
+            ),
+        ] {
+            let out = render(input);
+            assert!(out.html.contains(expected), "{}", out.html);
+        }
     }
 
     #[test]
     fn render_markdown_display_math() {
-        let out = render("$$E=mc^2$$");
-        assert!(
-            out.html
-                .contains(r#"<span class="math math-display">\[E=mc^2\]</span>"#),
-            "html:\n{}",
-            out.html
-        );
-    }
-
-    #[test]
-    fn render_markdown_display_math_with_underscores() {
-        let out = render("$$a_{ij} + b_{ij}$$");
-        assert!(
-            out.html.contains("a_{ij} + b_{ij}"),
-            "underscores in math should not become emphasis, html:\n{}",
-            out.html
-        );
-        assert!(
-            !out.html.contains("<em>"),
-            "no emphasis tags inside math, html:\n{}",
-            out.html
-        );
+        for (input, expected) in [
+            (
+                "$$E=mc^2$$",
+                r#"<span class="math math-display">\[E=mc^2\]</span>"#,
+            ),
+            (
+                "$$a_{ij} + b_{ij}$$",
+                r#"<span class="math math-display">\[a_{ij} + b_{ij}\]</span>"#,
+            ),
+        ] {
+            let out = render(input);
+            assert!(out.html.contains(expected), "{}", out.html);
+        }
     }
 
     #[test]

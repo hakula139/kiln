@@ -363,9 +363,7 @@ mod tests {
 
     #[test]
     fn resolve_yields_dimensions_but_no_lqip_for_undecodable_png() {
-        // A minimal PNG header (signature + IHDR for a 4×2 RGBA image, with a
-        // valid CRC) gives `imagesize` enough to report dimensions, but the
-        // `image` crate's full decoder bails when it hits EOF without IDAT.
+        // The header exposes dimensions to `imagesize` while full image decoding fails.
         let dir = tempdir().unwrap();
         let bundle = dir.path().join("bundle");
         fs::create_dir_all(&bundle).unwrap();
@@ -385,7 +383,6 @@ mod tests {
         let meta = r.resolve("partial.png", Some(&bundle)).unwrap();
         assert_eq!(meta.width, 4);
         assert_eq!(meta.height, 2);
-        // `image` crate refuses the file because IDAT is missing.
         assert!(meta.lqip_uri.is_none());
     }
 
