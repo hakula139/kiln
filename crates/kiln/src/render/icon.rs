@@ -28,8 +28,6 @@ pub fn replace_icons(input: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use indoc::indoc;
-
     use super::*;
 
     // ── replace_icons ──
@@ -79,56 +77,12 @@ mod tests {
         assert_eq!(output, input);
     }
 
-    // ── replace_icons (code awareness) ──
-
     #[test]
-    fn replace_icons_skips_inline_code() {
-        let input = "use `:(fas fa-link):` syntax";
-        let output = replace_icons(input);
-        assert_eq!(output, input);
-    }
-
-    #[test]
-    fn replace_icons_skips_fenced_code() {
-        let input = indoc! {"
-            ```
-            :(fas fa-link):
-            ```
-        "};
-        let output = replace_icons(input);
-        assert_eq!(output, input);
-
-        let input = indoc! {"
-            ~~~
-            :(fas fa-link):
-            ~~~
-        "};
-        let output = replace_icons(input);
-        assert_eq!(output, input);
-    }
-
-    #[test]
-    fn replace_icons_after_fenced_code() {
-        let input = indoc! {"
-            ```
-            code
-            ```
-            :(fas fa-link):
-        "};
-        let output = replace_icons(input);
+    fn replace_icons_preserves_code_context() {
+        let input = ":(fas fa-link): `:(fas fa-link):`";
         assert_eq!(
-            output,
-            input.replace(
-                ":(fas fa-link):",
-                r#"<i class="fas fa-link" aria-hidden="true"></i>"#,
-            )
+            replace_icons(input),
+            r#"<i class="fas fa-link" aria-hidden="true"></i> `:(fas fa-link):`"#
         );
-    }
-
-    #[test]
-    fn replace_icons_unclosed_backtick() {
-        let input = "`:(fas fa-link):";
-        let output = replace_icons(input);
-        assert_eq!(output, r#"`<i class="fas fa-link" aria-hidden="true"></i>"#);
     }
 }

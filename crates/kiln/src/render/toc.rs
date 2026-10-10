@@ -85,23 +85,25 @@ mod tests {
 
     #[test]
     fn render_toc_html_single_entry() {
-        let entries = vec![TocEntry {
-            level: HeadingLevel::H2,
-            number: None,
-            id: "hello".into(),
-            title: "Hello".into(),
-        }];
-        assert_eq!(
-            render_toc_html(&entries),
-            indoc! {r##"
-                <nav class="toc">
-                  <ul>
-                    <li><a href="#hello">Hello</a>
-                    </li>
-                  </ul>
-                </nav>
-            "##}
-        );
+        for level in [HeadingLevel::H2, HeadingLevel::H3] {
+            let entries = vec![TocEntry {
+                level,
+                number: None,
+                id: "hello".into(),
+                title: "Hello".into(),
+            }];
+            assert_eq!(
+                render_toc_html(&entries),
+                indoc! {r##"
+                    <nav class="toc">
+                      <ul>
+                        <li><a href="#hello">Hello</a>
+                        </li>
+                      </ul>
+                    </nav>
+                "##}
+            );
+        }
     }
 
     #[test]
@@ -245,27 +247,6 @@ mod tests {
     }
 
     #[test]
-    fn render_toc_html_h3_first_normalizes_to_top_level() {
-        let entries = vec![TocEntry {
-            level: HeadingLevel::H3,
-            number: None,
-            id: "only".into(),
-            title: "Only".into(),
-        }];
-        assert_eq!(
-            render_toc_html(&entries),
-            indoc! {r##"
-                <nav class="toc">
-                  <ul>
-                    <li><a href="#only">Only</a>
-                    </li>
-                  </ul>
-                </nav>
-            "##}
-        );
-    }
-
-    #[test]
     fn render_toc_html_skipped_levels() {
         // H2 then H4: intermediate <ul> levels get wrapper <li> elements.
         let entries = vec![
@@ -339,32 +320,18 @@ mod tests {
     }
 
     #[test]
-    fn render_toc_html_title_with_html_chars() {
-        let entries = vec![TocEntry {
-            level: HeadingLevel::H2,
-            number: None,
-            id: "generics".into(),
-            title: "Vec<T> & Friends".into(),
-        }];
-        let html = render_toc_html(&entries);
-        assert!(
-            html.contains("Vec&lt;T&gt; &amp; Friends"),
-            "should escape HTML in titles, html:\n{html}"
-        );
-    }
-
-    #[test]
-    fn render_toc_html_id_with_html_chars() {
+    fn render_toc_html_escapes_title_and_id() {
         let entries = vec![TocEntry {
             level: HeadingLevel::H2,
             number: None,
             id: "foo&bar".into(),
-            title: "Foo".into(),
+            title: "Vec<T> & Friends".into(),
         }];
         let html = render_toc_html(&entries);
+        assert!(html.contains(r##"href="#foo&amp;bar""##), "{html}");
         assert!(
-            html.contains(r##"href="#foo&amp;bar""##),
-            "should escape HTML in href, html:\n{html}"
+            html.contains("Vec&lt;T&gt; &amp; Friends"),
+            "should escape HTML in titles, html:\n{html}"
         );
     }
 

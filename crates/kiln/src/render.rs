@@ -68,33 +68,21 @@ mod tests {
     }
 
     #[test]
-    fn from_params_known_options() {
-        let params: toml::Table = toml::from_str(indoc! {r"
+    fn from_params_reads_known_options_and_ignores_other_params() {
+        let params: toml::Table = toml::from_str(indoc! {r#"
             code_max_lines = 40
             emojis = true
             fontawesome = true
             table_nowrap_width = 30
-        "})
+            site_title = "Example"
+            social = { github = "user" }
+        "#})
         .unwrap();
         let options = RenderOptions::from_params(&params).unwrap();
         assert_eq!(options.code_max_lines, Some(40));
         assert!(options.emojis);
         assert!(options.fontawesome);
         assert_eq!(options.table_nowrap_width, Some(30));
-    }
-
-    #[test]
-    fn from_params_ignores_unknown_keys() {
-        let params: toml::Table = toml::from_str(indoc! {r#"
-            emojis = true
-            site_title = "Example"
-            social = { github = "user" }
-        "#})
-        .unwrap();
-        let options = RenderOptions::from_params(&params).unwrap();
-        assert!(options.emojis);
-        assert!(!options.fontawesome);
-        assert!(options.code_max_lines.is_none());
     }
 
     #[test]

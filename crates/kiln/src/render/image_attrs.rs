@@ -104,8 +104,24 @@ mod tests {
     // ── extract_image_attrs ──
 
     #[test]
+    fn extract_image_attrs_authored_fields() {
+        let (output, attrs) = extract_image_attrs(
+            r#"![alt](img.png){#photo .hero width="my .fake class" height=300 foo=bar}"#,
+        );
+        assert_eq!(output, "![alt](img.png)");
+        let attrs = &attrs[&0];
+        assert_eq!(attrs.id.as_deref(), Some("photo"));
+        assert_eq!(attrs.classes, vec!["hero"]);
+        assert_eq!(attrs.width.as_deref(), Some("my .fake class"));
+        assert_eq!(attrs.height.as_deref(), Some("300"));
+    }
+
+    #[test]
     fn extract_image_attrs_uses_markdown_image_boundaries() {
         for image in [
+            r#"![Alt](photo.png "title")"#,
+            "![Alt [nested]](photo.png)",
+            r"![Alt\]text](photo.png)",
             r#"![Alt](photo.png "A ) B")"#,
             r#"![Alt](photo.png "A ( B")"#,
             indoc! {"
@@ -116,69 +132,6 @@ mod tests {
             assert_eq!(cleaned, image);
             assert_eq!(attrs[&0].width.as_deref(), Some("80"));
         }
-    }
-
-    #[test]
-    fn extract_image_attrs_preserves_code_contexts() {
-        for input in [
-            indoc! {"
-                `first
-                ![Alt](photo.png){width=80}`
-            "},
-            "    ![Alt](photo.png){width=80}",
-            indoc! {"
-                > ```
-                > ![Alt](photo.png){width=80}
-                > ```
-            "},
-        ] {
-            let (cleaned, attrs) = extract_image_attrs(input);
-            assert_eq!(cleaned, input);
-            assert!(attrs.is_empty());
-        }
-    }
-
-    #[test]
-    fn extract_image_attrs_no_attrs_passthrough() {
-        let input = "![alt](img.png)";
-        let (output, attrs) = extract_image_attrs(input);
-        assert_eq!(output, input);
-        assert!(attrs.is_empty());
-    }
-
-    #[test]
-    fn extract_image_attrs_authored_fields() {
-        let (output, attrs) =
-            extract_image_attrs("![alt](img.png){#photo .hero width=500 height=300}");
-        assert_eq!(output, "![alt](img.png)");
-        let attrs = &attrs[&0];
-        assert_eq!(attrs.id.as_deref(), Some("photo"));
-        assert_eq!(attrs.classes, vec!["hero"]);
-        assert_eq!(attrs.width.as_deref(), Some("500"));
-        assert_eq!(attrs.height.as_deref(), Some("300"));
-    }
-
-    #[test]
-    fn extract_image_attrs_skips_dot_inside_quoted_value() {
-        // Dots inside quoted values must not be misidentified as classes.
-        let input = r#"![alt](img.png){.real width="my .fake class"}"#;
-        let (output, attrs) = extract_image_attrs(input);
-        assert_eq!(output, "![alt](img.png)");
-        assert_eq!(attrs.len(), 1);
-        let a = &attrs[&0];
-        assert_eq!(a.classes, vec!["real"]);
-        assert_eq!(a.width.as_deref(), Some("my .fake class"));
-    }
-
-    #[test]
-    fn extract_image_attrs_with_escaped_quote_in_value() {
-        let input = r#"![alt](img.png){.hero width="val\"ue"}"#;
-        let (output, attrs) = extract_image_attrs(input);
-        assert_eq!(output, "![alt](img.png)");
-        assert_eq!(attrs.len(), 1);
-        let a = &attrs[&0];
-        assert_eq!(a.classes, vec!["hero"]);
-        assert_eq!(a.width.as_deref(), Some("val\"ue"));
     }
 
     #[test]
@@ -193,36 +146,6 @@ mod tests {
             assert_eq!(a.width.as_deref(), Some(width));
             assert_eq!(a.height.as_deref(), Some("300"));
         }
-    }
-
-    #[test]
-    fn extract_image_attrs_nested_brackets() {
-        let input = "![alt [nested]](img.png){width=100}";
-        let (output, attrs) = extract_image_attrs(input);
-        assert_eq!(output, "![alt [nested]](img.png)");
-        assert_eq!(attrs.len(), 1);
-        let a = &attrs[&0];
-        assert_eq!(a.width.as_deref(), Some("100"));
-    }
-
-    #[test]
-    fn extract_image_attrs_with_title() {
-        let input = r#"![alt](img.png "title"){width=100}"#;
-        let (output, attrs) = extract_image_attrs(input);
-        assert_eq!(output, r#"![alt](img.png "title")"#);
-        assert_eq!(attrs.len(), 1);
-        let a = &attrs[&0];
-        assert_eq!(a.width.as_deref(), Some("100"));
-    }
-
-    #[test]
-    fn extract_image_attrs_escaped_bracket() {
-        let input = r"![alt\]text](img.png){width=100}";
-        let (output, attrs) = extract_image_attrs(input);
-        assert_eq!(output, r"![alt\]text](img.png)");
-        assert_eq!(attrs.len(), 1);
-        let a = &attrs[&0];
-        assert_eq!(a.width.as_deref(), Some("100"));
     }
 
     #[test]
@@ -248,111 +171,34 @@ mod tests {
     }
 
     #[test]
-    fn extract_image_attrs_unknown_key_ignored() {
-        let input = "![alt](img.png){foo=bar width=100}";
-        let (output, attrs) = extract_image_attrs(input);
-        assert_eq!(output, "![alt](img.png)");
-        assert_eq!(attrs.len(), 1);
-        let a = &attrs[&0];
-        assert_eq!(a.width.as_deref(), Some("100"));
-    }
-
-    #[test]
-    fn extract_image_attrs_bang_without_bracket_preserved() {
-        let input = "!{width=500}";
-        let (output, attrs) = extract_image_attrs(input);
-        assert_eq!(output, input);
-        assert!(attrs.is_empty());
-    }
-
-    #[test]
-    fn extract_image_attrs_alt_without_paren_preserved() {
-        let input = "![alt]{width=500}";
-        let (output, attrs) = extract_image_attrs(input);
-        assert_eq!(output, input);
-        assert!(attrs.is_empty());
-    }
-
-    #[test]
-    fn extract_image_attrs_no_image_braces_preserved() {
-        let input = "text {width=500} more";
-        let (output, attrs) = extract_image_attrs(input);
-        assert_eq!(output, input);
-        assert!(attrs.is_empty());
-    }
-
-    #[test]
-    fn extract_image_attrs_unclosed_brace_preserved() {
-        let input = indoc! {"
-            ![alt](img.png){width=500
-            next line
-        "};
-        let (output, attrs) = extract_image_attrs(input);
-        assert_eq!(output, input);
-        assert!(attrs.is_empty());
-    }
-
-    #[test]
-    fn extract_image_attrs_unclosed_brace_at_eof_preserved() {
-        let input = "![alt](img.png){width=500";
-        let (output, attrs) = extract_image_attrs(input);
-        assert_eq!(output, input);
-        assert!(attrs.is_empty());
-    }
-
-    #[test]
-    fn extract_image_attrs_unclosed_quoted_value_preserved() {
-        let input = r#"![alt](img.png){width="a}b"#;
-        let (output, attrs) = extract_image_attrs(input);
-        assert_eq!(output, input);
-        assert!(attrs.is_empty());
-    }
-
-    #[test]
-    fn extract_image_attrs_empty_brace_block_drops_attrs_entry() {
-        let input = "![alt](img.png){}";
-        let (output, attrs) = extract_image_attrs(input);
-        assert_eq!(output, "![alt](img.png)");
-        assert!(attrs.is_empty());
-    }
-
-    #[test]
-    fn extract_image_attrs_unmatched_open_bracket_passes_bang_through() {
-        let input = "![no close paren or bracket";
-        let (output, attrs) = extract_image_attrs(input);
-        assert_eq!(output, input);
-        assert!(attrs.is_empty());
-    }
-
-    // ── extract_image_attrs (code awareness) ──
-
-    #[test]
-    fn extract_image_attrs_skips_inline_code() {
-        let input = "`![alt](img.png){width=500}` rest";
-        let (output, attrs) = extract_image_attrs(input);
-        assert_eq!(output, input);
-        assert!(attrs.is_empty());
-    }
-
-    #[test]
-    fn extract_image_attrs_skips_fenced_code() {
-        let input = indoc! {"
-            ```
-            ![alt](img.png){width=500}
-            ```
-        "};
-        let (output, attrs) = extract_image_attrs(input);
-        assert_eq!(output, input);
-        assert!(attrs.is_empty());
-
-        let input = indoc! {"
-            ~~~
-            ![alt](img.png){width=500}
-            ~~~
-        "};
-        let (output, attrs) = extract_image_attrs(input);
-        assert_eq!(output, input);
-        assert!(attrs.is_empty());
+    fn extract_image_attrs_preserves_code_contexts() {
+        for input in [
+            "`![alt](img.png){width=500}` rest",
+            indoc! {"
+                ```
+                ![alt](img.png){width=500}
+                ```
+            "},
+            indoc! {"
+                ~~~
+                ![alt](img.png){width=500}
+                ~~~
+            "},
+            indoc! {"
+                `first
+                ![Alt](photo.png){width=80}`
+            "},
+            "    ![Alt](photo.png){width=80}",
+            indoc! {"
+                > ```
+                > ![Alt](photo.png){width=80}
+                > ```
+            "},
+        ] {
+            let (cleaned, attrs) = extract_image_attrs(input);
+            assert_eq!(cleaned, input);
+            assert!(attrs.is_empty());
+        }
     }
 
     #[test]
@@ -374,6 +220,35 @@ mod tests {
         assert_eq!(attrs.len(), 1);
         let a = &attrs[&output.find("![alt]").unwrap()];
         assert_eq!(a.width.as_deref(), Some("500"));
+    }
+
+    #[test]
+    fn extract_image_attrs_empty_brace_block_drops_attrs_entry() {
+        let input = "![alt](img.png){}";
+        let (output, attrs) = extract_image_attrs(input);
+        assert_eq!(output, "![alt](img.png)");
+        assert!(attrs.is_empty());
+    }
+
+    #[test]
+    fn extract_image_attrs_preserves_unattributed_and_malformed_input() {
+        for input in [
+            "![alt](img.png)",
+            "!{width=500}",
+            "![alt]{width=500}",
+            "text {width=500} more",
+            indoc! {"
+                ![alt](img.png){width=500
+                next line
+            "},
+            "![alt](img.png){width=500",
+            r#"![alt](img.png){width="a}b"#,
+            "![no close paren or bracket",
+        ] {
+            let (output, attrs) = extract_image_attrs(input);
+            assert_eq!(output, input);
+            assert!(attrs.is_empty(), "{input}");
+        }
     }
 
     // ── ImageAttrs::is_empty ──

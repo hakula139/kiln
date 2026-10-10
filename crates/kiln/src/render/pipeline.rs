@@ -408,61 +408,6 @@ mod tests {
     // ── render_page ──
 
     #[test]
-    fn render_page_enriches_images_in_inline_containers() {
-        for input in [
-            "- ![Alt](photo.png){width=80 #photo}",
-            "## ![Alt](photo.png){width=80 #photo}",
-            indoc! {"
-                | Image |
-                | --- |
-                | ![Alt](photo.png){width=80 #photo} |
-            "},
-        ] {
-            let html = render(input).content_html;
-            assert!(html.contains(r#"id="photo""#), "{html}");
-            assert!(html.contains(r#"width="80""#), "{html}");
-            assert!(html.contains(r#"loading="lazy""#), "{html}");
-            assert!(!html.contains("<figure"), "{html}");
-        }
-    }
-
-    #[test]
-    fn render_page_preserves_heading_attributes() {
-        let html = render("## Title {.wide data-x=yes numbering-start=3}").content_html;
-        assert!(html.contains(r#"class="wide""#), "{html}");
-        assert!(html.contains(r#"data-x="yes""#), "{html}");
-        assert!(!html.contains("numbering-start"), "{html}");
-    }
-
-    #[test]
-    fn render_page_reserves_fence_ids_across_directive_scopes() {
-        let fence = indoc! {"
-            ::: wrapper
-            ```rust {#sample}
-            let value = 1;
-            ```
-            ```text {#fn-a}
-            footnote id
-            ```
-            :::
-        "};
-        let prose = indoc! {"
-            ## Sample
-
-            Text[^a]
-
-            [^a]: Note
-        "};
-        for input in [format!("{fence}\n{prose}"), format!("{prose}\n{fence}")] {
-            let html = render(&input).content_html;
-            assert_eq!(html.matches(r#"id="sample""#).count(), 1, "{html}");
-            assert!(html.contains(r#"id="sample-1""#), "{html}");
-            assert_eq!(html.matches(r#"id="fn-a""#).count(), 1, "{html}");
-            assert!(html.contains(r#"id="fn-a-1""#), "{html}");
-        }
-    }
-
-    #[test]
     fn render_page_no_directives() {
         let page = render(indoc! {"
             # Hello
@@ -548,6 +493,25 @@ mod tests {
     }
 
     #[test]
+    fn render_page_enriches_images_in_inline_containers() {
+        for input in [
+            "- ![Alt](photo.png){width=80 #photo}",
+            "## ![Alt](photo.png){width=80 #photo}",
+            indoc! {"
+                | Image |
+                | --- |
+                | ![Alt](photo.png){width=80 #photo} |
+            "},
+        ] {
+            let html = render(input).content_html;
+            assert!(html.contains(r#"id="photo""#), "{html}");
+            assert!(html.contains(r#"width="80""#), "{html}");
+            assert!(html.contains(r#"loading="lazy""#), "{html}");
+            assert!(!html.contains("<figure"), "{html}");
+        }
+    }
+
+    #[test]
     fn render_page_replaces_shortcodes_in_directive_bodies() {
         let options = RenderOptions {
             emojis: true,
@@ -628,6 +592,42 @@ mod tests {
     }
 
     // ── render_page: headings and IDs ──
+
+    #[test]
+    fn render_page_preserves_heading_attributes() {
+        let html = render("## Title {.wide data-x=yes numbering-start=3}").content_html;
+        assert!(html.contains(r#"class="wide""#), "{html}");
+        assert!(html.contains(r#"data-x="yes""#), "{html}");
+        assert!(!html.contains("numbering-start"), "{html}");
+    }
+
+    #[test]
+    fn render_page_reserves_fence_ids_across_directive_scopes() {
+        let fence = indoc! {"
+            ::: wrapper
+            ```rust {#sample}
+            let value = 1;
+            ```
+            ```text {#fn-a}
+            footnote id
+            ```
+            :::
+        "};
+        let prose = indoc! {"
+            ## Sample
+
+            Text[^a]
+
+            [^a]: Note
+        "};
+        for input in [format!("{fence}\n{prose}"), format!("{prose}\n{fence}")] {
+            let html = render(&input).content_html;
+            assert_eq!(html.matches(r#"id="sample""#).count(), 1, "{html}");
+            assert!(html.contains(r#"id="sample-1""#), "{html}");
+            assert_eq!(html.matches(r#"id="fn-a""#).count(), 1, "{html}");
+            assert!(html.contains(r#"id="fn-a-1""#), "{html}");
+        }
+    }
 
     #[test]
     fn render_page_heading_ids_follow_document_order_across_scopes() {
@@ -988,21 +988,19 @@ mod tests {
             Second.
             :::
         "});
-        assert!(
-            page.content_html.contains(r#"class="callout note""#),
-            "first callout, html:\n{}",
-            page.content_html
-        );
-        assert!(
-            page.content_html.contains(r#"class="callout warning""#),
-            "second callout, html:\n{}",
-            page.content_html
-        );
-        assert!(
-            page.content_html.contains("<p>Some text between.</p>"),
-            "text between directives preserved, html:\n{}",
-            page.content_html
-        );
+        let first = page.content_html.find(r#"class="callout note""#).unwrap();
+        let first_body = page.content_html.find("<p>First.</p>").unwrap();
+        let first_close = page.content_html.find("</details>").unwrap();
+        let between = page.content_html.find("<p>Some text between.</p>").unwrap();
+        let second = page
+            .content_html
+            .find(r#"class="callout warning""#)
+            .unwrap();
+        let second_body = page.content_html.find("<p>Second.</p>").unwrap();
+        let second_close = page.content_html.rfind("</details>").unwrap();
+        assert!(first < first_body && first_body < first_close);
+        assert!(first_close < between && between < second);
+        assert!(second < second_body && second_body < second_close);
     }
 
     #[test]
@@ -1035,26 +1033,18 @@ mod tests {
             :::
             ::::
         "});
-        assert!(
-            page.content_html.contains(r#"class="callout warning""#),
-            "outer callout, html:\n{}",
-            page.content_html
-        );
-        assert!(
-            page.content_html.contains("<p>Outer text.</p>"),
-            "outer body rendered, html:\n{}",
-            page.content_html
-        );
-        assert!(
-            page.content_html.contains(r#"class="callout tip""#),
-            "inner callout, html:\n{}",
-            page.content_html
-        );
-        assert!(
-            page.content_html.contains("<p>Inner text.</p>"),
-            "inner body rendered, html:\n{}",
-            page.content_html
-        );
+        let outer = page
+            .content_html
+            .find(r#"class="callout warning""#)
+            .unwrap();
+        let outer_body = page.content_html.find("<p>Outer text.</p>").unwrap();
+        let inner = page.content_html.find(r#"class="callout tip""#).unwrap();
+        let inner_body = page.content_html.find("<p>Inner text.</p>").unwrap();
+        let inner_close = page.content_html.find("</details>").unwrap();
+        let outer_close = page.content_html.rfind("</details>").unwrap();
+        assert!(outer < outer_body && outer_body < inner);
+        assert!(inner < inner_body && inner_body < inner_close);
+        assert!(inner_close < outer_close);
     }
 
     #[test]

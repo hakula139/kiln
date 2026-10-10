@@ -819,89 +819,51 @@ mod tests {
     // ── render_markdown: code blocks ──
 
     #[test]
-    fn render_markdown_code_block() {
-        let md = indoc! {"
-            ```
-            fn main() {}
-            ```
-        "};
-        let out = render(md);
-        assert!(
-            out.html.contains(r#"class="highlight""#),
-            "no-lang code block should still have highlight wrapper, html:\n{}",
-            out.html
-        );
-        assert!(
-            out.html.contains(r#"data-lang="plaintext""#),
-            "no-lang code block should normalize to plaintext, html:\n{}",
-            out.html
-        );
+    fn render_markdown_plaintext_code_blocks() {
+        for md in [
+            indoc! {"
+                ```
+                fn main() {}
+                ```
+            "},
+            "    fn main() {}",
+        ] {
+            let out = render(md);
+            assert!(out.html.contains(r#"class="highlight""#), "{}", out.html);
+            assert!(
+                out.html.contains(r#"data-lang="plaintext""#),
+                "{}",
+                out.html
+            );
+            assert!(out.html.contains("fn main() {}"), "{}", out.html);
+        }
     }
 
     #[test]
-    fn render_markdown_indented_code_block() {
-        let md = "    fn main() {}\n";
-        let out = render(md);
-        assert!(
-            out.html.contains(r#"class="highlight""#),
-            "indented code block should have highlight wrapper, html:\n{}",
-            out.html
-        );
-        assert!(
-            out.html.contains(r#"data-lang="plaintext""#),
-            "indented code block should normalize to plaintext, html:\n{}",
-            out.html
-        );
-    }
-
-    #[test]
-    fn render_markdown_code_block_with_language() {
-        let md = indoc! {"
-            ```rust
-            fn main() {}
-            ```
-        "};
-        let out = render(md);
-        assert!(
-            out.html.contains(r#"class="highlight""#),
-            "should have highlight wrapper, html:\n{}",
-            out.html
-        );
-        assert!(
-            out.html.contains(r#"data-lang="rust""#),
-            "should have data-lang attribute, html:\n{}",
-            out.html
-        );
-        assert!(
-            out.html.contains("<span class="),
-            "should contain highlighted spans, html:\n{}",
-            out.html
-        );
-    }
-
-    #[test]
-    fn render_markdown_code_block_info_string_metadata() {
-        let md = indoc! {"
-            ```rust no_run
-            fn main() {}
-            ```
-        "};
-        let out = render(md);
-        assert!(
-            out.html.contains(r#"data-lang="rust""#),
-            "should extract language from info string, html:\n{}",
-            out.html
-        );
-        assert!(
-            !out.html.contains("no_run"),
-            "metadata after language should be stripped, html:\n{}",
-            out.html
-        );
-        assert!(
-            out.html.contains("<span class="),
-            "should contain highlighted spans, html:\n{}",
-            out.html
-        );
+    fn render_markdown_code_block_extracts_language_and_highlights_source() {
+        for md in [
+            indoc! {"
+                ```rust
+                fn main() {}
+                ```
+            "},
+            indoc! {"
+                ```rust no_run
+                fn main() {}
+                ```
+            "},
+        ] {
+            let out = render(md);
+            assert!(out.html.contains(r#"class="highlight""#), "{}", out.html);
+            assert!(out.html.contains(r#"data-lang="rust""#), "{}", out.html);
+            assert!(!out.html.contains("no_run"), "{}", out.html);
+            assert!(
+                out.html
+                    .contains(r#"<span class="source rust"><span class="meta function rust">"#),
+                "{}",
+                out.html
+            );
+        }
     }
 
     #[test]

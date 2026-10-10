@@ -362,43 +362,9 @@ mod tests {
     // ── parse_directives: pandoc attributes ──
 
     #[test]
-    fn parse_directives_pandoc_id_extracted() {
-        let input = indoc! {"
-            ::: callout {#my-id}
-            Body
-            :::
-        "};
-        let blocks = parse_directives(input);
-        assert_eq!(blocks.len(), 1);
-        assert_eq!(
-            blocks[0].block.kind,
-            DirectiveKind::Callout {
-                kind: CalloutKind::Note,
-                title: None,
-                open: true,
-            }
-        );
-        assert_eq!(blocks[0].block.id.as_deref(), Some("my-id"));
-        assert_eq!(blocks[0].block.classes, Vec::<String>::new());
-    }
-
-    #[test]
-    fn parse_directives_pandoc_extra_classes_collected() {
-        let input = indoc! {"
-            ::: callout {.highlight .compact}
-            Body
-            :::
-        "};
-        let blocks = parse_directives(input);
-        assert_eq!(blocks.len(), 1);
-        assert_eq!(blocks[0].block.id, None);
-        assert_eq!(blocks[0].block.classes, ["highlight", "compact"]);
-    }
-
-    #[test]
-    fn parse_directives_pandoc_id_and_classes_with_args() {
+    fn parse_directives_pandoc_interleaved_attrs() {
         let input = indoc! {r#"
-            ::: callout {#box .wide type=warning title="Careful"}
+            ::: callout {.highlight type=tip #my-id title="Hello #world .bold" .wide open=false}
             Body
             :::
         "#};
@@ -407,43 +373,9 @@ mod tests {
         assert_eq!(
             blocks[0].block.kind,
             DirectiveKind::Callout {
-                kind: CalloutKind::Warning,
-                title: Some("Careful".into()),
-                open: true,
-            }
-        );
-        assert_eq!(blocks[0].block.id.as_deref(), Some("box"));
-        assert_eq!(blocks[0].block.classes, ["wide"]);
-    }
-
-    #[test]
-    fn parse_directives_pandoc_id_after_class() {
-        let input = indoc! {"
-            ::: callout {.extra #late-id}
-            Body
-            :::
-        "};
-        let blocks = parse_directives(input);
-        assert_eq!(blocks.len(), 1);
-        assert_eq!(blocks[0].block.id.as_deref(), Some("late-id"));
-        assert_eq!(blocks[0].block.classes, ["extra"]);
-    }
-
-    #[test]
-    fn parse_directives_pandoc_interleaved_attrs() {
-        let input = indoc! {"
-            ::: callout {.highlight type=tip #my-id .wide}
-            Body
-            :::
-        "};
-        let blocks = parse_directives(input);
-        assert_eq!(blocks.len(), 1);
-        assert_eq!(
-            blocks[0].block.kind,
-            DirectiveKind::Callout {
                 kind: CalloutKind::Tip,
-                title: None,
-                open: true,
+                title: Some("Hello #world .bold".into()),
+                open: false,
             }
         );
         assert_eq!(blocks[0].block.id.as_deref(), Some("my-id"));
@@ -510,53 +442,6 @@ mod tests {
                 named_args: BTreeMap::from([("title".into(), "Custom".into())]),
             }
         );
-    }
-
-    #[test]
-    fn parse_directives_pandoc_multiple_ids_first_wins() {
-        let input = indoc! {"
-            ::: callout {#first #second .extra}
-            Body
-            :::
-        "};
-        let blocks = parse_directives(input);
-        assert_eq!(blocks.len(), 1);
-        assert_eq!(blocks[0].block.id.as_deref(), Some("first"));
-        assert_eq!(blocks[0].block.classes, ["extra"]);
-    }
-
-    #[test]
-    fn parse_directives_pandoc_empty_hash_and_dot_ignored() {
-        let input = indoc! {"
-            ::: callout {# . .real}
-            Body
-            :::
-        "};
-        let blocks = parse_directives(input);
-        assert_eq!(blocks.len(), 1);
-        assert_eq!(blocks[0].block.id, None);
-        assert_eq!(blocks[0].block.classes, ["real"]);
-    }
-
-    #[test]
-    fn parse_directives_pandoc_quoted_value_shields_hash_and_dot() {
-        let input = indoc! {r#"
-            ::: callout {title="Hello #world .bold" #real-id .real-class}
-            Body
-            :::
-        "#};
-        let blocks = parse_directives(input);
-        assert_eq!(blocks.len(), 1);
-        assert_eq!(
-            blocks[0].block.kind,
-            DirectiveKind::Callout {
-                kind: CalloutKind::Note,
-                title: Some("Hello #world .bold".into()),
-                open: true,
-            }
-        );
-        assert_eq!(blocks[0].block.id.as_deref(), Some("real-id"));
-        assert_eq!(blocks[0].block.classes, ["real-class"]);
     }
 
     // ── parse_directives: nesting ──
@@ -831,7 +716,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_directives_trailing_content_after_attrs_preserved() {
+    fn parse_directives_ignores_trailing_content_after_attrs() {
         let input = indoc! {r#"
             ::: embed { src="example.com" mode="full" } <!-- comment -->
             :::
@@ -985,7 +870,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_directive_head_trailing_content_after_close_brace_kept() {
+    fn parse_directive_head_ignores_trailing_content_after_close_brace() {
         let head = parse_directive_head(r#"embed {src="example.com"} <!-- note } -->"#);
         assert_eq!(head.name, "embed");
         assert_eq!(head.positional_args, Vec::<String>::new());

@@ -271,26 +271,15 @@ mod tests {
     // ── parse_highlight_ranges ──
 
     #[test]
-    fn parse_highlight_ranges_single_line() {
-        assert_eq!(parse_highlight_ranges("3"), vec![3..=3]);
-    }
-
-    #[test]
-    fn parse_highlight_ranges_range() {
-        assert_eq!(parse_highlight_ranges("2-5"), vec![2..=5]);
-    }
-
-    #[test]
-    fn parse_highlight_ranges_mixed() {
-        assert_eq!(parse_highlight_ranges("1,3-5,7"), vec![1..=1, 3..=5, 7..=7]);
-    }
-
-    #[test]
-    fn parse_highlight_ranges_with_spaces() {
-        assert_eq!(
-            parse_highlight_ranges(" 1 , 3 - 5 , 7 "),
-            vec![1..=1, 3..=5, 7..=7]
-        );
+    fn parse_highlight_ranges_valid_ranges() {
+        for (input, expected) in [
+            ("3", std::iter::once(3..=3).collect()),
+            ("2-5", std::iter::once(2..=5).collect()),
+            ("1,3-5,7", vec![1..=1, 3..=5, 7..=7]),
+            (" 1 , 3 - 5 , 7 ", vec![1..=1, 3..=5, 7..=7]),
+        ] {
+            assert_eq!(parse_highlight_ranges(input), expected, "{input}");
+        }
     }
 
     #[test]
