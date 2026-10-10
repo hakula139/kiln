@@ -13,26 +13,34 @@ const DEFAULT_BINARY: &str = "pagefind";
 /// Returns an error if the output path is not UTF-8, the binary cannot be executed, or it exits
 /// with a non-zero status. Exit failures include stdout and stderr.
 pub fn run_pagefind(output_dir: &Path, binary: Option<&str>) -> Result<()> {
-    let binary = binary.unwrap_or(DEFAULT_BINARY);
+    let command = binary.unwrap_or(DEFAULT_BINARY);
     let site_arg = output_dir
         .to_str()
         .context("output directory path is not valid UTF-8")?;
 
-    let output = Command::new(binary)
-        .args(["--site", site_arg])
-        .output()
-        .with_context(|| {
-            formatdoc! {"
-                failed to run `{binary}`. Is Pagefind installed?
+    let output = Command::new(command).args(["--site", site_arg]).output();
+    #[cfg(windows)]
+    let output = output.or_else(|error| {
+        if binary.is_none() && error.kind() == std::io::ErrorKind::NotFound {
+            Command::new("pagefind.cmd")
+                .args(["--site", site_arg])
+                .output()
+        } else {
+            Err(error)
+        }
+    });
+    let output = output.with_context(|| {
+        formatdoc! {"
+            failed to run `{command}`. Is Pagefind installed?
 
-                Install with one of:
+            Install with one of:
 
-                  cargo install pagefind
-                  npm install -g pagefind
-                  npx pagefind --site <dir>
+              cargo install pagefind
+              npm install -g pagefind
+              npx pagefind --site <dir>
 
-                See https://pagefind.app/docs/installation/ for details."}
-        })?;
+            See https://pagefind.app/docs/installation/ for details."}
+    })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -67,6 +75,29 @@ mod tests {
     use super::*;
 
     // ── run_pagefind ──
+
+    #[test]
+    #[ignore = "requires globally installed npm Pagefind"]
+    fn run_pagefind_npm_indexes_site() {
+        let dir = tempfile::Builder::new()
+            .prefix("pagefind site & (test) ")
+            .tempdir()
+            .unwrap();
+        std::fs::write(
+            dir.path().join("index.html"),
+            r#"<html lang="en"><body><main data-pagefind-body>Searchable example</main></body></html>"#,
+        )
+        .unwrap();
+
+        run_pagefind(dir.path(), None).unwrap();
+
+        assert!(dir.path().join("pagefind/pagefind.js").is_file());
+        let entry: serde_yaml::Value = serde_yaml::from_slice(
+            &std::fs::read(dir.path().join("pagefind/pagefind-entry.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(entry["languages"]["en"]["page_count"].as_u64(), Some(1));
+    }
 
     #[test]
     fn run_pagefind_missing_binary_returns_error() {
