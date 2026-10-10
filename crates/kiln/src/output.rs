@@ -234,48 +234,28 @@ mod tests {
     // ── copy_directory ──
 
     #[test]
-    fn copy_directory_copies_recursively() {
-        let dir = tempfile::tempdir().unwrap();
-        let src = dir.path().join("static");
-        let dest = dir.path().join("public");
-        fs::create_dir_all(src.join("images")).unwrap();
-        fs::create_dir_all(&dest).unwrap();
-        fs::write(src.join("favicon.ico"), "icon").unwrap();
-        fs::write(src.join("images").join("logo.png"), "logo").unwrap();
-
-        copy_directory(&src, &dest, |_| true).unwrap();
-
-        assert_eq!(
-            fs::read_to_string(dest.join("favicon.ico")).unwrap(),
-            "icon"
-        );
-        assert_eq!(
-            fs::read_to_string(dest.join("images").join("logo.png")).unwrap(),
-            "logo"
-        );
-    }
-
-    #[test]
-    fn copy_directory_preserves_underscore_names_at_every_depth() {
+    fn copy_directory_copies_recursively_and_preserves_underscore_names() {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("static");
         let dest = dir.path().join("public");
         let files = [
-            "_headers",
-            "_redirects",
-            "_custom/data.txt",
-            "nested/_headers",
+            ("favicon.ico", "icon"),
+            ("images/logo.png", "logo"),
+            ("_headers", "headers"),
+            ("_redirects", "redirects"),
+            ("_custom/data.txt", "data"),
+            ("nested/_headers", "nested headers"),
         ];
-        for file in files {
+        for (file, contents) in files {
             let path = src.join(file);
             fs::create_dir_all(path.parent().unwrap()).unwrap();
-            fs::write(path, file).unwrap();
+            fs::write(path, contents).unwrap();
         }
 
         copy_directory(&src, &dest, |_| true).unwrap();
 
-        for file in files {
-            assert_eq!(fs::read_to_string(dest.join(file)).unwrap(), file);
+        for (file, contents) in files {
+            assert_eq!(fs::read_to_string(dest.join(file)).unwrap(), contents);
         }
     }
 
@@ -354,7 +334,6 @@ mod tests {
 
     // macOS APFS rejects non-UTF-8 filenames, while Linux ext4 and btrfs accept them.
     #[cfg(target_os = "linux")]
-    #[cfg(unix)]
     #[test]
     fn copy_directory_copies_files_with_non_utf8_names() {
         use std::ffi::OsStr;
@@ -532,7 +511,7 @@ mod tests {
     // ── copy_file ──
 
     #[test]
-    fn copy_file_creates_parent_and_copies() {
+    fn copy_file_creates_parents_and_overwrites_existing_file() {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("source.png");
         let dest = dir.path().join("a").join("b").join("dest.png");
@@ -541,6 +520,10 @@ mod tests {
         copy_file(&src, &dest).unwrap();
 
         assert_eq!(fs::read_to_string(&dest).unwrap(), "image-data");
+
+        fs::write(&src, "updated-image").unwrap();
+        copy_file(&src, &dest).unwrap();
+        assert_eq!(fs::read_to_string(&dest).unwrap(), "updated-image");
     }
 
     #[test]
@@ -578,23 +561,14 @@ mod tests {
     // ── write_output ──
 
     #[test]
-    fn write_output_creates_parent_dirs() {
+    fn write_output_creates_parents_and_overwrites_existing_file() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("a").join("b").join("test.html");
-
-        write_output(&path, "hello").unwrap();
-
-        assert_eq!(fs::read_to_string(&path).unwrap(), "hello");
-    }
-
-    #[test]
-    fn write_output_overwrites_existing_file() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("test.html");
+        let path = dir.path().join("a/b/test.html");
 
         write_output(&path, "first").unwrap();
-        write_output(&path, "second").unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "first");
 
+        write_output(&path, "second").unwrap();
         assert_eq!(fs::read_to_string(&path).unwrap(), "second");
     }
 

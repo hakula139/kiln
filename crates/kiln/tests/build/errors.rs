@@ -6,9 +6,7 @@ use kiln::build::{BuildOptions, build};
 
 #[cfg(unix)]
 use super::support::PermissionGuard;
-use super::support::{
-    assert_broken_template_fails, copy_templates, setup_site_with_page, write_page,
-};
+use super::support::{copy_templates, setup_site_with_page, write_page};
 
 // ── build: 404 page ──
 
@@ -77,18 +75,25 @@ fn build_missing_templates_returns_error() {
 }
 
 #[test]
-fn build_broken_post_template_returns_error() {
-    assert_broken_template_fails("post.html");
-}
+fn build_broken_page_templates_returns_error() {
+    for template in ["post.html", "archive.html", "overview.html"] {
+        let root = tempfile::tempdir().unwrap();
+        setup_site_with_page(root.path());
 
-#[test]
-fn build_broken_archive_template_returns_error() {
-    assert_broken_template_fails("archive.html");
-}
+        fs::write(
+            root.path().join("templates").join(template),
+            "{% invalid %}",
+        )
+        .unwrap();
 
-#[test]
-fn build_broken_overview_template_returns_error() {
-    assert_broken_template_fails("overview.html");
+        let err = build(root.path(), BuildOptions::default())
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("failed to render"),
+            "should report render failure for {template}, got: {err}"
+        );
+    }
 }
 
 #[test]

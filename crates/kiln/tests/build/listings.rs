@@ -12,79 +12,6 @@ use super::support::{
 // ── build: home page ──
 
 #[test]
-fn build_generates_home_page() {
-    let root = tempfile::tempdir().unwrap();
-    fs::write(root.path().join("config.toml"), "").unwrap();
-    copy_templates(&root.path().join("templates"));
-
-    write_page(
-        root.path(),
-        "posts/note/hello",
-        indoc! {r#"
-            +++
-            title = "Hello"
-            date = "2026-01-01T00:00:00Z"
-            +++
-            Body
-        "#},
-    );
-
-    build(root.path(), BuildOptions::default()).unwrap();
-
-    let home = root.path().join("public").join("index.html");
-    assert!(home.exists(), "should generate home page /index.html");
-    let html = fs::read_to_string(&home).unwrap();
-    assert!(
-        html.contains("Hello"),
-        "home page should list posts, html:\n{html}"
-    );
-    assert!(
-        html.contains(r#"<a href="http://localhost:5456/posts/note/hello/">Hello</a>"#),
-        "home page should link to the post under /posts/, html:\n{html}"
-    );
-}
-
-#[test]
-fn build_home_orders_by_date_descending() {
-    let root = tempfile::tempdir().unwrap();
-    fs::write(root.path().join("config.toml"), "").unwrap();
-    copy_templates(&root.path().join("templates"));
-
-    write_page(
-        root.path(),
-        "posts/aaa-old",
-        indoc! {r#"
-            +++
-            title = "Old Post"
-            date = "2025-01-01T00:00:00Z"
-            +++
-            Body
-        "#},
-    );
-    write_page(
-        root.path(),
-        "posts/zzz-new",
-        indoc! {r#"
-            +++
-            title = "New Post"
-            date = "2026-06-01T00:00:00Z"
-            +++
-            Body
-        "#},
-    );
-
-    build(root.path(), BuildOptions::default()).unwrap();
-
-    let html = fs::read_to_string(root.path().join("public").join("index.html")).unwrap();
-    let new_pos = html.find("New Post").expect("should list New Post");
-    let old_pos = html.find("Old Post").expect("should list Old Post");
-    assert!(
-        new_pos < old_pos,
-        "newer post should appear before older post on home page, html:\n{html}"
-    );
-}
-
-#[test]
 fn build_pins_home_without_reordering_archives() {
     let root = tempfile::tempdir().unwrap();
     write_listing_site(root.path());
@@ -195,12 +122,10 @@ fn build_home_pagination() {
     let root = tempfile::tempdir().unwrap();
     fs::write(
         root.path().join("config.toml"),
-        indoc! {r#"
-            base_url = "https://example.com"
-
+        indoc! {r"
             [params.home]
             paginate = 2
-        "#},
+        "},
     )
     .unwrap();
     copy_templates(&root.path().join("templates"));
@@ -224,52 +149,11 @@ fn build_home_pagination() {
     assert_paginated_listing(
         &root.path().join("public"),
         &[
-            r#"<a href="https://example.com/posts/note/post-3/">Post 3</a>"#,
-            r#"<a href="https://example.com/posts/note/post-2/">Post 2</a>"#,
+            r#"<a href="http://localhost:5456/posts/note/post-3/">Post 3</a>"#,
+            r#"<a href="http://localhost:5456/posts/note/post-2/">Post 2</a>"#,
         ],
-        &[r#"<a href="https://example.com/posts/note/post-1/">Post 1</a>"#],
+        &[r#"<a href="http://localhost:5456/posts/note/post-1/">Post 1</a>"#],
         None,
-    );
-}
-
-#[test]
-fn build_standalone_excluded_from_home() {
-    let root = tempfile::tempdir().unwrap();
-    fs::write(root.path().join("config.toml"), "").unwrap();
-    copy_templates(&root.path().join("templates"));
-
-    write_page(
-        root.path(),
-        "posts/note/hello",
-        indoc! {r#"
-            +++
-            title = "Hello Post"
-            date = "2026-01-01T00:00:00Z"
-            +++
-            Body
-        "#},
-    );
-    write_page(
-        root.path(),
-        "about-me",
-        indoc! {r#"
-            +++
-            title = "About Me"
-            +++
-            Bio
-        "#},
-    );
-
-    build(root.path(), BuildOptions::default()).unwrap();
-
-    let html = fs::read_to_string(root.path().join("public").join("index.html")).unwrap();
-    assert!(
-        html.contains("Hello Post"),
-        "home page should list posts, html:\n{html}"
-    );
-    assert!(
-        !html.contains("About Me"),
-        "home page should NOT list standalone pages, html:\n{html}"
     );
 }
 
@@ -300,46 +184,6 @@ fn build_skips_home_without_template() {
 }
 
 // ── build: posts index ──
-
-#[test]
-fn build_generates_posts_index() {
-    let root = tempfile::tempdir().unwrap();
-    fs::write(root.path().join("config.toml"), "").unwrap();
-    copy_templates(&root.path().join("templates"));
-
-    write_page(
-        root.path(),
-        "posts/note/post-a",
-        indoc! {r#"
-            +++
-            title = "Post A"
-            date = "2026-01-01T00:00:00Z"
-            +++
-            Body
-        "#},
-    );
-    write_page(
-        root.path(),
-        "posts/essay/post-b",
-        indoc! {r#"
-            +++
-            title = "Post B"
-            date = "2026-01-02T00:00:00Z"
-            +++
-            Body
-        "#},
-    );
-
-    build(root.path(), BuildOptions::default()).unwrap();
-
-    let posts_index = root.path().join("public").join("posts").join("index.html");
-    assert!(posts_index.exists(), "should generate /posts/index.html");
-    let html = fs::read_to_string(&posts_index).unwrap();
-    assert!(
-        html.contains("Post A") && html.contains("Post B"),
-        "posts index should list all posts across sections, html:\n{html}"
-    );
-}
 
 #[test]
 fn build_posts_index_uses_index_title() {
@@ -746,46 +590,6 @@ fn build_generates_taxonomy_index_pages() {
     assert!(
         html.contains("rust") && html.contains("web"),
         "tags index should list terms, html:\n{html}"
-    );
-}
-
-#[test]
-fn build_generates_tag_archive_pages() {
-    let root = tempfile::tempdir().unwrap();
-    fs::write(root.path().join("config.toml"), "").unwrap();
-    copy_templates(&root.path().join("templates"));
-
-    for (name, tag) in [("post-1", "rust"), ("post-2", "rust"), ("post-3", "web")] {
-        write_page(
-            root.path(),
-            &format!("posts/{name}"),
-            &format!(
-                indoc! {r#"
-                    +++
-                    title = "{name}"
-                    tags = ["{tag}"]
-                    +++
-                    Body
-                "#},
-                name = name,
-                tag = tag,
-            ),
-        );
-    }
-
-    build(root.path(), BuildOptions::default()).unwrap();
-
-    let output_dir = root.path().join("public");
-    let rust_page = output_dir.join("tags").join("rust").join("index.html");
-    assert!(rust_page.exists(), "should generate /tags/rust/index.html");
-    let html = fs::read_to_string(&rust_page).unwrap();
-    assert!(
-        html.contains("post-1") && html.contains("post-2"),
-        "tag archive should list posts, html:\n{html}"
-    );
-    assert!(
-        !html.contains("post-3"),
-        "tag archive should not include unrelated posts, html:\n{html}"
     );
 }
 

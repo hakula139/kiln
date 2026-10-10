@@ -313,6 +313,7 @@ fn build_compiles_tailwind_with_shared_context_and_fresh_candidates() {
     let canonical_root = root.path().canonicalize().unwrap();
     build(&canonical_root, BuildOptions::default()).unwrap();
     let rebuilt = fs::read_to_string(public.join("assets/css/site.css")).unwrap();
+    assert!(rebuilt.contains(".text-brand"), "{rebuilt}");
     assert!(!rebuilt.contains(".bg-brand"), "{rebuilt}");
 }
 

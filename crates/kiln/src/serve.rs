@@ -477,9 +477,8 @@ async fn shutdown_signal() {
 mod tests {
     use std::fs;
 
-    use indoc::indoc;
-
     use axum::http::Request;
+    use indoc::indoc;
 
     use super::*;
     use crate::test_utils::copy_templates;
@@ -487,9 +486,11 @@ mod tests {
     // ── serve_until ──
 
     #[tokio::test]
-    async fn serve_until_serves_html_with_live_reload() {
+    async fn serve_until_serves_pages_assets_and_websocket() {
         let root = tempfile::tempdir().unwrap();
         setup_site(root.path());
+        fs::create_dir(root.path().join("static")).unwrap();
+        fs::write(root.path().join("static/style.css"), "body { color: red; }").unwrap();
 
         let (addr, shutdown_tx) = spawn_server(root.path()).await;
         wait_for_server(addr).await;
@@ -505,29 +506,16 @@ mod tests {
             "should inject live reload script"
         );
 
-        _ = shutdown_tx.send(());
-    }
-
-    #[tokio::test]
-    async fn serve_until_no_inject_for_non_html() {
-        let root = tempfile::tempdir().unwrap();
-        setup_site(root.path());
-        fs::create_dir_all(root.path().join("static")).unwrap();
-        fs::write(
-            root.path().join("static").join("style.css"),
-            "body { color: red; }",
-        )
-        .unwrap();
-
-        let (addr, shutdown_tx) = spawn_server(root.path()).await;
-        wait_for_server(addr).await;
-
-        let resp = reqwest::get(format!("http://{addr}/style.css"))
+        let css = reqwest::get(format!("http://{addr}/style.css"))
             .await
             .unwrap();
-        assert_eq!(resp.status(), 200);
-        let body = resp.text().await.unwrap();
-        assert_eq!(body, "body { color: red; }");
+        assert_eq!(css.status(), 200);
+        assert_eq!(css.text().await.unwrap(), "body { color: red; }");
+
+        let (ws, _) = tokio_tungstenite::connect_async(format!("ws://{addr}{LIVE_RELOAD_PATH}"))
+            .await
+            .unwrap();
+        drop(ws);
 
         _ = shutdown_tx.send(());
     }
@@ -563,22 +551,6 @@ mod tests {
         _ = shutdown_tx.send(());
     }
 
-    #[tokio::test]
-    async fn serve_until_ws_endpoint() {
-        let root = tempfile::tempdir().unwrap();
-        setup_site(root.path());
-
-        let (addr, shutdown_tx) = spawn_server(root.path()).await;
-        wait_for_server(addr).await;
-
-        let url = format!("ws://{addr}{LIVE_RELOAD_PATH}");
-        let (ws, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
-        drop(ws);
-
-        _ = shutdown_tx.send(());
-    }
-
-    /// Creates a minimal site that builds successfully.
     fn setup_site(root: &Path) {
         fs::write(root.join("config.toml"), "").unwrap();
         copy_templates(&root.join("templates"));
@@ -686,13 +658,20 @@ mod tests {
         let config = Config::default();
         let paths = watch_paths(root.path(), &config);
 
-        assert_eq!(paths.len(), 6);
-        assert!(paths[0].path.ends_with("config.toml") && !paths[0].recursive);
-        assert!(paths[1].path.ends_with("assets") && paths[1].recursive);
-        assert!(paths[2].path.ends_with("content") && paths[2].recursive);
-        assert!(paths[3].path.ends_with("i18n") && paths[3].recursive);
-        assert!(paths[4].path.ends_with("static") && paths[4].recursive);
-        assert!(paths[5].path.ends_with("templates") && paths[5].recursive);
+        assert_eq!(
+            paths
+                .into_iter()
+                .map(|entry| (entry.path, entry.recursive))
+                .collect::<Vec<_>>(),
+            [
+                (root.path().join("config.toml"), false),
+                (root.path().join("assets"), true),
+                (root.path().join("content"), true),
+                (root.path().join("i18n"), true),
+                (root.path().join("static"), true),
+                (root.path().join("templates"), true),
+            ]
+        );
     }
 
     #[test]
@@ -706,25 +685,16 @@ mod tests {
         let config: Config = toml::from_str(r#"theme = "my-theme""#).unwrap();
         let paths = watch_paths(root.path(), &config);
 
-        let theme_entry = paths.iter().find(|e| e.path.ends_with("my-theme/assets"));
-        assert!(theme_entry.is_some(), "should include theme directory");
-        assert!(theme_entry.unwrap().recursive);
-    }
-
-    #[test]
-    fn watch_paths_without_theme() {
-        let root = tempfile::tempdir().unwrap();
-        fs::write(root.path().join("config.toml"), "").unwrap();
-
-        let config = Config::default();
-        let paths = watch_paths(root.path(), &config);
-
-        let theme_entry = paths
-            .iter()
-            .find(|e| e.path.to_string_lossy().contains("themes"));
-        assert!(
-            theme_entry.is_none(),
-            "should not include any theme directory"
+        assert_eq!(
+            paths
+                .into_iter()
+                .map(|entry| (entry.path, entry.recursive))
+                .collect::<Vec<_>>(),
+            [
+                (root.path().join("config.toml"), false),
+                (theme_dir.join("theme.toml"), false),
+                (theme_dir.join("assets"), true),
+            ]
         );
     }
 
@@ -737,7 +707,8 @@ mod tests {
         let paths = watch_paths(root.path(), &config);
 
         assert_eq!(paths.len(), 1);
-        assert!(paths[0].path.ends_with("content"));
+        assert_eq!(paths[0].path, root.path().join("content"));
+        assert!(paths[0].recursive);
     }
 
     // ── watch_loop ──
@@ -1214,7 +1185,6 @@ mod tests {
         build_router(dir, tx)
     }
 
-    /// Collects a response body into a string.
     async fn collect_body(response: Response) -> String {
         let bytes = response.into_body().collect().await.unwrap().to_bytes();
         String::from_utf8(bytes.to_vec()).unwrap()
@@ -1223,36 +1193,22 @@ mod tests {
     // ── inject_script ──
 
     #[test]
-    fn inject_script_before_body_close() {
-        let html = "<html><body><p>Hello</p></body></html>";
-        let result = inject_script(html);
-        assert!(
-            result.contains(LIVE_RELOAD_SCRIPT),
-            "should contain live reload script"
-        );
-        assert!(
-            result.contains(&format!("{LIVE_RELOAD_SCRIPT}</body>")),
-            "script should be injected before </body>, got:\n{result}"
-        );
-    }
-
-    #[test]
-    fn inject_script_case_insensitive() {
-        let html = "<html><body><p>Hello</p></BODY></html>";
-        let result = inject_script(html);
-        assert!(
-            result.contains(&format!("{LIVE_RELOAD_SCRIPT}</BODY>")),
-            "should handle uppercase </BODY>, got:\n{result}"
-        );
-    }
-
-    #[test]
-    fn inject_script_no_body_tag() {
-        let html = "<html><p>Hello</p></html>";
-        let result = inject_script(html);
-        assert!(
-            result.ends_with(LIVE_RELOAD_SCRIPT),
-            "should append script when no </body>, got:\n{result}"
-        );
+    fn inject_script_places_script_before_body_close_or_appends() {
+        for (html, expected) in [
+            (
+                "<html><body>Hello</body></html>",
+                format!("<html><body>Hello{LIVE_RELOAD_SCRIPT}</body></html>"),
+            ),
+            (
+                "<html><body>Hello</BODY></html>",
+                format!("<html><body>Hello{LIVE_RELOAD_SCRIPT}</BODY></html>"),
+            ),
+            (
+                "<html>Hello</html>",
+                format!("<html>Hello</html>{LIVE_RELOAD_SCRIPT}"),
+            ),
+        ] {
+            assert_eq!(inject_script(html), expected);
+        }
     }
 }

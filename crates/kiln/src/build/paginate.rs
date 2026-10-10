@@ -91,6 +91,8 @@ mod tests {
     #[test]
     fn paginate_config_returns_first_matching_path() {
         let params: toml::value::Table = toml::from_str(indoc! {r"
+                paginate = 16
+
                 [home]
                 paginate = 8
             "})
