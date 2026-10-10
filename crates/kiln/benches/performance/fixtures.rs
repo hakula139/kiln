@@ -26,8 +26,8 @@ pub(super) struct Site {
 }
 
 impl Site {
-    /// Creates `pages` section posts using `body` and `params` unrelated settings, with search
-    /// disabled.
+    /// Writes a site of `pages` section posts using `body`, plus `params` as extra `[params]`
+    /// settings, with search disabled.
     pub(super) fn new(pages: usize, body: &str, params: usize) -> Self {
         let directory = tempfile::tempdir().unwrap();
         let root = directory.path();
