@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0-alpha.1] - 2026-10-10
+
+### Breaking changes
+
+- _(kiln)_ Share page metadata and parser contracts (#115)
+- _(render)_ Make native AVIF decoding optional (#116)
+
+### Added
+
+- _(release)_ Publish base and optional AVIF binaries (#118)
+- _(release)_ Distribute kiln through npm platform packages (#121)
+- _(assets)_ Fingerprint raster images and fonts (#127)
+
+### Fixed
+
+- _(build)_ Publish output transactionally and preserve source trees (#114)
+- _(search)_ Run npm Pagefind on Windows (#119)
+- _(config)_ Allow output within linked theme repositories (#126)
+
 ## [0.4.0] - 2026-10-07
 
 ### Breaking changes
@@ -233,6 +252,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - _(deps)_ Bump rand from 0.9.2 to 0.9.4 (#29)
 
+[0.5.0-alpha.1]: https://github.com/hakula139/kiln/compare/v0.4.0..v0.5.0-alpha.1
 [0.4.0]: https://github.com/hakula139/kiln/compare/v0.3.0..v0.4.0
 [0.4.0-rc.4]: https://github.com/hakula139/kiln/compare/v0.4.0-rc.3..v0.4.0-rc.4
 [0.4.0-rc.3]: https://github.com/hakula139/kiln/compare/v0.4.0-rc.2..v0.4.0-rc.3
