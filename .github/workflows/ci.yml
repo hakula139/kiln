@@ -166,6 +166,7 @@ jobs:
       - name: Build packages
         run: |
           set -euo pipefail
+
           jq -r '.[]' <<< "$CACHIX_PINS" |
             nix build --stdin --no-link --print-build-logs
 
@@ -175,6 +176,7 @@ jobs:
           CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
         run: |
           set -euo pipefail
+
           jq -r '.[]' <<< "$CACHIX_PINS" |
             nix path-info --stdin |
             cachix push "$CACHIX_NAME"
@@ -200,6 +202,7 @@ jobs:
       - name: Restore builds from cache
         run: |
           set -euo pipefail
+
           jq -r '.[]' <<< "$CACHIX_PINS" |
             nix build --stdin --no-link --max-jobs 0 --print-build-logs
 
@@ -208,14 +211,17 @@ jobs:
           CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
         run: |
           set -euo pipefail
+
           jq -r 'to_entries[] | [.key, .value] | @tsv' <<< "$CACHIX_PINS" |
             while IFS=$'\t' read -r pin_name package; do
               store_path=$(nix path-info "$package")
+
               main_sha=$(git ls-remote origin refs/heads/main | cut -f1)
               test -n "$main_sha"
               if [ "$GITHUB_SHA" != "$main_sha" ]; then
                 echo "Skipping pins for an older main commit."
                 exit 0
               fi
+
               cachix pin "$CACHIX_NAME" "$pin_name" "$store_path" --keep-revisions 2
             done
