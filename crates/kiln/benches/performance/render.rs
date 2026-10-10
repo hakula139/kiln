@@ -28,7 +28,7 @@ pub(super) fn benchmarks(criterion: &mut Criterion) {
         images: &resolver,
         assets: &manifest,
         page_url: "/",
-        deployment_prefix: "",
+        deployment_prefix: "/",
     };
     let code = indoc! {r#"
         ```rust

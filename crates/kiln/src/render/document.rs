@@ -421,8 +421,8 @@ mod tests {
 
     use indoc::indoc;
 
-    use crate::config::Config;
-    use crate::render::lqip::{ImageConfig, ImageResolver};
+    use crate::config::{Config, ImageConfig};
+    use crate::render::lqip::ImageResolver;
     use crate::render::pipeline::{RenderedPage, render_page};
     use crate::render::{PageResources, RenderOptions};
     use crate::static_assets::StaticAssetManifest;

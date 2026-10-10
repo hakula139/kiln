@@ -13,7 +13,7 @@ use crate::render::PageResources;
 use crate::section::Section;
 use crate::taxonomy::TaxonomySet;
 use crate::template::vars::{BucketSummary, LinkedTerm, PageGroup, PageSummary};
-use crate::url::{encode_component, join_site_url, page_url, site_asset_url};
+use crate::url::{BaseUrl, encode_component, page_url, site_asset_url};
 
 // ── Prepared pages ──
 
@@ -110,7 +110,7 @@ fn prepare_page(
             images: &ctx.image_resolver,
             assets: &ctx.static_assets,
             page_url: &url,
-            deployment_prefix: &ctx.deployment_prefix,
+            deployment_prefix: ctx.config.base_url.prefix(),
         },
     )?;
     Ok(PreparedPage {
@@ -118,7 +118,7 @@ fn prepare_page(
         summary: PageSummary {
             title: page.frontmatter.title.clone(),
             url,
-            date: published.map(|date| format_page_date(date, ctx.time_zone.as_ref())),
+            date: published.map(|date| format_page_date(date, &ctx.config.timezone)),
             pinned: page.frontmatter.weight.is_some(),
             description: page
                 .frontmatter
@@ -134,7 +134,7 @@ fn prepare_page(
         updated,
         weight: page.frontmatter.weight,
         year: published
-            .map(|date| page_year(date, ctx.time_zone.as_ref()))
+            .map(|date| page_year(date, &ctx.config.timezone))
             .unwrap_or_default(),
     })
 }
@@ -181,7 +181,7 @@ impl<'a> ListingBucket<'a> {
         }
     }
 
-    pub(super) fn summary(&self, base_url: &str) -> BucketSummary<'a> {
+    pub(super) fn summary(&self, base_url: &BaseUrl) -> BucketSummary<'a> {
         BucketSummary {
             name: self.name.clone(),
             slug: self.slug.clone(),
@@ -256,7 +256,7 @@ pub(super) fn group_by_year<'a>(pages: &[&'a PreparedPage]) -> Vec<PageGroup<'a>
 #[must_use]
 pub(super) fn page_section(
     page: &Page,
-    base_url: &str,
+    base_url: &BaseUrl,
     sections: &[Section],
 ) -> Option<LinkedTerm> {
     let PageKind::Post {
@@ -271,7 +271,7 @@ pub(super) fn page_section(
         .map_or(slug.as_str(), |s| s.title.as_str());
     Some(LinkedTerm {
         name: title.to_owned(),
-        url: join_site_url(base_url, &format!("posts/{}/", encode_component(slug))),
+        url: base_url.site_url(&format!("posts/{}/", encode_component(slug))),
     })
 }
 
@@ -301,35 +301,30 @@ pub(super) fn resolve_featured_image(
     Ok(Some(out))
 }
 
-fn linked_tags(taxonomy: &TaxonomySet, page_index: usize, base_url: &str) -> Vec<LinkedTerm> {
+fn linked_tags(taxonomy: &TaxonomySet, page_index: usize, base_url: &BaseUrl) -> Vec<LinkedTerm> {
     taxonomy.page_tags[page_index]
         .iter()
         .map(|&index| {
             let term = &taxonomy.tags[index];
             LinkedTerm {
                 name: term.name.clone(),
-                url: join_site_url(base_url, &format!("tags/{}/", encode_component(&term.slug))),
+                url: base_url.site_url(&format!("tags/{}/", encode_component(&term.slug))),
             }
         })
         .collect()
 }
 
-/// Formats a page date for templates using the configured site time zone (falls back to UTC).
+/// Formats a page date for templates in the site time zone.
 #[must_use]
-pub(super) fn format_page_date(date: Timestamp, time_zone: Option<&TimeZone>) -> String {
-    let Some(time_zone) = time_zone else {
-        return date.to_string();
-    };
-    let zoned = date.to_zoned(time_zone.clone());
-    date.display_with_offset(zoned.offset()).to_string()
+pub(super) fn format_page_date(date: Timestamp, time_zone: &TimeZone) -> String {
+    date.display_with_offset(time_zone.to_offset(date))
+        .to_string()
 }
 
 /// Returns the grouping year for a page date in the configured site time zone.
 #[must_use]
-pub(super) fn page_year(date: Timestamp, time_zone: Option<&TimeZone>) -> String {
-    date.to_zoned(time_zone.cloned().unwrap_or(TimeZone::UTC))
-        .year()
-        .to_string()
+pub(super) fn page_year(date: Timestamp, time_zone: &TimeZone) -> String {
+    date.to_zoned(time_zone.clone()).year().to_string()
 }
 
 #[cfg(test)]
@@ -337,8 +332,9 @@ mod tests {
     use std::sync::LazyLock;
 
     use super::*;
+    use crate::config::ImageConfig;
     use crate::content::frontmatter::ImageCredit;
-    use crate::render::lqip::{ImageConfig, ImageResolver};
+    use crate::render::lqip::ImageResolver;
     use crate::static_assets::StaticAssetManifest;
 
     static EMPTY_RESOLVER: LazyLock<ImageResolver> =
@@ -386,7 +382,7 @@ mod tests {
             updated: None,
             weight,
             year: published
-                .map(|date| page_year(date, None))
+                .map(|date| page_year(date, &TimeZone::UTC))
                 .unwrap_or_default(),
         }
     }
@@ -431,7 +427,7 @@ mod tests {
     // ── page_section ──
 
     #[test]
-    fn page_section_base_url_trailing_slashes() {
+    fn page_section_preserves_base_path() {
         let mut page = crate::test_utils::test_page("Post A");
         page.kind = PageKind::Post {
             section: Some("notes".into()),
@@ -441,11 +437,10 @@ mod tests {
             title: "Notes".into(),
         }];
 
-        for base_url in ["https://example.com/blog", "https://example.com/blog/"] {
-            let section = page_section(&page, base_url, &sections).unwrap();
-            assert_eq!(section.name, "Notes");
-            assert_eq!(section.url, "https://example.com/blog/posts/notes/");
-        }
+        let base_url = "https://example.com/blog".parse().unwrap();
+        let section = page_section(&page, &base_url, &sections).unwrap();
+        assert_eq!(section.name, "Notes");
+        assert_eq!(section.url, "https://example.com/blog/posts/notes/");
     }
 
     // ── resolve_featured_image ──
@@ -487,7 +482,7 @@ mod tests {
                     images: &EMPTY_RESOLVER,
                     assets: &StaticAssetManifest::default(),
                     page_url: "https://example.com/blog/posts/foo/",
-                    deployment_prefix: "/blog",
+                    deployment_prefix: "/blog/",
                 },
             )
             .unwrap()
@@ -515,7 +510,7 @@ mod tests {
                 images: &EMPTY_RESOLVER,
                 assets: &StaticAssetManifest::default(),
                 page_url: "https://example.com/posts/foo/",
-                deployment_prefix: "",
+                deployment_prefix: "/",
             },
         )
         .unwrap()
@@ -549,7 +544,7 @@ mod tests {
                 images: &img_resolver,
                 assets: &StaticAssetManifest::build(dir.path()).unwrap(),
                 page_url: "https://example.com/posts/foo/",
-                deployment_prefix: "",
+                deployment_prefix: "/",
             },
         )
         .unwrap()
@@ -575,7 +570,7 @@ mod tests {
                     images: &EMPTY_RESOLVER,
                     assets: &StaticAssetManifest::default(),
                     page_url: "https://example.com/posts/foo/",
-                    deployment_prefix: "",
+                    deployment_prefix: "/",
                 }
             )
             .unwrap()
@@ -593,18 +588,16 @@ mod tests {
     // ── linked_tags ──
 
     #[test]
-    fn linked_tags_base_url_trailing_slashes() {
-        let tags = ["Rust".into(), "Web Tools".into()];
-        for base_url in ["https://example.com/blog", "https://example.com/blog/"] {
-            let mut page = crate::test_utils::test_page("Example");
-            page.frontmatter.tags = tags.to_vec();
-            let taxonomy = crate::taxonomy::build_taxonomies(&[page], None).unwrap();
-            let linked = linked_tags(&taxonomy, 0, base_url);
-            assert_eq!(linked[0].name, "Rust");
-            assert_eq!(linked[0].url, "https://example.com/blog/tags/rust/");
-            assert_eq!(linked[1].name, "Web Tools");
-            assert_eq!(linked[1].url, "https://example.com/blog/tags/web-tools/");
-        }
+    fn linked_tags_preserves_base_path() {
+        let mut page = crate::test_utils::test_page("Example");
+        page.frontmatter.tags = vec!["Rust".into(), "Web Tools".into()];
+        let taxonomy = crate::taxonomy::build_taxonomies(&[page], None).unwrap();
+
+        let linked = linked_tags(&taxonomy, 0, &"https://example.com/blog".parse().unwrap());
+        assert_eq!(linked[0].name, "Rust");
+        assert_eq!(linked[0].url, "https://example.com/blog/tags/rust/");
+        assert_eq!(linked[1].name, "Web Tools");
+        assert_eq!(linked[1].url, "https://example.com/blog/tags/web-tools/");
     }
 
     // ── page_year ──
@@ -612,8 +605,8 @@ mod tests {
     #[test]
     fn page_year_uses_configured_timezone() {
         let date: Timestamp = "2025-12-31T16:30:00Z".parse().unwrap();
-        let time_zone = jiff::tz::TimeZone::get("Asia/Shanghai").unwrap();
-        assert_eq!(page_year(date, Some(&time_zone)), "2026");
-        assert_eq!(page_year(date, None), "2025");
+        let time_zone = TimeZone::get("Asia/Shanghai").unwrap();
+        assert_eq!(page_year(date, &time_zone), "2026");
+        assert_eq!(page_year(date, &TimeZone::UTC), "2025");
     }
 }

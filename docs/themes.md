@@ -18,7 +18,7 @@ A theme can declare a minimum kiln version and a stylesheet processor. Check its
 
 ## Site Configuration
 
-kiln reads `config.toml` from the site root. An absent file uses the defaults below.
+kiln reads `config.toml` from the site root. An absent file uses the defaults below, and an unknown setting fails configuration loading.
 
 | Setting            | Default                    | Purpose                                                     |
 | ------------------ | -------------------------- | ----------------------------------------------------------- |
@@ -26,11 +26,11 @@ kiln reads `config.toml` from the site root. An absent file uses the defaults be
 | `title`            | `"My Site"`                | Site title                                                  |
 | `description`      | `""`                       | Site description                                            |
 | `language`         | `"en"`                     | Active theme translation language                           |
-| `timezone`         | unset                      | IANA time zone for rendered timestamps, otherwise UTC       |
+| `timezone`         | `"UTC"`                    | IANA time zone for rendered timestamps                      |
 | `enable_git_info`  | `false`                    | Derive missing page updates from Git history                |
 | `output_dir`       | `"public"`                 | Build destination, resolved relative to the site root       |
 | `theme`            | unset                      | Theme directory under `themes/`                             |
-| `[author]`         | empty fields               | `name`, `email` and `link`, available to templates          |
+| `[author]`         | empty `name`               | Site author `name`, available to templates                  |
 | `[css]`            | inherited, otherwise plain | [Stylesheet processor](assets.md#processor-setup)           |
 | `[search]`         | disabled                   | [Pagefind indexing](../README.md#search)                    |
 | `[image]`          | size 16, quality 25        | [Image placeholders](#image-rendering)                      |
@@ -175,7 +175,7 @@ emojis = true
 
 Post, standalone, home, archive and overview templates share `title`, `description`, canonical `url` and `config`.
 
-MiniJinja auto-escapes strings. Apply `| safe` to generated HTML such as `content`, `toc` and `body_html`. Dates are ISO 8601 timestamps in the configured time zone, or UTC. Templates may use `date[:10]` when only the date is wanted.
+MiniJinja auto-escapes strings. Apply `| safe` to generated HTML such as `content`, `toc` and `body_html`. Dates are ISO 8601 timestamps with an offset in the configured time zone. Templates may use `date[:10]` when only the date is wanted.
 
 #### Post Templates (`post.html`)
 

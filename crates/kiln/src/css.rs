@@ -19,7 +19,7 @@ use crate::static_assets::StaticAssetManifest;
 use crate::static_assets::publication::PublishedAssets;
 use crate::url::{join_site_url, path_url};
 
-const ENTRY: &str = "assets/css/_src/style.css";
+pub(crate) const ENTRY: &str = "assets/css/_src/style.css";
 struct Stylesheet {
     source: PathBuf,
     page: Option<PathBuf>,
@@ -80,8 +80,7 @@ impl Stylesheets {
         manifest: &StaticAssetManifest,
         output_dir: &Path,
     ) -> Result<()> {
-        let base_url = url::Url::parse(&config.base_url)?;
-        let prefix = base_url.path();
+        let prefix = config.base_url.prefix();
         for style in self.shared.iter().chain(self.pages.values()) {
             let css = match config.css.processor.unwrap_or_default() {
                 CssProcessor::Plain => compile_plain(assets, manifest, prefix, style),

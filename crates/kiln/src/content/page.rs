@@ -1,12 +1,12 @@
 use std::fs;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, ensure};
 use itertools::Itertools;
 use pulldown_cmark::{Event, Parser, Tag, TagEnd};
 
 use super::frontmatter::{self, Frontmatter};
-use super::{is_markdown, is_public};
+use super::{is_markdown, is_public, is_single_component};
 use crate::markdown::markdown_options;
 use crate::output::walk_directory;
 
@@ -101,11 +101,8 @@ fn output_dir(relative: &Path, slug: Option<&str>) -> Result<PathBuf> {
         relative.with_extension("")
     };
     if let Some(slug) = slug {
-        let mut components = Path::new(slug).components();
         ensure!(
-            matches!(components.next(), Some(Component::Normal(_)))
-                && components.next().is_none()
-                && !slug.contains(['/', '\\']),
+            is_single_component(slug),
             "slug must be a single nonempty path component"
         );
         directory.set_file_name(slug);
@@ -449,6 +446,7 @@ mod tests {
             "../other",
             "one/two",
             r"one\two",
+            "c:drive",
             "/absolute",
         ] {
             assert!(

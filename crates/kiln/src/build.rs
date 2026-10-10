@@ -13,8 +13,7 @@ use std::fmt::Write;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result, ensure};
-use jiff::tz::TimeZone;
+use anyhow::{Context, Result};
 
 use self::git::GitInfo;
 use self::listing::{
@@ -28,6 +27,7 @@ use crate::content::page::{Page, PageKind};
 use crate::css::Stylesheets;
 use crate::i18n::I18n;
 use crate::minify::{self, MinifyStats};
+use crate::output::guard::resolve_output_dir;
 use crate::output::{OutputTransaction, write_output};
 use crate::render::lqip::ImageResolver;
 use crate::render::pipeline::render_page;
@@ -43,9 +43,7 @@ use crate::template::vars::{PageMetadata, PostTemplateVars};
 /// Shared build state, created once per build invocation.
 struct BuildContext {
     config: Config,
-    deployment_prefix: String,
     i18n: I18n,
-    time_zone: Option<TimeZone>,
     render_options: RenderOptions,
     stylesheets: Stylesheets,
     static_assets: StaticAssetManifest,
@@ -60,7 +58,8 @@ pub struct BuildOptions<'a> {
     /// Replaces `base_url` from config when set. Used by `kiln serve` so rendered URLs match the
     /// actual server port.
     pub base_url_override: Option<&'a str>,
-    /// Publishes into this directory instead of `root/<config.output_dir>`.
+    /// Publishes into this directory instead of `config.output_dir`. Relative paths resolve
+    /// against the project root.
     pub output_dir_override: Option<&'a Path>,
     /// Runs HTML / CSS / JS minification over the output directory before Pagefind indexing.
     pub minify: bool,
@@ -83,10 +82,10 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
         minify,
     } = options;
 
-    let (config, deployment_prefix) = load_build_config(root, base_url_override)?;
-    let time_zone = config
-        .time_zone()
-        .context("failed to resolve configured time zone")?;
+    let mut config = Config::load(root).context("failed to load config")?;
+    if let Some(base_url) = base_url_override {
+        config.base_url = base_url.parse()?;
+    }
     let render_options = RenderOptions::from_params(&config.params)?;
 
     let site_templates = root.join("templates");
@@ -104,10 +103,7 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
         .context("failed to load i18n strings")?;
 
     let content = discover_content(root)?;
-    let output_dir = match output_dir_override {
-        Some(path) => config.validate_output_dir(root, path)?,
-        None => config.resolved_output_dir(root)?,
-    };
+    let output_dir = resolve_output_dir(root, &config, output_dir_override)?;
 
     let transaction = OutputTransaction::new(output_dir)?;
     let output_dir = transaction.path().to_owned();
@@ -131,7 +127,7 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
         Some(&site_templates),
         theme_templates.as_deref(),
         &i18n,
-        &deployment_prefix,
+        config.base_url.prefix(),
         &static_assets,
     )
     .context("failed to initialize template engine")?;
@@ -139,9 +135,7 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
     let git_info = GitInfo::new(root, config.enable_git_info);
     let ctx = BuildContext {
         config,
-        deployment_prefix,
         i18n,
-        time_zone,
         render_options,
         stylesheets,
         static_assets,
@@ -179,29 +173,6 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
         content.pages.len(),
         started,
     )
-}
-
-fn load_build_config(root: &Path, base_url_override: Option<&str>) -> Result<(Config, String)> {
-    let mut config = Config::load(root).context("failed to load config")?;
-    if let Some(base_url) = base_url_override {
-        base_url.clone_into(&mut config.base_url);
-    }
-    let base_url = url::Url::parse(&config.base_url).context("invalid base_url")?;
-    ensure!(
-        !base_url.cannot_be_a_base() && base_url.has_host(),
-        "base_url must be an absolute URL with a host"
-    );
-    ensure!(
-        base_url.query().is_none() && base_url.fragment().is_none(),
-        "base_url must not contain a query or fragment"
-    );
-    let deployment_prefix = base_url.path().to_owned();
-    base_url
-        .as_str()
-        .trim_end_matches('/')
-        .clone_into(&mut config.base_url);
-
-    Ok((config, deployment_prefix))
 }
 
 fn finish_build(
@@ -299,15 +270,15 @@ fn build_page(
             images: &ctx.image_resolver,
             assets: &ctx.static_assets,
             page_url: &prepared.summary.url,
-            deployment_prefix: &ctx.deployment_prefix,
+            deployment_prefix: ctx.config.base_url.prefix(),
         },
         page.frontmatter.heading_numbering,
     )
     .with_context(|| format!("failed to render {}", page.source_path.display()))?;
 
-    let page_css = ctx
-        .stylesheets
-        .page_url(&ctx.deployment_prefix, &ctx.static_assets, page)?;
+    let page_css =
+        ctx.stylesheets
+            .page_url(ctx.config.base_url.prefix(), &ctx.static_assets, page)?;
     let vars = PostTemplateVars {
         metadata: PageMetadata {
             title: &prepared.summary.title,
@@ -320,7 +291,7 @@ fn build_page(
         date: prepared.summary.date.as_deref(),
         updated: prepared
             .updated
-            .map(|date| format_page_date(date, ctx.time_zone.as_ref())),
+            .map(|date| format_page_date(date, &ctx.config.timezone)),
         tags: &prepared.summary.tags,
         section: prepared.summary.section.as_ref(),
         assets: rendered.assets,

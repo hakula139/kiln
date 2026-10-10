@@ -42,7 +42,7 @@ fn write_archive(
         &bucket.pages,
         per_page,
         &base_path,
-        &ctx.deployment_prefix,
+        ctx.config.base_url.prefix(),
         output_dir,
         |pages, pagination| {
             let page_groups = group_by_year(pages);

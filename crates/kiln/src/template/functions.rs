@@ -365,7 +365,7 @@ mod tests {
             Some(templates.path()),
             None,
             &test_i18n(),
-            "/blog",
+            "/blog/",
             &manifest,
         )
         .unwrap();

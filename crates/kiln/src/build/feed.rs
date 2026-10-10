@@ -6,7 +6,7 @@ use super::BuildContext;
 use super::listing::{ListingBucket, PreparedPage};
 use crate::feed::{self, Channel, DEFAULT_FEED_LIMIT, FeedItem};
 use crate::output::write_output;
-use crate::url::{join_site_url, path_url};
+use crate::url::directory_url;
 
 /// Generates the site-wide RSS feed at `index.xml` plus one per listing bucket
 /// (all-posts, per-section, per-tag).
@@ -20,8 +20,8 @@ pub(super) fn build_feeds(
 
     let main_channel = Channel {
         title: ctx.config.title.clone(),
-        link: join_site_url(base_url, ""),
-        feed_url: join_site_url(base_url, "index.xml"),
+        link: base_url.site_url(""),
+        feed_url: base_url.site_url("index.xml"),
         description: ctx.config.description.clone(),
         language: ctx.config.language.clone(),
         last_build_date: newest_date(listed_posts),
@@ -45,18 +45,19 @@ fn write_bucket_feed(
 ) -> Result<()> {
     let base_url = &ctx.config.base_url;
     let directory = bucket.base_path();
-    let dir_slug = path_url(&directory);
+    let directory_url = directory_url(&directory);
     let channel = Channel {
         title: format!("{} - {}", bucket.name, ctx.config.title),
-        link: join_site_url(base_url, &format!("{dir_slug}/")),
-        feed_url: join_site_url(base_url, &format!("{dir_slug}/index.xml")),
+        link: base_url.site_url(&directory_url),
+        feed_url: base_url.site_url(&format!("{directory_url}index.xml")),
         description: ctx.config.description.clone(),
         language: ctx.config.language.clone(),
         last_build_date: newest_date(&bucket.pages),
     };
     let xml = feed::generate_rss(&channel, feed_items(&bucket.pages), DEFAULT_FEED_LIMIT);
     let dest = output_dir.join(directory).join("index.xml");
-    write_output(&dest, &xml).with_context(|| format!("failed to write RSS feed for {dir_slug}"))
+    write_output(&dest, &xml)
+        .with_context(|| format!("failed to write RSS feed for {directory_url}"))
 }
 
 /// Returns the RFC 2822 date of the newest page, for `lastBuildDate`.

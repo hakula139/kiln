@@ -39,7 +39,7 @@ impl TemplateEngine {
             site_dir,
             theme_dir,
             i18n,
-            "",
+            "/",
             &StaticAssetManifest::default(),
         )
     }
@@ -412,7 +412,7 @@ mod tests {
                 url: "https://example.com/page/2/".into(),
             },
             pages: vec![&page],
-            pagination: PaginationVars::new("", 2, 3),
+            pagination: PaginationVars::new("/", 2, 3),
             config: &config,
         };
 
@@ -446,7 +446,7 @@ mod tests {
                 key: "2026".into(),
                 pages: vec![&page],
             }],
-            pagination: PaginationVars::new("/tags/rust", 2, 3),
+            pagination: PaginationVars::new("/tags/rust/", 2, 3),
             config: &config,
         };
 

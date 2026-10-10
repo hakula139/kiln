@@ -1,6 +1,6 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use kiln::BuildOptions;
 use tracing_subscriber::EnvFilter;
@@ -24,9 +24,9 @@ enum Command {
         #[arg(long)]
         minify: bool,
 
-        /// Override `base_url` from `config.toml`. Useful for staging or
-        /// per-deploy preview environments that share a single `config.toml`
-        /// with prod. Falls back to the `KILN_BASE_URL` environment variable.
+        /// Override `base_url` from `config.toml`. Useful for staging or per-deploy preview
+        /// environments that share a single `config.toml` with prod. Falls back to the
+        /// `KILN_BASE_URL` environment variable.
         #[arg(long, env = "KILN_BASE_URL")]
         base_url: Option<String>,
     },
@@ -79,7 +79,7 @@ fn main() -> Result<()> {
             minify,
             base_url,
         } => {
-            let root = root.canonicalize()?;
+            let root = canonicalize(&root)?;
             // An empty `KILN_BASE_URL` env var (e.g., from a workflow input left unset) should fall
             // through to config.toml, not blank out every URL.
             let base_url = base_url.filter(|s| !s.is_empty());
@@ -93,19 +93,24 @@ fn main() -> Result<()> {
             )?;
         }
         Command::Convert { source, dest } => {
-            let source = source.canonicalize()?;
+            let source = canonicalize(&source)?;
             let dest = dest.canonicalize().unwrap_or(dest);
             kiln::convert(&source, &dest)?;
         }
         Command::InitTheme { name, root } => {
-            let root = root.canonicalize()?;
+            let root = canonicalize(&root)?;
             kiln::init_theme(&root, &name)?;
         }
         Command::Serve { root, port, open } => {
-            let root = root.canonicalize()?;
+            let root = canonicalize(&root)?;
             kiln::serve(&root, port, open)?;
         }
     }
 
     Ok(())
+}
+
+fn canonicalize(path: &Path) -> Result<PathBuf> {
+    path.canonicalize()
+        .with_context(|| format!("failed to resolve {}", path.display()))
 }
