@@ -12,18 +12,18 @@ A `{...}` attribute block is the shared syntax kiln uses to attach metadata to i
 
 The block accepts four token kinds, in any order:
 
-| Token       | Meaning                                                          |
-| ----------- | ---------------------------------------------------------------- |
-| `#id`       | HTML `id`. First wins if duplicates appear, later `#id`s ignored |
-| `.class`    | CSS class. Multiple `.class` tokens accumulate                   |
-| `key=value` | Key-value pair. Value can be quoted (`key="..."`) or bare        |
-| `bare_word` | Standalone word. Interpretation depends on the consumer          |
+| Token                      | Meaning                                                          |
+| -------------------------- | ---------------------------------------------------------------- |
+| `#id`                      | HTML `id`. First wins if duplicates appear, later `#id`s ignored |
+| `.class`                   | CSS class. Multiple `.class` tokens accumulate                   |
+| `key=value`                | Key-value pair. Value can be quoted (`key="..."`) or bare        |
+| `bare_word` / `"a string"` | Positional value. Interpretation depends on the consumer         |
 
 Quoted values support `\"` (escaped quote) and `\\` (escaped backslash).
 
-Bare words are interpreted differently by each consumer:
+Positional values are interpreted differently by each consumer:
 
-| Consumer   | Bare-word meaning                                                |
+| Consumer   | Positional meaning                                               |
 | ---------- | ---------------------------------------------------------------- |
 | Code fence | Boolean flag (`collapse`, `expand`)                              |
 | Directive  | Positional argument (surfaced to templates as `positional_args`) |
@@ -233,7 +233,7 @@ This is a note.
 :::
 ```
 
-A [Pandoc-style attribute block](#pandoc-style-attributes) can follow the directive name. Bare words inside `{...}` become positional arguments accessible in templates as `positional_args`:
+A [Pandoc-style attribute block](#pandoc-style-attributes) can follow the directive name, with or without a space. Directive names are case-sensitive. Positional values inside `{...}` become arguments accessible in templates as `positional_args`:
 
 ```markdown
 ::: callout {#my-id .custom-class type=tip title="Read This"}
@@ -258,28 +258,13 @@ The closing fence must have at least as many colons as the opening fence it clos
 
 ### Callouts
 
-Callouts are styled content blocks. The `callout` directive supports 12 types:
+Callouts are styled content blocks. The `callout` directive supports 12 types: `abstract`, `bug`, `danger`, `example`, `failure`, `info`, `note`, `question`, `quote`, `success`, `tip` and `warning`.
 
-| Type       | Default Title |
-| ---------- | ------------- |
-| `abstract` | Abstract      |
-| `bug`      | Bug           |
-| `danger`   | Danger        |
-| `example`  | Example       |
-| `failure`  | Failure       |
-| `info`     | Info          |
-| `note`     | Note          |
-| `question` | Question      |
-| `quote`    | Quote         |
-| `success`  | Success       |
-| `tip`      | Tip           |
-| `warning`  | Warning       |
-
-Callouts use native disclosure. Theme styling hooks are documented under [Callouts and Divs](themes.md#callouts-and-divs).
+kiln validates the options, and the theme's `directives/callout.html` template renders the callout. The default title is the theme's `callout_<type>` translation. Without that template, a callout becomes a [generic div](#generic-div-wrappers). See [Callouts and Divs](themes.md#callouts-and-divs) for the template contract.
 
 #### Type and Options
 
-The callout type defaults to `note`. Use `type=` to specify a different type. Custom titles and collapse behavior are set via key-value attributes:
+The callout type defaults to `note`. Use `type=` to specify a different type. Custom titles and collapse behavior are set via key-value attributes. An unknown type or an `open` value other than `true` / `false` fails the build:
 
 ```markdown
 ::: callout {type=warning title="Careful" open=false}
@@ -291,9 +276,9 @@ Recognized keys:
 
 | Key     | Values           | Default | Description                              |
 | ------- | ---------------- | ------- | ---------------------------------------- |
-| `type`  | see table above  | `note`  | Callout type (determines icon and style) |
+| `type`  | see list above   | `note`  | Callout type (determines icon and style) |
 | `title` | any string       | none    | Overrides the default title              |
-| `open`  | `true` / `false` | `true`  | Controls whether the `<details>` is open |
+| `open`  | `true` / `false` | `true`  | Controls whether the callout starts open |
 
 ### Generic Div Wrappers
 

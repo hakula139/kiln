@@ -117,7 +117,7 @@ impl I18n {
     /// `{{` and `}}` render as literal braces. Missing placeholders substitute an empty string and
     /// emit a warning. An unclosed `{` emits a warning and renders the partial literal as-is.
     #[must_use]
-    pub fn t_interp(&self, key: &str, args: &BTreeMap<&str, &str>) -> String {
+    pub fn t_interp(&self, key: &str, args: &BTreeMap<&str, impl AsRef<str>>) -> String {
         let template = self.t(key);
         interpolate(&template, args, |warning| self.emit_warning(key, warning))
     }
@@ -216,7 +216,7 @@ enum InterpolateWarning<'a> {
 /// via `warn`. Unclosed `{` reports via `warn` and renders the remaining text as-is.
 fn interpolate(
     template: &str,
-    args: &BTreeMap<&str, &str>,
+    args: &BTreeMap<&str, impl AsRef<str>>,
     mut warn: impl FnMut(InterpolateWarning<'_>),
 ) -> String {
     let mut out = String::with_capacity(template.len());
@@ -246,7 +246,7 @@ fn interpolate(
                     break;
                 }
                 if let Some(value) = args.get(name.as_str()) {
-                    out.push_str(value);
+                    out.push_str(value.as_ref());
                 } else {
                     warn(InterpolateWarning::MissingPlaceholder(&name));
                 }
@@ -515,7 +515,7 @@ mod tests {
     #[test]
     fn t_interp_closing_brace_escape_and_stray() {
         let i18n = make_i18n(&[("braces", "a}}b }")]);
-        let args = BTreeMap::new();
+        let args = BTreeMap::<&str, &str>::new();
         assert_eq!(i18n.t_interp("braces", &args), "a}b }");
     }
 
@@ -530,7 +530,7 @@ mod tests {
     #[test]
     fn t_interp_missing_arg_substitutes_empty_and_records_warning() {
         let i18n = make_i18n(&[("hello", "Hi {who}!")]);
-        let args = BTreeMap::new();
+        let args = BTreeMap::<&str, &str>::new();
         for _ in 0..2 {
             assert_eq!(i18n.t_interp("hello", &args), "Hi !");
         }
@@ -545,7 +545,7 @@ mod tests {
     #[test]
     fn t_interp_unclosed_brace_renders_partial_and_records_warning() {
         let i18n = make_i18n(&[("bad", "start {unclosed tail")]);
-        let args = BTreeMap::new();
+        let args = BTreeMap::<&str, &str>::new();
         for _ in 0..2 {
             assert_eq!(i18n.t_interp("bad", &args), "start {unclosed tail");
         }

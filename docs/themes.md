@@ -219,17 +219,18 @@ Receives `title` and `config`. The output is `404.html`. Generation is skipped w
 
 #### Directive Templates (`directives/<name>.html`)
 
-| Variable                | Contract                                 |
-| ----------------------- | ---------------------------------------- |
-| `name`                  | Directive name                           |
-| `positional_args`       | Positional argument strings              |
-| `named_args`            | Named argument string values             |
-| `id`, `classes`         | Authored `#id` and `.class` tokens       |
-| `body_html`, `body_raw` | Rendered body HTML and original Markdown |
-| `source_dir`            | Page source directory, or `none`         |
-| `config`                | Site configuration                       |
+| Variable                | Contract                                       |
+| ----------------------- | ---------------------------------------------- |
+| `name`                  | Directive name                                 |
+| `positional_args`       | Positional argument strings                    |
+| `named_args`            | Named argument string values                   |
+| `id`, `classes`         | Authored `#id` (or `none`) and `.class` tokens |
+| `body_html`             | Rendered body HTML                             |
+| `type`, `title`, `open` | Validated options, for `callout.html` only     |
+| `source_dir`            | Page source directory, or `none`               |
+| `config`                | Site configuration                             |
 
-Arguments remain nested in `named_args`, so `named_args.id` and the outer `id` are separate values. Use `body_html | safe` for rendered content. `body_raw` is available to data-driven components that interpret their own input.
+Apply `id` and `classes` to the root element, so authored anchors and styling hooks work on every directive. kiln reserves the `id` in the page's heading namespace. Arguments remain nested in `named_args`, so `named_args.id` and the outer `id` are separate values. Use `body_html | safe` for rendered content.
 
 ### Shared Template Values
 
@@ -339,7 +340,9 @@ Authored IDs and classes belong to the outer details element. Per-line highlight
 
 ### Callouts and Divs
 
-Callouts use `<details class="callout <type>">`, `.callout-title`, and `.callout-body > .callout-body-inner`. Authored IDs and classes belong to the details element. Generic directives use a div with the directive name and authored classes. See [Directives](syntax.md#directives) for syntax.
+Themes render callouts with `directives/callout.html`. `type` is one of the 12 [callout types](syntax.md#callouts) in lowercase, `title` is `none` unless authored, and `open` is a boolean. Fall back to `t('callout_' ~ type)` when `title` is `none`. A theme without this template gets the generic div.
+
+Directives without a template use a div with the authored `id` and a class list of the directive name followed by the authored classes. An anonymous directive without attributes passes its body through unwrapped. See [Directives](syntax.md#directives) for syntax.
 
 ### Math and Diagrams
 

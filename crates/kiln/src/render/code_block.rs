@@ -60,7 +60,7 @@ fn parse_code_block_attrs(
 
     let mut title = None;
     let mut highlight = Vec::new();
-    for (key, value) in &pandoc.kvs {
+    for (key, value) in &pandoc.named {
         match *key {
             "title" => title = Some(value.to_string()),
             "highlight" => highlight = parse_highlight_ranges(value),
@@ -68,9 +68,9 @@ fn parse_code_block_attrs(
         }
     }
 
-    let collapse = if pandoc.bare.contains(&"collapse") {
+    let collapse = if pandoc.positional.iter().any(|word| word == "collapse") {
         Some(true)
-    } else if pandoc.bare.contains(&"expand") {
+    } else if pandoc.positional.iter().any(|word| word == "expand") {
         Some(false)
     } else {
         None

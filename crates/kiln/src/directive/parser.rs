@@ -1,48 +1,30 @@
-use std::collections::BTreeMap;
-
-use super::{DirectiveBlock, DirectiveKind, parse_directive_args};
-use crate::attrs::find_attr_block_end;
+use super::{DirectiveArgs, DirectiveBlock};
+use crate::attrs::{find_attr_block_end, parse_pandoc_attrs};
 use crate::markdown::code_ranges;
 
 struct StackEntry {
     colon_count: usize,
-    kind: DirectiveKind,
-    id: Option<String>,
-    classes: Vec<String>,
-    /// Byte offset of the first line after the opening fence.
-    body_start: usize,
-    /// Byte offset of the opening fence line.
-    range_start: usize,
+    /// The block with provisional body and range ends, which the closing fence completes.
+    block: DirectiveBlock,
     children: Vec<DirectiveNode>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct DirectiveNode {
     pub(crate) block: DirectiveBlock,
-    pub(crate) body_start: usize,
     pub(crate) children: Vec<Self>,
-}
-
-/// Parsed result from the text after the opening colon fence.
-struct DirectiveHead {
-    name: String,
-    positional_args: Vec<String>,
-    named_args: BTreeMap<String, String>,
-    id: Option<String>,
-    classes: Vec<String>,
 }
 
 /// Parses nested `:::` directives in source order, retaining children of unclosed fences.
 pub(crate) fn parse_directives(content: &str) -> Vec<DirectiveNode> {
     let mut blocks = Vec::new();
-    let mut stack = Vec::new();
+    let mut stack: Vec<StackEntry> = Vec::new();
     let protected = code_ranges(content);
     let mut protected = protected.iter().peekable();
     let mut offset = 0;
 
     for raw_line in content.split('\n') {
-        // +1 for the '\n' delimiter, but cap at content length for the final
-        // segment which has no trailing newline.
+        // +1 for the '\n' delimiter, capped for a final segment without a trailing newline.
         let next_offset = (offset + raw_line.len() + 1).min(content.len());
         let line = raw_line.strip_suffix('\r').unwrap_or(raw_line);
 
@@ -58,24 +40,13 @@ pub(crate) fn parse_directives(content: &str) -> Vec<DirectiveNode> {
             let after_colons = line[colon_count..].trim();
 
             if after_colons.is_empty() {
-                // A closing fence only matches the topmost stack entry if its
-                // opening colon count ≤ the closing count. This prevents a
-                // closing fence from "reaching through" unclosed inner blocks.
-                if stack
-                    .last()
-                    .is_some_and(|e: &StackEntry| e.colon_count <= colon_count)
-                    && let Some(entry) = stack.pop()
-                {
-                    let body = extract_body(content, entry.body_start, offset);
+                // A closing fence only closes the innermost open directive, and only if that one
+                // opened with at most as many colons, so it never reaches through unclosed blocks.
+                if let Some(mut entry) = stack.pop_if(|entry| entry.colon_count <= colon_count) {
+                    entry.block.body.end = body_end(content, entry.block.body.start, offset);
+                    entry.block.range.end = next_offset;
                     let node = DirectiveNode {
-                        block: DirectiveBlock {
-                            kind: entry.kind,
-                            id: entry.id,
-                            classes: entry.classes,
-                            body,
-                            range: entry.range_start..next_offset,
-                        },
-                        body_start: entry.body_start,
+                        block: entry.block,
                         children: entry.children,
                     };
                     if let Some(parent) = stack.last_mut() {
@@ -85,18 +56,15 @@ pub(crate) fn parse_directives(content: &str) -> Vec<DirectiveNode> {
                     }
                 }
             } else {
-                let head = parse_directive_head(after_colons);
+                let (name, args) = parse_directive_head(after_colons);
                 stack.push(StackEntry {
                     colon_count,
-                    kind: DirectiveKind::from_parsed(
-                        &head.name,
-                        head.positional_args,
-                        head.named_args,
-                    ),
-                    id: head.id,
-                    classes: head.classes,
-                    body_start: next_offset,
-                    range_start: offset,
+                    block: DirectiveBlock {
+                        name: name.to_owned(),
+                        args,
+                        body: next_offset..next_offset,
+                        range: offset..offset,
+                    },
                     children: Vec::new(),
                 });
             }
@@ -114,60 +82,38 @@ pub(crate) fn parse_directives(content: &str) -> Vec<DirectiveNode> {
 
 /// Returns the number of leading `:` characters if there are at least 3.
 ///
-/// Only matches column-0 directives. Indented lines are intentionally ignored
-/// since directives are top-level constructs.
+/// Only matches column-0 directives. Indented lines are intentionally ignored since directives
+/// are top-level constructs.
 fn count_leading_colons(line: &str) -> Option<usize> {
     let count = line.bytes().take_while(|&b| b == b':').count();
     (count >= 3).then_some(count)
 }
 
-/// Splits the text after the colons into a directive name and `{...}` attributes.
+/// Splits the text after the colons into a directive name and its `{...}` arguments.
 ///
-/// Accepts `name {attrs}`, bare `name`, or `{attrs}` alone.
-fn parse_directive_head(text: &str) -> DirectiveHead {
-    let text = text.trim();
-
-    let (name, rest) = if text.starts_with('{') {
-        ("", text)
-    } else {
-        let pos = text.find(char::is_whitespace).unwrap_or(text.len());
-        (&text[..pos], text[pos..].trim_start())
-    };
-
-    if let Some(payload) = rest.strip_prefix('{')
-        && let Some(close) = find_attr_block_end(payload)
-    {
-        let inner = &payload[..close];
-        let args = parse_directive_args(inner.trim());
-        return DirectiveHead {
-            name: name.to_string(),
-            positional_args: args.positional,
-            named_args: args.named,
-            id: args.id,
-            classes: args.classes,
-        };
-    }
-
-    // Name only: text after the name without braces is ignored.
-    DirectiveHead {
-        name: name.to_string(),
-        positional_args: Vec::new(),
-        named_args: BTreeMap::new(),
-        id: None,
-        classes: Vec::new(),
-    }
+/// Accepts `name {attrs}`, `name{attrs}`, bare `name`, or `{attrs}` alone. Text after the name
+/// without a closed attribute block is ignored.
+fn parse_directive_head(text: &str) -> (&str, DirectiveArgs) {
+    let end = text
+        .find(|c: char| c.is_whitespace() || c == '{')
+        .unwrap_or(text.len());
+    let (name, rest) = text.split_at(end);
+    let args = rest
+        .trim_start()
+        .strip_prefix('{')
+        .and_then(|payload| find_attr_block_end(payload).map(|close| &payload[..close]))
+        .map(|attrs| DirectiveArgs::from(parse_pandoc_attrs(attrs)))
+        .unwrap_or_default();
+    (name, args)
 }
 
-/// Extracts the body text between byte offsets `start` and `end`, stripping
-/// exactly one trailing line ending.
-fn extract_body(content: &str, start: usize, end: usize) -> String {
-    if start >= end {
-        return String::new();
-    }
-    let body = &content[start..end];
+/// Returns the end of a body that starts at `start`, excluding the line ending before the
+/// closing fence at `fence`.
+fn body_end(content: &str, start: usize, fence: usize) -> usize {
+    let body = &content[start..fence];
     let body = body.strip_suffix('\n').unwrap_or(body);
     let body = body.strip_suffix('\r').unwrap_or(body);
-    body.to_string()
+    start + body.len()
 }
 
 #[cfg(test)]
@@ -177,9 +123,25 @@ mod tests {
     use indoc::indoc;
 
     use super::*;
-    use crate::directive::CalloutKind;
+    use crate::attrs::Identity;
 
     // ── parse_directives ──
+
+    #[test]
+    fn parse_directives_records_name_body_and_range() {
+        let input = indoc! {"
+            ::: callout
+            Hello world
+            :::
+        "};
+        let blocks = parse_directives(input);
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].block.name, "callout");
+        assert_eq!(blocks[0].block.args, DirectiveArgs::default());
+        assert_eq!(body(input, &blocks[0]), "Hello world");
+        assert_eq!(blocks[0].block.range, 0..input.len());
+        assert_eq!(blocks[0].children, []);
+    }
 
     #[test]
     fn parse_directives_distinguishes_literal_fences_from_code_in_arguments() {
@@ -196,252 +158,80 @@ mod tests {
         let blocks = parse_directives(input);
         assert_eq!(blocks.len(), 1);
         assert_eq!(
-            blocks[0].block.kind,
-            DirectiveKind::Callout {
-                kind: CalloutKind::Note,
-                title: Some("Use `code`".into()),
-                open: true,
-            }
+            blocks[0].block.args.named,
+            named(&[("title", "Use `code`")])
         );
-        assert_eq!(blocks[0].block.body, "Body");
-    }
-
-    // ── parse_directives: callout ──
-
-    #[test]
-    fn parse_directives_callout_default_type() {
-        let input = indoc! {"
-            ::: callout
-            Hello world
-            :::
-        "};
-        let blocks = parse_directives(input);
-        assert_eq!(blocks.len(), 1);
-        assert_eq!(
-            blocks[0].block.kind,
-            DirectiveKind::Callout {
-                kind: CalloutKind::Note,
-                title: None,
-                open: true,
-            }
-        );
-        assert_eq!(blocks[0].block.id, None);
-        assert_eq!(blocks[0].block.classes, Vec::<String>::new());
-        assert_eq!(blocks[0].block.body, "Hello world");
-        assert_eq!(blocks[0].block.range, 0..input.len());
+        assert_eq!(body(input, &blocks[0]), "Body");
     }
 
     #[test]
-    fn parse_directives_callout_name_case_insensitive() {
-        let input = indoc! {"
-            ::: Callout
-            Body
-            :::
-        "};
-        let blocks = parse_directives(input);
-        assert_eq!(blocks.len(), 1);
-        assert_eq!(
-            blocks[0].block.kind,
-            DirectiveKind::Callout {
-                kind: CalloutKind::Note,
-                title: None,
-                open: true,
-            }
-        );
-    }
-
-    #[test]
-    fn parse_directives_callout_with_type_and_attrs() {
-        let input = indoc! {r#"
-            ::: callout {type=warning title="Careful" open=false}
-            Body
-            :::
-        "#};
-        let blocks = parse_directives(input);
-        assert_eq!(blocks.len(), 1);
-        assert_eq!(
-            blocks[0].block.kind,
-            DirectiveKind::Callout {
-                kind: CalloutKind::Warning,
-                title: Some("Careful".into()),
-                open: false,
-            }
-        );
-    }
-
-    #[test]
-    fn parse_directives_callout_multiple_sequential() {
-        let input = indoc! {"
-            ::: callout
-            First
-            :::
-
-            ::: callout {type=warning}
-            Second
-            :::
-        "};
-        let blocks = parse_directives(input);
-        assert_eq!(blocks.len(), 2);
-        assert_eq!(blocks[0].block.body, "First");
-        assert_eq!(blocks[1].block.body, "Second");
-    }
-
-    #[test]
-    fn parse_directives_callout_multiline_body() {
-        let input = indoc! {"
-            ::: callout
-            First paragraph.
-
-            Second paragraph.
-            :::
-        "};
-        let blocks = parse_directives(input);
-        assert_eq!(blocks.len(), 1);
-        assert_eq!(
-            blocks[0].block.body,
-            indoc! {"
-                First paragraph.
-
-                Second paragraph."
-            },
-        );
-    }
-
-    #[test]
-    fn parse_directives_callout_empty_body() {
-        let input = indoc! {"
-            ::: callout
-            :::
-        "};
-        let blocks = parse_directives(input);
-        assert_eq!(blocks.len(), 1);
-        assert_eq!(blocks[0].block.body, "");
-    }
-
-    // ── parse_directives: unknown ──
-
-    #[test]
-    fn parse_directives_unknown_name_only() {
-        let input = indoc! {"
-            ::: custom
-            Body
-            :::
-        "};
-        let blocks = parse_directives(input);
-        assert_eq!(blocks.len(), 1);
-        assert_eq!(
-            blocks[0].block.kind,
-            DirectiveKind::Unknown {
-                name: "custom".into(),
-                positional_args: Vec::new(),
-                named_args: BTreeMap::new(),
-            }
-        );
-    }
-
-    #[test]
-    fn parse_directives_unknown_name_and_args() {
-        let input = indoc! {"
-            ::: table {cols=3}
-            Body
-            :::
-        "};
-        let blocks = parse_directives(input);
-        assert_eq!(blocks.len(), 1);
-        assert_eq!(
-            blocks[0].block.kind,
-            DirectiveKind::Unknown {
-                name: "table".into(),
-                positional_args: Vec::new(),
-                named_args: BTreeMap::from([("cols".into(), "3".into())]),
-            }
-        );
-        assert_eq!(blocks[0].block.body, "Body");
-    }
-
-    // ── parse_directives: pandoc attributes ──
-
-    #[test]
-    fn parse_directives_pandoc_interleaved_attrs() {
+    fn parse_directives_interleaved_pandoc_attrs() {
         let input = indoc! {r#"
             ::: callout {.highlight type=tip #my-id title="Hello #world .bold" .wide open=false}
             Body
             :::
         "#};
         let blocks = parse_directives(input);
-        assert_eq!(blocks.len(), 1);
         assert_eq!(
-            blocks[0].block.kind,
-            DirectiveKind::Callout {
-                kind: CalloutKind::Tip,
-                title: Some("Hello #world .bold".into()),
-                open: false,
+            blocks[0].block.args,
+            DirectiveArgs {
+                positional: Vec::new(),
+                named: named(&[
+                    ("open", "false"),
+                    ("title", "Hello #world .bold"),
+                    ("type", "tip"),
+                ]),
+                identity: Identity {
+                    id: Some("my-id".into()),
+                    classes: vec!["highlight".into(), "wide".into()],
+                },
             }
         );
-        assert_eq!(blocks[0].block.id.as_deref(), Some("my-id"));
-        assert_eq!(blocks[0].block.classes, ["highlight", "wide"]);
     }
 
     #[test]
-    fn parse_directives_pandoc_class_only_no_name() {
-        // {.note} without a name word is a generic div, not a callout.
-        let input = indoc! {"
-            ::: {.note}
-            Body
-            :::
-        "};
-        let blocks = parse_directives(input);
-        assert_eq!(blocks.len(), 1);
-        assert_eq!(
-            blocks[0].block.kind,
-            DirectiveKind::Unknown {
-                name: String::new(),
-                positional_args: Vec::new(),
-                named_args: BTreeMap::new(),
-            }
-        );
-        assert_eq!(blocks[0].block.classes, ["note"]);
-    }
-
-    #[test]
-    fn parse_directives_pandoc_id_only_no_name() {
-        // {#section} without a name word is a generic div, not a callout.
-        let input = indoc! {"
-            ::: {#section}
-            Body
-            :::
-        "};
-        let blocks = parse_directives(input);
-        assert_eq!(blocks.len(), 1);
-        assert_eq!(
-            blocks[0].block.kind,
-            DirectiveKind::Unknown {
-                name: String::new(),
-                positional_args: Vec::new(),
-                named_args: BTreeMap::new(),
-            }
-        );
-        assert_eq!(blocks[0].block.id.as_deref(), Some("section"));
-        assert_eq!(blocks[0].block.classes, Vec::<String>::new());
-    }
-
-    #[test]
-    fn parse_directives_pandoc_attrs_bare_words_become_positional_args() {
+    fn parse_directives_anonymous_blocks_have_empty_name() {
         let input = indoc! {r#"
+            ::: {#section .note}
+            :::
+
             ::: {note title="Custom"}
-            Body
             :::
         "#};
         let blocks = parse_directives(input);
-        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks[0].block.name, "");
+        assert_eq!(blocks[0].block.args.identity.id.as_deref(), Some("section"));
+        assert_eq!(blocks[0].block.args.identity.classes, ["note"]);
+        assert_eq!(blocks[1].block.name, "");
+        assert_eq!(blocks[1].block.args.positional, ["note"]);
+        assert_eq!(blocks[1].block.args.named, named(&[("title", "Custom")]));
+    }
+
+    #[test]
+    fn parse_directives_sequential_multiline_and_empty_bodies() {
+        let input = indoc! {"
+            ::: first
+            First paragraph.
+
+            Second paragraph.
+            :::
+
+            ::: second
+            :::
+        "};
+        let blocks = parse_directives(input);
+        assert_eq!(blocks.len(), 2);
         assert_eq!(
-            blocks[0].block.kind,
-            DirectiveKind::Unknown {
-                name: String::new(),
-                positional_args: vec!["note".into()],
-                named_args: BTreeMap::from([("title".into(), "Custom".into())]),
-            }
+            body(input, &blocks[0]),
+            indoc! {"
+                First paragraph.
+
+                Second paragraph."
+            },
         );
+        assert_eq!(blocks[1].block.name, "second");
+        assert_eq!(body(input, &blocks[1]), "");
     }
 
     // ── parse_directives: nesting ──
@@ -449,8 +239,8 @@ mod tests {
     #[test]
     fn parse_directives_nested_directives() {
         let input = indoc! {"
-            :::: callout {type=warning}
-            ::: callout
+            :::: outer
+            ::: inner
             Inner
             :::
             Outer
@@ -458,33 +248,19 @@ mod tests {
         "};
         let blocks = parse_directives(input);
         assert_eq!(blocks.len(), 1);
-
+        assert_eq!(blocks[0].block.name, "outer");
         assert_eq!(
-            blocks[0].block.kind,
-            DirectiveKind::Callout {
-                kind: CalloutKind::Warning,
-                title: None,
-                open: true,
+            body(input, &blocks[0]),
+            indoc! {"
+                ::: inner
+                Inner
+                :::
+                Outer"
             }
         );
-        assert!(
-            blocks[0].block.body.contains("::: callout"),
-            "outer body should contain inner raw text"
-        );
-        assert!(
-            blocks[0].block.body.contains("Outer"),
-            "outer body should contain text after inner block"
-        );
-
-        assert_eq!(
-            blocks[0].children[0].block.kind,
-            DirectiveKind::Callout {
-                kind: CalloutKind::Note,
-                title: None,
-                open: true,
-            }
-        );
-        assert_eq!(blocks[0].children[0].block.body, "Inner");
+        assert_eq!(blocks[0].children.len(), 1);
+        assert_eq!(blocks[0].children[0].block.name, "inner");
+        assert_eq!(body(input, &blocks[0].children[0]), "Inner");
     }
 
     #[test]
@@ -501,10 +277,9 @@ mod tests {
         "};
         let blocks = parse_directives(input);
         assert_eq!(blocks.len(), 1);
-
-        assert_eq!(blocks[0].block.body.matches(":::").count(), 4);
-        assert_eq!(blocks[0].children[0].block.body, "First");
-        assert_eq!(blocks[0].children[1].block.body, "Second");
+        assert_eq!(body(input, &blocks[0]).matches(":::").count(), 4);
+        assert_eq!(body(input, &blocks[0].children[0]), "First");
+        assert_eq!(body(input, &blocks[0].children[1]), "Second");
     }
 
     // ── parse_directives: closing fence ──
@@ -518,7 +293,7 @@ mod tests {
         "};
         let blocks = parse_directives(input);
         assert_eq!(blocks.len(), 1, ":::: should close ::: (4 >= 3)");
-        assert_eq!(blocks[0].block.body, "Body");
+        assert_eq!(body(input, &blocks[0]), "Body");
 
         let input = indoc! {"
             :::: callout
@@ -540,9 +315,10 @@ mod tests {
         "};
         let blocks = parse_directives(input);
         assert_eq!(blocks.len(), 1);
-        assert!(blocks[0].block.body.contains("::: inner-b"));
+        assert!(body(input, &blocks[0]).contains("::: inner-b"));
         assert_eq!(blocks[0].children.len(), 1);
-        assert_eq!(blocks[0].children[0].block.body, "");
+        assert_eq!(blocks[0].children[0].block.name, "inner-b");
+        assert_eq!(body(input, &blocks[0].children[0]), "");
     }
 
     #[test]
@@ -551,144 +327,33 @@ mod tests {
             ::: callout
             No closing fence
         "};
-        let blocks = parse_directives(input);
-        assert!(blocks.is_empty(), "unclosed directive should be skipped");
+        assert_eq!(parse_directives(input), []);
     }
 
-    // ── parse_directives: code fence ──
+    // ── parse_directives: code ──
 
     #[test]
-    fn parse_directives_directives_inside_code_fences_ignored() {
+    fn parse_directives_ignores_fences_inside_code() {
         let input = indoc! {"
             ```
-            ::: callout
-            Body
+            ::: ignored
             :::
             ```
-        "};
-        assert_eq!(parse_directives(input), Vec::<DirectiveNode>::new());
 
-        let input = indoc! {"
-            ~~~
             ::: callout
-            Body
-            :::
             ~~~
-        "};
-        assert_eq!(parse_directives(input), Vec::<DirectiveNode>::new());
-    }
-
-    #[test]
-    fn parse_directives_code_fence_inside_directive() {
-        let input = indoc! {"
-            ::: callout
-            ```
             ::: callout {type=warning}
             not a directive
             :::
-            ```
+            ~~~
             :::
         "};
         let blocks = parse_directives(input);
         assert_eq!(blocks.len(), 1);
-        assert_eq!(
-            blocks[0].block.kind,
-            DirectiveKind::Callout {
-                kind: CalloutKind::Note,
-                title: None,
-                open: true,
-            }
-        );
+        assert_eq!(blocks[0].children, []);
         assert!(
-            blocks[0].block.body.contains("```"),
+            body(input, &blocks[0]).ends_with("not a directive\n:::\n~~~"),
             "body should contain the code fence"
-        );
-    }
-
-    #[test]
-    fn parse_directives_indented_code_fence_ignores_directives() {
-        let input = indoc! {"
-               ```
-            ::: callout
-            Body
-            :::
-               ```
-        "};
-        assert!(
-            parse_directives(input).is_empty(),
-            "directives inside indented code fences should be ignored"
-        );
-    }
-
-    #[test]
-    fn parse_directives_over_indented_code_fence_not_recognized() {
-        let input = indoc! {"
-                ```
-            ::: callout
-            Body
-            :::
-        "};
-        assert_eq!(
-            parse_directives(input).len(),
-            1,
-            "over-indented opening fence should not suppress directives"
-        );
-
-        let input = indoc! {"
-            ```
-            ::: callout
-            Body
-            :::
-                ```
-        "};
-        assert!(
-            parse_directives(input).is_empty(),
-            "over-indented closing fence should not close the code block"
-        );
-    }
-
-    #[test]
-    fn parse_directives_short_backtick_run_not_a_code_fence() {
-        let input = indoc! {"
-            ``
-            ::: callout
-            Body
-            :::
-        "};
-        assert_eq!(
-            parse_directives(input).len(),
-            1,
-            "two backticks should not suppress directives"
-        );
-    }
-
-    #[test]
-    fn parse_directives_mismatched_code_fence_chars_not_closed() {
-        let input = indoc! {"
-            ```
-            ::: callout
-            Body
-            :::
-            ~~~
-        "};
-        assert!(
-            parse_directives(input).is_empty(),
-            "~~~ should not close ``` fence"
-        );
-    }
-
-    #[test]
-    fn parse_directives_backtick_fence_with_backtick_in_info_not_a_fence() {
-        let input = indoc! {"
-            ```foo`bar
-            ::: callout
-            Body
-            :::
-        "};
-        assert_eq!(
-            parse_directives(input).len(),
-            1,
-            "invalid backtick fence should not suppress directives"
         );
     }
 
@@ -701,10 +366,7 @@ mod tests {
             Body
             :::
         "};
-        assert!(
-            parse_directives(input).is_empty(),
-            "indented directive fences should not be recognized"
-        );
+        assert_eq!(parse_directives(input), []);
     }
 
     #[test]
@@ -712,28 +374,7 @@ mod tests {
         let input = concat!("::: callout   \n", "Body\n", ":::   \n",);
         let blocks = parse_directives(input);
         assert_eq!(blocks.len(), 1);
-        assert_eq!(blocks[0].block.body, "Body");
-    }
-
-    #[test]
-    fn parse_directives_ignores_trailing_content_after_attrs() {
-        let input = indoc! {r#"
-            ::: embed { src="example.com" mode="full" } <!-- comment -->
-            :::
-        "#};
-        let blocks = parse_directives(input);
-        assert_eq!(blocks.len(), 1);
-        assert_eq!(
-            blocks[0].block.kind,
-            DirectiveKind::Unknown {
-                name: "embed".into(),
-                positional_args: Vec::new(),
-                named_args: BTreeMap::from([
-                    ("src".into(), "example.com".into()),
-                    ("mode".into(), "full".into()),
-                ]),
-            }
-        );
+        assert_eq!(body(input, &blocks[0]), "Body");
     }
 
     #[test]
@@ -747,7 +388,7 @@ mod tests {
         let input = format!("{prefix}{directive}");
         let blocks = parse_directives(&input);
         assert_eq!(blocks.len(), 1);
-        assert_eq!(blocks[0].block.body, "你好世界");
+        assert_eq!(body(&input, &blocks[0]), "你好世界");
         assert_eq!(
             blocks[0].block.range,
             prefix.len()..input.len(),
@@ -762,7 +403,7 @@ mod tests {
 
             No directives here.
         "};
-        assert_eq!(parse_directives(input), Vec::<DirectiveNode>::new());
+        assert_eq!(parse_directives(input), []);
     }
 
     #[test]
@@ -774,12 +415,8 @@ mod tests {
         };
         let blocks = parse_directives(input);
         assert_eq!(blocks.len(), 1);
-        assert_eq!(blocks[0].block.body, "Body");
-        assert_eq!(
-            blocks[0].block.range,
-            0..input.len(),
-            "range should span entire input"
-        );
+        assert_eq!(body(input, &blocks[0]), "Body");
+        assert_eq!(blocks[0].block.range, 0..input.len());
     }
 
     #[test]
@@ -791,12 +428,8 @@ mod tests {
         "};
         let blocks = parse_directives(input);
         assert_eq!(blocks.len(), 1);
-        assert_eq!(blocks[0].block.body, "Hello");
-        assert_eq!(
-            blocks[0].block.range,
-            0..input.len(),
-            "range should span entire input"
-        );
+        assert_eq!(body(input, &blocks[0]), "Hello");
+        assert_eq!(blocks[0].block.range, 0..input.len());
     }
 
     // ── count_leading_colons ──
@@ -825,102 +458,83 @@ mod tests {
 
     #[test]
     fn parse_directive_head_bare_name() {
-        let head = parse_directive_head("callout");
-        assert_eq!(head.name, "callout");
-        assert_eq!(head.positional_args, Vec::<String>::new());
-        assert!(head.named_args.is_empty());
-        assert_eq!(head.id, None);
-        assert_eq!(head.classes, Vec::<String>::new());
-    }
-
-    #[test]
-    fn parse_directive_head_name_and_attrs() {
-        let head = parse_directive_head(r#"callout {#box .wide type=warning title="Careful"}"#);
-        assert_eq!(head.name, "callout");
-        assert_eq!(head.id.as_deref(), Some("box"));
-        assert_eq!(head.classes, ["wide"]);
         assert_eq!(
-            head.named_args,
-            BTreeMap::from([
-                ("type".into(), "warning".into()),
-                ("title".into(), "Careful".into()),
-            ]),
+            parse_directive_head("callout"),
+            ("callout", DirectiveArgs::default())
         );
     }
 
     #[test]
+    fn parse_directive_head_name_and_attrs() {
+        for text in [
+            "callout {.wide type=warning}",
+            "callout{.wide type=warning}",
+        ] {
+            let (name, args) = parse_directive_head(text);
+            assert_eq!(name, "callout", "{text}");
+            assert_eq!(args.identity.classes, ["wide"], "{text}");
+            assert_eq!(args.named, named(&[("type", "warning")]), "{text}");
+        }
+    }
+
+    #[test]
     fn parse_directive_head_quoted_braces() {
-        let head = parse_directive_head(r#"callout {"a}b" title="a\"}b" type=warning}"#);
-        assert_eq!(head.positional_args, ["a}b"]);
+        let (_, args) = parse_directive_head(r#"callout {"a}b" title="a\"}b" type=warning}"#);
+        assert_eq!(args.positional, ["a}b"]);
         assert_eq!(
-            head.named_args,
-            BTreeMap::from([
-                ("title".into(), "a\"}b".into()),
-                ("type".into(), "warning".into()),
-            ]),
+            args.named,
+            named(&[("title", "a\"}b"), ("type", "warning")])
         );
     }
 
     #[test]
     fn parse_directive_head_attrs_only_yields_empty_name() {
-        let head = parse_directive_head("{#section .note}");
-        assert_eq!(head.name, "");
-        assert_eq!(head.id.as_deref(), Some("section"));
-        assert_eq!(head.classes, ["note"]);
+        let (name, args) = parse_directive_head("{#section .note}");
+        assert_eq!(name, "");
+        assert_eq!(args.identity.id.as_deref(), Some("section"));
+        assert_eq!(args.identity.classes, ["note"]);
     }
 
     #[test]
-    fn parse_directive_head_ignores_trailing_content_after_close_brace() {
-        let head = parse_directive_head(r#"embed {src="example.com"} <!-- note } -->"#);
-        assert_eq!(head.name, "embed");
-        assert_eq!(head.positional_args, Vec::<String>::new());
-        assert_eq!(
-            head.named_args,
-            BTreeMap::from([("src".into(), "example.com".into())]),
-        );
+    fn parse_directive_head_ignores_text_outside_closed_attrs() {
+        for (text, expected) in [
+            (
+                r#"embed {src="example.com"} <!-- note } -->"#,
+                named(&[("src", "example.com")]),
+            ),
+            ("embed extra text", BTreeMap::new()),
+            (r#"embed {title="a}b"#, BTreeMap::new()),
+        ] {
+            let (name, args) = parse_directive_head(text);
+            assert_eq!(name, "embed", "{text}");
+            assert_eq!(args.named, expected, "{text}");
+            assert_eq!(args.positional, Vec::<String>::new(), "{text}");
+        }
     }
 
+    // ── body_end ──
+
     #[test]
-    fn parse_directive_head_extra_text_after_name_without_braces_ignored() {
-        let head = parse_directive_head("name extra text");
-        assert_eq!(head.name, "name");
-        assert_eq!(head.positional_args, Vec::<String>::new());
-        assert!(head.named_args.is_empty());
-        assert_eq!(head.id, None);
-        assert_eq!(head.classes, Vec::<String>::new());
+    fn body_end_excludes_one_line_ending() {
+        for (content, expected) in [
+            ("Hello\n", 5),
+            ("Hello\r\n", 5),
+            ("Hello\n\n", 6),
+            ("Hello", 5),
+            ("", 0),
+        ] {
+            assert_eq!(body_end(content, 0, content.len()), expected, "{content:?}");
+        }
     }
 
-    #[test]
-    fn parse_directive_head_unclosed_quoted_value() {
-        let head = parse_directive_head(r#"callout {title="a}b"#);
-        assert_eq!(head.name, "callout");
-        assert_eq!(head.positional_args, Vec::<String>::new());
-        assert!(head.named_args.is_empty());
+    fn body<'a>(input: &'a str, node: &DirectiveNode) -> &'a str {
+        &input[node.block.body.clone()]
     }
 
-    // ── extract_body ──
-
-    #[test]
-    fn extract_body_strips_trailing_newline() {
-        let content = "Hello\n";
-        assert_eq!(extract_body(content, 0, content.len()), "Hello");
-    }
-
-    #[test]
-    fn extract_body_strips_trailing_crlf() {
-        let content = "Hello\r\n";
-        assert_eq!(extract_body(content, 0, content.len()), "Hello");
-    }
-
-    #[test]
-    fn extract_body_keeps_content_without_trailing_newline() {
-        let content = "Hello";
-        assert_eq!(extract_body(content, 0, content.len()), "Hello");
-    }
-
-    #[test]
-    fn extract_body_returns_empty_for_empty_or_inverted_range() {
-        assert_eq!(extract_body("Hello", 3, 3), "");
-        assert_eq!(extract_body("Hello", 5, 2), "");
+    fn named(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
+        pairs
+            .iter()
+            .map(|&(key, value)| (key.to_owned(), value.to_owned()))
+            .collect()
     }
 }

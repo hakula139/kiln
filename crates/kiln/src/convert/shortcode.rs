@@ -1,11 +1,11 @@
 use std::borrow::Cow;
 use std::fmt::Write as _;
 
-use anyhow::{Result, bail, ensure};
+use anyhow::{Context, Result, bail, ensure};
 use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
 
-use crate::attrs::{AttrToken, AttrTokens, scan_quoted_value};
-use crate::directive::CalloutKind;
+use crate::attrs::{Arg, ArgTokens, quote, scan_quoted_value};
+use crate::directive::callout;
 use crate::markdown::code_ranges;
 
 #[derive(Default)]
@@ -119,11 +119,11 @@ fn convert_body(mut input: &str, out: &mut String, stack: &mut Vec<String>) -> R
 }
 
 fn shortcode_end(input: &str, marker: &str) -> Result<usize> {
-    let closing = format!("{}{}", if marker == "<" { ">" } else { "%" }, "}}");
+    let closing = if marker == "<" { ">}}" } else { "%}}" };
     let mut offset = 0;
     while offset < input.len() {
         let rest = &input[offset..];
-        if rest.starts_with(&closing) {
+        if rest.starts_with(closing) {
             return Ok(offset);
         }
         if let Some(quoted) = rest.strip_prefix('"') {
@@ -139,19 +139,16 @@ fn shortcode_end(input: &str, marker: &str) -> Result<usize> {
 
 fn parse_shortcode_args(input: &str) -> Result<ShortcodeArgs<'_>> {
     let mut args = ShortcodeArgs::default();
-    for token in AttrTokens::values(input) {
-        match token {
-            AttrToken::Named(key, value) => {
+    for arg in ArgTokens::new(input) {
+        match arg {
+            Arg::Named(key, value) => {
                 ensure!(
                     args.get(key).is_none(),
                     "duplicate shortcode argument `{key}`"
                 );
                 args.named.push((key, value));
             }
-            AttrToken::Quoted(value) => args.positional.push(value),
-            AttrToken::Bare(value) => args.positional.push(Cow::Borrowed(value)),
-            AttrToken::Id(value) => args.positional.push(Cow::Owned(format!("#{value}"))),
-            AttrToken::Class(value) => args.positional.push(Cow::Owned(format!(".{value}"))),
+            Arg::Positional(value) => args.positional.push(value),
         }
     }
     ensure!(
@@ -181,10 +178,8 @@ fn emit_callout(args: &ShortcodeArgs, out: &mut String) -> Result<()> {
     }
     let positional = |index| args.positional.get(index).map(AsRef::as_ref);
     let kind = args.get("type").or_else(|| positional(0)).unwrap_or("note");
-    ensure!(
-        kind.parse::<CalloutKind>().is_ok(),
-        "unsupported admonition type `{kind}`"
-    );
+    let kind = callout::find_type(kind)
+        .with_context(|| format!("unsupported admonition type `{kind}`"))?;
     let title = args.get("title").or_else(|| positional(1));
     let open = args.get("open").or_else(|| positional(2)).unwrap_or("true");
     ensure!(
@@ -226,7 +221,7 @@ fn emit_image(args: &ShortcodeArgs) -> Result<String> {
     let src = args
         .get("src")
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| anyhow::anyhow!("image shortcode requires src"))?;
+        .context("image shortcode requires src")?;
     let alt = args
         .get("alt")
         .or_else(|| args.get("caption"))
@@ -283,10 +278,6 @@ fn emit_directive(name: &str, args: &ShortcodeArgs) -> String {
     }
     output.push_str("\n:::");
     output
-}
-
-fn quote(value: &str) -> String {
-    format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
 #[cfg(test)]
