@@ -58,6 +58,7 @@ for (const variant of ['kiln', 'kiln-extended']) {
   const directory = join(destination, variant);
   mkdirSync(directory, { recursive: true });
   copyFileSync(join(root, 'npm/launcher.cjs'), join(directory, 'launcher.cjs'));
+  copyFileSync(join(root, 'README.md'), join(directory, 'README.md'));
   packPackage(directory, {
     ...metadata,
     name: `@kiln-ssg/${variant}`,
