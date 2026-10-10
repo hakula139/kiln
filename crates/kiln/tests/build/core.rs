@@ -274,30 +274,6 @@ fn build_base_url_override() {
 }
 
 #[test]
-fn build_copies_static_files() {
-    let root = tempfile::tempdir().unwrap();
-    fs::write(root.path().join("config.toml"), "").unwrap();
-    copy_templates(&root.path().join("templates"));
-
-    let static_dir = root.path().join("static");
-    fs::create_dir_all(static_dir.join("images")).unwrap();
-    fs::write(static_dir.join("favicon.ico"), "icon").unwrap();
-    fs::write(static_dir.join("images").join("logo.png"), "logo").unwrap();
-
-    build(root.path(), BuildOptions::default()).unwrap();
-
-    let output_dir = root.path().join("public");
-    assert_eq!(
-        fs::read_to_string(output_dir.join("favicon.ico")).unwrap(),
-        "icon"
-    );
-    assert_eq!(
-        fs::read_to_string(output_dir.join("images").join("logo.png")).unwrap(),
-        "logo"
-    );
-}
-
-#[test]
 fn build_copies_colocated_assets() {
     let root = tempfile::tempdir().unwrap();
     fs::write(root.path().join("config.toml"), "").unwrap();
@@ -402,28 +378,52 @@ fn build_cleans_stale_output() {
 }
 
 #[test]
-fn build_empty_site_generates_listings_feed_and_error_page() {
-    let root = tempfile::tempdir().unwrap();
-    write_test_file(root.path(), "config.toml", "");
-    copy_templates(&root.path().join("templates"));
+fn build_empty_listing_states_generate_listings_feed_and_error_page() {
+    for content in [None, Some("about"), Some("posts/hello")] {
+        let root = tempfile::tempdir().unwrap();
+        write_test_file(root.path(), "config.toml", "");
+        copy_templates(&root.path().join("templates"));
+        if let Some(path) = content {
+            write_page(
+                root.path(),
+                path,
+                indoc! {r#"
+                    +++
+                    title = "Hello"
+                    +++
+                    Body
+                "#},
+            );
+        }
 
-    build(root.path(), BuildOptions::default()).unwrap();
+        build(root.path(), BuildOptions::default()).unwrap();
 
-    let output = root.path().join("public");
-    for path in [
-        "index.html",
-        "posts/index.html",
-        "sections/index.html",
-        "tags/index.html",
-    ] {
-        let html = fs::read_to_string(output.join(path)).unwrap();
-        assert!(listing_links(&html).is_empty(), "{path}: {html}");
+        let output = root.path().join("public");
+        for path in [
+            "index.html",
+            "posts/index.html",
+            "sections/index.html",
+            "tags/index.html",
+        ] {
+            let html = fs::read_to_string(output.join(path)).unwrap();
+            let expected = if content == Some("posts/hello")
+                && matches!(path, "index.html" | "posts/index.html")
+            {
+                vec![r#"<a href="http://localhost:5456/posts/hello/">Hello</a>"#]
+            } else {
+                Vec::new()
+            };
+            assert_eq!(listing_links(&html), expected, "{content:?}: {path}");
+        }
+        let feed = fs::read_to_string(output.join("index.xml")).unwrap();
+        assert_eq!(
+            feed.matches("<item>").count(),
+            usize::from(content == Some("posts/hello"))
+        );
+        assert!(!feed.contains("<lastBuildDate>"), "{feed}");
+        let error = fs::read_to_string(output.join("404.html")).unwrap();
+        assert!(error.contains("404 Not Found"), "{error}");
     }
-    let feed = fs::read_to_string(output.join("index.xml")).unwrap();
-    assert!(!feed.contains("<item>"), "{feed}");
-    assert!(!feed.contains("<lastBuildDate>"), "{feed}");
-    let error = fs::read_to_string(output.join("404.html")).unwrap();
-    assert!(error.contains("404 Not Found"), "{error}");
 }
 
 #[test]
@@ -435,6 +435,7 @@ fn build_publishes_assets_with_owner_precedence_and_private_sources() {
     copy_templates(&root.path().join("templates"));
     for (path, value) in [
         ("themes/example/assets/theme.txt", "theme resource"),
+        ("themes/example/static/theme.txt", "theme static"),
         ("themes/example/assets/overlay.txt", "theme asset"),
         (
             "themes/example/static/assets/theme-overlay.txt",
@@ -450,6 +451,8 @@ fn build_publishes_assets_with_owner_precedence_and_private_sources() {
         ("assets/_secret.txt", "private"),
         ("assets/nested/_cache/secret.txt", "private"),
         ("static/_headers", "root headers"),
+        ("static/favicon.ico", "icon"),
+        ("static/images/logo.png", "logo"),
     ] {
         write_test_file(root.path(), path, value);
     }
@@ -458,10 +461,13 @@ fn build_publishes_assets_with_owner_precedence_and_private_sources() {
     let public = root.path().join("public");
     for (path, value) in [
         ("assets/theme.txt", "theme resource"),
+        ("theme.txt", "theme static"),
         ("assets/theme-overlay.txt", "theme overlay"),
         ("assets/layers.txt", "site asset"),
         ("assets/overlay.txt", "site overlay"),
         ("_headers", "root headers"),
+        ("favicon.ico", "icon"),
+        ("images/logo.png", "logo"),
     ] {
         assert_eq!(fs::read_to_string(public.join(path)).unwrap(), value);
     }

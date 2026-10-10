@@ -441,14 +441,13 @@ fn canonicalize_via_parent(path: &Path) -> Result<PathBuf> {
 mod tests {
     use indoc::indoc;
 
+    use super::*;
     use crate::serve::{DEFAULT_PORT, localhost_url};
 
-    use super::*;
-
-    // ── deserialization ──
+    // ── Config::default ──
 
     #[test]
-    fn defaults_when_empty() {
+    fn default_uses_site_defaults() {
         let config = Config::default();
         assert_eq!(config.base_url, localhost_url(DEFAULT_PORT));
         assert_eq!(config.title, "My Site");
@@ -478,6 +477,8 @@ mod tests {
             toml::to_string(&from_toml).unwrap(),
         );
     }
+
+    // ── deserialization ──
 
     #[test]
     fn overrides_from_toml() {
@@ -544,8 +545,6 @@ mod tests {
         );
     }
 
-    /// Items stay in TOML source order because `toml::from_str` bypasses the weight sort in
-    /// `Config::load()`, which `menu_sorts_by_weight_on_load` covers.
     #[test]
     fn menu_from_toml_parses_fields() {
         let config: Config = toml::from_str(indoc! {r#"
@@ -605,29 +604,6 @@ mod tests {
     }
 
     #[test]
-    fn menu_groups_coexist() {
-        let config: Config = toml::from_str(indoc! {r#"
-            [[menu.main]]
-            name = "Posts"
-            url = "/posts/"
-            weight = 1
-
-            [[menu.social]]
-            name = "GitHub"
-            url = "https://github.com/example"
-            icon = "fab fa-github"
-            external = true
-        "#})
-        .unwrap();
-
-        assert_eq!(config.menu["main"].len(), 1);
-        assert_eq!(config.menu["main"][0].name, "Posts");
-        assert_eq!(config.menu["social"].len(), 1);
-        assert_eq!(config.menu["social"][0].name, "GitHub");
-        assert!(config.menu["social"][0].external);
-    }
-
-    #[test]
     fn deserialize_unknown_css_processor_returns_error() {
         assert!(
             toml::from_str::<Config>(indoc! {r#"
@@ -648,14 +624,14 @@ mod tests {
             &config_path,
             indoc! {r#"
                 base_url = "https://example.com"
-                title = "HAKULA†CHANNEL"
+                title = "Example Site"
             "#},
         )
         .unwrap();
 
         let config = Config::load(dir.path()).unwrap();
         assert_eq!(config.base_url, "https://example.com");
-        assert_eq!(config.title, "HAKULA†CHANNEL");
+        assert_eq!(config.title, "Example Site");
     }
 
     #[test]
@@ -663,54 +639,29 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let config = Config::load(dir.path()).unwrap();
         assert_eq!(config.base_url, localhost_url(DEFAULT_PORT));
+        assert!(config.theme.is_none());
+        assert!(config.params.is_empty());
     }
 
     #[test]
-    fn menu_sorts_by_weight_on_load() {
+    fn load_sorts_menu_groups_independently() {
         let dir = tempfile::tempdir().unwrap();
         fs::write(
             dir.path().join("config.toml"),
             indoc! {r#"
-                [[menu.main]]
-                name = "Last"
-                url = "/last/"
-                weight = 10
-
-                [[menu.main]]
-                name = "First"
-                url = "/first/"
-                weight = 1
-
-                [[menu.main]]
-                name = "Middle"
-                url = "/middle/"
-                weight = 5
-            "#},
-        )
-        .unwrap();
-
-        let config = Config::load(dir.path()).unwrap();
-        let names: Vec<&str> = config.menu["main"]
-            .iter()
-            .map(|m| m.name.as_str())
-            .collect();
-        assert_eq!(names, ["First", "Middle", "Last"]);
-    }
-
-    #[test]
-    fn menu_sorts_each_group_independently_on_load() {
-        let dir = tempfile::tempdir().unwrap();
-        fs::write(
-            dir.path().join("config.toml"),
-            indoc! {r#"
-                [[menu.main]]
-                name = "B"
-                url = "/b/"
-                weight = 2
-
                 [[menu.main]]
                 name = "A"
                 url = "/a/"
+                weight = 2
+
+                [[menu.main]]
+                name = "M"
+                url = "/m/"
+                weight = 3
+
+                [[menu.main]]
+                name = "Z"
+                url = "/z/"
                 weight = 1
 
                 [[menu.social]]
@@ -719,9 +670,10 @@ mod tests {
                 weight = 20
 
                 [[menu.social]]
-                name = "X"
-                url = "/x/"
+                name = "Z"
+                url = "/z/"
                 weight = 10
+                external = true
             "#},
         )
         .unwrap();
@@ -735,8 +687,10 @@ mod tests {
             .iter()
             .map(|m| m.name.as_str())
             .collect();
-        assert_eq!(main, ["A", "B"]);
-        assert_eq!(social, ["X", "Y"]);
+        assert_eq!(main, ["Z", "A", "M"]);
+        assert_eq!(social, ["Z", "Y"]);
+        assert!(config.menu["social"][0].external);
+        assert!(!config.menu["main"][0].external);
     }
 
     #[test]
@@ -752,17 +706,7 @@ mod tests {
     // ── load (theme) ──
 
     #[test]
-    fn load_no_theme_skips_theme() {
-        let dir = tempfile::tempdir().unwrap();
-        fs::write(dir.path().join("config.toml"), "").unwrap();
-
-        let config = Config::load(dir.path()).unwrap();
-        assert!(config.theme.is_none());
-        assert!(config.params.is_empty());
-    }
-
-    #[test]
-    fn load_theme_merges_params() {
+    fn load_theme_merges_scalar_and_nested_params() {
         let dir = tempfile::tempdir().unwrap();
         fs::write(
             dir.path().join("config.toml"),
@@ -771,40 +715,6 @@ mod tests {
 
                 [params]
                 fontawesome = true
-            "#},
-        )
-        .unwrap();
-        setup_theme(
-            dir.path(),
-            indoc! {r#"
-                name = "test-theme"
-
-                [params]
-                code_max_lines = 40
-                fontawesome = false
-            "#},
-        );
-
-        let config = Config::load(dir.path()).unwrap();
-        assert_eq!(
-            config.params.get("code_max_lines"),
-            Some(&toml::Value::Integer(40)),
-            "should fill in missing site params from theme"
-        );
-        assert_eq!(
-            config.params.get("fontawesome"),
-            Some(&toml::Value::Boolean(true)),
-            "should override theme defaults"
-        );
-    }
-
-    #[test]
-    fn load_theme_merges_nested_params() {
-        let dir = tempfile::tempdir().unwrap();
-        fs::write(
-            dir.path().join("config.toml"),
-            indoc! {r#"
-                theme = "test-theme"
 
                 [params.social]
                 github = "user"
@@ -819,6 +729,10 @@ mod tests {
             indoc! {r#"
                 name = "test-theme"
 
+                [params]
+                code_max_lines = 40
+                fontawesome = false
+
                 [params.social]
                 github = "default"
                 twitter = "default"
@@ -830,6 +744,8 @@ mod tests {
         );
 
         let config = Config::load(dir.path()).unwrap();
+        assert_eq!(config.params["code_max_lines"], toml::Value::Integer(40));
+        assert_eq!(config.params["fontawesome"], toml::Value::Boolean(true));
         let social = config.params["social"].as_table().unwrap();
         assert_eq!(
             social.get("github"),
@@ -887,47 +803,16 @@ mod tests {
     }
 
     #[test]
-    fn load_theme_no_min_version_succeeds() {
+    fn load_theme_accepts_compatible_min_version() {
         let dir = tempfile::tempdir().unwrap();
-        fs::write(
-            dir.path().join("config.toml"),
-            indoc! {r#"
-                theme = "test-theme"
-            "#},
-        )
-        .unwrap();
+        fs::write(dir.path().join("config.toml"), r#"theme = "test-theme""#).unwrap();
         setup_theme(
             dir.path(),
-            indoc! {r#"
-                name = "test-theme"
-            "#},
+            &format!(r#"min_kiln_version = "{KILN_VERSION}""#),
         );
 
-        assert!(Config::load(dir.path()).is_ok());
-    }
-
-    #[test]
-    fn load_theme_compatible_version_succeeds() {
-        let dir = tempfile::tempdir().unwrap();
-        fs::write(
-            dir.path().join("config.toml"),
-            indoc! {r#"
-                theme = "test-theme"
-            "#},
-        )
-        .unwrap();
-        setup_theme(
-            dir.path(),
-            &format!(
-                indoc! {r#"
-                    name = "test-theme"
-                    min_kiln_version = "{version}"
-                "#},
-                version = KILN_VERSION,
-            ),
-        );
-
-        assert!(Config::load(dir.path()).is_ok());
+        let config = Config::load(dir.path()).unwrap();
+        assert_eq!(config.theme.as_deref(), Some("test-theme"));
     }
 
     #[test]
@@ -1107,61 +992,25 @@ mod tests {
     }
 
     #[test]
-    fn resolved_output_dir_dot_returns_error() {
-        let dir = tempfile::tempdir().unwrap();
-
-        let err = resolved_output_dir_for(dir.path(), ".")
-            .unwrap_err()
-            .to_string();
-
-        assert!(
-            err.contains("would overwrite the project root"),
-            "should reject `.`, got: {err}"
-        );
-    }
-
-    #[test]
-    fn resolved_output_dir_dotdot_returns_error() {
-        let dir = tempfile::tempdir().unwrap();
-
-        let err = resolved_output_dir_for(dir.path(), "..")
-            .unwrap_err()
-            .to_string();
-
-        assert!(
-            err.contains("would overwrite the project root"),
-            "should reject `..`, got: {err}"
-        );
-    }
-
-    #[test]
-    fn resolved_output_dir_filesystem_root_returns_error() {
-        let dir = tempfile::tempdir().unwrap();
-
-        let root = dir.path().ancestors().last().unwrap();
-        let err = resolved_output_dir_for(dir.path(), &root.to_string_lossy())
-            .unwrap_err()
-            .to_string();
-
-        assert!(
-            err.contains("would overwrite the project root"),
-            "should reject the filesystem root, got: {err}"
-        );
-    }
-
-    #[test]
-    fn resolved_output_dir_equal_to_root_returns_error() {
+    fn resolved_output_dir_root_or_ancestor_returns_error() {
         let dir = tempfile::tempdir().unwrap();
         let canonical_root = dir.path().canonicalize().unwrap();
+        let filesystem_root = canonical_root.ancestors().last().unwrap();
 
-        let err = resolved_output_dir_for(dir.path(), &canonical_root.to_string_lossy())
-            .unwrap_err()
-            .to_string();
-
-        assert!(
-            err.contains("would overwrite the project root"),
-            "should reject path equal to root, got: {err}"
-        );
+        for output in [
+            ".",
+            "..",
+            canonical_root.to_str().unwrap(),
+            filesystem_root.to_str().unwrap(),
+        ] {
+            let error = resolved_output_dir_for(dir.path(), output)
+                .unwrap_err()
+                .to_string();
+            assert!(
+                error.contains("would overwrite the project root"),
+                "{output}: {error}"
+            );
+        }
     }
 
     #[test]

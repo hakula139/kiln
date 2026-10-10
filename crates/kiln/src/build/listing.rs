@@ -338,29 +338,6 @@ mod tests {
     static EMPTY_RESOLVER: LazyLock<ImageResolver> =
         LazyLock::new(|| ImageResolver::new(Path::new(""), ImageConfig::default()));
 
-    fn prepared(title: &str, date: Option<&str>, weight: Option<i64>) -> PreparedPage {
-        let published = date.map(|date| date.parse().unwrap());
-        PreparedPage {
-            output_path: PathBuf::from(title).join("index.html"),
-            summary: PageSummary {
-                title: title.into(),
-                url: format!("/{title}/"),
-                date: date.map(str::to_owned),
-                pinned: weight.is_some(),
-                description: String::new(),
-                featured_image: None,
-                tags: Vec::new(),
-                section: None,
-            },
-            published,
-            updated: None,
-            weight,
-            year: published
-                .map(|date| page_year(date, None))
-                .unwrap_or_default(),
-        }
-    }
-
     // ── sort_pinned_first ──
 
     #[test]
@@ -383,6 +360,29 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["negative", "new", "a", "z", "positive", "old", "undated"]
         );
+    }
+
+    fn prepared(title: &str, date: Option<&str>, weight: Option<i64>) -> PreparedPage {
+        let published = date.map(|date| date.parse().unwrap());
+        PreparedPage {
+            output_path: PathBuf::from(title).join("index.html"),
+            summary: PageSummary {
+                title: title.into(),
+                url: format!("/{title}/"),
+                date: date.map(str::to_owned),
+                pinned: weight.is_some(),
+                description: String::new(),
+                featured_image: None,
+                tags: Vec::new(),
+                section: None,
+            },
+            published,
+            updated: None,
+            weight,
+            year: published
+                .map(|date| page_year(date, None))
+                .unwrap_or_default(),
+        }
     }
 
     // ── group_by_year ──
@@ -445,42 +445,24 @@ mod tests {
     // ── resolve_featured_image ──
 
     #[test]
-    fn resolve_featured_image_absolute_path() {
-        let fi = make_featured_image("/images/cover.webp");
-        let resolved = resolve_featured_image(
-            Some(&fi),
-            "https://example.com/posts/foo/",
-            &EMPTY_RESOLVER,
-            None,
-        )
-        .unwrap();
-        assert_eq!(resolved.src, "/images/cover.webp");
-    }
-
-    #[test]
-    fn resolve_featured_image_relative_path() {
-        let fi = make_featured_image("assets/cover.webp");
-        let resolved = resolve_featured_image(
-            Some(&fi),
-            "https://example.com/posts/section/page/",
-            &EMPTY_RESOLVER,
-            None,
-        )
-        .unwrap();
-        assert_eq!(resolved.src, "/posts/section/page/assets/cover.webp");
-    }
-
-    #[test]
-    fn resolve_featured_image_external_url() {
-        let fi = make_featured_image("https://cdn.example.com/img.jpg");
-        let resolved = resolve_featured_image(
-            Some(&fi),
-            "https://example.com/posts/foo/",
-            &EMPTY_RESOLVER,
-            None,
-        )
-        .unwrap();
-        assert_eq!(resolved.src, "https://cdn.example.com/img.jpg");
+    fn resolve_featured_image_resolves_relative_and_external_sources() {
+        for (source, expected) in [
+            ("assets/cover.webp", "/posts/section/page/assets/cover.webp"),
+            (
+                "https://cdn.example.com/img.jpg",
+                "https://cdn.example.com/img.jpg",
+            ),
+        ] {
+            let image = make_featured_image(source);
+            let resolved = resolve_featured_image(
+                Some(&image),
+                "https://example.com/posts/section/page/",
+                &EMPTY_RESOLVER,
+                None,
+            )
+            .unwrap();
+            assert_eq!(resolved.src, expected);
+        }
     }
 
     #[test]

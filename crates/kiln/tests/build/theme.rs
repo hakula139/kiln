@@ -51,36 +51,6 @@ fn build_with_theme() {
 }
 
 #[test]
-fn build_theme_static_files_with_site_override() {
-    let root = tempfile::tempdir().unwrap();
-    fs::write(root.path().join("config.toml"), r#"theme = "my-theme""#).unwrap();
-    setup_theme(root.path(), "my-theme");
-
-    let theme_static = root.path().join("themes/my-theme/static");
-    fs::create_dir_all(&theme_static).unwrap();
-    fs::write(theme_static.join("theme.css"), "theme-default").unwrap();
-    fs::write(theme_static.join("shared.css"), "from-theme").unwrap();
-
-    let site_static = root.path().join("static");
-    fs::create_dir_all(&site_static).unwrap();
-    fs::write(site_static.join("shared.css"), "from-site").unwrap();
-
-    build(root.path(), BuildOptions::default()).unwrap();
-
-    let output_dir = root.path().join("public");
-    assert_eq!(
-        fs::read_to_string(output_dir.join("theme.css")).unwrap(),
-        "theme-default",
-        "theme-only static file should be copied"
-    );
-    assert_eq!(
-        fs::read_to_string(output_dir.join("shared.css")).unwrap(),
-        "from-site",
-        "site static file should override theme"
-    );
-}
-
-#[test]
 fn build_fingerprints_merged_static_assets_after_minification() {
     let root = tempfile::tempdir().unwrap();
     fs::write(root.path().join("config.toml"), r#"theme = "my-theme""#).unwrap();

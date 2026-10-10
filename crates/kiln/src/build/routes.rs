@@ -246,6 +246,7 @@ mod tests {
         plan.validate_assets(directory.path()).unwrap();
         assert!(!directory.path().join("posts/index.html").exists());
     }
+
     #[test]
     fn validate_assets_conflicting_destinations_returns_error() {
         let directory = tempfile::tempdir().unwrap();

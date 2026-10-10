@@ -4,8 +4,6 @@ use std::path::{Path, PathBuf};
 use indoc::{formatdoc, indoc};
 use scraper::{Html, Selector};
 
-use kiln::build::{BuildOptions, build};
-
 #[path = "../support/fixtures.rs"]
 mod fixtures;
 
@@ -158,25 +156,4 @@ pub(super) fn stylesheet_url(html: &str) -> String {
 
 pub(super) fn published_path(root: &Path, url: &str) -> PathBuf {
     root.join(url.strip_prefix("/subsite/").unwrap())
-}
-
-// ── Error assertions ──
-
-pub(super) fn assert_broken_template_fails(template_name: &str) {
-    let root = tempfile::tempdir().unwrap();
-    setup_site_with_page(root.path());
-
-    fs::write(
-        root.path().join("templates").join(template_name),
-        "{% invalid %}",
-    )
-    .unwrap();
-
-    let err = build(root.path(), BuildOptions::default())
-        .unwrap_err()
-        .to_string();
-    assert!(
-        err.contains("failed to render"),
-        "should report render failure for {template_name}, got: {err}"
-    );
 }

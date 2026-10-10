@@ -82,7 +82,7 @@ fn paginate_at(params: &toml::value::Table, path: &[&str]) -> Option<usize> {
 
 #[cfg(test)]
 mod tests {
-    use indoc::indoc;
+    use indoc::{formatdoc, indoc};
 
     use super::*;
 
@@ -91,6 +91,8 @@ mod tests {
     #[test]
     fn paginate_config_returns_first_matching_path() {
         let params: toml::value::Table = toml::from_str(indoc! {r"
+                paginate = 16
+
                 [home]
                 paginate = 8
             "})
@@ -113,16 +115,21 @@ mod tests {
     }
 
     #[test]
-    fn paginate_config_skips_non_positive_values() {
-        let params: toml::value::Table = toml::from_str(indoc! {r"
-                paginate = 0
-
+    fn paginate_config_skips_invalid_values() {
+        for value in ["0", "-1", r#""invalid""#, "true", "[]", "{}"] {
+            let params: toml::value::Table = toml::from_str(&formatdoc! {r"
+                paginate = 16
                 [home]
-                paginate = -1
+                paginate = {value}
             "})
-        .unwrap();
-        let per_page = paginate_config(&params, &[&["home", "paginate"], &["paginate"]], 10);
-        assert_eq!(per_page, 10);
+            .unwrap();
+            assert_eq!(
+                paginate_config(&params, &[&["home", "paginate"], &["paginate"]], 10),
+                16
+            );
+        }
+        let params: toml::value::Table = toml::from_str("paginate = 0").unwrap();
+        assert_eq!(paginate_config(&params, &[&["paginate"]], 10), 10);
     }
 
     #[test]
