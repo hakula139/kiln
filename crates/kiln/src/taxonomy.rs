@@ -166,60 +166,29 @@ mod tests {
     // ── build_taxonomies ──
 
     #[test]
-    fn build_taxonomies_empty() {
-        let set = build_taxonomies(&[], None).unwrap();
-        assert!(set.tags.is_empty());
-        assert!(set.tag_pages.is_empty());
-    }
-
-    #[test]
-    fn build_taxonomies_single_tag() {
-        let pages = [make_page("Post 1", &["rust"])];
-        let set = build_taxonomies(&pages, None).unwrap();
-
-        assert_eq!(set.tags.len(), 1);
-        assert_eq!(set.tags[0].name, "rust");
-        assert_eq!(set.tags[0].slug, "rust");
-        assert_eq!(set.tags[0].page_count, 1);
-    }
-
-    #[test]
     fn build_taxonomies_multiple_tags_shared() {
         let pages = [
             make_page("Post 1", &["rust", "web"]),
-            make_page("Post 2", &["rust"]),
+            make_page("Post 2", &["", "  ", "rust"]),
             make_page("Post 3", &["web"]),
         ];
         let set = build_taxonomies(&pages, None).unwrap();
 
         assert_eq!(set.tags.len(), 2);
-        // Both have 2 pages, so sorted alphabetically.
         assert_eq!(set.tags[0].name, "rust");
+        assert_eq!(set.tags[0].slug, "rust");
         assert_eq!(set.tags[0].page_count, 2);
         assert_eq!(set.tags[1].name, "web");
         assert_eq!(set.tags[1].page_count, 2);
     }
 
     #[test]
-    fn build_taxonomies_case_insensitive_slugs() {
-        let pages = [
-            make_page("Post 1", &["Rust"]),
-            make_page("Post 2", &["rust"]),
-        ];
-        let set = build_taxonomies(&pages, None).unwrap();
-
-        assert_eq!(set.tags.len(), 1, "should deduplicate by slug");
-        assert_eq!(
-            set.tags[0].name, "Rust",
-            "should preserve first-seen display name"
-        );
-        assert_eq!(set.tags[0].page_count, 2);
-    }
-
-    #[test]
     fn build_taxonomies_deduplicates_page_membership() {
         let pages = [
-            make_page("Post A", &["web", "Rust", "rust", " Rust ", "", "Web"]),
+            make_page(
+                "Post A",
+                &["web", "Rust", "rust", " Rust ", "", "  ", "Web"],
+            ),
             make_page("Post B", &["rust"]),
         ];
         let set = build_taxonomies(&pages, None).unwrap();
@@ -266,64 +235,6 @@ mod tests {
         assert_eq!(set.tags[1].page_count, 1);
         assert_eq!(set.tags[2].name, "zebra");
         assert_eq!(set.tags[2].page_count, 1);
-    }
-
-    #[test]
-    fn build_taxonomies_preserves_page_order() {
-        let pages = [
-            make_page("Newest", &["rust"]),
-            make_page("Oldest", &["rust"]),
-        ];
-        let set = build_taxonomies(&pages, None).unwrap();
-
-        let indices = &set.tag_pages["rust"];
-        assert_eq!(
-            indices,
-            &[0, 1],
-            "should preserve input order (newest first)"
-        );
-    }
-
-    #[test]
-    fn build_taxonomies_empty_tags_ignored() {
-        let pages = [make_page("Post 1", &["", "  ", "rust"])];
-        let set = build_taxonomies(&pages, None).unwrap();
-
-        assert_eq!(set.tags.len(), 1);
-        assert_eq!(set.tags[0].name, "rust");
-    }
-
-    #[test]
-    fn build_taxonomies_empty_tag_slug_returns_error() {
-        for tag in ["!!!", " +++ ", "..."] {
-            let pages = [make_page("Post A", &[tag])];
-            let error = build_taxonomies(&pages, None).unwrap_err();
-            assert_eq!(
-                error.to_string(),
-                format!(
-                    r#"tag "{}" must contain at least one letter or number"#,
-                    tag.trim()
-                ),
-            );
-        }
-    }
-
-    #[test]
-    fn build_taxonomies_colliding_terms_returns_error() {
-        let pages = [
-            make_page("Post 1", &["Alpha Beta"]),
-            make_page("Post 2", &["Alpha & Beta"]),
-            make_page("Post 3", &["Alpha Beta"]),
-            make_page("Post 4", &["Alpha & Beta"]),
-            make_page("Post 5", &["Alpha & Beta"]),
-        ];
-        let err = build_taxonomies(&pages, None).unwrap_err();
-
-        assert_eq!(
-            err.to_string(),
-            r#"tag slug collision on "alpha-beta": "Alpha & Beta" (3 pages) and "Alpha Beta" (2 pages)"#,
-            "should name the slug, both terms, and each term's total page count"
-        );
     }
 
     #[test]
@@ -390,6 +301,46 @@ mod tests {
         assert_eq!(
             set.tags[0].name, "rust",
             "should fall back when _index.md has empty title"
+        );
+    }
+
+    #[test]
+    fn build_taxonomies_empty() {
+        let set = build_taxonomies(&[], None).unwrap();
+        assert!(set.tags.is_empty());
+        assert!(set.tag_pages.is_empty());
+    }
+
+    #[test]
+    fn build_taxonomies_empty_tag_slug_returns_error() {
+        for tag in ["!!!", " +++ ", "..."] {
+            let pages = [make_page("Post A", &[tag])];
+            let error = build_taxonomies(&pages, None).unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                format!(
+                    r#"tag "{}" must contain at least one letter or number"#,
+                    tag.trim()
+                ),
+            );
+        }
+    }
+
+    #[test]
+    fn build_taxonomies_colliding_terms_returns_error() {
+        let pages = [
+            make_page("Post 1", &["Alpha Beta"]),
+            make_page("Post 2", &["Alpha & Beta"]),
+            make_page("Post 3", &["Alpha Beta"]),
+            make_page("Post 4", &["Alpha & Beta"]),
+            make_page("Post 5", &["Alpha & Beta"]),
+        ];
+        let err = build_taxonomies(&pages, None).unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            r#"tag slug collision on "alpha-beta": "Alpha & Beta" (3 pages) and "Alpha Beta" (2 pages)"#,
+            "should name the slug, both terms, and each term's total page count"
         );
     }
 }

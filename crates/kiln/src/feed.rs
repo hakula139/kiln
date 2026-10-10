@@ -104,42 +104,6 @@ fn write_escaped_element(xml: &mut String, level: u8, tag: &str, content: &str) 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::template::vars::PageSummary;
-
-    fn generate_rss(channel: &Channel, items: &[PageSummary], limit: usize) -> String {
-        super::generate_rss(
-            channel,
-            items.iter().map(|item| FeedItem {
-                title: &item.title,
-                url: &item.url,
-                description: &item.description,
-                published: item.date.as_ref().map(|date| date.parse().unwrap()),
-            }),
-            limit,
-        )
-    }
-
-    /// Extracts the inner content of the first `<item>...</item>` block in `xml`.
-    fn first_item(xml: &str) -> &str {
-        let start = xml.find("<item>").expect("xml should contain <item>") + "<item>".len();
-        let end = xml[start..]
-            .find("</item>")
-            .expect("xml should contain </item>");
-        &xml[start..start + end]
-    }
-
-    fn make_summary(title: &str, url: &str, date: Option<&str>) -> PageSummary {
-        PageSummary {
-            title: title.into(),
-            url: url.into(),
-            date: date.map(String::from),
-            pinned: false,
-            description: String::new(),
-            featured_image: None,
-            tags: Vec::new(),
-            section: None,
-        }
-    }
 
     // ── generate_rss ──
 
@@ -151,28 +115,30 @@ mod tests {
             feed_url: "https://example.com/index.xml".into(),
             description: "A test site".into(),
             language: "en".into(),
-            last_build_date: None,
+            last_build_date: Some("Sun, 15 Mar 2026 10:00:00 +0000".into()),
         };
         let items = vec![
-            make_summary(
+            make_item(
                 "Post A",
                 "https://example.com/post-a/",
                 Some("2026-03-15T10:00:00Z"),
             ),
-            make_summary(
+            make_item(
                 "Post B",
                 "https://example.com/post-b/",
                 Some("2026-03-10T08:00:00Z"),
             ),
         ];
 
-        let xml = generate_rss(&channel, &items, DEFAULT_FEED_LIMIT);
+        let xml = generate_rss(&channel, items, DEFAULT_FEED_LIMIT);
 
         assert!(xml.starts_with(r#"<?xml version="1.0""#));
         assert!(xml.contains("<title>Test Site</title>"));
         assert!(xml.contains("<link>https://example.com/</link>"));
         assert!(xml.contains("<description>A test site</description>"));
         assert!(xml.contains("<language>en</language>"));
+        assert!(xml.contains(r#"<atom:link href="https://example.com/index.xml" rel="self" type="application/rss+xml" />"#));
+        assert!(xml.contains("<lastBuildDate>Sun, 15 Mar 2026 10:00:00 +0000</lastBuildDate>"));
         assert!(xml.contains("<title>Post A</title>"));
         assert!(xml.contains("<link>https://example.com/post-a/</link>"));
         assert!(xml.contains("<pubDate>Sun, 15 Mar 2026 10:00:00 +0000</pubDate>"));
@@ -189,13 +155,13 @@ mod tests {
             language: "en".into(),
             last_build_date: None,
         };
-        let items = vec![make_summary(
+        let items = vec![make_item(
             r#"Post "with" <tags>"#,
             "https://example.com/post/",
             None,
         )];
 
-        let xml = generate_rss(&channel, &items, DEFAULT_FEED_LIMIT);
+        let xml = generate_rss(&channel, items, DEFAULT_FEED_LIMIT);
 
         assert!(
             xml.contains("<title>A &amp; B &lt;Site&gt;</title>"),
@@ -217,81 +183,18 @@ mod tests {
             language: "en".into(),
             last_build_date: None,
         };
-        let items: Vec<_> = (1..=5)
-            .map(|i| {
-                make_summary(
-                    &format!("Post {i}"),
-                    &format!("https://example.com/{i}/"),
-                    None,
-                )
-            })
-            .collect();
+        let items = [
+            make_item("Post 1", "https://example.com/1/", None),
+            make_item("Post 2", "https://example.com/2/", None),
+            make_item("Post 3", "https://example.com/3/", None),
+            make_item("Post 4", "https://example.com/4/", None),
+        ];
 
-        let xml = generate_rss(&channel, &items, 3);
+        let xml = generate_rss(&channel, items, 3);
 
         assert!(xml.contains("Post 1"));
         assert!(xml.contains("Post 3"));
         assert!(!xml.contains("Post 4"), "should stop at limit");
-    }
-
-    #[test]
-    fn generate_rss_includes_atom_self_link() {
-        let channel = Channel {
-            title: "Site".into(),
-            link: "https://example.com/".into(),
-            feed_url: "https://example.com/index.xml".into(),
-            description: String::new(),
-            language: "en".into(),
-            last_build_date: None,
-        };
-
-        let xml = generate_rss(&channel, &[], DEFAULT_FEED_LIMIT);
-
-        assert!(
-            xml.contains(r#"<atom:link href="https://example.com/index.xml" rel="self""#),
-            "should include atom:link self reference, xml:\n{xml}"
-        );
-    }
-
-    #[test]
-    fn generate_rss_with_last_build_date() {
-        let channel = Channel {
-            title: "Site".into(),
-            link: "https://example.com/".into(),
-            feed_url: "https://example.com/index.xml".into(),
-            description: String::new(),
-            language: "en".into(),
-            last_build_date: Some("Sun, 15 Mar 2026 10:00:00 +0000".into()),
-        };
-
-        let xml = generate_rss(&channel, &[], DEFAULT_FEED_LIMIT);
-
-        assert!(xml.contains("<lastBuildDate>Sun, 15 Mar 2026 10:00:00 +0000</lastBuildDate>"));
-    }
-
-    #[test]
-    fn generate_rss_omits_empty_description() {
-        let channel = Channel {
-            title: "Site".into(),
-            link: "https://example.com/".into(),
-            feed_url: "https://example.com/index.xml".into(),
-            description: String::new(),
-            language: "en".into(),
-            last_build_date: None,
-        };
-        let items = vec![make_summary("Post", "https://example.com/post/", None)];
-
-        let xml = generate_rss(&channel, &items, DEFAULT_FEED_LIMIT);
-
-        let item = first_item(&xml);
-        assert!(
-            item.contains("<title>Post</title>"),
-            "item should contain its title, xml:\n{xml}"
-        );
-        assert!(
-            !item.contains("<description>"),
-            "should omit empty description from item, xml:\n{xml}"
-        );
     }
 
     #[test]
@@ -304,10 +207,10 @@ mod tests {
             language: "en".into(),
             last_build_date: None,
         };
-        let mut item = make_summary("Post", "https://example.com/post/", None);
-        item.description = "A summary of the post".into();
+        let mut item = make_item("Post", "https://example.com/post/", None);
+        item.description = "A summary of the post";
 
-        let xml = generate_rss(&channel, &[item], DEFAULT_FEED_LIMIT);
+        let xml = generate_rss(&channel, [item], DEFAULT_FEED_LIMIT);
 
         let item_xml = first_item(&xml);
         assert!(
@@ -317,7 +220,7 @@ mod tests {
     }
 
     #[test]
-    fn generate_rss_omits_pub_date_without_date() {
+    fn generate_rss_omits_empty_description_and_missing_date() {
         let channel = Channel {
             title: "Site".into(),
             link: "https://example.com/".into(),
@@ -326,18 +229,19 @@ mod tests {
             language: "en".into(),
             last_build_date: None,
         };
-        let items = vec![make_summary("Post", "https://example.com/post/", None)];
+        let items = vec![make_item("Post", "https://example.com/post/", None)];
 
-        let xml = generate_rss(&channel, &items, DEFAULT_FEED_LIMIT);
+        let xml = generate_rss(&channel, items, DEFAULT_FEED_LIMIT);
 
         let item = first_item(&xml);
         assert!(
             item.contains("<title>Post</title>"),
             "item should contain its title, xml:\n{xml}"
         );
+        assert!(!item.contains("<pubDate>"));
         assert!(
-            !item.contains("<pubDate>"),
-            "should omit pubDate for undated item, xml:\n{xml}"
+            !item.contains("<description>"),
+            "should omit empty description from item, xml:\n{xml}"
         );
     }
 
@@ -348,5 +252,23 @@ mod tests {
         let ts: Timestamp = "2026-03-15T10:30:00Z".parse().unwrap();
         let formatted = format_rfc2822(ts);
         assert_eq!(formatted, "Sun, 15 Mar 2026 10:30:00 +0000");
+    }
+
+    /// Extracts the inner content of the first `<item>...</item>` block in `xml`.
+    fn first_item(xml: &str) -> &str {
+        let start = xml.find("<item>").expect("xml should contain <item>") + "<item>".len();
+        let end = xml[start..]
+            .find("</item>")
+            .expect("xml should contain </item>");
+        &xml[start..start + end]
+    }
+
+    fn make_item<'a>(title: &'a str, url: &'a str, date: Option<&str>) -> FeedItem<'a> {
+        FeedItem {
+            title,
+            url,
+            description: "",
+            published: date.map(|date| date.parse().unwrap()),
+        }
     }
 }

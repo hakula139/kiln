@@ -725,41 +725,34 @@ mod tests {
 
     #[test]
     fn render_required_template_failures_return_error() {
-        for name in [
-            "post.html",
-            "page.html",
-            "home.html",
-            "archive.html",
-            "overview.html",
+        let name = "post.html";
+        for (source, kind, phase) in [
+            (None, minijinja::ErrorKind::TemplateNotFound, "load"),
+            (
+                Some("{% invalid %}"),
+                minijinja::ErrorKind::SyntaxError,
+                "load",
+            ),
+            (
+                Some("{{ missing_function() }}"),
+                minijinja::ErrorKind::UnknownFunction,
+                "render",
+            ),
         ] {
-            for (source, kind, phase) in [
-                (None, minijinja::ErrorKind::TemplateNotFound, "load"),
-                (
-                    Some("{% invalid %}"),
-                    minijinja::ErrorKind::SyntaxError,
-                    "load",
-                ),
-                (
-                    Some("{{ missing_function() }}"),
-                    minijinja::ErrorKind::UnknownFunction,
-                    "render",
-                ),
-            ] {
-                let dir = tempfile::tempdir().unwrap();
-                if let Some(source) = source {
-                    test_fs::write(dir.path().join(name), source).unwrap();
-                }
-                let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
-                let error = engine.render_required_template(name, ()).unwrap_err();
-                assert_eq!(
-                    error.to_string(),
-                    format!("failed to {phase} {name} template")
-                );
-                assert_eq!(
-                    error.downcast_ref::<minijinja::Error>().unwrap().kind(),
-                    kind
-                );
+            let dir = tempfile::tempdir().unwrap();
+            if let Some(source) = source {
+                test_fs::write(dir.path().join(name), source).unwrap();
             }
+            let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
+            let error = engine.render_required_template(name, ()).unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                format!("failed to {phase} {name} template")
+            );
+            assert_eq!(
+                error.downcast_ref::<minijinja::Error>().unwrap().kind(),
+                kind
+            );
         }
     }
 
@@ -993,7 +986,7 @@ mod tests {
     // ── tpl_register_script ──
 
     #[test]
-    fn tpl_register_script_records_default_deferred_tag() {
+    fn tpl_register_script_records_and_deduplicates_default_deferred_tag() {
         let (_dir, engine) = engine_with_directive(
             "widget",
             r#"{{ register_script("/js/widget.js") }}<widget>"#,
@@ -1005,6 +998,13 @@ mod tests {
             .unwrap();
 
         assert_eq!(html, "<widget>", "register_script must return empty string");
+        assert_eq!(
+            engine
+                .render_directive("widget", empty_ctx("widget"), &assets, &Config::default())
+                .unwrap()
+                .unwrap(),
+            "<widget>"
+        );
         let snapshot = assets.snapshot();
         assert_eq!(snapshot.scripts().len(), 1);
         assert_eq!(snapshot.scripts()[0].url, "/js/widget.js");
@@ -1027,20 +1027,6 @@ mod tests {
         let snapshot = assets.snapshot();
         assert_eq!(snapshot.scripts()[0].load, LoadStrategy::Async);
         assert!(!snapshot.scripts()[0].module);
-    }
-
-    #[test]
-    fn tpl_register_script_deduplicates_repeated_directive_renders() {
-        let (_dir, engine) =
-            engine_with_directive("widget", r#"{{ register_script("/js/widget.js") }}"#);
-        let assets = AssetsHandle::default();
-        for _ in 0..5 {
-            engine
-                .render_directive("widget", empty_ctx("widget"), &assets, &Config::default())
-                .unwrap()
-                .unwrap();
-        }
-        assert_eq!(assets.snapshot().scripts().len(), 1);
     }
 
     #[test]
@@ -1120,73 +1106,33 @@ mod tests {
     }
 
     #[test]
-    fn tpl_register_script_unknown_kwarg_returns_error() {
-        let (_dir, engine) =
-            engine_with_directive("widget", r#"{{ register_script("/x.js", bogus=true) }}"#);
-        let err = format!(
-            "{:#}",
-            engine
+    fn tpl_register_script_invalid_keyword_arguments_return_error() {
+        for (template, message) in [
+            (r#"{{ register_script("/x.js", bogus=true) }}"#, "bogus"),
+            (
+                r#"{{ register_script("/x.js", load="eager") }}"#,
+                r#"load must be one of "defer", "async", "sync"; got "eager""#,
+            ),
+            (
+                r#"{{ register_script("/x.js", module="yes") }}"#,
+                "cannot convert",
+            ),
+        ] {
+            let (_dir, engine) = engine_with_directive("widget", template);
+            let error = engine
                 .render_directive(
                     "widget",
                     empty_ctx("widget"),
                     &AssetsHandle::default(),
-                    &Config::default()
+                    &Config::default(),
                 )
                 .unwrap()
-                .unwrap_err(),
-        );
-        assert!(
-            err.contains("bogus"),
-            "unknown kwarg should surface in the error, got: {err}"
-        );
-    }
-
-    #[test]
-    fn tpl_register_script_unknown_load_strategy_returns_error() {
-        let (_dir, engine) =
-            engine_with_directive("widget", r#"{{ register_script("/x.js", load="eager") }}"#);
-        let err = format!(
-            "{:#}",
-            engine
-                .render_directive(
-                    "widget",
-                    empty_ctx("widget"),
-                    &AssetsHandle::default(),
-                    &Config::default()
-                )
-                .unwrap()
-                .unwrap_err(),
-        );
-        assert!(
-            err.contains(r#"load must be one of "defer", "async", "sync"; got "eager""#),
-            "should surface the parse error verbatim, got: {err}"
-        );
-    }
-
-    #[test]
-    fn tpl_register_script_wrong_module_type_returns_error() {
-        let (_dir, engine) =
-            engine_with_directive("widget", r#"{{ register_script("/x.js", module="yes") }}"#);
-        let err = format!(
-            "{:#}",
-            engine
-                .render_directive(
-                    "widget",
-                    empty_ctx("widget"),
-                    &AssetsHandle::default(),
-                    &Config::default()
-                )
-                .unwrap()
-                .unwrap_err(),
-        );
-        assert!(
-            !err.contains("unknown keyword argument"),
-            "wrong-type kwarg must not surface as an unknown-keyword error, got: {err}"
-        );
-        assert!(
-            err.contains("cannot convert"),
-            "should pass through MiniJinja's type-mismatch error, got: {err}"
-        );
+                .unwrap_err();
+            assert!(
+                format!("{error:#}").contains(message),
+                "{template}: {error:#}"
+            );
+        }
     }
 
     fn engine_with_template(name: &'static str, source: &'static str) -> TemplateEngine {

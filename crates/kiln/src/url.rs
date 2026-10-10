@@ -91,16 +91,24 @@ mod tests {
     // ── page_url ──
 
     #[test]
-    fn page_url_index_html() {
-        assert_eq!(
-            page_url("https://example.com", Path::new("foo/bar/index.html")),
-            "https://example.com/foo/bar/"
-        );
-    }
-
-    #[test]
-    fn page_url_non_index() {
+    fn page_url_encodes_paths_and_preserves_base_url() {
         for (base, path, expected) in [
+            (
+                "https://example.com",
+                "foo/bar/index.html",
+                "https://example.com/foo/bar/",
+            ),
+            (
+                "https://example.com/",
+                "foo/index.html",
+                "https://example.com/foo/",
+            ),
+            (
+                "https://example.com/blog/",
+                "foo/index.html",
+                "https://example.com/blog/foo/",
+            ),
+            ("https://example.com", "index.html", "https://example.com/"),
             (
                 "https://example.com",
                 "standalone.html",
@@ -113,44 +121,17 @@ mod tests {
             ),
             (
                 "https://example.com/blog/",
+                "standalone.html",
+                "https://example.com/blog/standalone.html",
+            ),
+            (
+                "https://example.com/blog/",
                 "中文/hash#query? 100%.html",
                 "https://example.com/blog/%E4%B8%AD%E6%96%87/hash%23query%3F%20100%25.html",
             ),
         ] {
-            assert_eq!(page_url(base, Path::new(path)), expected);
+            assert_eq!(page_url(base, Path::new(path)), expected, "{base}, {path}");
         }
-    }
-
-    #[test]
-    fn page_url_trailing_slash_base() {
-        assert_eq!(
-            page_url("https://example.com/", Path::new("foo/index.html")),
-            "https://example.com/foo/"
-        );
-    }
-
-    #[test]
-    fn page_url_preserves_base_path() {
-        for (output_path, expected) in [
-            ("foo/index.html", "https://example.com/blog/foo/"),
-            (
-                "standalone.html",
-                "https://example.com/blog/standalone.html",
-            ),
-        ] {
-            assert_eq!(
-                page_url("https://example.com/blog/", Path::new(output_path)),
-                expected
-            );
-        }
-    }
-
-    #[test]
-    fn page_url_root_index() {
-        assert_eq!(
-            page_url("https://example.com", Path::new("index.html")),
-            "https://example.com/"
-        );
     }
 
     // ── join_site_url ──
@@ -187,38 +168,34 @@ mod tests {
     // ── resolve_relative_url ──
 
     #[test]
-    fn resolve_relative_url_relative_path() {
-        assert_eq!(
-            resolve_relative_url("assets/cover.webp", "https://example.com/posts/foo/"),
-            "/posts/foo/assets/cover.webp"
-        );
-    }
-
-    #[test]
-    fn resolve_relative_url_bare_path() {
-        assert_eq!(
-            resolve_relative_url("style.css", "/posts/my-post/"),
-            "/posts/my-post/style.css"
-        );
-    }
-
-    #[test]
-    fn resolve_relative_url_absolute_path() {
-        assert_eq!(
-            resolve_relative_url("/images/cover.webp", "https://example.com/posts/foo/"),
-            "/images/cover.webp"
-        );
-    }
-
-    #[test]
-    fn resolve_relative_url_external_url() {
-        for src in [
-            "https://cdn.example.com/img.jpg",
-            "data:image/png;base64,example",
+    fn resolve_relative_url_resolves_relative_paths_and_preserves_absolute_sources() {
+        for (source, page, expected) in [
+            (
+                "assets/cover.webp",
+                "https://example.com/posts/foo/",
+                "/posts/foo/assets/cover.webp",
+            ),
+            ("style.css", "/posts/my-post/", "/posts/my-post/style.css"),
+            (
+                "/images/cover.webp",
+                "https://example.com/posts/foo/",
+                "/images/cover.webp",
+            ),
+            (
+                "https://cdn.example.com/img.jpg",
+                "https://example.com/posts/foo/",
+                "https://cdn.example.com/img.jpg",
+            ),
+            (
+                "data:image/png;base64,example",
+                "https://example.com/posts/foo/",
+                "data:image/png;base64,example",
+            ),
         ] {
             assert_eq!(
-                resolve_relative_url(src, "https://example.com/posts/foo/"),
-                src
+                resolve_relative_url(source, page),
+                expected,
+                "{source}, {page}"
             );
         }
     }

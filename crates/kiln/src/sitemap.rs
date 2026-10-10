@@ -53,10 +53,10 @@ mod tests {
     // ── generate_sitemap ──
 
     #[test]
-    fn generate_sitemap_basic() {
-        let entries = vec![
+    fn generate_sitemap_renders_entries_and_optional_dates() {
+        let entries = [
             SitemapEntry {
-                loc: "https://example.com/".into(),
+                loc: "https://example.com/tags/c&c++/".into(),
                 lastmod: None,
             },
             SitemapEntry {
@@ -65,74 +65,49 @@ mod tests {
             },
         ];
 
-        let xml = generate_sitemap(&entries);
-
-        assert!(xml.starts_with(r#"<?xml version="1.0""#));
-        assert!(xml.contains("<loc>https://example.com/</loc>"));
-        assert!(xml.contains("<loc>https://example.com/posts/hello/</loc>"));
-        assert!(xml.contains("<lastmod>2026-03-15T10:00:00+00:00</lastmod>"));
-        assert!(xml.ends_with("</urlset>\n"));
-    }
-
-    #[test]
-    fn generate_sitemap_escapes_urls() {
-        let entries = vec![SitemapEntry {
-            loc: "https://example.com/tags/c&c++/".into(),
-            lastmod: None,
-        }];
-
-        let xml = generate_sitemap(&entries);
-
-        assert!(
-            xml.contains("<loc>https://example.com/tags/c&amp;c++/</loc>"),
-            "should escape ampersand in URL, xml:\n{xml}"
+        assert_eq!(
+            generate_sitemap(&entries),
+            indoc! {r#"
+                <?xml version="1.0" encoding="utf-8" standalone="yes"?>
+                <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+                  <url>
+                    <loc>https://example.com/tags/c&amp;c++/</loc>
+                  </url>
+                  <url>
+                    <loc>https://example.com/posts/hello/</loc>
+                    <lastmod>2026-03-15T10:00:00+00:00</lastmod>
+                  </url>
+                </urlset>
+            "#}
         );
     }
 
     #[test]
     fn generate_sitemap_empty() {
-        let xml = generate_sitemap(&[]);
-
-        assert!(xml.starts_with(r#"<?xml version="1.0""#));
-        assert!(xml.contains("<urlset"));
-        assert!(xml.ends_with("</urlset>\n"));
-        assert!(!xml.contains("<url>"));
-    }
-
-    #[test]
-    fn generate_sitemap_omits_lastmod_when_none() {
-        let entries = vec![SitemapEntry {
-            loc: "https://example.com/about/".into(),
-            lastmod: None,
-        }];
-
-        let xml = generate_sitemap(&entries);
-
-        assert!(!xml.contains("<lastmod>"));
+        assert_eq!(
+            generate_sitemap(&[]),
+            indoc! {r#"
+                <?xml version="1.0" encoding="utf-8" standalone="yes"?>
+                <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+                </urlset>
+            "#}
+        );
     }
 
     // ── generate_robots_txt ──
 
     #[test]
-    fn generate_robots_txt_basic() {
-        let txt = generate_robots_txt("https://example.com");
-        assert_eq!(
-            txt,
-            indoc! {"
-                User-agent: *
-                Allow: /
+    fn generate_robots_txt_normalizes_base_url() {
+        for base in ["https://example.com", "https://example.com/"] {
+            assert_eq!(
+                generate_robots_txt(base),
+                indoc! {"
+                    User-agent: *
+                    Allow: /
 
-                Sitemap: https://example.com/sitemap.xml
-            "},
-        );
-    }
-
-    #[test]
-    fn generate_robots_txt_strips_trailing_slash() {
-        let txt = generate_robots_txt("https://example.com/");
-        assert!(
-            txt.contains("Sitemap: https://example.com/sitemap.xml"),
-            "should not double-slash, txt:\n{txt}"
-        );
+                    Sitemap: https://example.com/sitemap.xml
+                "}
+            );
+        }
     }
 }

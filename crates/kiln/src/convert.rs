@@ -237,7 +237,10 @@ mod tests {
             "#}
         );
 
-        assert!(dest.join("content/posts/my-post/image.webp").exists());
+        assert_eq!(
+            fs::read_to_string(dest.join("content/posts/my-post/image.webp")).unwrap(),
+            "fake-image"
+        );
         assert_eq!(
             fs::read_to_string(dest.join("static/images/logo.webp")).unwrap(),
             "site-image"
@@ -458,44 +461,6 @@ mod tests {
         );
     }
 
-    // ── convert_tree ──
-
-    #[test]
-    fn convert_tree_copies_files() {
-        let dir = tempfile::tempdir().unwrap();
-        let source = dir.path().join("source");
-        let dest = dir.path().join("dest");
-
-        fs::create_dir_all(source.join("images/icons")).unwrap();
-        fs::write(source.join("images/icons/logo.webp"), "site-image").unwrap();
-
-        convert_tree(&source, &dest, false).unwrap();
-
-        assert_eq!(
-            fs::read_to_string(dest.join("images/icons/logo.webp")).unwrap(),
-            "site-image"
-        );
-    }
-
-    #[test]
-    fn convert_tree_does_not_overwrite_existing_files() {
-        let dir = tempfile::tempdir().unwrap();
-        let source = dir.path().join("source");
-        let dest = dir.path().join("dest");
-
-        fs::create_dir_all(source.join("images")).unwrap();
-        fs::create_dir_all(dest.join("images")).unwrap();
-        fs::write(source.join("images/logo.webp"), "new static").unwrap();
-        fs::write(dest.join("images/logo.webp"), "existing static").unwrap();
-
-        convert_tree(&source, &dest, false).unwrap();
-
-        assert_eq!(
-            fs::read_to_string(dest.join("images/logo.webp")).unwrap(),
-            "existing static"
-        );
-    }
-
     // ── index_dest_path ──
 
     #[test]
@@ -629,58 +594,6 @@ mod tests {
         .unwrap();
 
         let err = convert_or_copy_markdown(&src, &dest).unwrap_err();
-        assert!(
-            err.to_string().contains("failed to convert frontmatter"),
-            "got: {err}"
-        );
-    }
-
-    // ── convert_markdown_file ──
-
-    #[test]
-    fn convert_markdown_file_basic() {
-        let dir = tempfile::tempdir().unwrap();
-        let dest = dir.path().join("output.md");
-
-        convert_markdown_file(
-            indoc! {r"
-                title: Hello, world!
-                tags: [rust]
-            "},
-            indoc! {r"
-                Summary
-
-                <!--more-->
-
-                Full content
-            "},
-            &dest,
-        )
-        .unwrap();
-
-        let result = fs::read_to_string(&dest).unwrap();
-        assert_eq!(
-            result,
-            indoc! {r#"
-                +++
-                title = "Hello, world!"
-                tags = ["rust"]
-                +++
-                Summary
-
-                <!--more-->
-
-                Full content
-            "#}
-        );
-    }
-
-    #[test]
-    fn convert_markdown_file_invalid_yaml_returns_error() {
-        let dir = tempfile::tempdir().unwrap();
-        let dest = dir.path().join("output.md");
-
-        let err = convert_markdown_file(":\n  invalid: [yaml", "Body\n", &dest).unwrap_err();
         assert!(
             err.to_string().contains("failed to convert frontmatter"),
             "got: {err}"

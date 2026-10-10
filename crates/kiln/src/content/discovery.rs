@@ -95,34 +95,6 @@ mod tests {
     // ── discover_content ──
 
     #[test]
-    fn discover_content_basic() {
-        let root = tempfile::tempdir().unwrap();
-        write_test_file(
-            root.path(),
-            "content/posts/hello/index.md",
-            indoc! {r#"
-                +++
-                title = "Hello"
-                +++
-                Body
-            "#},
-        );
-        write_test_file(
-            root.path(),
-            "content/posts/world/index.md",
-            indoc! {r#"
-                +++
-                title = "World"
-                +++
-                Body
-            "#},
-        );
-
-        let set = discover_content(root.path()).unwrap();
-        assert_eq!(set.pages.len(), 2);
-    }
-
-    #[test]
     fn discover_content_preserves_bundle_assets() {
         let root = tempfile::tempdir().unwrap();
         write_test_file(
@@ -150,136 +122,63 @@ mod tests {
     }
 
     #[test]
-    fn discover_content_excludes_drafts() {
+    fn discover_content_excludes_drafts_private_paths_and_non_content_files() {
         let root = tempfile::tempdir().unwrap();
-        write_test_file(
-            root.path(),
-            "content/posts/draft/index.md",
-            indoc! {r#"
-                +++
-                title = "Draft"
-                draft = true
-                +++
-                Body
-            "#},
-        );
-        write_test_file(
-            root.path(),
-            "content/posts/published/index.md",
-            indoc! {r#"
-                +++
-                title = "Published"
-                +++
-                Body
-            "#},
-        );
+        for (path, contents) in [
+            (
+                "content/posts/published/index.md",
+                indoc! {r#"
+                    +++
+                    title = "Published"
+                    +++
+                    Body
+                "#},
+            ),
+            (
+                "content/posts/draft/index.md",
+                indoc! {r#"
+                    +++
+                    title = "Draft"
+                    draft = true
+                    +++
+                    Body
+                "#},
+            ),
+            (
+                "content/posts/_hidden/index.md",
+                indoc! {r#"
+                    +++
+                    title = "Hidden"
+                    +++
+                    Body
+                "#},
+            ),
+            ("content/posts/published/notes.md", "# Notes"),
+            (
+                "content/posts/published/image.png",
+                indoc! {r#"
+                    +++
+                    title = "Not Markdown"
+                    +++
+                    Body
+                "#},
+            ),
+        ] {
+            write_test_file(root.path(), path, contents);
+        }
 
         let set = discover_content(root.path()).unwrap();
-        assert_eq!(set.pages.len(), 1);
-        assert_eq!(set.pages[0].frontmatter.title, "Published");
-    }
-
-    #[test]
-    fn discover_content_excludes_underscore_prefixed() {
-        let root = tempfile::tempdir().unwrap();
-        write_test_file(
-            root.path(),
-            "content/posts/visible/index.md",
-            indoc! {r#"
-                +++
-                title = "Visible"
-                +++
-                Body
-            "#},
-        );
-        write_test_file(
-            root.path(),
-            "content/posts/_hidden/index.md",
-            indoc! {r#"
-                +++
-                title = "Hidden"
-                +++
-                Body
-            "#},
-        );
-
-        let set = discover_content(root.path()).unwrap();
-        assert_eq!(set.pages.len(), 1);
-        assert_eq!(set.pages[0].frontmatter.title, "Visible");
-    }
-
-    #[test]
-    fn discover_content_skips_markdown_without_frontmatter() {
-        let root = tempfile::tempdir().unwrap();
-        write_test_file(
-            root.path(),
-            "content/posts/hello/index.md",
-            indoc! {r#"
-                +++
-                title = "Hello"
-                +++
-                Body
-            "#},
-        );
-        // CLAUDE.md has no frontmatter, so it should be silently skipped.
-        write_test_file(
-            root.path(),
-            "content/posts/hello/CLAUDE.md",
-            "# Notes\nSome reference notes.",
-        );
-
-        let set = discover_content(root.path()).unwrap();
-        assert_eq!(set.pages.len(), 1);
-        assert_eq!(set.pages[0].frontmatter.title, "Hello");
-    }
-
-    #[test]
-    fn discover_content_ignores_non_markdown_files() {
-        let root = tempfile::tempdir().unwrap();
-        write_test_file(
-            root.path(),
-            "content/posts/hello/index.md",
-            indoc! {r#"
-                +++
-                title = "Hello"
-                +++
-                Body
-            "#},
-        );
-        write_test_file(root.path(), "content/posts/hello/image.png", "not-a-png");
-
-        let set = discover_content(root.path()).unwrap();
-        assert_eq!(set.pages.len(), 1);
-    }
-
-    #[test]
-    fn discover_content_invalid_utf8_returns_error() {
-        let root = tempfile::tempdir().unwrap();
-        let content_dir = root.path().join("content");
-        std::fs::create_dir(&content_dir).unwrap();
-        let path = content_dir.join("broken.md");
-        std::fs::write(&path, b"+++\n\xff").unwrap();
-
-        let error = discover_content(root.path()).unwrap_err();
         assert_eq!(
-            error.to_string(),
-            format!("failed to read {}", path.display())
-        );
-        assert_eq!(
-            error.downcast_ref::<std::io::Error>().unwrap().kind(),
-            std::io::ErrorKind::InvalidData,
+            set.pages
+                .iter()
+                .map(|page| page.frontmatter.title.as_str())
+                .collect::<Vec<_>>(),
+            ["Published"]
         );
     }
 
     #[test]
-    fn discover_content_missing_dir_returns_empty() {
-        let root = tempfile::tempdir().unwrap();
-        let set = discover_content(root.path()).unwrap();
-        assert!(set.pages.is_empty());
-    }
-
-    #[test]
-    fn discover_content_sorted_by_date_descending() {
+    fn discover_content_sorts_dated_pages_before_undated_pages() {
         let root = tempfile::tempdir().unwrap();
         write_test_file(
             root.path(),
@@ -304,38 +203,37 @@ mod tests {
             "#},
         );
 
-        let set = discover_content(root.path()).unwrap();
-        assert_eq!(set.pages[0].frontmatter.title, "New");
-        assert_eq!(set.pages[1].frontmatter.title, "Old");
-    }
-
-    #[test]
-    fn discover_content_undated_pages_sorted_by_path() {
-        let root = tempfile::tempdir().unwrap();
-        write_test_file(
-            root.path(),
-            "content/posts/beta/index.md",
-            indoc! {r#"
-                +++
-                title = "Beta"
-                +++
-                Body
-            "#},
-        );
-        write_test_file(
-            root.path(),
-            "content/posts/alpha/index.md",
-            indoc! {r#"
-                +++
-                title = "Alpha"
-                +++
-                Body
-            "#},
-        );
+        for (path, contents) in [
+            (
+                "content/posts/beta/index.md",
+                indoc! {r#"
+                    +++
+                    title = "Beta"
+                    +++
+                    Body
+                "#},
+            ),
+            (
+                "content/posts/alpha/index.md",
+                indoc! {r#"
+                    +++
+                    title = "Alpha"
+                    +++
+                    Body
+                "#},
+            ),
+        ] {
+            write_test_file(root.path(), path, contents);
+        }
 
         let set = discover_content(root.path()).unwrap();
-        assert_eq!(set.pages[0].frontmatter.title, "Alpha");
-        assert_eq!(set.pages[1].frontmatter.title, "Beta");
+        assert_eq!(
+            set.pages
+                .iter()
+                .map(|page| page.frontmatter.title.as_str())
+                .collect::<Vec<_>>(),
+            ["New", "Old", "Alpha", "Beta"]
+        );
     }
 
     #[test]
@@ -400,5 +298,31 @@ mod tests {
             .find(|p| p.frontmatter.title == "About Me")
             .unwrap();
         assert_eq!(about.kind, PageKind::Page);
+    }
+
+    #[test]
+    fn discover_content_missing_dir_returns_empty() {
+        let root = tempfile::tempdir().unwrap();
+        let set = discover_content(root.path()).unwrap();
+        assert!(set.pages.is_empty());
+    }
+
+    #[test]
+    fn discover_content_invalid_utf8_returns_error() {
+        let root = tempfile::tempdir().unwrap();
+        let content_dir = root.path().join("content");
+        std::fs::create_dir(&content_dir).unwrap();
+        let path = content_dir.join("broken.md");
+        std::fs::write(&path, b"+++\n\xff").unwrap();
+
+        let error = discover_content(root.path()).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            format!("failed to read {}", path.display())
+        );
+        assert_eq!(
+            error.downcast_ref::<std::io::Error>().unwrap().kind(),
+            std::io::ErrorKind::InvalidData,
+        );
     }
 }

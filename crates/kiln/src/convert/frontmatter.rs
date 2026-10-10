@@ -90,11 +90,6 @@ mod tests {
     }
 
     #[test]
-    fn split_yaml_frontmatter_missing_delimiter_returns_error() {
-        assert!(split_yaml_frontmatter("No frontmatter here").is_err());
-    }
-
-    #[test]
     fn split_yaml_frontmatter_no_body() {
         let input = indoc! {"
             ---
@@ -104,6 +99,11 @@ mod tests {
         let (fm, body) = split_yaml_frontmatter(input).unwrap();
         assert_eq!(fm, "title: No Body\n");
         assert_eq!(body, "");
+    }
+
+    #[test]
+    fn split_yaml_frontmatter_missing_delimiter_returns_error() {
+        assert!(split_yaml_frontmatter("No frontmatter here").is_err());
     }
 
     // ── convert_frontmatter ──
@@ -201,19 +201,6 @@ mod tests {
     }
 
     #[test]
-    fn convert_frontmatter_invalid_yaml_returns_error() {
-        let yaml = indoc! {"
-            :
-              invalid: [yaml
-        "};
-        let err = convert_frontmatter(yaml).unwrap_err();
-        assert!(
-            err.to_string().contains("failed to parse YAML"),
-            "got: {err}"
-        );
-    }
-
-    #[test]
     fn convert_frontmatter_reports_unsupported_fields() {
         let yaml = indoc! {"
             title: Test
@@ -228,6 +215,19 @@ mod tests {
             indoc! {r#"
                 title = "Test"
             "#}
+        );
+    }
+
+    #[test]
+    fn convert_frontmatter_invalid_yaml_returns_error() {
+        let yaml = indoc! {"
+            :
+              invalid: [yaml
+        "};
+        let err = convert_frontmatter(yaml).unwrap_err();
+        assert!(
+            err.to_string().contains("failed to parse YAML"),
+            "got: {err}"
         );
     }
 }

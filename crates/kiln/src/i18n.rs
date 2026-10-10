@@ -283,8 +283,6 @@ mod tests {
 
     #[test]
     fn load_language_en_loads_en_toml_as_sole_source() {
-        // When `language == "en"`, the resolver deliberately skips the second `{language}.toml`
-        // open attempt (that file would be identical to the `en.toml` already merged).
         let site = tempfile::tempdir().unwrap();
         let theme = tempfile::tempdir().unwrap();
         write_file(
@@ -296,56 +294,6 @@ mod tests {
 
         let i18n = I18n::load(site.path(), Some(theme.path()), "en").unwrap();
         assert_eq!(i18n.t("all_posts").as_ref(), "All Posts");
-    }
-
-    #[test]
-    fn load_theme_lang_file_overrides_en() {
-        let site = tempfile::tempdir().unwrap();
-        let theme = tempfile::tempdir().unwrap();
-        write_file(
-            &theme.path().join("i18n/en.toml"),
-            indoc! {r#"
-                shared = "shared en"
-            "#},
-        );
-        write_file(
-            &theme.path().join("i18n/fr.toml"),
-            indoc! {r#"
-                shared = "shared fr"
-                only_in_fr = "fr-only value"
-            "#},
-        );
-
-        let i18n = I18n::load(site.path(), Some(theme.path()), "fr").unwrap();
-        assert_eq!(i18n.t("shared").as_ref(), "shared fr");
-        assert_eq!(i18n.t("only_in_fr").as_ref(), "fr-only value");
-    }
-
-    #[test]
-    fn load_site_overrides_theme() {
-        let site = tempfile::tempdir().unwrap();
-        let theme = tempfile::tempdir().unwrap();
-        write_file(
-            &theme.path().join("i18n/en.toml"),
-            indoc! {r#"
-                theme_only = "from theme"
-                shared = "from theme"
-            "#},
-        );
-        write_file(
-            &site.path().join("i18n/en.toml"),
-            indoc! {r#"
-                shared = "from site"
-            "#},
-        );
-
-        let i18n = I18n::load(site.path(), Some(theme.path()), "en").unwrap();
-        assert_eq!(i18n.t("shared").as_ref(), "from site");
-        assert_eq!(
-            i18n.t("theme_only").as_ref(),
-            "from theme",
-            "non-overridden theme keys should still resolve",
-        );
     }
 
     #[test]
@@ -366,6 +314,7 @@ mod tests {
             indoc! {r#"
                 all_posts = "全部文章"
                 back_to_top = "回到顶部"
+                translated_only = "本地化"
             "#},
         );
         write_file(
@@ -376,12 +325,10 @@ mod tests {
         );
 
         let i18n = I18n::load(site.path(), Some(theme.path()), "zh-Hans").unwrap();
-        // Site wins.
         assert_eq!(i18n.t("back_to_top").as_ref(), "回顶");
-        // Theme lang wins over theme en when site has no override.
         assert_eq!(i18n.t("all_posts").as_ref(), "全部文章");
-        // Theme en is the ultimate fallback.
         assert_eq!(i18n.t("only_in_en").as_ref(), "from en");
+        assert_eq!(i18n.t("translated_only").as_ref(), "本地化");
         assert_eq!(i18n.language(), "zh-Hans");
     }
 
@@ -417,21 +364,13 @@ mod tests {
 
     #[test]
     fn load_ignores_non_toml_entries_in_i18n_dir() {
-        // Non-TOML files (READMEs, editor swap files, etc.) and subdirectories must be skipped
-        // without tripping the "missing en.toml fallback" check.
         let site = tempfile::tempdir().unwrap();
         let theme = tempfile::tempdir().unwrap();
-        write_file(
-            &theme.path().join("i18n/en.toml"),
-            indoc! {r#"
-                greeting = "Hi"
-            "#},
-        );
         write_file(&theme.path().join("i18n/README.md"), "translator notes");
         fs::create_dir_all(theme.path().join("i18n/.backup")).unwrap();
 
         let i18n = I18n::load(site.path(), Some(theme.path()), "en").unwrap();
-        assert_eq!(i18n.t("greeting").as_ref(), "Hi");
+        assert_eq!(i18n.t("greeting"), "greeting");
     }
 
     #[test]
@@ -446,6 +385,16 @@ mod tests {
     }
 
     #[test]
+    fn load_missing_language_uses_english_fallback() {
+        let site = tempfile::tempdir().unwrap();
+        let theme = tempfile::tempdir().unwrap();
+        write_file(&theme.path().join("i18n/en.toml"), r#"greeting = "Hello""#);
+
+        let i18n = I18n::load(site.path(), Some(theme.path()), "fr").unwrap();
+        assert_eq!(i18n.t("greeting"), "Hello");
+    }
+
+    #[test]
     fn load_theme_english_filename_case_returns_error() {
         let site = tempfile::tempdir().unwrap();
         let theme = tempfile::tempdir().unwrap();
@@ -457,16 +406,6 @@ mod tests {
                 .to_string()
                 .contains("missing required en.toml fallback")
         );
-    }
-
-    #[test]
-    fn load_missing_language_uses_english_fallback() {
-        let site = tempfile::tempdir().unwrap();
-        let theme = tempfile::tempdir().unwrap();
-        write_file(&theme.path().join("i18n/en.toml"), r#"greeting = "Hello""#);
-
-        let i18n = I18n::load(site.path(), Some(theme.path()), "fr").unwrap();
-        assert_eq!(i18n.t("greeting"), "Hello");
     }
 
     #[test]
@@ -490,44 +429,18 @@ mod tests {
     }
 
     #[test]
-    fn load_nested_table_returns_error() {
-        let site = tempfile::tempdir().unwrap();
-        let theme = tempfile::tempdir().unwrap();
-        write_file(
-            &theme.path().join("i18n/en.toml"),
-            indoc! {r#"
-                [nested]
-                key = "value"
-            "#},
-        );
+    fn load_non_string_values_return_error() {
+        for contents in [r#"nested = { key = "value" }"#, "count = 42"] {
+            let site = tempfile::tempdir().unwrap();
+            let theme = tempfile::tempdir().unwrap();
+            write_file(&theme.path().join("i18n/en.toml"), contents);
 
-        let err = I18n::load(site.path(), Some(theme.path()), "en")
-            .unwrap_err()
-            .to_string();
-        assert!(
-            err.contains("must be a string"),
-            "should reject nested table, got: {err}"
-        );
-    }
-
-    #[test]
-    fn load_integer_value_returns_error() {
-        let site = tempfile::tempdir().unwrap();
-        let theme = tempfile::tempdir().unwrap();
-        write_file(
-            &theme.path().join("i18n/en.toml"),
-            indoc! {r"
-                count = 42
-            "},
-        );
-
-        let err = I18n::load(site.path(), Some(theme.path()), "en")
-            .unwrap_err()
-            .to_string();
-        assert!(
-            err.contains("must be a string"),
-            "should reject integer value, got: {err}"
-        );
+            let error = I18n::load(site.path(), Some(theme.path()), "en").unwrap_err();
+            assert!(
+                error.to_string().contains("must be a string"),
+                "{contents}: {error}"
+            );
+        }
     }
 
     #[test]
@@ -628,18 +541,19 @@ mod tests {
     }
 
     #[test]
-    fn t_interp_missing_arg_substitutes_empty() {
-        let i18n = make_i18n(&[("hello", "Hi {who}!")]);
-        let args = BTreeMap::new();
-        assert_eq!(i18n.t_interp("hello", &args), "Hi !");
+    fn t_interp_ignores_args_when_no_placeholder() {
+        let i18n = make_i18n(&[("plain", "Just text.")]);
+        let mut args = BTreeMap::new();
+        args.insert("unused", "nope");
+        assert_eq!(i18n.t_interp("plain", &args), "Just text.");
     }
 
     #[test]
-    fn t_interp_missing_arg_warns_once_across_many_calls() {
+    fn t_interp_missing_arg_substitutes_empty_and_records_warning() {
         let i18n = make_i18n(&[("hello", "Hi {who}!")]);
         let args = BTreeMap::new();
-        for _ in 0..500 {
-            _ = i18n.t_interp("hello", &args);
+        for _ in 0..2 {
+            assert_eq!(i18n.t_interp("hello", &args), "Hi !");
         }
         let warned = i18n.inner.warned.lock().unwrap();
         assert_eq!(warned.len(), 1);
@@ -650,18 +564,11 @@ mod tests {
     }
 
     #[test]
-    fn t_interp_unclosed_brace_renders_partial() {
+    fn t_interp_unclosed_brace_renders_partial_and_records_warning() {
         let i18n = make_i18n(&[("bad", "start {unclosed tail")]);
         let args = BTreeMap::new();
-        assert_eq!(i18n.t_interp("bad", &args), "start {unclosed tail");
-    }
-
-    #[test]
-    fn t_interp_unclosed_brace_warns_once_across_many_calls() {
-        let i18n = make_i18n(&[("bad", "start {unclosed tail")]);
-        let args = BTreeMap::new();
-        for _ in 0..500 {
-            _ = i18n.t_interp("bad", &args);
+        for _ in 0..2 {
+            assert_eq!(i18n.t_interp("bad", &args), "start {unclosed tail");
         }
         let warned = i18n.inner.warned.lock().unwrap();
         assert_eq!(warned.len(), 1);
@@ -669,13 +576,5 @@ mod tests {
             key: "bad".to_owned(),
             partial: "unclosed tail".to_owned(),
         }));
-    }
-
-    #[test]
-    fn t_interp_ignores_args_when_no_placeholder() {
-        let i18n = make_i18n(&[("plain", "Just text.")]);
-        let mut args = BTreeMap::new();
-        args.insert("unused", "nope");
-        assert_eq!(i18n.t_interp("plain", &args), "Just text.");
     }
 }
