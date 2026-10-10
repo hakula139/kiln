@@ -2,7 +2,7 @@
 
 Releases are produced by `.github/workflows/release.yml`, triggered when a tag matching `v[0-9]+.*` is pushed.
 
-`CHANGELOG.md` sections are generated from Conventional Commits via [`git-cliff`](https://git-cliff.org). The `cliff.toml` config groups commits into Keep a Changelog sections (`Breaking changes`, `Added`, `Fixed`, `Changed`, `Removed`, `Dependencies`). GitHub Release notes use the matching section through `taiki-e/create-gh-release-action`.
+`CHANGELOG.md` sections are generated from Conventional Commits via [`git-cliff`](https://git-cliff.org). The `cliff.toml` config groups commits into Keep a Changelog sections (`Breaking changes`, `Added`, `Fixed`, `Changed`, `Removed`, `Dependencies`). GitHub Release notes use the matching section extracted by `parse-changelog`.
 
 Stable releases include all changes since the previous stable tag, including prereleases. Prerelease sections contain changes since the previous tag. Existing sections remain in the changelog when a stable summary is added.
 
@@ -42,7 +42,7 @@ Any prose that should land in the changelog must come from a commit message: use
    git push origin vX.Y.Z
    ```
 
-7. The workflow creates the GitHub Release from the matching changelog section and uploads archives for the [supported targets](#targets), with SHA-256 checksums.
+7. After all [supported targets](#targets) build successfully, the workflow creates the GitHub Release from the matching changelog section and attaches the archives and SHA-256 checksums. Existing releases are preserved if the workflow is rerun.
 
 ## Installing `git-cliff`
 
@@ -63,4 +63,4 @@ Each platform has two archives, both containing the `kiln` binary. `kiln-<target
 
 AVIF files are published and their dimensions are read in both variants. See [Building from Source](README.md#building-from-source) to enable placeholder decoding in a source build.
 
-Add new targets by extending the matrix in `release.yml`.
+Add new targets by extending the matrix in `release.yml`. Pull requests that change release configuration and manual runs build validation archives without publishing a release.

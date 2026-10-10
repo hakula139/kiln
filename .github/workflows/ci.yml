@@ -6,6 +6,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
@@ -22,117 +25,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Setup Nix
+      - name: Set up Nix
         uses: ./.github/actions/setup-nix
 
       - name: Run flake check
         run: nix flake check
-
-  rust-check:
-    name: Rust Check
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Setup Nix
-        uses: ./.github/actions/setup-nix
-        with:
-          cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
-
-      - name: Cache cargo target
-        uses: Swatinem/rust-cache@v2
-
-      - name: Format
-        run: nix develop -c cargo fmt --all --check
-
-      - name: Verify AVIF dependency
-        run: nix develop -c pkg-config --modversion dav1d
-
-      - name: Clippy
-        run: nix develop -c cargo clippy --all-targets --all-features -- -D warnings
-
-      - name: Test extended features
-        run: nix develop -c cargo test --all-features
-
-      - name: Test benchmark workloads
-        run: nix develop -c cargo test --bench performance
-
-  base-test:
-    name: Base Rust Test
-    runs-on: ubuntu-latest
-    env:
-      SYSTEM_DEPS_DAV1D_NO_PKG_CONFIG: '1'
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: base
-
-      - name: Build without the AVIF decoder
-        run: cargo build --locked
-
-      - name: Test default features
-        run: cargo test --locked --lib --test avif
-
-  windows-test:
-    name: Windows Rust Test
-    runs-on: windows-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: '24'
-
-      - name: Install CSS processor
-        run: npm install --global @kiln-ssg/tailwindcss@0.1.2
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: windows
-
-      - name: Test
-        run: cargo test --locked
-
-  coverage:
-    name: Coverage
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Setup Nix
-        uses: ./.github/actions/setup-nix
-        with:
-          cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
-
-      - name: Cache cargo target
-        uses: Swatinem/rust-cache@v2
-
-      - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cargo-llvm-cov
-
-      - name: Generate coverage
-        run: nix develop -c cargo llvm-cov --all-features --ignore-filename-regex 'main\.rs' --lcov --output-path lcov.info
-
-      - name: Upload to Codecov
-        uses: codecov/codecov-action@v7
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: lcov.info
 
   node-check:
     name: Node Check
@@ -141,7 +38,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Setup Nix
+      - name: Set up Nix
         uses: ./.github/actions/setup-nix
         with:
           cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
@@ -158,13 +55,98 @@ jobs:
       - name: Spell check
         run: nix develop -c pnpm spellcheck
 
+  rust-check:
+    name: Rust Check (${{ matrix.runner }}, ${{ matrix.variant }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            variant: base
+            features: ""
+          - runner: ubuntu-latest
+            variant: extended
+            features: avif
+          - runner: windows-latest
+            variant: base
+            features: ""
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up AVIF
+        uses: ./.github/actions/setup-avif
+        with:
+          enabled: ${{ matrix.variant == 'extended' }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
+      - name: Install CSS processor
+        run: npm install --global @kiln-ssg/tailwindcss@0.1.2
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.variant }}
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --locked --all-targets --features "${{ matrix.features }}" -- -D warnings
+
+      - name: Test
+        run: cargo test --locked --features "${{ matrix.features }}"
+
+      - name: Test benchmark workloads
+        run: cargo test --locked --bench performance --features "${{ matrix.features }}"
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Nix
+        uses: ./.github/actions/setup-nix
+        with:
+          cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Generate coverage
+        run: nix develop -c cargo llvm-cov --locked --all-features --ignore-filename-regex 'main\.rs' --lcov --output-path lcov.info
+
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v7
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: lcov.info
+
   nix-build:
-    name: Nix Build (${{ matrix.config.runner }})
-    runs-on: ${{ matrix.config.runner }}
+    name: Nix Build (${{ matrix.platform.runner }})
+    runs-on: ${{ matrix.platform.runner }}
     strategy: &nix-platforms
       fail-fast: false
       matrix:
-        config:
+        platform:
           - runner: ubuntu-latest
             cachix_pins:
               kiln-main-x86_64-linux: .#kiln
@@ -174,12 +156,12 @@ jobs:
               kiln-main-aarch64-darwin: .#kiln
               pagefind-main-aarch64-darwin: .#pagefind
     env:
-      CACHIX_PINS: ${{ toJSON(matrix.config.cachix_pins) }}
+      CACHIX_PINS: ${{ toJSON(matrix.platform.cachix_pins) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Setup Nix
+      - name: Set up Nix
         uses: ./.github/actions/setup-nix
         with:
           cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
@@ -201,21 +183,21 @@ jobs:
             cachix push "$CACHIX_NAME"
 
   pin-main:
-    name: Pin main builds (${{ matrix.config.runner }})
+    name: Pin Main Builds (${{ matrix.platform.runner }})
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [base-test, flake-check, nix-build, node-check, rust-check, windows-test]
-    runs-on: ${{ matrix.config.runner }}
+    needs: [flake-check, nix-build, node-check, rust-check]
+    runs-on: ${{ matrix.platform.runner }}
     strategy: *nix-platforms
     concurrency:
-      group: kiln-main-pin-${{ matrix.config.runner }}
+      group: kiln-main-pin-${{ matrix.platform.runner }}
       queue: max
     env:
-      CACHIX_PINS: ${{ toJSON(matrix.config.cachix_pins) }}
+      CACHIX_PINS: ${{ toJSON(matrix.platform.cachix_pins) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Setup Nix
+      - name: Set up Nix
         uses: ./.github/actions/setup-nix
 
       - name: Restore builds from cache

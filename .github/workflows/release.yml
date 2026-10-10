@@ -5,6 +5,7 @@ on:
     tags: ['v[0-9]+.*']
   pull_request:
     paths:
+      - .github/actions/setup-avif/**
       - .github/workflows/release.yml
       - Cargo.lock
       - Cargo.toml
@@ -22,28 +23,14 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
-  create-release:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Create GitHub release
-        if: github.event_name != 'pull_request'
-        uses: taiki-e/create-gh-release-action@v1
-        with:
-          changelog: CHANGELOG.md
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-  upload-assets:
-    name: ${{ matrix.variant.name }} (${{ matrix.platform.target }})
-    needs: create-release
-    runs-on: ${{ matrix.platform.os }}
-    permissions:
-      contents: write
+  build:
+    name: Build (${{ matrix.platform.target }}, ${{ matrix.variant.name }})
+    runs-on: ${{ matrix.platform.runner }}
     strategy:
       fail-fast: false
       matrix:
@@ -55,35 +42,20 @@ jobs:
             features: avif
             archive: kiln-extended
         platform:
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-          - target: aarch64-apple-darwin
-            os: macos-latest
-          - target: x86_64-pc-windows-msvc
-            os: windows-latest
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - runner: macos-latest
+            target: aarch64-apple-darwin
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Install libdav1d (Linux)
-        if: matrix.variant.name == 'extended' && runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libdav1d-dev
-
-      - name: Install libdav1d (macOS)
-        if: matrix.variant.name == 'extended' && runner.os == 'macOS'
-        run: brew install dav1d
-
-      - name: Install libdav1d (Windows)
-        # vcpkg ships dav1d; pkgconfiglite lets `system-deps` read its .pc files.
-        if: matrix.variant.name == 'extended' && runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          choco install --no-progress pkgconfiglite
-          vcpkg install dav1d:x64-windows-static-md
-          $vcpkgInstalled = "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows-static-md"
-          "PKG_CONFIG_PATH=$vcpkgInstalled\lib\pkgconfig" | Out-File -FilePath $env:GITHUB_ENV -Append
-          "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
-          "VCPKGRS_TRIPLET=x64-windows-static-md" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Set up AVIF
+        uses: ./.github/actions/setup-avif
+        with:
+          enabled: ${{ matrix.variant.name == 'extended' }}
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -92,8 +64,10 @@ jobs:
 
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.variant.name }}
 
-      - name: Build and upload binary
+      - name: Build archive
         id: binary
         uses: taiki-e/upload-rust-binary-action@v1
         with:
@@ -105,11 +79,10 @@ jobs:
           zip: windows
           checksum: sha256
           locked: true
-          dry-run: ${{ github.event_name == 'pull_request' }}
-          token: ${{ secrets.GITHUB_TOKEN }}
+          dry-run: true
+          dry-run-intended: true
 
-      - name: Upload validation archive
-        if: github.event_name == 'pull_request'
+      - name: Upload archive
         uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.variant.archive }}-${{ matrix.platform.target }}
@@ -118,3 +91,36 @@ jobs:
             ${{ steps.binary.outputs.zip }}
             ${{ steps.binary.outputs.sha256 }}
           if-no-files-found: error
+          overwrite: true
+
+  publish:
+    name: Publish
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Download archives
+        uses: actions/download-artifact@v7
+        with:
+          pattern: kiln-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Install changelog parser
+        uses: taiki-e/install-action@parse-changelog
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          parse-changelog CHANGELOG.md "${GITHUB_REF_NAME#v}" > release-notes.md
+          options=(--verify-tag --title "$GITHUB_REF_NAME" --notes-file release-notes.md)
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            options+=(--prerelease)
+          fi
+          gh release create "$GITHUB_REF_NAME" release-assets/* "${options[@]}"
