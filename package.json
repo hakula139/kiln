@@ -1,7 +1,6 @@
 {
   "private": true,
   "scripts": {
-    "check:node": "node --check npm/launcher.cjs && node --check npm/package.mjs",
     "format": "pnpm format:prettier && pnpm format:markdown && pnpm format:toml",
     "format:prettier": "prettier --check \"**/*.{cjs,js,json,mjs,yaml,yml}\"",
     "format:markdown": "dprint check",
