@@ -324,7 +324,7 @@ mod tests {
         assert!(
             error.to_string().ends_with(&format!(
                 "both convert to {}",
-                Path::new("posts/anime/_index.md").display()
+                Path::new("posts").join("anime").join("_index.md").display()
             )),
             "{error}"
         );
