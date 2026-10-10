@@ -83,7 +83,10 @@ fn has_frontmatter(content: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use indoc::indoc;
+    #[cfg(unix)]
+    use std::os::unix::fs::symlink;
+
+    use indoc::{formatdoc, indoc};
 
     use super::*;
     use crate::content::page::PageKind;
@@ -326,8 +329,6 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn discover_content_follows_symlinks() {
-        use std::os::unix::fs::symlink;
-
         let root = tempfile::tempdir().unwrap();
         let external = tempfile::tempdir().unwrap();
         for (path, title) in [
@@ -337,7 +338,11 @@ mod tests {
             write_test_file(
                 external.path(),
                 path,
-                &format!("+++\ntitle = \"{title}\"\n+++\n"),
+                &formatdoc! {r#"
+                    +++
+                    title = "{title}"
+                    +++
+                "#},
             );
         }
         write_test_file(external.path(), "bundle/image.png", "image");
@@ -373,7 +378,7 @@ mod tests {
         let content_dir = root.path().join("content");
         std::fs::create_dir(&content_dir).unwrap();
         let link = content_dir.join("broken.md");
-        std::os::unix::fs::symlink(content_dir.join("missing.md"), &link).unwrap();
+        symlink(content_dir.join("missing.md"), &link).unwrap();
 
         let error = discover_content(root.path()).unwrap_err();
         assert_eq!(
