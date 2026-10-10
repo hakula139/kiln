@@ -12,7 +12,7 @@ kiln powers [hakula.xyz](https://hakula.xyz). This is the developer overview of 
 - Syntax highlighting for 200+ languages, line numbers, code titles, selected-line highlighting and native collapse / expand controls. Themes can honor a configured visible-line limit.
 - Inline and display math markup for KaTeX, plus Mermaid code fences. The page records which runtimes it needs, and the theme supplies client-side rendering.
 - Block image figures with captions, inline images, and authored IDs, classes and dimensions. Images receive lazy loading and asynchronous decoding.
-- Nested `:::` directives, validated callouts, generic div wrappers and theme template renderers with positional / named arguments. Code blocks and code spans retain literal shortcode and directive text.
+- Nested `:::` directives, validated callouts, generic div wrappers and theme template renderers with positional / named arguments. Code retains literal shortcode and directive text, and math, raw HTML and link destinations retain literal shortcode text.
 - Optional emoji and Font Awesome shortcodes. Short table columns can receive a no-wrap class using CJK-aware text widths.
 
 The main table of contents includes page-body headings. Headings inside directives retain IDs and numbering but stay outside that outline. Custom directives and raw HTML are authored site content, so their output depends on the site's templates and styles. See the [Syntax Reference](syntax.md) for authoring rules.

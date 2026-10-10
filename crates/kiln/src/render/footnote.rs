@@ -7,11 +7,11 @@ use unicase::UniCase;
 use super::Spanned;
 use super::page_ids::PageIds;
 use crate::html::{escape, writeln_indented};
-use crate::text::slugify;
+use crate::text::slugify_or;
 
+/// Footnotes reachable from a document body, in first-reference order.
 #[derive(Default)]
-pub(super) struct Footnotes {
-    body: Vec<Spanned>,
+pub(super) struct Notes {
     notes: Vec<Note>,
     numbers: HashMap<String, usize>,
 }
@@ -19,29 +19,25 @@ pub(super) struct Footnotes {
 struct Note {
     key: String,
     body: Vec<Spanned>,
+    reference_count: usize,
     id: String,
     references: Vec<String>,
 }
 
-impl Footnotes {
-    /// Collects reachable footnotes in reference order, removing definitions from body events.
-    pub(super) fn collect(events: Vec<Spanned>) -> Self {
+impl Notes {
+    /// Removes footnote definitions from `events`, returning the body and its reachable notes.
+    pub(super) fn extract(mut events: impl Iterator<Item = Spanned>) -> (Vec<Spanned>, Self) {
         let mut definitions = HashMap::new();
-        let mut events = events.into_iter();
-        let body = extract_definitions(&mut events, &mut definitions, false).0;
-        let mut notes = Self {
-            body,
-            ..Self::default()
-        };
-        let keys = reference_keys(&notes.body);
-        notes.discover_references(keys, &mut definitions);
+        let (body, _) = extract_definitions(&mut events, &mut definitions, false);
+        let mut notes = Self::default();
+        notes.discover_references(reference_keys(&body), &mut definitions);
         let mut index = 0;
         while index < notes.notes.len() {
             let keys = reference_keys(&notes.notes[index].body);
             notes.discover_references(keys, &mut definitions);
             index += 1;
         }
-        notes
+        (body, notes)
     }
 
     fn discover_references(
@@ -55,91 +51,85 @@ impl Footnotes {
                 self.notes.push(Note {
                     key,
                     body,
+                    reference_count: 1,
                     id: String::new(),
                     references: Vec::new(),
                 });
+            } else if let Some(&number) = self.numbers.get(&key) {
+                self.notes[number].reference_count += 1;
             }
         }
     }
 
-    /// Yields body events followed by reachable footnotes in reference order.
+    /// Yields the note bodies in reference order.
     pub(super) fn events(&self) -> impl Iterator<Item = &Spanned> {
-        self.body
-            .iter()
-            .chain(self.notes.iter().flat_map(|note| &note.body))
+        self.notes.iter().flat_map(|note| &note.body)
     }
 
-    /// Allocates note and backlink IDs and replaces reference events before rendering.
-    pub(super) fn allocate_ids(&mut self, ids: &mut PageIds, scope: usize) {
-        let mut counts = vec![0; self.notes.len()];
-        for (event, _) in self.events() {
-            if let Event::FootnoteReference(name) = event {
-                counts[self.numbers[&footnote_key(name)]] += 1;
-            }
-        }
-        for (note, count) in self.notes.iter_mut().zip(counts) {
-            let label = safe_label(&note.key);
-            let prefix = if scope == 0 {
-                label
-            } else {
-                format!("{scope}-{label}")
-            };
-            note.id = ids.allocate(&format!("fn-{prefix}"));
-            note.references = (1..=count)
-                .map(|n| ids.allocate(&format!("fnref-{prefix}-{n}")))
-                .collect();
-        }
-        let mut occurrences = vec![0; self.notes.len()];
-        let targets: Vec<_> = self
+    /// Allocates note and backlink IDs and replaces reference events in `body` and the notes.
+    pub(super) fn allocate_ids(&mut self, body: &mut [Spanned], ids: &mut PageIds, scope: usize) {
+        let mut references: Vec<_> = self
             .notes
-            .iter()
-            .map(|n| (n.id.clone(), n.references.clone()))
+            .iter_mut()
+            .enumerate()
+            .map(|(index, note)| {
+                let label = slugify_or(&note.key, "note");
+                let prefix = if scope == 0 {
+                    label
+                } else {
+                    format!("{scope}-{label}")
+                };
+                note.id = ids.allocate(&format!("fn-{prefix}"));
+                note.references = (1..=note.reference_count)
+                    .map(|n| ids.allocate(&format!("fnref-{prefix}-{n}")))
+                    .collect();
+                note.references
+                    .iter()
+                    .map(|reference| render_reference(&note.id, reference, index + 1))
+                    .collect::<Vec<_>>()
+                    .into_iter()
+            })
             .collect();
-        for (event, _) in self
-            .body
+        for (event, _) in body
             .iter_mut()
             .chain(self.notes.iter_mut().flat_map(|note| &mut note.body))
         {
-            if let Event::FootnoteReference(name) = event {
-                let number = self.numbers[&footnote_key(name)];
-                let (id, references) = &targets[number];
-                let reference = &references[occurrences[number]];
-                occurrences[number] += 1;
-                *event = Event::InlineHtml(render_reference(id, reference, number + 1).into());
+            if let Event::FootnoteReference(name) = event
+                && let Some(html) = references[self.numbers[&footnote_key(name)]].next()
+            {
+                *event = Event::InlineHtml(html.into());
             }
         }
     }
 
-    /// Renders the body and endnotes with backlinks after [`Self::allocate_ids`].
-    pub(super) fn render(self, mut render: impl FnMut(Vec<Spanned>, u8) -> String) -> String {
-        let mut html = render(self.body, 0);
+    /// Appends the endnotes with backlinks to `html` after [`Self::allocate_ids`].
+    pub(super) fn render(self, html: &mut String, mut render: impl FnMut(Vec<Spanned>) -> String) {
         if self.notes.is_empty() {
-            return html;
+            return;
         }
         writeln_indented!(
-            &mut html,
+            html,
             0,
             r#"<section class="footnotes" role="doc-endnotes">"#
         );
-        writeln_indented!(&mut html, 1, "<ol>");
+        writeln_indented!(html, 1, "<ol>");
         for note in self.notes {
-            writeln_indented!(&mut html, 2, r#"<li id="{}">"#, escape(&note.id));
+            writeln_indented!(html, 2, r#"<li id="{}">"#, escape(&note.id));
             let ends_in_paragraph =
                 matches!(note.body.last(), Some((Event::End(TagEnd::Paragraph), _)));
-            let mut body = render(note.body, 3);
+            let body = render(note.body);
             let backlinks = render_backlinks(&note.references);
-            if ends_in_paragraph && body.ends_with("</p>\n") {
-                body.truncate(body.len() - "</p>\n".len());
-                _ = writeln!(&mut body, " {backlinks}</p>");
+            if ends_in_paragraph && let Some(body) = body.strip_suffix("</p>\n") {
+                html.push_str(body);
+                _ = writeln!(html, " {backlinks}</p>");
             } else {
-                writeln_indented!(&mut body, 3, "<p>{backlinks}</p>");
+                html.push_str(&body);
+                _ = writeln!(html, "<p>{backlinks}</p>");
             }
-            html.push_str(&body);
-            writeln_indented!(&mut html, 2, "</li>");
+            writeln_indented!(html, 2, "</li>");
         }
-        writeln_indented!(&mut html, 1, "</ol>");
-        writeln_indented!(&mut html, 0, "</section>");
-        html
+        writeln_indented!(html, 1, "</ol>");
+        writeln_indented!(html, 0, "</section>");
     }
 }
 
@@ -199,15 +189,6 @@ fn footnote_key(name: &str) -> String {
     UniCase::new(name).to_folded_case()
 }
 
-fn safe_label(label: &str) -> String {
-    let slug = slugify(label);
-    if slug.is_empty() {
-        "note".to_owned()
-    } else {
-        slug
-    }
-}
-
 fn render_reference(id: &str, reference: &str, number: usize) -> String {
     format!(
         r##"<sup class="footnote-reference" id="{}"><a href="#{}" role="doc-noteref">{number}</a></sup>"##,
@@ -246,16 +227,18 @@ mod tests {
     fn render(content: &str) -> String {
         let events = Parser::new_ext(content, Options::ENABLE_FOOTNOTES)
             .into_offset_iter()
-            .map(|(event, range)| (event.into_static(), range))
-            .collect();
-        let mut notes = Footnotes::collect(events);
-        notes.allocate_ids(&mut PageIds::default(), 0);
-        notes.render(|events, level| {
-            let mut html = String::new();
-            crate::html::indent(&mut html, level);
-            pulldown_cmark::html::push_html(&mut html, events.into_iter().map(|(e, _)| e));
-            html
-        })
+            .map(|(event, range)| (event.into_static(), range));
+        let (mut body, mut notes) = Notes::extract(events);
+        notes.allocate_ids(&mut body, &mut PageIds::default(), 0);
+        let mut html = push_html(body);
+        notes.render(&mut html, push_html);
+        html
+    }
+
+    fn push_html(events: Vec<Spanned>) -> String {
+        let mut html = String::new();
+        pulldown_cmark::html::push_html(&mut html, events.into_iter().map(|(event, _)| event));
+        html
     }
 
     // ── render ──
@@ -277,7 +260,7 @@ mod tests {
                 <section class="footnotes" role="doc-endnotes">
                   <ol>
                     <li id="fn-a">
-                      <p>Note. <a class="footnote-backref" href="#fnref-a-1" role="doc-backlink">↩&#xFE0E;</a></p>
+                <p>Note. <a class="footnote-backref" href="#fnref-a-1" role="doc-backlink">↩&#xFE0E;</a></p>
                     </li>
                   </ol>
                 </section>
@@ -377,7 +360,7 @@ mod tests {
                 - item
         "});
         assert!(
-            html.contains("</ul>\n      <p><a class=\"footnote-backref\" href=\"#fnref-a-1\""),
+            html.contains("</ul>\n<p><a class=\"footnote-backref\" href=\"#fnref-a-1\""),
             "html:\n{html}",
         );
     }

@@ -1,14 +1,14 @@
 pub mod assets;
 mod code_block;
-pub mod emoji;
+mod document;
+mod emoji;
 mod footnote;
 mod heading;
 mod highlight;
-pub mod icon;
+mod icon;
 mod image;
 mod image_attrs;
 pub mod lqip;
-mod markdown;
 mod mermaid;
 mod page_ids;
 pub mod pipeline;
@@ -49,15 +49,14 @@ impl PageResources<'_> {
     }
 }
 
-/// Feature flags and settings for the render pipeline.
-#[derive(Debug, Clone, Default, Deserialize)]
+/// Site-wide render settings read from the `[params]` table.
+#[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub struct RenderOptions {
     pub code_max_lines: Option<usize>,
     pub emojis: bool,
     pub fontawesome: bool,
-    #[serde(skip)]
-    pub heading_numbering: bool,
+    /// In terminal columns.
     pub table_nowrap_width: Option<usize>,
 }
 
@@ -89,7 +88,6 @@ mod tests {
         assert!(options.code_max_lines.is_none());
         assert!(!options.emojis);
         assert!(!options.fontawesome);
-        assert!(!options.heading_numbering);
         assert!(options.table_nowrap_width.is_none());
     }
 

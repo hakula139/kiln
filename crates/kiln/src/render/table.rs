@@ -3,9 +3,29 @@ use unicode_width::UnicodeWidthStr;
 
 /// Adds `class="nowrap"` to every cell of a table column whose widest cell fits within
 /// `max_width` terminal columns. Only text, inline code, and math source count.
-pub(super) struct TableNowrap {
-    max_width: usize,
-    table: Option<TableLayout>,
+pub(super) fn stamp_nowrap(events: &mut [Event<'_>], max_width: usize) {
+    let mut stamps = Vec::new();
+    let mut table = None;
+    for (index, event) in events.iter().enumerate() {
+        match event {
+            Event::Start(Tag::Table(alignments)) => {
+                table = Some(TableLayout::new(alignments.clone()));
+            }
+            Event::End(TagEnd::Table) => {
+                if let Some(table) = table.take() {
+                    stamps.extend(table.nowrap_cells(max_width));
+                }
+            }
+            _ => {
+                if let Some(table) = &mut table {
+                    table.observe(event, index);
+                }
+            }
+        }
+    }
+    for (index, html) in stamps {
+        events[index] = Event::Html(html.into());
+    }
 }
 
 struct TableLayout {
@@ -14,7 +34,6 @@ struct TableLayout {
     cells: Vec<Cell>,
     in_head: bool,
     column: usize,
-    image_depth: usize,
     cell_text: String,
 }
 
@@ -22,34 +41,6 @@ struct Cell {
     event_index: usize,
     column: usize,
     is_head: bool,
-}
-
-impl TableNowrap {
-    pub fn new(max_width: usize) -> Self {
-        Self {
-            max_width,
-            table: None,
-        }
-    }
-
-    /// Records `event`, which the caller pushes onto `events` next.
-    pub fn observe(&mut self, event: &Event<'_>, events: &mut [Event<'_>]) {
-        match event {
-            Event::Start(Tag::Table(alignments)) => {
-                self.table = Some(TableLayout::new(alignments.clone()));
-            }
-            Event::End(TagEnd::Table) => {
-                if let Some(table) = self.table.take() {
-                    table.stamp_nowrap(self.max_width, events);
-                }
-            }
-            _ => {
-                if let Some(table) = &mut self.table {
-                    table.observe(event, events.len());
-                }
-            }
-        }
-    }
 }
 
 impl TableLayout {
@@ -60,7 +51,6 @@ impl TableLayout {
             cells: Vec::new(),
             in_head: false,
             column: 0,
-            image_depth: 0,
             cell_text: String::new(),
         }
     }
@@ -86,32 +76,30 @@ impl TableLayout {
                 self.column_widths[self.column] = self.column_widths[self.column].max(width);
                 self.column += 1;
             }
-            Event::Start(Tag::Image { .. }) => self.image_depth += 1,
-            Event::End(TagEnd::Image) => self.image_depth -= 1,
-            Event::Text(t) | Event::Code(t) | Event::InlineMath(t) if self.image_depth == 0 => {
-                self.cell_text.push_str(t);
-            }
+            Event::Text(t) | Event::Code(t) | Event::InlineMath(t) => self.cell_text.push_str(t),
             _ => {}
         }
     }
 
-    /// Swaps each nowrap cell's `Start(TableCell)` for raw HTML. The `End(TableCell)` events stay
-    /// untouched, so pulldown-cmark still closes each cell from its own head / body state.
-    fn stamp_nowrap(self, max_width: usize, events: &mut [Event<'_>]) {
-        for cell in &self.cells {
-            if self.column_widths[cell.column] > max_width {
-                continue;
-            }
-            let tag = if cell.is_head { "th" } else { "td" };
-            let style = match self.alignments[cell.column] {
-                Alignment::None => "",
-                Alignment::Left => r#" style="text-align: left""#,
-                Alignment::Center => r#" style="text-align: center""#,
-                Alignment::Right => r#" style="text-align: right""#,
-            };
-            events[cell.event_index] =
-                Event::Html(format!(r#"<{tag} class="nowrap"{style}>"#).into());
-        }
+    /// Yields raw HTML replacing each nowrap cell's `Start(TableCell)`. The `End(TableCell)` events
+    /// stay untouched, so pulldown-cmark still closes each cell from its own head / body state.
+    fn nowrap_cells(self, max_width: usize) -> impl Iterator<Item = (usize, String)> {
+        self.cells
+            .into_iter()
+            .filter(move |cell| self.column_widths[cell.column] <= max_width)
+            .map(move |cell| {
+                let tag = if cell.is_head { "th" } else { "td" };
+                let style = match self.alignments[cell.column] {
+                    Alignment::None => "",
+                    Alignment::Left => r#" style="text-align: left""#,
+                    Alignment::Center => r#" style="text-align: center""#,
+                    Alignment::Right => r#" style="text-align: right""#,
+                };
+                (
+                    cell.event_index,
+                    format!(r#"<{tag} class="nowrap"{style}>"#),
+                )
+            })
     }
 }
 
@@ -124,64 +112,60 @@ mod tests {
 
     fn render(content: &str, max_width: usize) -> String {
         let options = Options::ENABLE_TABLES | Options::ENABLE_FOOTNOTES | Options::ENABLE_MATH;
-        let mut nowrap = TableNowrap::new(max_width);
-        let mut events = Vec::new();
-        for event in Parser::new_ext(content, options) {
-            nowrap.observe(&event, &mut events);
-            events.push(event);
-        }
+        let mut events: Vec<_> = Parser::new_ext(content, options).collect();
+        stamp_nowrap(&mut events, max_width);
         let mut html = String::new();
         pulldown_cmark::html::push_html(&mut html, events.into_iter());
         html
     }
 
-    // ── TableNowrap::observe ──
+    // ── stamp_nowrap ──
 
     #[test]
-    fn observe_marks_every_cell_of_short_columns() {
-        // 名称 peaks at 8 with `Cherries`, 产地 at 4, and 说明 at 12 (CJK = 2).
+    fn stamp_nowrap_marks_every_cell_of_short_columns() {
+        // 名称 peaks at 8 with `Cherries`, 产地 at 4, 价格 at 5, and 说明 at 12 (CJK = 2).
         let html = render(
             indoc! {"
-                | 名称 | 产地 | 说明 |
-                | :--- | :--: | ---: |
-                | Cherries | 北方 | 红色的小水果 |
-                | 香蕉 | 南方 | 黄色水果 |
+                | 名称 | 产地 | 价格 | 说明 |
+                | :--- | :--: | ---: | --- |
+                | Cherries | 北方 | 12.50 | 红色的小水果 |
+                | 香蕉 | 南方 | 3.00 | 黄色水果 |
             "},
             8,
         );
 
         let expected = indoc! {r#"
-            <table><thead><tr><th class="nowrap" style="text-align: left">名称</th><th class="nowrap" style="text-align: center">产地</th><th style="text-align: right">说明</th></tr></thead><tbody>
-            <tr><td class="nowrap" style="text-align: left">Cherries</td><td class="nowrap" style="text-align: center">北方</td><td style="text-align: right">红色的小水果</td></tr>
-            <tr><td class="nowrap" style="text-align: left">香蕉</td><td class="nowrap" style="text-align: center">南方</td><td style="text-align: right">黄色水果</td></tr>
+            <table><thead><tr><th class="nowrap" style="text-align: left">名称</th><th class="nowrap" style="text-align: center">产地</th><th class="nowrap" style="text-align: right">价格</th><th>说明</th></tr></thead><tbody>
+            <tr><td class="nowrap" style="text-align: left">Cherries</td><td class="nowrap" style="text-align: center">北方</td><td class="nowrap" style="text-align: right">12.50</td><td>红色的小水果</td></tr>
+            <tr><td class="nowrap" style="text-align: left">香蕉</td><td class="nowrap" style="text-align: center">南方</td><td class="nowrap" style="text-align: right">3.00</td><td>黄色水果</td></tr>
             </tbody></table>
         "#};
         assert_eq!(html, expected);
     }
 
     #[test]
-    fn observe_measures_visible_text_and_math_source() {
-        // Visible text is `ab 🎮 cd  x2`: the link target, image alt text, code backticks, math
-        // delimiters, and footnote label contribute nothing, and the emoji counts as 2.
+    fn stamp_nowrap_measures_visible_text_and_math_source() {
+        // Visible text is `ab 🎮 cd x2`: the link target, code backticks, math delimiters, and
+        // footnote label contribute nothing, and the emoji counts as 2.
         let md = indoc! {"
             | Name |
             | ---- |
-            | [ab](https://example.com/a-very-long-url) 🎮 `cd` ![long alt text](a.png) $x2$[^note] |
+            | [ab](https://example.com/a-very-long-url) 🎮 `cd` $x2$[^note] |
 
             [^note]: A footnote.
         "};
         assert!(
-            render(md, 12).contains(r#"<td class="nowrap"><a href="#),
+            render(md, 11).contains(r#"<td class="nowrap"><a href="#),
             "cell at the threshold should be nowrap"
         );
         assert!(
-            render(md, 11).contains("<td><a href="),
+            render(md, 10).contains("<td><a href="),
             "cell one column over the threshold should wrap"
         );
     }
 
     #[test]
-    fn observe_follows_padded_ragged_rows() {
+    fn stamp_nowrap_follows_padded_ragged_rows() {
         // pulldown-cmark pads short rows and drops cells beyond the header's column count.
         let html = render(
             indoc! {"
@@ -203,7 +187,7 @@ mod tests {
     }
 
     #[test]
-    fn observe_resets_per_table() {
+    fn stamp_nowrap_resets_per_table() {
         let html = render(
             indoc! {"
                 | A |

@@ -41,6 +41,17 @@ pub fn slugify(text: &str) -> String {
     result
 }
 
+/// Returns the slug of `text`, or `fallback` when no alphanumeric character survives.
+#[must_use]
+pub(crate) fn slugify_or(text: &str, fallback: &str) -> String {
+    let slug = slugify(text);
+    if slug.is_empty() {
+        fallback.to_owned()
+    } else {
+        slug
+    }
+}
+
 /// Converts a hyphenated slug to titlecase (e.g., "hello-world" → "Hello World").
 #[must_use]
 pub fn titlecase(s: &str) -> String {
@@ -92,6 +103,15 @@ mod tests {
             ("...", ""),
         ] {
             assert_eq!(slugify(input), expected, "{input}");
+        }
+    }
+
+    // ── slugify_or ──
+
+    #[test]
+    fn slugify_or_falls_back_only_without_alphanumerics() {
+        for (input, expected) in [("Hello World", "hello-world"), ("!?", "note"), ("", "note")] {
+            assert_eq!(slugify_or(input, "note"), expected, "{input}");
         }
     }
 

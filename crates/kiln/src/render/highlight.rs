@@ -1,3 +1,5 @@
+use std::sync::LazyLock;
+
 use syntect::html::{ClassStyle, ClassedHTMLGenerator, line_tokens_to_classed_spans};
 use syntect::parsing::{ParseState, ScopeStack, ScopeStackOp, SyntaxReference, SyntaxSet};
 use syntect::util::LinesWithEndings;
@@ -7,12 +9,18 @@ use tracing::{debug, warn};
 use super::code_block::CodeBlockSpec;
 use crate::html::{escape, indent, writeln_indented};
 
+static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(two_face::syntax::extra_newlines);
+
 /// Highlights a code block with line numbers and a header (language pill or title, copy button).
 ///
 /// Empty and unrecognized fence tags normalize to `plaintext`. The display label is derived from
 /// the author's input by [`display_label`], not from syntect's internal name.
 #[must_use]
-pub(super) fn highlight_code(syntax_set: &SyntaxSet, code: &str, spec: &CodeBlockSpec) -> String {
+pub(super) fn highlight_code(code: &str, spec: &CodeBlockSpec) -> String {
+    highlight_with(&SYNTAX_SET, code, spec)
+}
+
+fn highlight_with(syntax_set: &SyntaxSet, code: &str, spec: &CodeBlockSpec) -> String {
     let lang = spec.lang.as_deref().unwrap_or("");
     let (syntax, effective_lang, display_label) = find_syntax(syntax_set, lang);
 
@@ -333,7 +341,6 @@ fn capitalize_first(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
-    use std::sync::LazyLock;
 
     use indoc::{formatdoc, indoc};
     use syntect::parsing::syntax_definition::{Context, MatchOperation, MatchPattern, Pattern};
@@ -341,11 +348,8 @@ mod tests {
 
     use super::*;
 
-    static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(two_face::syntax::extra_newlines);
-
     fn highlight(lang: &str, code: &str) -> String {
         highlight_code(
-            &SYNTAX_SET,
             code,
             &CodeBlockSpec {
                 lang: Some(lang.to_string()),
@@ -355,7 +359,7 @@ mod tests {
     }
 
     fn highlight_with_spec(code: &str, spec: &CodeBlockSpec) -> String {
-        highlight_code(&SYNTAX_SET, code, spec)
+        highlight_code(code, spec)
     }
 
     // ── highlight_code (structure) ──
@@ -700,7 +704,7 @@ mod tests {
                 ..CodeBlockSpec::default()
             };
             for code in [code, code.trim_end(), &crlf] {
-                let html = highlight_code(&syntax_set, code, &spec);
+                let html = highlight_with(&syntax_set, code, &spec);
                 let fragment = scraper::Html::parse_fragment(&html);
                 let selector = scraper::Selector::parse(".code code").unwrap();
                 let rendered_code = fragment.select(&selector).next().unwrap();
@@ -788,7 +792,7 @@ mod tests {
                 max_lines: Some(limit),
                 ..CodeBlockSpec::default()
             };
-            let html = highlight_code(&SYNTAX_SET, "code", &spec);
+            let html = highlight_code("code", &spec);
             if limit == 0 {
                 assert!(!html.contains("data-max-lines"));
                 assert!(!html.contains("--max-lines"));

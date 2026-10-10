@@ -127,18 +127,11 @@ fn build_heading_numbering_is_per_page() {
 }
 
 #[test]
-fn build_validates_render_options_only_for_content() {
+fn build_invalid_render_options_returns_error() {
     let site = TestSite::new(indoc! {r#"
         [params]
         emojis = "yes"
     "#});
-    site.write("templates/home.html", "<h1>Empty site</h1>");
-
-    site.build().unwrap();
-
-    assert_eq!(site.read("index.html"), "<h1>Empty site</h1>");
-
-    site.titled_page("posts/hello", "Hello");
 
     let err = site.build().unwrap_err();
     assert_eq!(
@@ -146,5 +139,5 @@ fn build_validates_render_options_only_for_content() {
         "failed to parse render options from [params]"
     );
     assert!(format!("{err:#}").contains("invalid type: string \"yes\", expected a boolean"));
-    assert!(!site.output("posts/hello/index.html").exists());
+    assert!(!site.path("public").exists());
 }
