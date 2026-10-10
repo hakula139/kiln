@@ -76,6 +76,7 @@ jobs:
       - name: Record benchmark environment
         run: |
           mkdir -p results
+
           {
             git -C base show -s --format='Base: %H'
             git -C head show -s --format='Head: %H'
@@ -88,9 +89,10 @@ jobs:
           for revision in base head; do
             (
               cd "$revision"
+
               CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target/$revision" \
                 nix develop "$GITHUB_WORKSPACE/head" -c \
-                cargo bench --locked --bench performance --no-run
+                  cargo bench --locked --bench performance --no-run
             ) 2>&1 | tee "results/compile-$revision.log"
           done
 
@@ -98,12 +100,14 @@ jobs:
         run: |
           for revision in base head; do
             mkdir -p "results/$revision"
+
             (
               cd "$revision"
-              CRITERION_HOME="$GITHUB_WORKSPACE/results/$revision/criterion" \
+
               CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target/$revision" \
+              CRITERION_HOME="$GITHUB_WORKSPACE/results/$revision/criterion" \
                 nix develop "$GITHUB_WORKSPACE/head" -c \
-                cargo bench --bench performance -- --color never --save-baseline measured
+                  cargo bench --bench performance -- --color never --save-baseline measured
             ) 2>&1 | tee "results/measure-$revision.log"
           done
 
