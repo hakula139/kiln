@@ -1205,31 +1205,33 @@ mod tests {
 
     #[test]
     fn render_directive_block_invalid_callout_returns_error() {
-        let error = render_page(
-            indoc! {"
-                ::: callout {type=warn}
-                Body
-                :::
-            "},
-            &SYNTAX_SET,
-            &test_engine(),
-            &Config::default(),
-            &RenderOptions::default(),
-            &PageResources {
-                source_dir: None,
-                images: &EMPTY_RESOLVER,
-                assets: &StaticAssetManifest::default(),
-                page_url: "/",
-                deployment_prefix: "",
-            },
-        )
-        .unwrap_err();
-        assert!(
-            error
-                .to_string()
-                .starts_with(r#"unknown callout type "warn""#),
-            "{error}"
-        );
+        for name in ["callout", "Callout"] {
+            let error = render_page(
+                &formatdoc! {"
+                    ::: {name} {{type=warn}}
+                    Body
+                    :::
+                "},
+                &SYNTAX_SET,
+                &test_engine(),
+                &Config::default(),
+                &RenderOptions::default(),
+                &PageResources {
+                    source_dir: None,
+                    images: &EMPTY_RESOLVER,
+                    assets: &StaticAssetManifest::default(),
+                    page_url: "/",
+                    deployment_prefix: "",
+                },
+            )
+            .unwrap_err();
+            assert!(
+                error
+                    .to_string()
+                    .starts_with(r#"unknown callout type "warn""#),
+                "{name}: {error}"
+            );
+        }
     }
 
     #[test]

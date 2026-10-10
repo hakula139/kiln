@@ -181,17 +181,18 @@ fn emit_callout(args: &ShortcodeArgs, out: &mut String) -> Result<()> {
     let kind = callout::find_type(kind)
         .with_context(|| format!("unsupported admonition type `{kind}`"))?;
     let title = args.get("title").or_else(|| positional(1));
-    let open = args.get("open").or_else(|| positional(2)).unwrap_or("true");
-    ensure!(
-        ["true", "false"].contains(&open),
-        "admonition open must be true or false"
-    );
+    let open = match args.get("open").or_else(|| positional(2)) {
+        Some(value) => {
+            callout::parse_open(value).context("admonition open must be true or false")?
+        }
+        None => true,
+    };
 
     _ = write!(out, "::: callout {{type={kind}");
     if let Some(title) = title {
         _ = write!(out, " title={}", quote(title));
     }
-    if open == "false" {
+    if !open {
         out.push_str(" open=false");
     }
     out.push('}');
@@ -321,6 +322,21 @@ mod tests {
                 :::
                 :::
             "#}
+        );
+    }
+
+    #[test]
+    fn convert_shortcodes_canonicalizes_admonition_type_and_open() {
+        assert_eq!(
+            convert_shortcodes(
+                r#"{{< admonition Warning "Careful" FALSE >}}Body{{< /admonition >}}"#
+            )
+            .unwrap(),
+            indoc! {r#"
+                ::: callout {type=warning title="Careful" open=false}
+                Body
+                :::
+            "#},
         );
     }
 

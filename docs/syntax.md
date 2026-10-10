@@ -233,7 +233,7 @@ This is a note.
 :::
 ```
 
-A [Pandoc-style attribute block](#pandoc-style-attributes) can follow the directive name, with or without a space. Directive names are case-sensitive. Positional values inside `{...}` become arguments accessible in templates as `positional_args`:
+A [Pandoc-style attribute block](#pandoc-style-attributes) can follow the directive name, with or without a space. Directive names are case-insensitive and normalized to lowercase, so `::: Callout` is a callout and renders with `directives/callout.html`. Positional values inside `{...}` become arguments accessible in templates as `positional_args`:
 
 ```markdown
 ::: callout {#my-id .custom-class type=tip title="Read This"}
@@ -260,7 +260,7 @@ The closing fence must have at least as many colons as the opening fence it clos
 
 Callouts are styled content blocks. The `callout` directive supports 12 types: `abstract`, `bug`, `danger`, `example`, `failure`, `info`, `note`, `question`, `quote`, `success`, `tip` and `warning`.
 
-kiln validates the options, and the theme's `directives/callout.html` template renders the callout. The default title is the theme's `callout_<type>` translation. Without that template, a callout becomes a [generic div](#generic-div-wrappers). See [Callouts and Divs](themes.md#callouts-and-divs) for the template contract.
+kiln validates the options, and the theme's `directives/callout.html` template renders the callout. The default title is the theme's `callout_<type>` translation. Without that template, a callout becomes a [generic div](#generic-div-wrappers), `<div class="callout">` plus the authored ID and classes. kiln still validates the options but drops the type, title and open state. See [Callouts and Divs](themes.md#callouts-and-divs) for the template contract.
 
 #### Type and Options
 
@@ -293,7 +293,7 @@ An unnamed directive applies authored IDs and classes to a div:
 :::
 ```
 
-If a named directive has no matching template, it also becomes a div and adds its name as a class.
+If a named directive has no matching template, it also becomes a div and adds its lowercase name as a class.
 
 ### Template-Based Directives
 

@@ -340,9 +340,9 @@ Authored IDs and classes belong to the outer details element. Per-line highlight
 
 ### Callouts and Divs
 
-Themes render callouts with `directives/callout.html`. `type` is one of the 12 [callout types](syntax.md#callouts) in lowercase, `title` is `none` unless authored, and `open` is a boolean. Fall back to `t('callout_' ~ type)` when `title` is `none`. A theme without this template gets the generic div.
+Themes render callouts with `directives/callout.html`. `type` is one of the 12 [callout types](syntax.md#callouts) in lowercase, `title` is `none` unless authored, and `open` is a boolean. Fall back to `t('callout_' ~ type)` when `title` is `none`. A theme without this template gets the generic div, `<div class="callout">` plus the authored `id` and classes, without `type`, `title` or `open`.
 
-Directives without a template use a div with the authored `id` and a class list of the directive name followed by the authored classes. An anonymous directive without attributes passes its body through unwrapped. See [Directives](syntax.md#directives) for syntax.
+Directives without a template use a div with the authored `id` and a class list of the lowercase directive name followed by the authored classes. An anonymous directive without attributes passes its body through unwrapped. See [Directives](syntax.md#directives) for syntax.
 
 ### Math and Diagrams
 

@@ -1,10 +1,10 @@
 use std::collections::BTreeMap;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use serde::Serialize;
 
 /// Callout types. Themes style each type and title it with the `callout_<type>` translation.
-pub(crate) const TYPES: [&str; 12] = [
+const TYPES: [&str; 12] = [
     "abstract", "bug", "danger", "example", "failure", "info", "note", "question", "quote",
     "success", "tip", "warning",
 ];
@@ -35,10 +35,9 @@ impl<'a> Callout<'a> {
             None => "note",
         };
         let open = match named.get("open") {
+            Some(value) => parse_open(value)
+                .with_context(|| format!(r#"callout open must be true or false, got "{value}""#))?,
             None => true,
-            Some(value) if value.eq_ignore_ascii_case("true") => true,
-            Some(value) if value.eq_ignore_ascii_case("false") => false,
-            Some(value) => bail!(r#"callout open must be true or false, got "{value}""#),
         };
         let title = named
             .get("title")
@@ -53,6 +52,11 @@ pub(crate) fn find_type(name: &str) -> Option<&'static str> {
     TYPES
         .into_iter()
         .find(|kind| kind.eq_ignore_ascii_case(name))
+}
+
+/// Parses an `open` value of `true` or `false` case-insensitively.
+pub(crate) fn parse_open(value: &str) -> Option<bool> {
+    value.to_ascii_lowercase().parse().ok()
 }
 
 #[cfg(test)]
@@ -129,6 +133,16 @@ mod tests {
         assert_eq!(find_type("TIP"), Some("tip"));
         assert_eq!(find_type("tips"), None);
         assert_eq!(find_type(""), None);
+    }
+
+    // ── parse_open ──
+
+    #[test]
+    fn parse_open_accepts_booleans_case_insensitively() {
+        assert_eq!(parse_open("True"), Some(true));
+        assert_eq!(parse_open("FALSE"), Some(false));
+        assert_eq!(parse_open("yes"), None);
+        assert_eq!(parse_open(""), None);
     }
 
     fn args(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {

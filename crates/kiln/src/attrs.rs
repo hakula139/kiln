@@ -251,6 +251,19 @@ fn unescape_quoted(s: &str) -> String {
 mod tests {
     use super::*;
 
+    // ── PandocAttrs::identity ──
+
+    #[test]
+    fn identity_copies_id_and_classes() {
+        assert_eq!(
+            parse_pandoc_attrs("#main .a key=value .b").identity(),
+            Identity {
+                id: Some("main".into()),
+                classes: vec!["a".into(), "b".into()],
+            }
+        );
+    }
+
     // ── parse_pandoc_attrs ──
 
     #[test]
@@ -375,19 +388,6 @@ mod tests {
     fn find_attr_block_end_unclosed_returns_none() {
         assert_eq!(find_attr_block_end(r#"title="a}b"#), None);
         assert_eq!(find_attr_block_end("#id .class"), None);
-    }
-
-    // ── PandocAttrs::identity ──
-
-    #[test]
-    fn identity_copies_id_and_classes() {
-        assert_eq!(
-            parse_pandoc_attrs("#main .a key=value .b").identity(),
-            Identity {
-                id: Some("main".into()),
-                classes: vec!["a".into(), "b".into()],
-            }
-        );
     }
 
     // ── Identity::html_attrs ──

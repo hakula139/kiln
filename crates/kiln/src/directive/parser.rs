@@ -60,7 +60,7 @@ pub(crate) fn parse_directives(content: &str) -> Vec<DirectiveNode> {
                 stack.push(StackEntry {
                     colon_count,
                     block: DirectiveBlock {
-                        name: name.to_owned(),
+                        name,
                         args,
                         body: next_offset..next_offset,
                         range: offset..offset,
@@ -89,11 +89,11 @@ fn count_leading_colons(line: &str) -> Option<usize> {
     (count >= 3).then_some(count)
 }
 
-/// Splits the text after the colons into a directive name and its `{...}` arguments.
+/// Splits the text after the colons into a lowercased directive name and its `{...}` arguments.
 ///
 /// Accepts `name {attrs}`, `name{attrs}`, bare `name`, or `{attrs}` alone. Text after the name
 /// without a closed attribute block is ignored.
-fn parse_directive_head(text: &str) -> (&str, DirectiveArgs) {
+fn parse_directive_head(text: &str) -> (String, DirectiveArgs) {
     let end = text
         .find(|c: char| c.is_whitespace() || c == '{')
         .unwrap_or(text.len());
@@ -104,7 +104,7 @@ fn parse_directive_head(text: &str) -> (&str, DirectiveArgs) {
         .and_then(|payload| find_attr_block_end(payload).map(|close| &payload[..close]))
         .map(|attrs| DirectiveArgs::from(parse_pandoc_attrs(attrs)))
         .unwrap_or_default();
-    (name, args)
+    (name.to_lowercase(), args)
 }
 
 /// Returns the end of a body that starts at `start`, excluding the line ending before the
@@ -460,7 +460,7 @@ mod tests {
     fn parse_directive_head_bare_name() {
         assert_eq!(
             parse_directive_head("callout"),
-            ("callout", DirectiveArgs::default())
+            ("callout".to_owned(), DirectiveArgs::default())
         );
     }
 
@@ -475,6 +475,15 @@ mod tests {
             assert_eq!(args.identity.classes, ["wide"], "{text}");
             assert_eq!(args.named, named(&[("type", "warning")]), "{text}");
         }
+    }
+
+    #[test]
+    fn parse_directive_head_lowercases_name_only() {
+        let (name, args) = parse_directive_head("Callout {#Tip-1 .Wide type=Tip}");
+        assert_eq!(name, "callout");
+        assert_eq!(args.identity.id.as_deref(), Some("Tip-1"));
+        assert_eq!(args.identity.classes, ["Wide"]);
+        assert_eq!(args.named, named(&[("type", "Tip")]));
     }
 
     #[test]

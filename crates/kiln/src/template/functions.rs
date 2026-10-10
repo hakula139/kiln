@@ -66,7 +66,12 @@ pub(super) fn tpl_parse_csv(text: &str) -> Result<Value, Error> {
 // ── i18n ──
 
 /// Looks up an i18n string and interpolates kwargs into Python-style `{name}` placeholders.
+/// Without kwargs, the string is returned verbatim.
 pub(super) fn tpl_t(i18n: &I18n, key: &str, kwargs: &Kwargs) -> Result<String, Error> {
+    if kwargs.args().next().is_none() {
+        return Ok(i18n.t(key).into_owned());
+    }
+
     // `none` and undefined values render as empty strings instead of the literal text "none".
     let args = kwargs
         .args()
@@ -159,6 +164,8 @@ pub(super) fn tpl_register_script(
 
     Ok("")
 }
+
+// ── Errors ──
 
 fn invalid(message: impl Into<Cow<'static, str>>) -> Error {
     Error::new(ErrorKind::InvalidOperation, message)
@@ -312,7 +319,7 @@ mod tests {
     }
 
     #[test]
-    fn tpl_t_interpolates_keyword_arguments() {
+    fn tpl_t_interpolates_only_with_keyword_arguments() {
         let dir = tempfile::tempdir().unwrap();
         fs::create_dir_all(dir.path().join("i18n")).unwrap();
         fs::write(
@@ -330,6 +337,7 @@ mod tests {
                 "Hi Alex, 2!",
             ),
             (r#"{{ t("greeting", name=none) }}"#, "Hi , !"),
+            (r#"{{ t("greeting") }}"#, "Hi {name}, {count}!"),
         ] {
             let result = engine.env.render_str(template, ()).unwrap();
             assert_eq!(result, expected, "template: {template}");
