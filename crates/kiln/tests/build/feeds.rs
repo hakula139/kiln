@@ -1,22 +1,17 @@
-use std::fs;
-
-use kiln::build::{BuildOptions, build};
-
-use super::support::write_listing_site;
+use super::support::{listing_site, xml_texts};
 
 // ── build: RSS feeds ──
 
 #[test]
 fn build_generates_rss_feeds() {
-    let root = tempfile::tempdir().unwrap();
-    write_listing_site(root.path());
+    let site = listing_site();
 
-    build(root.path(), BuildOptions::default()).unwrap();
+    site.build().unwrap();
 
-    let output_dir = root.path().join("public");
-    for (path, expected) in [
+    for (path, channel, items) in [
         (
             "index.xml",
+            "",
             vec![
                 "posts/review/latest",
                 "posts/note/newer",
@@ -25,6 +20,7 @@ fn build_generates_rss_feeds() {
         ),
         (
             "posts/index.xml",
+            "posts/",
             vec![
                 "posts/review/latest",
                 "posts/note/newer",
@@ -33,35 +29,39 @@ fn build_generates_rss_feeds() {
         ),
         (
             "posts/note/index.xml",
+            "posts/note/",
             vec!["posts/note/newer", "posts/note/older"],
         ),
-        ("posts/review/index.xml", vec!["posts/review/latest"]),
+        (
+            "posts/review/index.xml",
+            "posts/review/",
+            vec!["posts/review/latest"],
+        ),
         (
             "tags/rust/index.xml",
+            "tags/rust/",
             vec!["about", "posts/review/latest", "posts/note/older"],
         ),
-        ("tags/testing/index.xml", vec!["posts/note/newer"]),
+        (
+            "tags/testing/index.xml",
+            "tags/testing/",
+            vec!["posts/note/newer"],
+        ),
     ] {
-        let xml = fs::read_to_string(output_dir.join(path)).unwrap();
-        let links: Vec<_> = xml
-            .split("<item>")
-            .skip(1)
-            .map(|item| {
-                item.split_once("<link>")
-                    .unwrap()
-                    .1
-                    .split_once("</link>")
-                    .unwrap()
-                    .0
-            })
+        let expected: Vec<_> = [format!("https://example.com/{channel}")]
+            .into_iter()
+            .chain(
+                items
+                    .iter()
+                    .map(|path| format!("https://example.com/{path}/")),
+            )
             .collect();
-        let expected: Vec<_> = expected
-            .iter()
-            .map(|path| format!("https://example.com/{path}/"))
-            .collect();
-        assert_eq!(links, expected, "incorrect membership or order in {path}");
+        assert_eq!(
+            xml_texts(&site.read(path), "link"),
+            expected,
+            "incorrect membership or order in {path}"
+        );
     }
 
-    let main_feed = fs::read_to_string(output_dir.join("index.xml")).unwrap();
-    assert!(main_feed.contains("<title>Test Site</title>"));
+    assert_eq!(xml_texts(&site.read("index.xml"), "title")[0], "Test Site");
 }

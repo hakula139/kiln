@@ -1,4 +1,6 @@
 use std::fs;
+#[cfg(unix)]
+use std::os::unix::fs::symlink;
 
 use indoc::indoc;
 use scraper::{Html, Selector};
@@ -7,10 +9,7 @@ use kiln::build::{BuildOptions, build};
 use kiln::content::discovery::discover_content;
 use kiln::convert::convert;
 
-#[path = "support/filesystem.rs"]
-mod filesystem;
-
-use filesystem::write_test_file;
+use super::fixtures::write_test_file;
 
 // ── convert ──
 
@@ -136,7 +135,7 @@ fn assert_converted_callout(html: &str) {
 }
 
 #[test]
-fn convert_overlapping_roots_return_error_without_writes() {
+fn convert_overlapping_roots_without_writes_returns_error() {
     let root = tempfile::tempdir().unwrap();
     let source = root.path().join("site");
     write_test_file(&source, "content/post.md", "Source body");
@@ -156,13 +155,20 @@ fn convert_overlapping_roots_return_error_without_writes() {
 }
 
 #[test]
-fn convert_malformed_frontmatter_returns_error_without_output_file() {
+fn convert_malformed_frontmatter_without_output_file_returns_error() {
     let root = tempfile::tempdir().unwrap();
     let source = root.path().join("source");
     let destination = root.path().join("destination");
     for content in [
-        "---\ntitle: Missing close",
-        "---broken\ntitle: Invalid opening\n---",
+        indoc! {"
+            ---
+            title: Missing close
+        "},
+        indoc! {"
+            ---broken
+            title: Invalid opening
+            ---
+        "},
     ] {
         write_test_file(&source, "content/post.md", content);
         let error = convert(&source, &destination).unwrap_err();
@@ -182,7 +188,7 @@ fn convert_source_file_symlink_copies_contents() {
     let destination = root.path().join("destination");
     fs::create_dir_all(source.join("content")).unwrap();
     fs::write(root.path().join("outside.txt"), "outside").unwrap();
-    std::os::unix::fs::symlink(
+    symlink(
         root.path().join("outside.txt"),
         source.join("content/link.txt"),
     )
@@ -212,7 +218,7 @@ fn convert_destination_symlink_escape_returns_error() {
         write_test_file(&source, &format!("{directory}/new.txt"), "new");
         fs::create_dir_all(link.parent().unwrap()).unwrap();
         fs::create_dir_all(&outside).unwrap();
-        std::os::unix::fs::symlink(&outside, &link).unwrap();
+        symlink(&outside, &link).unwrap();
 
         let error = convert(&source, &destination).unwrap_err();
         assert!(error.to_string().contains("escapes its root"), "{error}");

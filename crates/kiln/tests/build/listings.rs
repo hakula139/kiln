@@ -1,34 +1,26 @@
-use std::fs;
-
 use indoc::{formatdoc, indoc};
 
-use kiln::build::{BuildOptions, build};
-
 use super::support::{
-    assert_paginated_listing, copy_templates, listing_links, write_listing_site, write_page,
-    write_paginated_posts, write_test_file,
+    TestSite, assert_paginated_listing, listing_links, listing_site, write_paginated_posts,
 };
 
-// ── build: home page ──
+// ── build: listings ──
 
 #[test]
-fn build_pins_home_without_reordering_archives() {
-    let root = tempfile::tempdir().unwrap();
-    write_listing_site(root.path());
+fn build_orders_listings_and_overviews() {
+    let site = listing_site();
 
-    build(root.path(), BuildOptions::default()).unwrap();
+    site.build().unwrap();
 
-    let output_dir = root.path().join("public");
-    let home = fs::read_to_string(output_dir.join("index.html")).unwrap();
-    assert_eq!(
-        listing_links(&home),
-        [
-            r#"<a href="https://example.com/posts/note/older/">Post A</a>"#,
-            r#"<a href="https://example.com/posts/review/latest/">Post C</a>"#,
-            r#"<a href="https://example.com/posts/note/newer/">Post B</a>"#,
-        ]
-    );
     for (path, expected) in [
+        (
+            "index.html",
+            vec![
+                r#"<a href="https://example.com/posts/note/older/">Post A</a>"#,
+                r#"<a href="https://example.com/posts/review/latest/">Post C</a>"#,
+                r#"<a href="https://example.com/posts/note/newer/">Post B</a>"#,
+            ],
+        ),
         (
             "posts/index.html",
             vec![
@@ -52,102 +44,171 @@ fn build_pins_home_without_reordering_archives() {
                 r#"<a href="https://example.com/posts/note/older/">Post A</a>"#,
             ],
         ),
+        (
+            "sections/index.html",
+            vec![
+                r#"<a href="https://example.com/posts/note/">Note</a>"#,
+                r#"<a href="https://example.com/posts/note/newer/">Post B</a>"#,
+                r#"<a href="https://example.com/posts/note/older/">Post A</a>"#,
+                r#"<a href="https://example.com/posts/review/">Review</a>"#,
+                r#"<a href="https://example.com/posts/review/latest/">Post C</a>"#,
+            ],
+        ),
+        (
+            "tags/index.html",
+            vec![
+                r#"<a href="https://example.com/tags/rust/">rust</a>"#,
+                r#"<a href="https://example.com/about/">About</a>"#,
+                r#"<a href="https://example.com/posts/review/latest/">Post C</a>"#,
+                r#"<a href="https://example.com/posts/note/older/">Post A</a>"#,
+                r#"<a href="https://example.com/tags/testing/">testing</a>"#,
+                r#"<a href="https://example.com/posts/note/newer/">Post B</a>"#,
+            ],
+        ),
     ] {
-        let html = fs::read_to_string(output_dir.join(path)).unwrap();
-        assert_eq!(listing_links(&html), expected, "incorrect order in {path}");
+        assert_eq!(listing_links(&site.read(path)), expected, "{path}");
     }
+    assert!(site.read("posts/note/index.html").contains("<h1>Note</h1>"));
 }
 
 #[test]
-fn build_orphan_posts_on_home_not_in_sections() {
-    let root = tempfile::tempdir().unwrap();
-    fs::write(root.path().join("config.toml"), "").unwrap();
-    copy_templates(&root.path().join("templates"));
+fn build_lists_orphan_posts_on_home_but_not_in_sections() {
+    let site = TestSite::new("");
+    for (path, title, day) in [
+        ("posts/note/sectioned", "Sectioned Post", 1),
+        ("posts/orphan", "Orphan Post", 2),
+    ] {
+        site.page(
+            path,
+            &formatdoc! {r#"
+                +++
+                title = "{title}"
+                date = "2026-01-0{day}T00:00:00Z"
+                +++
+                Body
+            "#},
+        );
+    }
 
-    write_page(
-        root.path(),
-        "posts/note/sectioned",
+    site.build().unwrap();
+
+    let sectioned = r#"<a href="http://localhost:5456/posts/note/sectioned/">Sectioned Post</a>"#;
+    let orphan = r#"<a href="http://localhost:5456/posts/orphan/">Orphan Post</a>"#;
+    assert_eq!(listing_links(&site.read("index.html")), [orphan, sectioned]);
+    assert_eq!(
+        listing_links(&site.read("posts/index.html")),
+        [orphan, sectioned]
+    );
+    assert_eq!(
+        listing_links(&site.read("posts/note/index.html")),
+        [sectioned]
+    );
+}
+
+#[test]
+fn build_tag_archive_excludes_untagged_standalone_pages() {
+    let site = TestSite::new("");
+    site.titled_page("about-me", "About Me").page(
+        "posts/note/hello",
         indoc! {r#"
             +++
-            title = "Sectioned Post"
+            title = "Hello Post"
+            tags = ["rust"]
             date = "2026-01-01T00:00:00Z"
             +++
             Body
         "#},
     );
-    write_page(
-        root.path(),
-        "posts/orphan",
-        indoc! {r#"
-            +++
-            title = "Orphan Post"
-            date = "2026-01-02T00:00:00Z"
-            +++
-            Body
-        "#},
-    );
 
-    build(root.path(), BuildOptions::default()).unwrap();
+    site.build().unwrap();
 
-    let home_html = fs::read_to_string(root.path().join("public").join("index.html")).unwrap();
-    assert!(
-        home_html.contains("Sectioned Post"),
-        "sectioned post should also appear on home page, html:\n{home_html}"
-    );
-    assert!(
-        home_html.contains("Orphan Post"),
-        "orphan post should appear on home page, html:\n{home_html}"
-    );
-
-    let note_html = fs::read_to_string(
-        root.path()
-            .join("public")
-            .join("posts")
-            .join("note")
-            .join("index.html"),
-    )
-    .unwrap();
-    assert!(
-        note_html.contains("Sectioned Post"),
-        "sectioned post should appear in section page, html:\n{note_html}"
-    );
-    assert!(
-        !note_html.contains("Orphan Post"),
-        "orphan post should NOT appear in section page, html:\n{note_html}"
+    assert_eq!(
+        listing_links(&site.read("tags/rust/index.html")),
+        [r#"<a href="http://localhost:5456/posts/note/hello/">Hello Post</a>"#]
     );
 }
 
 #[test]
+fn build_index_files_title_archives() {
+    let site = TestSite::new("");
+    for (path, title) in [("posts", "文章"), ("posts/note", "笔记")] {
+        site.write(
+            &format!("content/{path}/_index.md"),
+            &formatdoc! {r#"
+                +++
+                title = "{title}"
+                +++
+            "#},
+        );
+    }
+    site.titled_page("posts/note/hello", "Hello");
+
+    site.build().unwrap();
+
+    for (path, title) in [("posts", "文章"), ("posts/note", "笔记")] {
+        let html = site.read(&format!("{path}/index.html"));
+        assert!(
+            html.contains(&format!("<h1>{title}</h1>")),
+            "{path}:\n{html}"
+        );
+    }
+}
+
+#[test]
+fn build_empty_listing_states_generate_listings_feed_and_error_page() {
+    for content in [None, Some("about"), Some("posts/hello")] {
+        let site = TestSite::new("");
+        if let Some(path) = content {
+            site.titled_page(path, "Hello");
+        }
+
+        site.build().unwrap();
+
+        for path in [
+            "index.html",
+            "posts/index.html",
+            "sections/index.html",
+            "tags/index.html",
+        ] {
+            let expected = if content == Some("posts/hello")
+                && matches!(path, "index.html" | "posts/index.html")
+            {
+                vec![r#"<a href="http://localhost:5456/posts/hello/">Hello</a>"#]
+            } else {
+                Vec::new()
+            };
+            assert_eq!(
+                listing_links(&site.read(path)),
+                expected,
+                "{content:?}: {path}"
+            );
+        }
+        let feed = site.read("index.xml");
+        assert_eq!(
+            feed.matches("<item>").count(),
+            usize::from(content == Some("posts/hello"))
+        );
+        assert!(!feed.contains("<lastBuildDate>"), "{feed}");
+        let error = site.read("404.html");
+        assert!(error.contains("<h1>404 Not Found</h1>"), "{error}");
+    }
+}
+
+// ── build: pagination ──
+
+#[test]
 fn build_home_pagination() {
-    let root = tempfile::tempdir().unwrap();
-    fs::write(
-        root.path().join("config.toml"),
-        indoc! {r"
-            [params.home]
-            paginate = 2
-        "},
-    )
-    .unwrap();
-    copy_templates(&root.path().join("templates"));
+    let site = TestSite::new(indoc! {r"
+        [params.home]
+        paginate = 2
+    "});
+    write_paginated_posts(&site, "posts/note", None);
+    site.titled_page("about", "About");
 
-    write_paginated_posts(root.path(), "posts/note", None);
-
-    write_page(
-        root.path(),
-        "about",
-        indoc! {r#"
-            +++
-            title = "About"
-            tags = ["rust"]
-            +++
-            Body
-        "#},
-    );
-
-    build(root.path(), BuildOptions::default()).unwrap();
+    site.build().unwrap();
 
     assert_paginated_listing(
-        &root.path().join("public"),
+        &site.output(""),
         &[
             r#"<a href="http://localhost:5456/posts/note/post-3/">Post 3</a>"#,
             r#"<a href="http://localhost:5456/posts/note/post-2/">Post 2</a>"#,
@@ -157,235 +218,42 @@ fn build_home_pagination() {
     );
 }
 
-// ── build: posts index ──
-
 #[test]
-fn build_posts_index_uses_index_title() {
-    let root = tempfile::tempdir().unwrap();
-    fs::write(root.path().join("config.toml"), "").unwrap();
-    copy_templates(&root.path().join("templates"));
+fn build_posts_index_and_section_pagination() {
+    let site = TestSite::new(indoc! {r#"
+        base_url = "https://example.com"
 
-    let posts_dir = root.path().join("content").join("posts");
-    fs::create_dir_all(&posts_dir).unwrap();
-    fs::write(
-        posts_dir.join("_index.md"),
-        indoc! {r#"
-            +++
-            title = "文章"
-            +++
-        "#},
-    )
-    .unwrap();
-
-    write_page(
-        root.path(),
-        "posts/note/hello",
-        indoc! {r#"
-            +++
-            title = "Hello"
-            date = "2026-01-01T00:00:00Z"
-            +++
-            Body
-        "#},
-    );
-
-    build(root.path(), BuildOptions::default()).unwrap();
-
-    let html =
-        fs::read_to_string(root.path().join("public").join("posts").join("index.html")).unwrap();
-    assert!(
-        html.contains("文章"),
-        "should use _index.md title for posts index, html:\n{html}"
-    );
-}
-
-#[test]
-fn build_posts_index_pagination() {
-    let root = tempfile::tempdir().unwrap();
-    fs::write(
-        root.path().join("config.toml"),
-        indoc! {r#"
-            base_url = "https://example.com"
-
-            [params.section]
-            paginate = 2
-        "#},
-    )
-    .unwrap();
-    copy_templates(&root.path().join("templates"));
-
-    write_paginated_posts(root.path(), "posts/note", None);
-
-    write_page(
-        root.path(),
-        "about",
-        indoc! {r#"
-            +++
-            title = "About"
-            tags = ["rust"]
-            +++
-            Body
-        "#},
-    );
-
-    build(root.path(), BuildOptions::default()).unwrap();
-
-    assert_paginated_listing(
-        &root.path().join("public/posts"),
-        &[
-            r#"<a href="https://example.com/posts/note/post-3/">Post 3</a>"#,
-            r#"<a href="https://example.com/posts/note/post-2/">Post 2</a>"#,
-        ],
-        &[r#"<a href="https://example.com/posts/note/post-1/">Post 1</a>"#],
-        Some(("/posts/page/2/", "/posts/")),
-    );
-}
-
-// ── build: section pages ──
-
-#[test]
-fn build_generates_section_pages() {
-    let root = tempfile::tempdir().unwrap();
-    fs::write(root.path().join("config.toml"), "").unwrap();
-    copy_templates(&root.path().join("templates"));
-
-    for (section, name) in [("note", "post-a"), ("note", "post-b"), ("essay", "hello")] {
-        write_page(
-            root.path(),
-            &format!("posts/{section}/{name}"),
-            &format!(
-                indoc! {r#"
-                    +++
-                    title = "{name}"
-                    date = "2026-01-01T00:00:00Z"
-                    +++
-                    Body
-                "#},
-                name = name,
-            ),
-        );
-    }
-
-    build(root.path(), BuildOptions::default()).unwrap();
-
-    let output_dir = root.path().join("public");
-    let note_index = output_dir.join("posts").join("note").join("index.html");
-    assert!(
-        note_index.exists(),
-        "should generate /posts/note/index.html"
-    );
-    let html = fs::read_to_string(&note_index).unwrap();
-    assert!(
-        html.contains("Note"),
-        "should have section title, html:\n{html}"
-    );
-    assert!(
-        html.contains("post-a") && html.contains("post-b"),
-        "should list section posts, html:\n{html}"
-    );
-    assert!(
-        html.contains(r#"<a href="http://localhost:5456/posts/note/post-a/">post-a</a>"#),
-        "section page should link to posts under /posts/, html:\n{html}"
-    );
-
-    let essay_index = output_dir.join("posts").join("essay").join("index.html");
-    assert!(
-        essay_index.exists(),
-        "should generate /posts/essay/index.html"
-    );
-}
-
-#[test]
-fn build_section_uses_index_title() {
-    let root = tempfile::tempdir().unwrap();
-    fs::write(root.path().join("config.toml"), "").unwrap();
-    copy_templates(&root.path().join("templates"));
-
-    let section_dir = root.path().join("content").join("posts").join("note");
-    fs::create_dir_all(&section_dir).unwrap();
-    fs::write(
-        section_dir.join("_index.md"),
-        indoc! {r#"
-            +++
-            title = "笔记"
-            +++
-        "#},
-    )
-    .unwrap();
-
-    write_page(
-        root.path(),
-        "posts/note/my-post",
-        indoc! {r#"
-            +++
-            title = "My Post"
-            +++
-            Body
-        "#},
-    );
-
-    build(root.path(), BuildOptions::default()).unwrap();
-
-    let html = fs::read_to_string(
-        root.path()
-            .join("public")
-            .join("posts")
-            .join("note")
-            .join("index.html"),
-    )
-    .unwrap();
-    assert!(
-        html.contains("笔记"),
-        "should use _index.md title, html:\n{html}"
-    );
-}
-
-#[test]
-fn build_section_pagination() {
-    let root = tempfile::tempdir().unwrap();
-    fs::write(
-        root.path().join("config.toml"),
-        indoc! {r#"
-            base_url = "https://example.com"
-
-            [params.section]
-            paginate = 2
-        "#},
-    )
-    .unwrap();
-    copy_templates(&root.path().join("templates"));
-
-    write_paginated_posts(root.path(), "posts/note", None);
-
-    write_page(
-        root.path(),
-        "about",
-        indoc! {r#"
-            +++
-            title = "About"
-            tags = ["rust"]
-            +++
-            Body
-        "#},
-    );
-
-    write_page(
-        root.path(),
+        [params.section]
+        paginate = 2
+    "#});
+    write_paginated_posts(&site, "posts/note", None);
+    site.titled_page("about", "About").page(
         "posts/review/other",
         indoc! {r#"
             +++
             title = "Other Post"
             date = "2026-01-04T00:00:00Z"
-            tags = ["rust"]
             +++
             Body
         "#},
     );
 
-    build(root.path(), BuildOptions::default()).unwrap();
+    site.build().unwrap();
 
     assert_paginated_listing(
-        &root.path().join("public/posts/note"),
+        &site.output("posts"),
+        &[
+            r#"<a href="https://example.com/posts/review/other/">Other Post</a>"#,
+            r#"<a href="https://example.com/posts/note/post-3/">Post 3</a>"#,
+        ],
+        &[
+            r#"<a href="https://example.com/posts/note/post-2/">Post 2</a>"#,
+            r#"<a href="https://example.com/posts/note/post-1/">Post 1</a>"#,
+        ],
+        Some(("/posts/page/2/", "/posts/")),
+    );
+    assert_paginated_listing(
+        &site.output("posts/note"),
         &[
             r#"<a href="https://example.com/posts/note/post-3/">Post 3</a>"#,
             r#"<a href="https://example.com/posts/note/post-2/">Post 2</a>"#,
@@ -395,110 +263,16 @@ fn build_section_pagination() {
     );
 }
 
-// ── build: sections index ──
-
 #[test]
-fn build_sections_index_generates_page() {
-    let root = tempfile::tempdir().unwrap();
-    fs::write(root.path().join("config.toml"), "").unwrap();
-    copy_templates(&root.path().join("templates"));
+fn build_tag_archive_pagination() {
+    let site = TestSite::new(indoc! {r#"
+        base_url = "https://example.com"
 
-    write_page(
-        root.path(),
-        "posts/note/post-a",
-        indoc! {r#"
-            +++
-            title = "Post A"
-            date = "2026-01-01T00:00:00Z"
-            +++
-            Body
-        "#},
-    );
-    write_page(
-        root.path(),
-        "posts/essay/post-b",
-        indoc! {r#"
-            +++
-            title = "Post B"
-            date = "2026-01-02T00:00:00Z"
-            +++
-            Body
-        "#},
-    );
-
-    build(root.path(), BuildOptions::default()).unwrap();
-
-    let sections_index = root
-        .path()
-        .join("public")
-        .join("sections")
-        .join("index.html");
-    assert!(
-        sections_index.exists(),
-        "should generate /sections/index.html"
-    );
-    let html = fs::read_to_string(&sections_index).unwrap();
-    assert!(
-        html.contains("Essay") && html.contains("Note"),
-        "should list section names, html:\n{html}"
-    );
-    assert!(
-        html.contains("Post A") && html.contains("Post B"),
-        "should list section posts, html:\n{html}"
-    );
-}
-
-// ── build: taxonomies ──
-
-#[test]
-fn build_generates_taxonomy_index_pages() {
-    let root = tempfile::tempdir().unwrap();
-    fs::write(root.path().join("config.toml"), "").unwrap();
-    copy_templates(&root.path().join("templates"));
-
-    write_page(
-        root.path(),
-        "posts/hello",
-        indoc! {r#"
-            +++
-            title = "Hello"
-            tags = ["rust", "web"]
-            +++
-            Body
-        "#},
-    );
-
-    build(root.path(), BuildOptions::default()).unwrap();
-
-    let output_dir = root.path().join("public");
-    let tags_index = output_dir.join("tags").join("index.html");
-    assert!(tags_index.exists(), "should generate /tags/index.html");
-    let html = fs::read_to_string(&tags_index).unwrap();
-    assert!(
-        html.contains("rust") && html.contains("web"),
-        "tags index should list terms, html:\n{html}"
-    );
-}
-
-#[test]
-fn build_generates_paginated_tag_archive_pages() {
-    let root = tempfile::tempdir().unwrap();
-    fs::write(
-        root.path().join("config.toml"),
-        indoc! {r#"
-            base_url = "https://example.com"
-
-            [params]
-            paginate = 2
-        "#},
-    )
-    .unwrap();
-    copy_templates(&root.path().join("templates"));
-
-    write_paginated_posts(root.path(), "posts", Some("rust"));
-
-    write_page(
-        root.path(),
+        [params]
+        paginate = 2
+    "#});
+    write_paginated_posts(&site, "posts", Some("rust"));
+    site.page(
         "about",
         indoc! {r#"
             +++
@@ -507,10 +281,8 @@ fn build_generates_paginated_tag_archive_pages() {
             +++
             Body
         "#},
-    );
-
-    write_page(
-        root.path(),
+    )
+    .page(
         "posts/other",
         indoc! {r#"
             +++
@@ -522,10 +294,10 @@ fn build_generates_paginated_tag_archive_pages() {
         "#},
     );
 
-    build(root.path(), BuildOptions::default()).unwrap();
+    site.build().unwrap();
 
     assert_paginated_listing(
-        &root.path().join("public/tags/rust"),
+        &site.output("tags/rust"),
         &[
             r#"<a href="https://example.com/posts/post-3/">Post 3</a>"#,
             r#"<a href="https://example.com/posts/post-2/">Post 2</a>"#,
@@ -539,75 +311,21 @@ fn build_generates_paginated_tag_archive_pages() {
 }
 
 #[test]
-fn build_tag_archive_excludes_untagged_standalone_pages() {
-    let root = tempfile::tempdir().unwrap();
-    fs::write(root.path().join("config.toml"), "").unwrap();
-    copy_templates(&root.path().join("templates"));
-
-    write_page(
-        root.path(),
-        "about-me",
-        indoc! {r#"
-            +++
-            title = "About Me"
-            +++
-            Bio
-        "#},
-    );
-    write_page(
-        root.path(),
-        "posts/note/hello",
-        indoc! {r#"
-            +++
-            title = "Hello Post"
-            tags = ["rust"]
-            date = "2026-01-01T00:00:00Z"
-            +++
-            Body
-        "#},
-    );
-
-    build(root.path(), BuildOptions::default()).unwrap();
-
-    let term_page = root
-        .path()
-        .join("public")
-        .join("tags")
-        .join("rust")
-        .join("index.html");
-    assert!(term_page.exists(), "should generate /tags/rust/index.html");
-    let html = fs::read_to_string(&term_page).unwrap();
-    assert_eq!(
-        listing_links(&html),
-        [r#"<a href="http://localhost:5456/posts/note/hello/">Hello Post</a>"#]
-    );
-}
-
-// ── build: pagination config ──
-
-#[test]
 fn build_zero_paginate_falls_back_to_defaults() {
-    let root = tempfile::tempdir().unwrap();
-    write_test_file(
-        root.path(),
-        "config.toml",
-        indoc! {r#"
-            base_url = "https://example.com"
+    let site = TestSite::new(indoc! {r#"
+        base_url = "https://example.com"
 
-            [params]
-            paginate = 0
+        [params]
+        paginate = 0
 
-            [params.home]
-            paginate = 0
+        [params.home]
+        paginate = 0
 
-            [params.section]
-            paginate = 0
-        "#},
-    );
-    copy_templates(&root.path().join("templates"));
+        [params.section]
+        paginate = 0
+    "#});
     for i in 1..=11 {
-        write_page(
-            root.path(),
+        site.page(
             &format!("posts/note/post-{i:02}"),
             &formatdoc! {r#"
                 +++
@@ -620,7 +338,7 @@ fn build_zero_paginate_falls_back_to_defaults() {
         );
     }
 
-    build(root.path(), BuildOptions::default()).unwrap();
+    site.build().unwrap();
 
     let page1: Vec<_> = (2..=11)
         .rev()
@@ -637,11 +355,6 @@ fn build_zero_paginate_falls_back_to_defaults() {
             Some(("/tags/example/page/2/", "/tags/example/")),
         ),
     ] {
-        assert_paginated_listing(
-            &root.path().join("public").join(path),
-            &page1,
-            &page2,
-            navigation,
-        );
+        assert_paginated_listing(&site.output(path), &page1, &page2, navigation);
     }
 }

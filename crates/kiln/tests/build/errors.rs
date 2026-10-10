@@ -2,43 +2,20 @@ use std::fs;
 
 use indoc::{formatdoc, indoc};
 
-use kiln::build::{BuildOptions, build};
+use kiln::build::BuildOptions;
 
 #[cfg(unix)]
-use super::support::PermissionGuard;
-use super::support::{copy_templates, setup_site_with_page, write_page};
-
-// ── build: 404 page ──
-
-#[test]
-fn build_skips_404_without_template() {
-    let root = tempfile::tempdir().unwrap();
-    fs::write(root.path().join("config.toml"), "").unwrap();
-
-    let templates = root.path().join("templates");
-    copy_templates(&templates);
-    fs::remove_file(templates.join("404.html")).unwrap();
-
-    build(root.path(), BuildOptions::default()).unwrap();
-
-    let output_dir = root.path().join("public");
-    assert!(
-        !output_dir.join("404.html").exists(),
-        "should not generate 404.html without template"
-    );
-}
+use super::fixtures::PermissionGuard;
+use super::support::TestSite;
 
 // ── build: errors ──
 
 #[test]
 fn build_invalid_config_returns_error() {
-    let root = tempfile::tempdir().unwrap();
-    fs::write(root.path().join("config.toml"), "{{invalid toml").unwrap();
+    let site = TestSite::empty();
+    site.write("config.toml", "{{invalid toml");
 
-    let err = format!(
-        "{:#}",
-        build(root.path(), BuildOptions::default()).unwrap_err()
-    );
+    let err = format!("{:#}", site.build().unwrap_err());
     assert!(
         err.contains("failed to load config"),
         "should report config failure, got: {err}"
@@ -46,28 +23,11 @@ fn build_invalid_config_returns_error() {
 }
 
 #[test]
-fn build_invalid_timezone_returns_error() {
-    let root = tempfile::tempdir().unwrap();
-    fs::write(root.path().join("config.toml"), r#"timezone = "Mars/Base""#).unwrap();
-
-    let err = build(root.path(), BuildOptions::default()).unwrap_err();
-    let chain: Vec<String> = err.chain().map(ToString::to_string).collect();
-    assert!(
-        chain
-            .iter()
-            .any(|message| message.contains("invalid timezone `Mars/Base` in config.toml")),
-        "should report invalid timezone, got: {chain:?}"
-    );
-}
-
-#[test]
 fn build_missing_templates_returns_error() {
-    let root = tempfile::tempdir().unwrap();
-    fs::write(root.path().join("config.toml"), "").unwrap();
+    let site = TestSite::empty();
+    site.write("config.toml", "");
 
-    let err = build(root.path(), BuildOptions::default())
-        .unwrap_err()
-        .to_string();
+    let err = site.build().unwrap_err().to_string();
     assert!(
         err.contains("failed to initialize template engine"),
         "should report template engine failure, got: {err}"
@@ -75,217 +35,113 @@ fn build_missing_templates_returns_error() {
 }
 
 #[test]
-fn build_broken_page_templates_returns_error() {
-    for template in ["post.html", "archive.html", "overview.html"] {
-        let root = tempfile::tempdir().unwrap();
-        setup_site_with_page(root.path());
+fn build_failure_preserves_previous_output_returns_error() {
+    type BreakSite = fn(&TestSite);
+    let cases: [(&str, Option<&str>, BreakSite); 10] = [
+        ("failed to render", None, |site| {
+            site.write("templates/post.html", "{% invalid %}");
+        }),
+        ("failed to render", None, |site| {
+            site.write("templates/archive.html", "{% invalid %}");
+        }),
+        ("failed to render", None, |site| {
+            site.write("templates/overview.html", "{% invalid %}");
+        }),
+        ("failed to render", None, |site| {
+            site.write(
+                "templates/directives/broken.html",
+                "{% for k, v in name | items %}{{ k }}{% endfor %}",
+            )
+            .page(
+                "posts/hello",
+                indoc! {r#"
+                    +++
+                    title = "Hello"
+                    +++
+                    ::: broken
+                    Body
+                    :::
+                "#},
+            );
+        }),
+        ("invalid featured image URL", None, |site| {
+            site.page(
+                "posts/hello",
+                indoc! {r#"
+                    +++
+                    title = "Hello"
+                    featured_image = "http://["
+                    +++
+                    Updated body
+                "#},
+            );
+        }),
+        ("reserved asset directory", None, |site| {
+            site.write("static/_assets/occupied.png", "occupied");
+        }),
+        ("base_url", Some("/blog"), |_| {}),
+        ("base_url", Some("mailto:example@example.com"), |_| {}),
+        ("base_url", Some("https://example.com/?q=1"), |_| {}),
+        ("base_url", Some("https://example.com/#page"), |_| {}),
+    ];
+    for (expected, base_url_override, break_site) in cases {
+        let site = TestSite::new("");
+        site.titled_page("posts/hello", "Hello");
+        site.build().unwrap();
+        let previous = site.read("posts/hello/index.html");
+        break_site(&site);
 
-        fs::write(
-            root.path().join("templates").join(template),
-            "{% invalid %}",
-        )
-        .unwrap();
+        let error = site
+            .build_with(BuildOptions {
+                base_url_override,
+                ..Default::default()
+            })
+            .unwrap_err();
 
-        let err = build(root.path(), BuildOptions::default())
-            .unwrap_err()
-            .to_string();
-        assert!(
-            err.contains("failed to render"),
-            "should report render failure for {template}, got: {err}"
-        );
+        assert!(format!("{error:#}").contains(expected), "{error:#}");
+        assert_eq!(site.read("posts/hello/index.html"), previous, "{expected}");
     }
 }
 
 #[test]
-fn build_broken_directive_template_returns_error() {
-    let root = tempfile::tempdir().unwrap();
-    setup_site_with_page(root.path());
-
-    let directives = root.path().join("templates").join("directives");
-    fs::create_dir_all(&directives).unwrap();
-    fs::write(
-        directives.join("broken.html"),
-        "{% for k, v in name | items %}{{ k }}{% endfor %}",
-    )
-    .unwrap();
-
-    write_page(
-        root.path(),
-        "posts/hello",
-        indoc! {r#"
-            +++
-            title = "Hello"
-            +++
-            ::: broken
-            Body
-            :::
-        "#},
-    );
-
-    let err = build(root.path(), BuildOptions::default())
-        .unwrap_err()
-        .to_string();
-    assert!(
-        err.contains("failed to render"),
-        "should report render failure, got: {err}"
-    );
-}
-
-#[cfg(unix)]
-#[test]
-fn build_staging_permission_denied_preserves_output() {
-    let root = tempfile::tempdir().unwrap();
-    setup_site_with_page(root.path());
-
-    build(root.path(), BuildOptions::default()).unwrap();
-    let output_dir = root.path().join("public");
-    let previous = fs::read_to_string(output_dir.join("posts/hello/index.html")).unwrap();
-    let _guard = PermissionGuard::restrict(root.path(), 0o555);
-
-    let err = build(root.path(), BuildOptions::default())
-        .unwrap_err()
-        .to_string();
-    assert!(
-        err.contains("failed to create build staging directory"),
-        "should report staging failure, got: {err}"
-    );
-    assert_eq!(
-        fs::read_to_string(output_dir.join("posts/hello/index.html")).unwrap(),
-        previous
-    );
-}
-
-#[cfg(unix)]
-#[test]
-fn build_asset_copy_permission_denied_returns_error() {
-    let root = tempfile::tempdir().unwrap();
-    setup_site_with_page(root.path());
-
-    let page_dir = root.path().join("content").join("posts").join("hello");
-    let asset = page_dir.join("image.png");
-    fs::write(&asset, "img-data").unwrap();
-    let _guard = PermissionGuard::restrict(&asset, 0o000);
-
-    let err = build(root.path(), BuildOptions::default())
-        .unwrap_err()
-        .to_string();
-    assert!(
-        err.contains("failed to copy asset"),
-        "should report asset copy failure, got: {err}"
-    );
-}
-
-// ── build: publication ──
-
-#[test]
-fn build_reserved_asset_directory_preserves_previous_output() {
-    let root = tempfile::tempdir().unwrap();
-    setup_site_with_page(root.path());
-    build(root.path(), BuildOptions::default()).unwrap();
-    let page = root.path().join("public/posts/hello/index.html");
-    let previous = fs::read(&page).unwrap();
-    fs::create_dir_all(root.path().join("static/_assets")).unwrap();
-    fs::write(root.path().join("static/_assets/occupied.png"), "occupied").unwrap();
-
-    let error = build(root.path(), BuildOptions::default()).unwrap_err();
-
-    assert!(format!("{error:#}").contains("reserved asset directory"));
-    assert_eq!(fs::read(page).unwrap(), previous);
-}
-
-#[test]
-fn build_failed_page_preparation_or_render_preserves_previous_output() {
-    let root = tempfile::tempdir().unwrap();
-    copy_templates(&root.path().join("templates"));
-    write_page(
-        root.path(),
-        "posts/example",
-        indoc! {r#"
-            +++
-            title = "Example"
-            +++
-            Original body
-        "#},
-    );
-
-    build(root.path(), BuildOptions::default()).unwrap();
-
-    let output = root.path().join("public/posts/example/index.html");
-    let previous = fs::read_to_string(&output).unwrap();
-    fs::write(root.path().join("templates/post.html"), "{% invalid %}").unwrap();
-
-    assert!(build(root.path(), BuildOptions::default()).is_err());
-    assert_eq!(fs::read_to_string(&output).unwrap(), previous);
-
-    copy_templates(&root.path().join("templates"));
-    write_page(
-        root.path(),
-        "posts/example",
-        indoc! {r#"
-            +++
-            title = "Example"
-            featured_image = "http://["
-            +++
-            Updated body
-        "#},
-    );
-
-    let error = build(root.path(), BuildOptions::default()).unwrap_err();
-
-    assert!(format!("{error:#}").contains("invalid featured image URL"));
-    assert_eq!(fs::read_to_string(output).unwrap(), previous);
-}
-
-#[test]
 fn build_existing_file_output_returns_error() {
-    let root = tempfile::tempdir().unwrap();
-    copy_templates(&root.path().join("templates"));
-    let output = root.path().join("existing");
-    fs::write(&output, "original").unwrap();
+    let site = TestSite::new("");
+    site.write("existing", "original");
+    let output = site.path("existing");
 
     for (configured, output_dir_override) in
         [("existing", None), ("public", Some(output.as_path()))]
     {
-        fs::write(
-            root.path().join("config.toml"),
-            format!(r#"output_dir = "{configured}""#),
-        )
-        .unwrap();
+        site.write("config.toml", &format!(r#"output_dir = "{configured}""#));
 
-        let error = build(
-            root.path(),
-            BuildOptions {
+        let error = site
+            .build_with(BuildOptions {
                 output_dir_override,
-                ..BuildOptions::default()
-            },
-        )
-        .unwrap_err();
+                ..Default::default()
+            })
+            .unwrap_err();
 
         assert!(error.to_string().contains("is not a directory"), "{error}");
         assert_eq!(fs::read_to_string(&output).unwrap(), "original");
-        assert!(!root.path().join("public").exists());
+        assert!(!site.output("").exists());
     }
 }
 
 #[test]
 fn build_output_override_input_overlap_returns_error() {
-    let root = tempfile::tempdir().unwrap();
-    copy_templates(&root.path().join("templates"));
+    let site = TestSite::new("");
     for name in ["content", "assets", "static", ".git"] {
-        fs::create_dir(root.path().join(name)).unwrap();
-        fs::write(root.path().join(name).join("sentinel.txt"), "original").unwrap();
+        site.write(&format!("{name}/sentinel.txt"), "original");
     }
 
     for name in ["content", "assets", "static", ".git"] {
-        let output = root.path().join(name);
-        let error = build(
-            root.path(),
-            BuildOptions {
+        let output = site.path(name);
+        let error = site
+            .build_with(BuildOptions {
                 output_dir_override: Some(&output),
-                ..BuildOptions::default()
-            },
-        )
-        .unwrap_err();
+                ..Default::default()
+            })
+            .unwrap_err();
         assert!(
             error.to_string().contains("overlaps project input"),
             "{error}"
@@ -298,59 +154,63 @@ fn build_output_override_input_overlap_returns_error() {
 }
 
 #[test]
-fn build_invalid_base_url_before_publication_returns_error() {
-    let root = tempfile::tempdir().unwrap();
-    let output = root.path().join("public");
-    fs::create_dir(&output).unwrap();
-    fs::write(output.join("sentinel.txt"), "previous output").unwrap();
-    for base_url in [
-        "/blog",
-        "mailto:example@example.com",
-        "https://example.com/?q=1",
-        "https://example.com/#page",
-    ] {
-        let error = build(
-            root.path(),
-            BuildOptions {
-                base_url_override: Some(base_url),
-                ..Default::default()
-            },
-        )
-        .unwrap_err();
-        assert!(format!("{error:#}").contains("base_url"));
-        assert_eq!(
-            fs::read_to_string(output.join("sentinel.txt")).unwrap(),
-            "previous output"
+fn build_search_requires_pagefind_only_when_enabled() {
+    let site = TestSite::new("");
+    site.titled_page("posts/hello", "Hello");
+    for enabled in [false, true] {
+        site.write(
+            "config.toml",
+            &formatdoc! {r#"
+                [search]
+                enabled = {enabled}
+                binary = "nonexistent-pagefind"
+            "#},
         );
+
+        let result = site.build();
+        if enabled {
+            let message = format!("{:#}", result.unwrap_err());
+            assert!(message.contains("nonexistent-pagefind"), "{message}");
+            assert!(message.contains("Is Pagefind installed?"), "{message}");
+        } else {
+            result.unwrap();
+            assert!(!site.output("pagefind").exists());
+            assert!(
+                site.read("posts/hello/index.html")
+                    .contains("<h1>Hello</h1>")
+            );
+        }
     }
 }
 
+#[cfg(unix)]
 #[test]
-fn build_search_requires_pagefind_only_when_enabled() {
-    let root = tempfile::tempdir().unwrap();
-    setup_site_with_page(root.path());
-    for enabled in [false, true] {
-        fs::write(
-            root.path().join("config.toml"),
-            formatdoc! {r#"
-                [search]
-                enabled = {enabled}
-                binary = "nonexistent-pagefind-for-disabled-search"
-            "#},
-        )
-        .unwrap();
+fn build_staging_permission_denied_preserves_output_returns_error() {
+    let site = TestSite::new("");
+    site.titled_page("posts/hello", "Hello");
+    site.build().unwrap();
+    let previous = site.read("posts/hello/index.html");
+    let _guard = PermissionGuard::restrict(site.root(), 0o555);
 
-        let result = build(root.path(), BuildOptions::default());
-        if enabled {
-            let message = format!("{:#}", result.unwrap_err());
-            assert!(message.contains("nonexistent-pagefind-for-disabled-search"));
-            assert!(message.contains("Is Pagefind installed?"));
-        } else {
-            result.unwrap();
-            assert!(!root.path().join("public/pagefind").exists());
-            let html =
-                fs::read_to_string(root.path().join("public/posts/hello/index.html")).unwrap();
-            assert!(html.contains("Hello"));
-        }
-    }
+    let err = site.build().unwrap_err().to_string();
+    assert!(
+        err.contains("failed to create build staging directory"),
+        "should report staging failure, got: {err}"
+    );
+    assert_eq!(site.read("posts/hello/index.html"), previous);
+}
+
+#[cfg(unix)]
+#[test]
+fn build_asset_copy_permission_denied_returns_error() {
+    let site = TestSite::new("");
+    site.titled_page("posts/hello", "Hello")
+        .write("content/posts/hello/image.png", "img-data");
+    let _guard = PermissionGuard::restrict(&site.path("content/posts/hello/image.png"), 0o000);
+
+    let err = site.build().unwrap_err().to_string();
+    assert!(
+        err.contains("failed to copy asset"),
+        "should report asset copy failure, got: {err}"
+    );
 }

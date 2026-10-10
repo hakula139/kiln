@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+
+{% block title %}<title>{{ kind | capitalize }} - {{ config.title }}</title>{% endblock %}
+
+{% block body %}
+  <h1>All {{ kind }}</h1>
+
+  <ul>
+  {%- for bucket in buckets %}
+    <li>
+      <a href="{{ bucket.url | safe }}">{{ bucket.name }}</a> ({{ bucket.pages | length }})
+      {%- for page in bucket.pages[:5] %}
+      <a href="{{ page.url | safe }}">{{ page.title }}</a>
+      {%- endfor %}
+    </li>
+  {%- endfor %}
+  </ul>
+{% endblock %}

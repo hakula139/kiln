@@ -1,70 +1,151 @@
 use std::fs;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use indoc::{formatdoc, indoc};
 use scraper::{Html, Selector};
+use sha2::{Digest, Sha256};
+use tempfile::TempDir;
 
-#[path = "../support/fixtures.rs"]
-mod fixtures;
+use kiln::build::{BuildOptions, build};
 
-#[cfg(unix)]
-pub(super) use fixtures::PermissionGuard;
-pub(super) use fixtures::{copy_templates, write_test_file};
+use super::fixtures::{copy_templates, write_test_file};
 
 // ── Site fixtures ──
 
-pub(super) fn setup_site_with_page(root: &Path) {
-    fs::write(root.join("config.toml"), "").unwrap();
-    copy_templates(&root.join("templates"));
-    write_page(
-        root,
-        "posts/hello",
-        indoc! {r#"
-            +++
-            title = "Hello"
-            +++
-            Body
-        "#},
-    );
+/// Temporary site root whose files are removed on drop.
+pub(super) struct TestSite {
+    dir: TempDir,
 }
 
-pub(super) fn setup_theme(root: &Path, theme_name: &str) {
-    let theme_dir = root.join("themes").join(theme_name);
-    let tmpl_dir = theme_dir.join("templates");
-    fs::create_dir_all(&tmpl_dir).unwrap();
-    copy_templates(&tmpl_dir);
-    fs::write(theme_dir.join("theme.toml"), "").unwrap();
-}
+impl TestSite {
+    /// Creates a site with `config` as `config.toml` and a copy of the fixture templates.
+    pub(super) fn new(config: &str) -> Self {
+        let site = Self::empty();
+        site.write("config.toml", config).templates("templates");
+        site
+    }
 
-pub(super) fn write_paginated_posts(root: &Path, post_dir: &str, tag: Option<&str>) {
-    let tags = tag.map_or_else(String::new, |tag| format!(r#"tags = ["{tag}"]"#));
-    for i in 1..=3 {
-        write_page(
-            root,
-            &format!("{post_dir}/post-{i}"),
+    /// Creates a site without configuration or templates.
+    pub(super) fn empty() -> Self {
+        Self {
+            dir: tempfile::tempdir().unwrap(),
+        }
+    }
+
+    /// Creates an empty site whose root directory name starts with `prefix`.
+    pub(super) fn with_prefix(prefix: &str) -> Self {
+        Self {
+            dir: tempfile::Builder::new().prefix(prefix).tempdir().unwrap(),
+        }
+    }
+
+    /// Selects theme `example` configured by `theme_toml`, replacing `config.toml`.
+    pub(super) fn theme(&self, theme_toml: &str) -> &Self {
+        fs::create_dir_all(self.path("themes/example/templates")).unwrap();
+        self.write("config.toml", r#"theme = "example""#)
+            .write("themes/example/theme.toml", theme_toml)
+    }
+
+    /// Copies the fixture templates into `rel_dir`.
+    pub(super) fn templates(&self, rel_dir: &str) -> &Self {
+        copy_templates(&self.path(rel_dir));
+        self
+    }
+
+    pub(super) fn write(&self, rel_path: &str, content: &str) -> &Self {
+        write_test_file(self.root(), rel_path, content);
+        self
+    }
+
+    /// Writes a page bundle at `content/{rel_path}/index.md`.
+    pub(super) fn page(&self, rel_path: &str, source: &str) -> &Self {
+        self.write(&format!("content/{rel_path}/index.md"), source)
+    }
+
+    /// Writes a page bundle with `title` and a one-word body.
+    pub(super) fn titled_page(&self, rel_path: &str, title: &str) -> &Self {
+        self.page(
+            rel_path,
             &formatdoc! {r#"
                 +++
-                title = "Post {i}"
-                date = "2026-01-0{i}T00:00:00Z"
-                {tags}
+                title = "{title}"
                 +++
                 Body
             "#},
-        );
+        )
+    }
+
+    /// Writes a solid black PNG, so images of different sizes have different bytes.
+    pub(super) fn write_png(&self, rel_path: &str, width: u32, height: u32) -> &Self {
+        let path = self.path(rel_path);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        image::RgbaImage::from_pixel(width, height, image::Rgba([0, 0, 0, 255]))
+            .save(path)
+            .unwrap();
+        self
+    }
+
+    /// Writes an executable script and returns its absolute path.
+    #[cfg(unix)]
+    pub(super) fn write_executable(&self, rel_path: &str, content: &str) -> PathBuf {
+        self.write(rel_path, content);
+        let path = self.path(rel_path);
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+        path
+    }
+
+    pub(super) fn remove(&self, rel_path: &str) -> &Self {
+        fs::remove_file(self.path(rel_path)).unwrap();
+        self
+    }
+
+    pub(super) fn build(&self) -> anyhow::Result<()> {
+        self.build_with(BuildOptions::default())
+    }
+
+    pub(super) fn build_with(&self, options: BuildOptions<'_>) -> anyhow::Result<()> {
+        build(self.root(), options)
+    }
+
+    pub(super) fn root(&self) -> &Path {
+        self.dir.path()
+    }
+
+    pub(super) fn path(&self, rel_path: &str) -> PathBuf {
+        self.root().join(rel_path)
+    }
+
+    pub(super) fn output(&self, rel_path: &str) -> PathBuf {
+        self.root().join("public").join(rel_path)
+    }
+
+    /// Reads a published file below `public/`.
+    pub(super) fn read(&self, rel_path: &str) -> String {
+        fs::read_to_string(self.output(rel_path)).unwrap()
     }
 }
 
-pub(super) fn write_listing_site(root: &Path) {
-    fs::write(
-        root.join("config.toml"),
-        indoc! {r#"
-            base_url = "https://example.com"
-            title = "Test Site"
-        "#},
-    )
-    .unwrap();
-    copy_templates(&root.join("templates"));
+// ── CLI ──
 
+/// Returns a `kiln` command isolated from the caller's base URL and log filter.
+pub(super) fn kiln() -> Command {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_kiln"));
+    command.env_remove("KILN_BASE_URL").env_remove("RUST_LOG");
+    command
+}
+
+// ── Listing fixtures ──
+
+/// Creates a site with posts in two sections and a tagged standalone page, where the oldest
+/// post is pinned by weight.
+pub(super) fn listing_site() -> TestSite {
+    let site = TestSite::new(indoc! {r#"
+        base_url = "https://example.com"
+        title = "Test Site"
+    "#});
     for (path, title, tags, date, weight) in [
         (
             "posts/note/older",
@@ -77,8 +158,7 @@ pub(super) fn write_listing_site(root: &Path) {
         ("posts/review/latest", "Post C", "rust", "2026-01-03", ""),
         ("about", "About", "rust", "2026-01-04", ""),
     ] {
-        write_page(
-            root,
+        site.page(
             path,
             &formatdoc! {r#"
                 +++
@@ -91,20 +171,26 @@ pub(super) fn write_listing_site(root: &Path) {
             "#},
         );
     }
+    site
 }
 
-pub(super) fn write_page(root: &Path, rel_path: &str, content: &str) {
-    write_test_file(root, &format!("content/{rel_path}/index.md"), content);
-}
-
-pub(super) fn copy_templates_except(dest: &Path, exclude: &[&str]) {
-    copy_templates(dest);
-    for name in exclude {
-        fs::remove_file(dest.join(name)).unwrap();
+/// Writes posts 1 to 3 under `post_dir` on consecutive days, each tagged with `tag` if given.
+pub(super) fn write_paginated_posts(site: &TestSite, post_dir: &str, tag: Option<&str>) {
+    let tags = tag.map_or_else(String::new, |tag| format!(r#"tags = ["{tag}"]"#));
+    for i in 1..=3 {
+        site.page(
+            &format!("{post_dir}/post-{i}"),
+            &formatdoc! {r#"
+                +++
+                title = "Post {i}"
+                date = "2026-01-0{i}T00:00:00Z"
+                {tags}
+                +++
+                Body
+            "#},
+        );
     }
 }
-
-// ── Listing assertions ──
 
 pub(super) fn assert_paginated_listing(
     output_dir: &Path,
@@ -128,32 +214,42 @@ pub(super) fn assert_paginated_listing(
     }
 }
 
-pub(super) fn listing_links(html: &str) -> Vec<&str> {
-    html.split("<li>")
-        .skip(1)
-        .map(|item| {
-            let start = item.find("<a ").unwrap();
-            let end = item.find("</a>").unwrap() + "</a>".len();
-            &item[start..end]
-        })
+// ── Output inspection ──
+
+/// Returns the content fingerprint kiln embeds in published asset names.
+pub(super) fn fingerprint(bytes: impl AsRef<[u8]>) -> String {
+    hex::encode(Sha256::digest(bytes))[..12].to_owned()
+}
+
+/// Returns every link directly inside a list item, serialized in document order.
+pub(super) fn listing_links(html: &str) -> Vec<String> {
+    let selector = Selector::parse("li > a").unwrap();
+    Html::parse_document(html)
+        .select(&selector)
+        .map(|link| link.html())
         .collect()
 }
 
-// ── Stylesheet assertions ──
-
+/// Returns the URL of the only stylesheet linked from `html`.
 pub(super) fn stylesheet_url(html: &str) -> String {
-    let document = Html::parse_document(html);
-    let selector = Selector::parse(r#"link[rel="stylesheet"]"#).unwrap();
-    document
-        .select(&selector)
-        .next()
-        .unwrap()
-        .value()
-        .attr("href")
-        .unwrap()
-        .to_owned()
+    let [url] = <[String; 1]>::try_from(stylesheet_urls(html)).unwrap();
+    url
 }
 
-pub(super) fn published_path(root: &Path, url: &str) -> PathBuf {
-    root.join(url.strip_prefix("/subsite/").unwrap())
+/// Returns the URLs of every stylesheet linked from `html`, in document order.
+pub(super) fn stylesheet_urls(html: &str) -> Vec<String> {
+    let selector = Selector::parse(r#"link[rel="stylesheet"]"#).unwrap();
+    Html::parse_document(html)
+        .select(&selector)
+        .map(|link| link.value().attr("href").unwrap().to_owned())
+        .collect()
+}
+
+/// Returns the text of every `<tag>` element in feed or sitemap XML, in document order.
+pub(super) fn xml_texts<'a>(xml: &'a str, tag: &str) -> Vec<&'a str> {
+    let close = format!("</{tag}>");
+    xml.split(&format!("<{tag}>"))
+        .skip(1)
+        .map(|element| element.split_once(&close).unwrap().0)
+        .collect()
 }
