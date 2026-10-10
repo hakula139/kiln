@@ -1,5 +1,4 @@
 use std::fs;
-#[cfg(unix)]
 use std::path::Path;
 
 use indoc::{formatdoc, indoc};
@@ -359,10 +358,13 @@ fn init_theme_default_and_explicit_roots() {
         );
         assert!(site.path(&format!("{theme}/theme.toml")).is_file());
         let stdout = String::from_utf8(output.stdout).unwrap();
-        let created = stdout.lines().next().unwrap();
-        assert!(
-            created.starts_with("Theme `example` created at /") && created.ends_with(theme),
-            "{stdout}"
+        let created = stdout
+            .lines()
+            .find_map(|line| line.strip_prefix("Theme `example` created at "))
+            .unwrap_or_else(|| panic!("missing creation message:\n{stdout}"));
+        assert_eq!(
+            Path::new(created).canonicalize().unwrap(),
+            site.path(theme).canonicalize().unwrap()
         );
     }
 }
