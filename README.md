@@ -38,7 +38,9 @@ fnm install --latest --use
 npm install -g @kiln-ssg/kiln@next
 ```
 
-Use `@kiln-ssg/kiln-extended@next` for AVIF loading placeholders, with the same [dav1d requirements](#prebuilt-binary) as the extended archive. Both packages install the `kiln` command. Uninstall the current variant before switching. Prereleases use the `next` npm tag.
+Choose `@kiln-ssg/kiln-extended@next` for AVIF loading placeholders. It has the same [dav1d requirements](#prebuilt-binary) as the extended archive. Both variants install `kiln`, so uninstall the current variant before switching.
+
+Prereleases use the `next` npm tag. Supported platforms are Linux x86_64 (glibc), Apple Silicon and Windows x86_64.
 
 Add optional tools to the same installation command when your site needs them:
 
@@ -46,7 +48,8 @@ Add optional tools to the same installation command when your site needs them:
 npm install -g @kiln-ssg/kiln@next @kiln-ssg/tailwindcss@0.1.2 pagefind@1.5.2
 ```
 
-Install the Tailwind processor when your site or theme compiles Tailwind CSS. Pagefind is required only when search is enabled. Omit either package when unused. npm selects the binary for Linux x86_64 (glibc), Apple Silicon, or Windows x86_64.
+- `@kiln-ssg/tailwindcss`: required when the site or theme compiles Tailwind CSS.
+- `pagefind`: required when search is enabled.
 
 ### Prebuilt binary
 
@@ -68,7 +71,13 @@ unzip kiln-x86_64-pc-windows-msvc.zip
 kiln --version
 ```
 
-From 0.5.0 onward, the default archive needs no dav1d, and `kiln-extended-<target>` provides AVIF loading placeholders. Extended Linux binaries need the system `libdav1d` package. On macOS, install it with `brew install dav1d`. Windows extended binaries include dav1d.
+For 0.5.0 releases, choose the default `kiln-<target>` archive or `kiln-extended-<target>` for AVIF loading placeholders. Only extended binaries need dav1d:
+
+| Platform | Extended runtime requirement |
+| -------- | ---------------------------- |
+| Linux    | System `libdav1d` package    |
+| macOS    | `brew install dav1d`         |
+| Windows  | Included in the binary       |
 
 The v0.4.0 Linux and macOS binaries require dav1d at runtime.
 
@@ -91,7 +100,9 @@ nix run github:hakula139/kiln -- build     # one-shot
 nix profile install github:hakula139/kiln  # install to user profile
 ```
 
-The flake offers the `hakula` Cachix cache for prebuilt kiln packages. Nix prompts for trust interactively. For noninteractive use, pass `--accept-flake-config` after verifying the cache key, or configure the cache in Nix. Projects that import kiln as an input need to configure the cache in their own top-level flake or Nix installation.
+The flake offers the `hakula` Cachix cache for prebuilt packages. Nix prompts for trust interactively. For noninteractive use, verify the cache key before passing `--accept-flake-config`.
+
+To use this cache from another flake, configure it in that flake or your Nix installation.
 
 To use kiln in another flake, add this input:
 
@@ -141,7 +152,9 @@ kiln init-theme my-theme
 kiln convert --source /path/to/hugo --dest /path/to/kiln
 ```
 
-`build`, `serve` and `init-theme` use the current directory as the site root unless `--root` is supplied. `KILN_BASE_URL` supplies a build URL override when `--base-url` is absent. [Hugo migration](docs/content.md#hugo-content-migration) covers the converter's supported scope and manual follow-up.
+`build`, `serve` and `init-theme` use the current directory as the site root unless `--root` is supplied. `KILN_BASE_URL` supplies a build URL override when `--base-url` is absent.
+
+See [Hugo migration](docs/content.md#hugo-content-migration) for the converter's supported scope and manual follow-up.
 
 ### Search
 
@@ -163,7 +176,22 @@ Requires stable [Rust](https://www.rust-lang.org/tools/install) and a C toolchai
 cargo build --release  # Binary at target/release/kiln
 ```
 
-AVIF loading placeholders are optional. Enable them with `cargo build --release --features avif`. This requires dav1d ≥ 1.3 and `pkg-config`. On macOS, install the Xcode command-line tools and `brew install dav1d pkg-config`. On Debian / Ubuntu, install `build-essential libdav1d-dev pkg-config`. Builds with AVIF support use the installed dav1d library at runtime. Image publication and dimension detection work with either build.
+### AVIF placeholders
+
+Image publication and dimension detection work in either build. To add AVIF loading placeholders, install dav1d ≥ 1.3 and `pkg-config`:
+
+| Platform        | Build dependencies                                           |
+| --------------- | ------------------------------------------------------------ |
+| macOS           | Xcode command-line tools and `brew install dav1d pkg-config` |
+| Debian / Ubuntu | `sudo apt install build-essential libdav1d-dev pkg-config`   |
+
+Then enable the feature:
+
+```bash
+cargo build --release --features avif
+```
+
+On macOS and Linux, dav1d is also a runtime dependency.
 
 ### Reproducible dev shell (Nix)
 

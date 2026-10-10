@@ -1,6 +1,6 @@
 # Benchmarks
 
-Run benchmarks in the Nix development shell. `cargo bench` uses the repository's optimized profile and [Criterion](https://criterion-rs.github.io/book/). Fixture setup and behavior checks are outside the timed closures. CI runs smoke checks without performance thresholds.
+Run benchmarks in the Nix development shell. `cargo bench` uses the optimized profile and [Criterion](https://criterion-rs.github.io/book/), with fixture setup and behavior checks outside the timed closures.
 
 ```bash
 cargo bench --bench performance
@@ -10,7 +10,11 @@ cargo test --bench performance
 
 Reports and saved baselines live under `target/criterion/`, respecting `CARGO_TARGET_DIR`. Set `CRITERION_HOME` to choose another location.
 
-CI builds each revision's own harness against its APIs, using the PR's common ancestor and the head's Nix environment. Separate Criterion reports, raw samples, logs, revision SHAs, and environment details are attached for 14 days. Review workload inputs and timing boundaries before comparing measurements. Timings are advisory because shared runners are noisy. The `Benchmarks` workflow also supports manual runs with a baseline revision.
+## CI reports
+
+CI runs smoke checks without performance thresholds. The `Benchmarks` workflow compares a PR against its common ancestor, compiling each revision's own harness in the head's Nix environment. It also accepts a baseline revision for manual runs.
+
+Each revision has a separate Criterion report with raw samples, logs, revision SHAs and environment details, retained for 14 days. Check workload inputs and timing boundaries before comparing them. Timings are advisory because shared runners are noisy.
 
 ## Workloads
 

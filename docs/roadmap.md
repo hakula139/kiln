@@ -29,7 +29,14 @@ The main table of contents includes page-body headings. Headings inside directiv
 - RSS feeds for the site, all posts, each section and each tag. Sitemaps include emitted HTML routes, and builds also produce `robots.txt` and an optional template-based 404 page.
 - Optional full-text search indexing through Pagefind, with the search interface supplied by the theme.
 
-Home, archive, overview and 404 generation depend on the corresponding templates. Non-bundle Markdown files cannot own co-located assets or page CSS. Tags are the supported taxonomy, and frontmatter dates represent absolute instants. Git-derived updates require the Git executable and full repository history. See [Content](content.md) and [Template Variables](themes.md#template-variables).
+Constraints:
+
+- Home, archive, overview and 404 generation require the corresponding templates.
+- Non-bundle Markdown files cannot own co-located assets or page CSS.
+- Tags are the supported taxonomy. Frontmatter dates represent absolute instants.
+- Git-derived updates require the Git executable and full repository history.
+
+See [Content](content.md) and [Template Variables](themes.md#template-variables).
 
 ### Assets, Stylesheets and Images
 
@@ -41,7 +48,13 @@ Home, archive, overview and 404 generation depend on the corresponding templates
 - Natural dimensions for resolvable local images and small WebP loading placeholders for supported decodable formats. Featured images expose the same metadata to page and listing templates.
 - Optional native AVIF decoding for placeholders. AVIF publication and dimension reads work without that feature, and the Nix package enables it by default.
 
-Image processing does not fetch remote images or generate responsive image variants. Missing or undecodable images may have no placeholder. Fingerprints cover individual files, so ordinary public CSS / JS imports need separate bundling when their dependencies also need content-hashed URLs. Plain CSS needs no external compiler. Tailwind requires its processor and Node.js outside the supplied Nix environment. See [Assets and Stylesheets](assets.md) and [Image Rendering](themes.md#image-rendering).
+Constraints:
+
+- Image processing uses local files and does not generate responsive variants. Missing or undecodable images may have no placeholder.
+- Ordinary public CSS / JS imports need separate bundling when their dependencies also need content-hashed URLs.
+- Plain CSS needs no external compiler. Tailwind requires its processor and Node.js outside the supplied Nix environment.
+
+See [Assets and Stylesheets](assets.md) and [Image Rendering](themes.md#image-rendering).
 
 ### Themes, Templates and Localization
 
@@ -63,9 +76,15 @@ The engine supplies content and template contracts. [IgnIt](https://github.com/h
 - Builds prepare output separately and publish it after rendering and optional search indexing succeed, preserving the previous output when a build fails.
 - `kiln serve` provides local preview, directory redirects, a custom 404 response and browser live reload after successful rebuilds. Preview builds use the local server URL and skip minification.
 - Rust unit / integration tests cover rendering and build behavior. [Benchmarks](benchmarks.md) cover representative rendering, discovery and full-build workloads.
-- Cargo and Nix installation paths, with Nix packages for the engine, Pagefind and the Tailwind processor. Release validation generates npm base / extended entry packages and platform binaries.
+- Cargo, Nix and npm installation paths. Nix provides the engine, Pagefind and the Tailwind processor. npm distributes base / extended variants for Linux x86_64, Apple Silicon and Windows x86_64.
 
-Pagefind is an external executable when indexing is enabled. Live reload watches the source directories that exist at startup. Creating a new top-level source directory, switching themes, changing the output directory or changing imports outside watched trees requires restarting the server. Builds currently regenerate the site as a whole. See [Usage](../README.md#usage) and [Live Reload](assets.md#live-reload).
+Constraints:
+
+- Search requires the external Pagefind executable when enabled.
+- Builds regenerate the whole site.
+- Live reload watches source directories present at startup. New top-level source directories, theme or output-directory changes, and imports outside watched trees require a restart.
+
+See [Usage](../README.md#usage) and [Live Reload](assets.md#live-reload).
 
 ### Hugo Content Migration
 
