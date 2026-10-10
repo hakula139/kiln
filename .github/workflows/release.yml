@@ -38,13 +38,16 @@ jobs:
           - name: extended
             features: avif
             archive: kiln-extended
-        platform:
+        platform: &release-platforms
           - runner: ubuntu-latest
             target: x86_64-unknown-linux-gnu
+            package: linux-x64-gnu
           - runner: macos-latest
             target: aarch64-apple-darwin
+            package: darwin-arm64
           - runner: windows-latest
             target: x86_64-pc-windows-msvc
+            package: win32-x64-msvc
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -137,13 +140,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform:
-          - runner: ubuntu-latest
-            package: linux-x64-gnu
-          - runner: macos-latest
-            package: darwin-arm64
-          - runner: windows-latest
-            package: win32-x64-msvc
+        platform: *release-platforms
     env:
       VERSION: ${{ needs.package-npm.outputs.version }}
     steps:
@@ -174,7 +171,11 @@ jobs:
             npm install --prefix "npm-$variant" --offline --ignore-scripts --no-audit --no-fund \
               "./npm-packages/kiln-ssg-$variant-$VERSION.tgz" \
               "./npm-packages/kiln-ssg-$variant-${{ matrix.platform.package }}-$VERSION.tgz"
-            PATH="$PWD/npm-$variant/node_modules/.bin:$PATH" kiln --version
+            export PATH="$PWD/npm-$variant/node_modules/.bin:$PATH"
+            test "$(kiln --version)" = "kiln $VERSION"
+            if kiln --unknown-option; then
+              exit 1
+            fi
           done
 
   publish:

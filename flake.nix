@@ -192,7 +192,6 @@
               pkg-config
               pnpm
               unzip
-              zip
             ])
             # libiconv resolves onig_sys / libwebp-sys link errors on darwin.
             ++ pkgs.lib.optional pkgs.stdenv.isDarwin pkgs.libiconv;
