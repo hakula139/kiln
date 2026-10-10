@@ -27,15 +27,14 @@ pub(crate) enum Disclosure {
 
 impl CodeBlockSpec {
     pub(crate) fn is_mermaid(&self) -> bool {
-        self.lang
-            .as_deref()
-            .is_some_and(|lang| lang.eq_ignore_ascii_case("mermaid"))
+        self.lang.as_deref() == Some("mermaid")
     }
 }
 
 /// Parses a fence info string of the form `lang {#id .class key=value ...}`.
 ///
-/// The language ends at the first whitespace or `{`. Only the first `{...}` block after it is read.
+/// The language tag ends at the first whitespace or `{`. Without one, the first class names the
+/// language, as in Pandoc. Only the first `{...}` block is read, and the language is lowercased.
 #[must_use]
 pub(crate) fn parse_fence_info(info: &str) -> CodeBlockSpec {
     let info = info.trim();
@@ -63,10 +62,17 @@ pub(crate) fn parse_fence_info(info: &str) -> CodeBlockSpec {
         Disclosure::Auto
     };
 
+    let mut classes = attrs.classes.into_iter();
+    let lang = if lang.is_empty() {
+        classes.next()
+    } else {
+        Some(lang)
+    };
+
     CodeBlockSpec {
-        lang: (!lang.is_empty()).then(|| lang.to_owned()),
+        lang: lang.map(str::to_ascii_lowercase),
         id: attrs.id.map(str::to_owned),
-        classes: attrs.classes.into_iter().map(str::to_owned).collect(),
+        classes: classes.map(str::to_owned).collect(),
         title,
         highlight,
         disclosure,
@@ -149,14 +155,15 @@ mod tests {
     }
 
     #[test]
-    fn parse_fence_info_attrs_without_separated_lang() {
-        for (info, lang) in [
-            (r#"{title="T"}"#, None),
-            (r#"rust{title="T"}"#, Some("rust")),
-            (r#"  {.rust title="T"} "#, None),
+    fn parse_fence_info_brace_attrs_and_first_class_lang() {
+        for (info, lang, classes) in [
+            (r#"{title="T"}"#, None, vec![]),
+            (r#"Rust{.wide title="T"}"#, Some("rust"), vec!["wide"]),
+            (r#"  {.Rust .wide title="T"} "#, Some("rust"), vec!["wide"]),
         ] {
             let spec = parse_fence_info(info);
             assert_eq!(spec.lang.as_deref(), lang, "{info}");
+            assert_eq!(spec.classes, classes, "{info}");
             assert_eq!(spec.title.as_deref(), Some("T"), "{info}");
         }
     }

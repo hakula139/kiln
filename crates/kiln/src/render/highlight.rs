@@ -17,7 +17,7 @@ static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(two_face::syntax::extra_n
 /// Highlights a code block with line numbers and a header (language pill or title, copy button).
 ///
 /// `max_lines` applies unless the fence sets `collapse` or `expand`. Unrecognized languages render
-/// as plain text, and the display label comes from the author's token via [`display_label`].
+/// as plain text, and the display label comes from the language tag via [`display_label`].
 #[must_use]
 pub(super) fn highlight_code(
     code: &str,
@@ -33,9 +33,9 @@ fn highlight_with(
     spec: &CodeBlockSpec,
     max_lines: Option<NonZeroUsize>,
 ) -> String {
-    let lang = spec.lang.as_deref().unwrap_or("").to_ascii_lowercase();
-    let syntax = syntax_set.find_syntax_by_token(&lang).unwrap_or_else(|| {
-        if !is_plain_text(&lang) {
+    let lang = spec.lang.as_deref().unwrap_or("");
+    let syntax = syntax_set.find_syntax_by_token(lang).unwrap_or_else(|| {
+        if !is_plain_text(lang) {
             debug!(lang, "unrecognized language, falling back to plain text");
         }
         syntax_set.find_syntax_plain_text()
@@ -53,11 +53,11 @@ fn highlight_with(
         .as_deref()
         .map(|id| format!(r#" id="{}""#, escape(id)))
         .unwrap_or_default();
-    let lang_attr = if lang.is_empty() {
-        String::new()
-    } else {
-        format!(r#" data-lang="{}""#, escape(&lang))
-    };
+    let lang_attr = spec
+        .lang
+        .as_deref()
+        .map(|lang| format!(r#" data-lang="{}""#, escape(lang)))
+        .unwrap_or_default();
     let open_attr = if spec.disclosure == Disclosure::Collapse {
         ""
     } else {
@@ -84,7 +84,7 @@ fn highlight_with(
             &mut html,
             2,
             r#"<span class="code-lang">{}</span>"#,
-            escape(&display_label(&lang))
+            escape(&display_label(lang))
         );
     }
     writeln_indented!(
@@ -206,7 +206,7 @@ fn highlight_line(
     Ok(html)
 }
 
-/// Derives a human-readable display label from the lowercased fence token.
+/// Derives a human-readable display label from the lowercased language tag.
 ///
 /// syntect's internal names are often verbose (`"Bourne Again Shell (bash)"`) and inconsistently
 /// cased. Per-block overrides go through the `title="..."` fence attribute instead.
