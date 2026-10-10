@@ -51,25 +51,13 @@ pub(crate) fn join_site_url(base_url: &str, path: &str) -> String {
     )
 }
 
-/// Resolves a relative path against a page's output URL.
-///
-/// Absolute paths and URLs are returned unchanged.
-/// Relative paths are resolved against the page's directory URL (must end with `/`) so that
-/// co-located assets like `assets/cover.webp` become `/posts/section/slug/assets/cover.webp`.
-#[must_use]
-pub(crate) fn resolve_relative_url(src: &str, page_url: &str) -> String {
-    if src.starts_with('/') || url::Url::parse(src).is_ok() {
-        return src.to_owned();
-    }
-    let path = if let Some(scheme_end) = page_url.find("://") {
-        let after_scheme = scheme_end + 3;
-        page_url[after_scheme..]
-            .find('/')
-            .map_or(page_url, |i| &page_url[after_scheme + i..])
+/// Adds the deployment prefix to site-root-relative asset URLs.
+pub(crate) fn site_asset_url(src: &str, prefix: &str) -> String {
+    if src.starts_with('/') && !src.starts_with("//") {
+        join_site_url(prefix, src)
     } else {
-        page_url
-    };
-    format!("{path}{src}")
+        src.to_owned()
+    }
 }
 
 #[cfg(test)]
@@ -162,41 +150,6 @@ mod tests {
             ("", "/"),
         ] {
             assert_eq!(join_site_url(base_url, ""), expected);
-        }
-    }
-
-    // ── resolve_relative_url ──
-
-    #[test]
-    fn resolve_relative_url_resolves_relative_paths_and_preserves_absolute_sources() {
-        for (source, page, expected) in [
-            (
-                "assets/cover.webp",
-                "https://example.com/posts/foo/",
-                "/posts/foo/assets/cover.webp",
-            ),
-            ("style.css", "/posts/my-post/", "/posts/my-post/style.css"),
-            (
-                "/images/cover.webp",
-                "https://example.com/posts/foo/",
-                "/images/cover.webp",
-            ),
-            (
-                "https://cdn.example.com/img.jpg",
-                "https://example.com/posts/foo/",
-                "https://cdn.example.com/img.jpg",
-            ),
-            (
-                "data:image/png;base64,example",
-                "https://example.com/posts/foo/",
-                "data:image/png;base64,example",
-            ),
-        ] {
-            assert_eq!(
-                resolve_relative_url(source, page),
-                expected,
-                "{source}, {page}"
-            );
         }
     }
 }

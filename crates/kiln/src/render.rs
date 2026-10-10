@@ -16,12 +16,38 @@ mod table;
 mod toc;
 
 use std::ops::Range;
+use std::path::Path;
+use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use pulldown_cmark::Event;
 use serde::Deserialize;
 
+use self::lqip::{ImageMeta, ImageResolver};
+use crate::static_assets::StaticAssetManifest;
+
 type Spanned = (Event<'static>, Range<usize>);
+
+/// Source context and published assets used by a page and its nested directives.
+pub struct PageResources<'a> {
+    pub source_dir: Option<&'a Path>,
+    pub images: &'a ImageResolver,
+    pub assets: &'a StaticAssetManifest,
+    pub page_url: &'a str,
+    pub deployment_prefix: &'a str,
+}
+
+impl PageResources<'_> {
+    pub(crate) fn resolve_image(&self, src: &str) -> (String, Option<Arc<ImageMeta>>) {
+        match self
+            .assets
+            .resolve_local(src, self.page_url, self.deployment_prefix)
+        {
+            Some(asset) => (asset.url, self.images.resolve(asset.original_url, None)),
+            None => (src.to_owned(), None),
+        }
+    }
+}
 
 /// Feature flags and settings for the render pipeline.
 #[derive(Debug, Clone, Default, Deserialize)]

@@ -178,7 +178,23 @@ fn build_asset_copy_permission_denied_returns_error() {
 // ── build: publication ──
 
 #[test]
-fn build_failed_render_preserves_previous_output() {
+fn build_reserved_asset_directory_preserves_previous_output() {
+    let root = tempfile::tempdir().unwrap();
+    setup_site_with_page(root.path());
+    build(root.path(), BuildOptions::default()).unwrap();
+    let page = root.path().join("public/posts/hello/index.html");
+    let previous = fs::read(&page).unwrap();
+    fs::create_dir_all(root.path().join("static/_assets")).unwrap();
+    fs::write(root.path().join("static/_assets/occupied.png"), "occupied").unwrap();
+
+    let error = build(root.path(), BuildOptions::default()).unwrap_err();
+
+    assert!(format!("{error:#}").contains("reserved asset directory"));
+    assert_eq!(fs::read(page).unwrap(), previous);
+}
+
+#[test]
+fn build_failed_page_preparation_or_render_preserves_previous_output() {
     let root = tempfile::tempdir().unwrap();
     copy_templates(&root.path().join("templates"));
     write_page(
@@ -191,12 +207,32 @@ fn build_failed_render_preserves_previous_output() {
             Original body
         "#},
     );
+
     build(root.path(), BuildOptions::default()).unwrap();
+
     let output = root.path().join("public/posts/example/index.html");
     let previous = fs::read_to_string(&output).unwrap();
     fs::write(root.path().join("templates/post.html"), "{% invalid %}").unwrap();
 
     assert!(build(root.path(), BuildOptions::default()).is_err());
+    assert_eq!(fs::read_to_string(&output).unwrap(), previous);
+
+    copy_templates(&root.path().join("templates"));
+    write_page(
+        root.path(),
+        "posts/example",
+        indoc! {r#"
+            +++
+            title = "Example"
+            featured_image = "http://["
+            +++
+            Updated body
+        "#},
+    );
+
+    let error = build(root.path(), BuildOptions::default()).unwrap_err();
+
+    assert!(format!("{error:#}").contains("invalid featured image URL"));
     assert_eq!(fs::read_to_string(output).unwrap(), previous);
 }
 

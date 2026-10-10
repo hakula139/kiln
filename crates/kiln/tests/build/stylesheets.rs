@@ -96,7 +96,10 @@ fn build_compiles_shared_css_with_site_override_and_theme_asset_urls() {
     build(root.path(), BuildOptions::default()).unwrap();
     let output = root.path().join("public/assets/css/site.css");
     let css = fs::read_to_string(&output).unwrap();
-    assert!(css.contains("../fonts/example.woff2?v=1#font"), "{css}");
+    assert!(
+        css.contains("../../_assets/assets/fonts/example.e67138b0778c.woff2?v=1#font"),
+        "{css}"
+    );
     assert!(css.contains(".theme"), "{css}");
 
     write_test_file(
@@ -293,7 +296,7 @@ fn build_compiles_tailwind_with_shared_context_and_fresh_candidates() {
         "{shared}"
     );
     assert!(
-        shared.contains("../fonts/example.woff2?version=1#font"),
+        shared.contains("../../_assets/assets/fonts/example.795ea3efa43d.woff2?version=1#font"),
         "{shared}"
     );
     let page = fs::read_to_string(public.join("example/assets/css/page.css")).unwrap();

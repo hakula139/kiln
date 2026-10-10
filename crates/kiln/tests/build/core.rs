@@ -1,12 +1,12 @@
 use std::fs;
+use std::path::Path;
 
-#[cfg(unix)]
-use indoc::formatdoc;
-use indoc::indoc;
+use indoc::{formatdoc, indoc};
 use scraper::{Html, Selector};
 use sha2::{Digest, Sha256};
 
 use kiln::build::{BuildOptions, build};
+use kiln::render::lqip::{ImageConfig, ImageResolver};
 
 use super::support::{copy_templates, listing_links, write_page, write_test_file};
 
@@ -323,7 +323,7 @@ fn build_fingerprints_bundle_assets_after_static_collisions() {
     );
     for (name, bundle, shared) in [
         ("app.js", "console.log('bundle');", "console.log('static');"),
-        ("image.svg", "bundle-image", "static-image"),
+        ("image.avif", "bundle-image", "static-image"),
     ] {
         write_test_file(
             root.path(),
@@ -347,8 +347,17 @@ fn build_fingerprints_bundle_assets_after_static_collisions() {
 
     let public = root.path().join("public");
     assert_eq!(
-        fs::read_to_string(public.join("example/assets/image.svg")).unwrap(),
+        fs::read_to_string(public.join("example/assets/image.avif")).unwrap(),
         "bundle-image"
+    );
+    let image_hash = hex::encode(Sha256::digest(b"bundle-image"));
+    assert_eq!(
+        fs::read(public.join(format!(
+            "_assets/example/assets/image.{}.avif",
+            &image_hash[..12]
+        )))
+        .unwrap(),
+        b"bundle-image"
     );
     let js = fs::read_to_string(public.join("example/assets/app.js")).unwrap();
     assert!(js.contains("bundle") && !js.contains("static"), "{js}");
@@ -356,6 +365,260 @@ fn build_fingerprints_bundle_assets_after_static_collisions() {
     assert_eq!(
         fs::read_to_string(public.join(format!("example/assets/app.{}.js", &hash[..12]))).unwrap(),
         js
+    );
+}
+
+#[test]
+fn build_image_urls_and_metadata_share_published_paths() {
+    let root = tempfile::tempdir().unwrap();
+    write_image_identity_site(root.path());
+
+    for (featured, alias) in [
+        ("/shared.png?q=1#view", "/shared.png"),
+        ("../a/photo.png?q=1#view", "/a/photo.png"),
+    ] {
+        write_page(
+            root.path(),
+            "a",
+            &formatdoc! {r#"
+                +++
+                title = "Example"
+                slug = "b"
+                featured_image = {featured:?}
+                +++
+                ![Root](/blog/shared.png?q=1#view)
+
+                Inline ![Relative](../a/photo.png?q=1#view) image.
+
+                ![Relative block](../a/photo.png?q=1#view)
+
+                Inline ![Outside](/shared.png) image.
+
+                ![Outside prefix](/blogger/shared.png)
+            "#},
+        );
+
+        build(root.path(), BuildOptions::default()).unwrap();
+
+        let public = root.path().join("public");
+        let resolver = ImageResolver::new(&public, ImageConfig::default());
+        let expected: Vec<_> = [alias, "/shared.png", "/a/photo.png", "/a/photo.png"]
+            .iter()
+            .enumerate()
+            .map(|(index, alias)| {
+                let path = Path::new(alias.trim_start_matches('/'));
+                let bytes = fs::read(public.join(path)).unwrap();
+                let hash = hex::encode(Sha256::digest(&bytes));
+                let origin = if index == 0 {
+                    "https://example.com"
+                } else {
+                    ""
+                };
+                let meta = resolver.resolve(alias, None).unwrap();
+                (
+                    format!(
+                        "{origin}/blog/_assets/{}.{}.png?q=1#view",
+                        alias.trim_start_matches('/').strip_suffix(".png").unwrap(),
+                        &hash[..12]
+                    ),
+                    Some(meta.width.to_string()),
+                    Some(meta.height.to_string()),
+                    Some(format!(
+                        "--lqip-uri:url('{}')",
+                        meta.lqip_uri.as_ref().unwrap()
+                    )),
+                )
+            })
+            .chain([
+                ("/shared.png".into(), None, None, None),
+                ("/blogger/shared.png".into(), None, None, None),
+            ])
+            .collect();
+        let html = fs::read_to_string(public.join("b/index.html")).unwrap();
+        let document = Html::parse_document(&html);
+        let actual: Vec<_> = document
+            .select(&Selector::parse("img").unwrap())
+            .map(|image| {
+                let element = image.value();
+                let style = image
+                    .parent()
+                    .and_then(scraper::ElementRef::wrap)
+                    .and_then(|parent| parent.value().attr("style"));
+                (
+                    element.attr("src").unwrap().to_owned(),
+                    element.attr("width").map(str::to_owned),
+                    element.attr("height").map(str::to_owned),
+                    style.map(str::to_owned),
+                )
+            })
+            .collect();
+        assert_eq!(actual, expected);
+    }
+}
+
+fn write_image_identity_site(root: &Path) {
+    copy_templates(&root.join("templates"));
+    write_test_file(
+        root,
+        "config.toml",
+        r#"base_url = "https://example.com/blog""#,
+    );
+    write_test_file(
+        root,
+        "templates/page.html",
+        indoc! {r#"
+            <span style="--lqip-uri:url('{{ featured_image.lqip_uri | safe }}')">
+              <img src="{{ featured_image.src | safe }}" width="{{ featured_image.width }}" height="{{ featured_image.height }}">
+            </span>
+            {{ content | safe }}
+        "#},
+    );
+    for (path, width, height, color) in [
+        ("static/shared.png", 10, 20, [255, 0, 0, 255]),
+        ("static/blog/shared.png", 30, 40, [0, 255, 0, 255]),
+        ("content/a/photo.png", 8, 4, [0, 0, 255, 255]),
+        ("static/a/photo.png", 12, 6, [255, 255, 0, 255]),
+    ] {
+        let path = root.join(path);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        image::RgbaImage::from_pixel(width, height, image::Rgba(color))
+            .save(path)
+            .unwrap();
+    }
+}
+
+#[test]
+fn build_updates_managed_image_urls_and_retires_previous_fingerprints() {
+    let root = tempfile::tempdir().unwrap();
+    let public = root.path().join("public");
+    let mut previous = None;
+    for (bytes, featured) in [
+        ("original image", "photo%20%25.avif?quality=1#view"),
+        ("changed image", "/example/photo%20%25.avif?quality=1#view"),
+        ("changed image", "photo%20%25.avif?quality=1#view"),
+    ] {
+        write_image_lifecycle_site(root.path(), featured);
+        write_test_file(root.path(), "content/example/photo %.avif", bytes);
+
+        build(
+            root.path(),
+            BuildOptions {
+                minify: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let hash = hex::encode(Sha256::digest(bytes.as_bytes()));
+        let path = format!("_assets/example/photo %.{}.avif", &hash[..12]);
+        let url = format!(
+            "/blog/_assets/example/photo%20%25.{}.avif?quality=1#view",
+            &hash[..12]
+        );
+        let html = fs::read_to_string(public.join("example/index.html")).unwrap();
+        let document = Html::parse_document(&html);
+        let images: Vec<_> = document
+            .select(&Selector::parse("img").unwrap())
+            .map(|image| image.value().attr("src").unwrap())
+            .collect();
+        assert_eq!(
+            images,
+            [
+                &format!("https://example.com{url}"),
+                url.as_str(),
+                "//example.org/logo.svg",
+                url.as_str(),
+                url.as_str(),
+                "missing.avif",
+                "https://example.org/image.avif",
+                url.as_str(),
+            ]
+        );
+        assert_eq!(fs::read_to_string(public.join(&path)).unwrap(), bytes);
+        assert_eq!(
+            fs::read_to_string(public.join("example/photo %.avif")).unwrap(),
+            bytes
+        );
+        let stylesheet = document
+            .select(&Selector::parse("link").unwrap())
+            .next()
+            .unwrap()
+            .value()
+            .attr("href")
+            .unwrap();
+        let css = fs::read(public.join(stylesheet.strip_prefix("/blog/").unwrap())).unwrap();
+        assert!(
+            String::from_utf8_lossy(&css)
+                .contains(&format!("../..{}", url.strip_prefix("/blog").unwrap()))
+        );
+
+        let css_hash = hex::encode(Sha256::digest(&css));
+        assert!(stylesheet.ends_with(&format!(".{}.css", &css_hash[..12])));
+
+        if let Some((old_path, old_stylesheet)) = &previous {
+            if old_path == &path {
+                assert_eq!(old_stylesheet, stylesheet);
+            } else {
+                assert!(!public.join(old_path).exists());
+                assert_ne!(old_stylesheet, stylesheet);
+            }
+        }
+        previous = Some((path, stylesheet.to_owned()));
+    }
+}
+
+fn write_image_lifecycle_site(root: &Path, featured: &str) {
+    copy_templates(&root.join("templates"));
+    write_test_file(
+        root,
+        "config.toml",
+        r#"base_url = "https://example.com/blog""#,
+    );
+    write_test_file(
+        root,
+        "templates/page.html",
+        indoc! {r#"
+            <img id="featured" src="{{ featured_image.src }}">
+            <img id="template" src="{{ asset_url('photo%20%25.avif?quality=1#view') }}">
+            <img id="external" src="{{ asset_url('//example.org/logo.svg') }}">
+            <link rel="stylesheet" href="{{ asset_url('/assets/css/site.css') }}">
+            {{ content | safe }}
+        "#},
+    );
+    write_test_file(
+        root,
+        "templates/directives/link.html",
+        indoc! {r#"
+            {% set url = named_args.url %}
+            <a href="{{ url }}"><img src="{{ asset_url(named_args.logo) }}"></a>
+        "#},
+    );
+    write_page(
+        root,
+        "example",
+        &formatdoc! {r#"
+            +++
+            title = "Example"
+            featured_image = {featured:?}
+            +++
+            ![Block](./photo%20%25.avif?quality=1#view)
+
+            Inline ![Inline](../example/photo%20%25.avif?quality=1#view) image.
+
+            ![Missing](missing.avif)
+
+            ![External](https://example.org/image.avif)
+
+            ::: box
+            ::: link {{url="https://example.org/target/" logo="photo%20%25.avif?quality=1#view"}}
+            :::
+            :::
+        "#},
+    );
+    write_test_file(
+        root,
+        "assets/css/_src/style.css",
+        r#".cover { background: url("/blog/example/photo%20%25.avif?quality=1#view"); }"#,
     );
 }
 

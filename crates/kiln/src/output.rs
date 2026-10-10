@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, ensure};
@@ -148,9 +149,23 @@ pub fn copy_file(src: &Path, dest: &Path) -> Result<()> {
         fs::create_dir_all(parent)
             .with_context(|| format!("failed to create directory {}", parent.display()))?;
     }
-    fs::copy(src, dest)
-        .with_context(|| format!("failed to copy {} to {}", src.display(), dest.display()))?;
-    Ok(())
+
+    // APFS cloning emits source modification events that trigger another rebuild.
+    let copy = || -> io::Result<()> {
+        let mut source = fs::File::open(src)?;
+        let metadata = source.metadata()?;
+        if !metadata.is_file() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "source is not a regular file",
+            ));
+        }
+
+        let mut destination = fs::File::create(dest)?;
+        io::copy(&mut source, &mut destination)?;
+        destination.set_permissions(metadata.permissions())
+    };
+    copy().with_context(|| format!("failed to copy {} to {}", src.display(), dest.display()))
 }
 
 /// Writes `content` to the given path, creating parent directories as needed.
@@ -521,22 +536,50 @@ mod tests {
 
         assert_eq!(fs::read_to_string(&dest).unwrap(), "image-data");
 
-        fs::write(&src, "updated-image").unwrap();
+        fs::write(&src, "updated").unwrap();
+
         copy_file(&src, &dest).unwrap();
-        assert_eq!(fs::read_to_string(&dest).unwrap(), "updated-image");
+
+        assert_eq!(fs::read_to_string(&dest).unwrap(), "updated");
     }
 
     #[test]
-    fn copy_file_nonexistent_src_returns_error() {
+    fn copy_file_invalid_src_returns_error() {
         let dir = tempfile::tempdir().unwrap();
-        let src = dir.path().join("missing.png");
         let dest = dir.path().join("dest.png");
+        fs::write(&dest, "previous").unwrap();
 
-        let err = copy_file(&src, &dest).unwrap_err().to_string();
-        assert!(
-            err.contains("failed to copy"),
-            "should report copy failure, got: {err}"
-        );
+        for src in [dir.path().join("missing.png"), dir.path().to_owned()] {
+            let err = copy_file(&src, &dest).unwrap_err().to_string();
+
+            assert_eq!(fs::read_to_string(&dest).unwrap(), "previous");
+            assert_eq!(
+                err,
+                format!("failed to copy {} to {}", src.display(), dest.display())
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn copy_file_preserves_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("source.txt");
+        let dest = dir.path().join("dest.txt");
+        fs::write(&src, "data").unwrap();
+
+        for mode in [0o640, 0o755] {
+            fs::set_permissions(&src, fs::Permissions::from_mode(mode)).unwrap();
+
+            copy_file(&src, &dest).unwrap();
+
+            assert_eq!(
+                fs::metadata(&dest).unwrap().permissions().mode() & 0o777,
+                mode
+            );
+        }
     }
 
     #[cfg(unix)]

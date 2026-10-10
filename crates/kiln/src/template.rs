@@ -91,8 +91,8 @@ impl TemplateEngine {
 
         let asset_manifest = static_assets.clone();
         let deployment_prefix = deployment_prefix.to_owned();
-        env.add_function("asset_url", move |url: &str| {
-            tpl_asset_url(&asset_manifest, &deployment_prefix, url)
+        env.add_function("asset_url", move |state: &minijinja::State, url: &str| {
+            tpl_asset_url(state, &asset_manifest, &deployment_prefix, url)
         });
 
         env.add_function(
@@ -116,7 +116,7 @@ impl TemplateEngine {
     ///
     /// Returns an error if the template is missing or rendering fails.
     pub fn render_post(&self, vars: &PostTemplateVars<'_>) -> Result<String> {
-        self.render_required_template("post.html", vars)
+        self.render_required_template("post.html", vars, &vars.metadata.url)
     }
 
     /// Renders a standalone page using the `page.html` template.
@@ -125,7 +125,7 @@ impl TemplateEngine {
     ///
     /// Returns an error if the template is missing or rendering fails.
     pub fn render_page(&self, vars: &PostTemplateVars<'_>) -> Result<String> {
-        self.render_required_template("page.html", vars)
+        self.render_required_template("page.html", vars, &vars.metadata.url)
     }
 
     /// Renders the home page using the `home.html` template.
@@ -134,7 +134,7 @@ impl TemplateEngine {
     ///
     /// Returns an error if the template is missing or rendering fails.
     pub fn render_home(&self, vars: &HomePageVars<'_>) -> Result<String> {
-        self.render_required_template("home.html", vars)
+        self.render_required_template("home.html", vars, &vars.metadata.url)
     }
 
     /// Renders an archive page using the `archive.html` template.
@@ -143,7 +143,7 @@ impl TemplateEngine {
     ///
     /// Returns an error if the template is missing or rendering fails.
     pub fn render_archive(&self, vars: &ArchivePageVars<'_>) -> Result<String> {
-        self.render_required_template("archive.html", vars)
+        self.render_required_template("archive.html", vars, &vars.metadata.url)
     }
 
     /// Renders a bucket overview page (e.g., `/tags/`, `/sections/`).
@@ -152,7 +152,7 @@ impl TemplateEngine {
     ///
     /// Returns an error if the template is missing or rendering fails.
     pub fn render_overview(&self, vars: &OverviewPageVars<'_>) -> Result<String> {
-        self.render_required_template("overview.html", vars)
+        self.render_required_template("overview.html", vars, &vars.metadata.url)
     }
 
     /// Renders the 404 error page using the `404.html` template.
@@ -201,11 +201,16 @@ impl TemplateEngine {
         }
     }
 
-    fn render_required_template(&self, name: &str, vars: impl Serialize) -> Result<String> {
+    fn render_required_template(
+        &self,
+        name: &str,
+        vars: impl Serialize,
+        page_url: &str,
+    ) -> Result<String> {
         self.env
             .get_template(name)
             .with_context(|| format!("failed to load {name} template"))?
-            .render(vars)
+            .render(page_context(vars, page_url))
             .with_context(|| format!("failed to render {name} template"))
     }
 
@@ -219,6 +224,13 @@ impl TemplateEngine {
             result => Some(result.and_then(|template| template.render(vars))),
         }
     }
+}
+
+fn page_context(vars: impl Serialize, page_url: &str) -> Value {
+    merge_maps([
+        minijinja::context! { __page_url => page_url },
+        Value::from_serialize(vars),
+    ])
 }
 
 #[cfg(test)]
@@ -744,7 +756,7 @@ mod tests {
                 test_fs::write(dir.path().join(name), source).unwrap();
             }
             let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
-            let error = engine.render_required_template(name, ()).unwrap_err();
+            let error = engine.render_required_template(name, (), "/").unwrap_err();
             assert_eq!(
                 error.to_string(),
                 format!("failed to {phase} {name} template")
@@ -944,15 +956,23 @@ mod tests {
     #[test]
     fn tpl_asset_url_renders_prefixed_and_encoded_manifest_urls() {
         let static_dir = tempfile::tempdir().unwrap();
-        for path in ["shared.css", "shared.js", "page script.js"] {
-            test_fs::write(static_dir.path().join(path), "abc").unwrap();
+        test_fs::create_dir(static_dir.path().join("blog")).unwrap();
+        for (path, content) in [
+            ("shared.css", "abc"),
+            ("blog/shared.css", "different"),
+            ("shared.js", "abc"),
+            ("page script.js", "abc"),
+        ] {
+            test_fs::write(static_dir.path().join(path), content).unwrap();
         }
+
         let manifest = StaticAssetManifest::build(static_dir.path()).unwrap();
         let templates = tempfile::tempdir().unwrap();
         test_fs::write(
             templates.path().join("assets.html"),
             indoc! {r#"
                 <link rel="stylesheet" href="{{ asset_url('/shared.css') | safe }}">
+                <link rel="stylesheet" href="{{ asset_url('/blog/shared.css') | safe }}">
                 <script src="{{ asset_url('/shared.js') | safe }}"></script>
                 <script src="{{ asset_url('/page%20script.js') | safe }}"></script>
             "#},
@@ -976,11 +996,31 @@ mod tests {
                 .unwrap(),
             indoc! {r#"
                 <link rel="stylesheet" href="/blog/shared.ba7816bf8f01.css">
+                <link rel="stylesheet" href="/blog/blog/shared.9d6f965ac832.css">
                 <script src="/blog/shared.ba7816bf8f01.js"></script>
                 <script src="/blog/page%20script.ba7816bf8f01.js"></script>
             "#}
             .trim_end(),
         );
+    }
+
+    #[test]
+    fn tpl_asset_url_missing_file_or_page_context_returns_error() {
+        let engine = test_engine();
+        for (template, expected) in [
+            (
+                r"{{ asset_url('/missing.png') }}",
+                "static asset not found: /missing.png",
+            ),
+            (
+                r"{{ asset_url('image.png') }}",
+                "requires a page URL for relative paths",
+            ),
+        ] {
+            let error = engine.env.render_str(template, ()).unwrap_err();
+            assert_eq!(error.kind(), minijinja::ErrorKind::InvalidOperation);
+            assert!(error.to_string().contains(expected), "{error}");
+        }
     }
 
     // ── tpl_register_script ──
@@ -1206,6 +1246,7 @@ mod tests {
             body_html: String::new(),
             body_raw: String::new(),
             source_dir: None,
+            page_url: "/".into(),
         }
     }
 }

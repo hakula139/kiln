@@ -104,7 +104,7 @@ inputs.kiln.url = "github:hakula139/kiln";
 
 ## First Site
 
-After installing kiln, create a site with [IgnIt](https://github.com/hakula139/IgnIt). Use a kiln version meeting the theme's `min_kiln_version`. The Nix package includes the Tailwind processor. For other installations, follow [Processor Setup](docs/assets.md#processor-setup).
+After installing kiln, create a site with [IgnIt](https://github.com/hakula139/IgnIt). Use a kiln version meeting the theme's `min_kiln_version`.
 
 ```bash
 git init my-site

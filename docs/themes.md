@@ -14,7 +14,7 @@ git submodule add https://github.com/hakula139/IgnIt.git themes/IgnIt
 theme = "IgnIt"
 ```
 
-A theme can declare a minimum kiln version and a stylesheet processor. Check its README for installation requirements and supported `[params]` settings. [IgnIt](https://github.com/hakula139/IgnIt) uses Tailwind, whose installation is covered in [Processor Setup](assets.md#processor-setup).
+A theme can declare a minimum kiln version and a stylesheet processor. Check its README for installation requirements and supported `[params]` settings. [IgnIt](https://github.com/hakula139/IgnIt) uses Tailwind, whose processor is covered in [Installation](../README.md#installation).
 
 ## Site Configuration
 
@@ -246,7 +246,7 @@ Controls include the first and last pages plus pages within two of the current p
 
 #### Featured Images
 
-`featured_image` contains `src`, `position` and `credit`, plus optional `width`, `height` and `lqip_uri`. `credit` contains optional `title`, `author` and `url`. Relative image sources resolve against the owning page URL. Local resolvable images receive dimensions, and supported decodable images can receive a placeholder. Gate rendering on optional fields.
+`featured_image` contains `src`, `position` and `credit`, plus optional `width`, `height` and `lqip_uri`. `credit` contains optional `title`, `author` and `url`. `src` is a prepared absolute URL, ready to use in image elements and metadata. Dimensions and placeholders, when available, come from the published image. Gate rendering on optional fields.
 
 #### Page Assets
 
@@ -293,7 +293,7 @@ Looks up and interpolates a translation. See [Internationalization](#internation
 
 #### `asset_url(path)`
 
-Resolves a published site-root-relative path to its public URL, fingerprinting CSS / JS. See [Fingerprints and Minification](assets.md#fingerprints-and-minification).
+Resolves a published site-root-relative or page-relative path to its public URL, including supported asset fingerprints and the deployment prefix. See [Referencing Assets](assets.md#referencing-assets).
 
 #### `register_script(url, load="defer", module=false)`
 

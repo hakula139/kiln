@@ -1,22 +1,20 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::path::Path;
 
 use anyhow::Result;
 use pulldown_cmark::{CodeBlockKind, Event, Tag, TagEnd};
 use syntect::parsing::SyntaxSet;
 
-use super::RenderOptions;
 use super::assets::{AssetsHandle, PageAssets};
 use super::code_block::parse_fence_info;
 use super::emoji::replace_emojis;
 use super::heading::HeadingNumbers;
 use super::icon::replace_icons;
 use super::image_attrs::{ImageAttrs, extract_image_attrs};
-use super::lqip::ImageResolver;
 use super::markdown::{MarkdownDocument, MarkdownOutput, MarkdownSettings, render_markdown};
 use super::page_ids::PageIds;
 use super::toc::render_toc_html;
+use super::{PageResources, RenderOptions};
 use crate::config::Config;
 use crate::directive::callout::render_callout;
 use crate::directive::div::render_div;
@@ -47,8 +45,7 @@ pub fn render_page(
     engine: &TemplateEngine,
     config: &Config,
     options: &RenderOptions,
-    source_dir: Option<&Path>,
-    image_resolver: &ImageResolver,
+    resources: &PageResources<'_>,
 ) -> Result<RenderedPage> {
     let mut placeholder_prefix = "<!--kiln-directive-".to_owned();
     while raw_content.contains(&placeholder_prefix) {
@@ -59,8 +56,7 @@ pub fn render_page(
         engine,
         config,
         options,
-        source_dir,
-        image_resolver,
+        resources,
         assets: AssetsHandle::default(),
         placeholder_prefix: &placeholder_prefix,
     };
@@ -85,8 +81,7 @@ struct PageRenderer<'a> {
     engine: &'a TemplateEngine,
     config: &'a Config,
     options: &'a RenderOptions,
-    source_dir: Option<&'a Path>,
-    image_resolver: &'a ImageResolver,
+    resources: &'a PageResources<'a>,
     assets: AssetsHandle,
     placeholder_prefix: &'a str,
 }
@@ -257,7 +252,7 @@ impl PageRenderer<'_> {
                 &body.html,
                 self.engine,
                 self.config,
-                self.source_dir,
+                self.resources,
                 &self.assets,
             )?;
             if !html.ends_with('\n') {
@@ -269,8 +264,7 @@ impl PageRenderer<'_> {
             document.markdown,
             self.syntax_set,
             &document.image_attrs,
-            self.image_resolver,
-            self.source_dir,
+            self.resources,
             MarkdownSettings {
                 code_max_lines: if document.scope == 0 {
                     self.options.code_max_lines
@@ -317,7 +311,7 @@ fn render_directive_block(
     body_html: &str,
     engine: &TemplateEngine,
     config: &Config,
-    source_dir: Option<&Path>,
+    resources: &PageResources<'_>,
     assets: &AssetsHandle,
 ) -> Result<String> {
     let id = block.id.as_deref();
@@ -345,7 +339,10 @@ fn render_directive_block(
                 classes: block.classes.clone(),
                 body_html: body_html.to_owned(),
                 body_raw: block.body.clone(),
-                source_dir: source_dir.map(|p| p.to_string_lossy().into_owned()),
+                source_dir: resources
+                    .source_dir
+                    .map(|p| p.to_string_lossy().into_owned()),
+                page_url: resources.page_url.to_owned(),
             };
             match engine.render_directive(name, ctx, assets, config) {
                 Some(result) => result,
@@ -358,13 +355,15 @@ fn render_directive_block(
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::path::Path;
     use std::sync::LazyLock;
 
     use indoc::{formatdoc, indoc};
 
     use super::*;
     use crate::render::assets::Feature;
-    use crate::render::lqip::ImageConfig;
+    use crate::render::lqip::{ImageConfig, ImageResolver};
+    use crate::static_assets::StaticAssetManifest;
     use crate::test_utils::{test_engine, test_i18n};
 
     static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(two_face::syntax::extra_newlines);
@@ -384,8 +383,13 @@ mod tests {
             engine,
             &Config::default(),
             &RenderOptions::default(),
-            None,
-            &EMPTY_RESOLVER,
+            &PageResources {
+                source_dir: None,
+                images: &EMPTY_RESOLVER,
+                assets: &StaticAssetManifest::default(),
+                page_url: "/",
+                deployment_prefix: "",
+            },
         )
         .unwrap()
     }
@@ -400,8 +404,13 @@ mod tests {
                 heading_numbering: true,
                 ..Default::default()
             },
-            None,
-            &EMPTY_RESOLVER,
+            &PageResources {
+                source_dir: None,
+                images: &EMPTY_RESOLVER,
+                assets: &StaticAssetManifest::default(),
+                page_url: "/",
+                deployment_prefix: "",
+            },
         )
     }
 
@@ -438,8 +447,13 @@ mod tests {
             &engine,
             &Config::default(),
             &options,
-            None,
-            &EMPTY_RESOLVER,
+            &PageResources {
+                source_dir: None,
+                images: &EMPTY_RESOLVER,
+                assets: &StaticAssetManifest::default(),
+                page_url: "/",
+                deployment_prefix: "",
+            },
         )
         .unwrap();
         assert!(
@@ -478,8 +492,13 @@ mod tests {
             &test_engine(),
             &Config::default(),
             &options,
-            None,
-            &EMPTY_RESOLVER,
+            &PageResources {
+                source_dir: None,
+                images: &EMPTY_RESOLVER,
+                assets: &StaticAssetManifest::default(),
+                page_url: "/",
+                deployment_prefix: "",
+            },
         )
         .unwrap();
         let fragment = scraper::Html::parse_fragment(&page.content_html);
@@ -530,8 +549,13 @@ mod tests {
             &test_engine(),
             &Config::default(),
             &options,
-            None,
-            &EMPTY_RESOLVER,
+            &PageResources {
+                source_dir: None,
+                images: &EMPTY_RESOLVER,
+                assets: &StaticAssetManifest::default(),
+                page_url: "/",
+                deployment_prefix: "",
+            },
         )
         .unwrap();
         assert!(
@@ -574,8 +598,13 @@ mod tests {
             &test_engine(),
             &Config::default(),
             &options,
-            None,
-            &EMPTY_RESOLVER,
+            &PageResources {
+                source_dir: None,
+                images: &EMPTY_RESOLVER,
+                assets: &StaticAssetManifest::default(),
+                page_url: "/",
+                deployment_prefix: "",
+            },
         )
         .unwrap();
         assert!(
@@ -1303,8 +1332,13 @@ mod tests {
             &engine,
             &Config::default(),
             &RenderOptions::default(),
-            Some(source.path()),
-            &EMPTY_RESOLVER,
+            &PageResources {
+                source_dir: Some(source.path()),
+                images: &EMPTY_RESOLVER,
+                assets: &StaticAssetManifest::default(),
+                page_url: "/",
+                deployment_prefix: "",
+            },
         )
         .unwrap();
         assert!(

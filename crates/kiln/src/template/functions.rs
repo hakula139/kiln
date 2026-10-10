@@ -5,7 +5,7 @@ use minijinja::value::Kwargs;
 use crate::i18n::I18n;
 use crate::render::assets::{AssetsHandle, LoadStrategy, ScriptTag};
 use crate::static_assets::StaticAssetManifest;
-use crate::url::join_site_url;
+use crate::url::site_asset_url;
 
 // ── Date / Time ──
 
@@ -121,13 +121,35 @@ pub(super) fn tpl_t(
 // ── Static Assets ──
 
 pub(super) fn tpl_asset_url(
+    state: &minijinja::State,
     manifest: &StaticAssetManifest,
     deployment_prefix: &str,
     url: &str,
 ) -> std::result::Result<String, minijinja::Error> {
+    let page_url = state.lookup("__page_url");
+    let page_url = page_url.as_ref().and_then(minijinja::Value::as_str);
+    let base = if url.starts_with('/') || crate::static_assets::is_external(url) {
+        "/"
+    } else {
+        page_url.ok_or_else(|| {
+            minijinja::Error::new(
+                minijinja::ErrorKind::InvalidOperation,
+                "asset_url requires a page URL for relative paths",
+            )
+        })?
+    };
     manifest
-        .asset_url(url)
-        .map(|url| join_site_url(deployment_prefix, &url))
+        .resolve(
+            &site_asset_url(url, deployment_prefix),
+            base,
+            deployment_prefix,
+        )
+        .ok_or_else(|| {
+            minijinja::Error::new(
+                minijinja::ErrorKind::InvalidOperation,
+                format!("asset_url: static asset not found: {url}"),
+            )
+        })
 }
 
 // ── Asset Registration ──

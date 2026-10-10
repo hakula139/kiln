@@ -1,74 +1,58 @@
 # Assets and Stylesheets
 
-`kiln build` and `kiln serve` publish assets and compile stylesheets automatically. Keep handwritten sources in the site, theme, or page that owns them. Generated files belong only in the build output. Failed builds preserve the previous output.
+`kiln build` and `kiln serve` publish assets and compile stylesheets automatically. Keep handwritten sources in the site, theme, or page that owns them. Generated files belong in the build output.
 
 ## Public Files
 
-| Source              | Output           | Use                                                                                   |
-| ------------------- | ---------------- | ------------------------------------------------------------------------------------- |
-| `assets/`           | `public/assets/` | Shared images, fonts, JavaScript, and other assets                                    |
-| `static/`           | `public/`        | Files requiring root paths, such as favicons, manifests, `_headers`, and `_redirects` |
-| `content/<bundle>/` | `public/<page>/` | Co-located page assets, retaining their relative paths                                |
+| Source              | Output           | Use                                                                  |
+| ------------------- | ---------------- | -------------------------------------------------------------------- |
+| `assets/`           | `public/assets/` | Shared images, fonts, JavaScript, and other assets                   |
+| `static/`           | `public/`        | Root files such as favicons, manifests, `_headers`, and `_redirects` |
+| `content/<bundle>/` | `public/<page>/` | Co-located page assets, retaining their relative paths               |
 
-Files and directories beginning with `_` are private within `assets/` and content bundles. This keeps stylesheet sources alongside public assets. `static/` publishes underscore-prefixed root files such as `_headers` and `_redirects`.
+Files and directories beginning with `_` are private within `assets/` and content bundles. `static/` also publishes underscore-prefixed files.
 
-Site files override theme files. Within each owner, `static/` overlays `assets/` at the output root. Page bundle assets are published next, followed by compiled stylesheets.
+Site files override theme files. Within each owner, `static/` overlays `assets/` at the output root. Page bundle assets overlay these shared files, and compiled stylesheets take precedence over copied files at their output paths.
 
-Reference shared files through `asset_url()` in templates. Absolute Markdown URLs such as `/assets/images/logo.svg` must include any deployment path prefix. Use bundle-relative URLs in Markdown for page assets, such as `assets/diagram.svg`. See [Page Bundles](content.md#page-bundles) for frontmatter examples.
+## Referencing Assets
+
+Use `asset_url(path)` in templates, including directives, to resolve published files. Markdown images, featured images and compiled CSS references also use the asset manifest. Keep authored filenames unchanged when their contents change.
+
+| Reference               | Relative URL                                   | Root-relative URL                             |
+| ----------------------- | ---------------------------------------------- | --------------------------------------------- |
+| Template `asset_url()`  | Relative to the page output URL                | Site path, with the deployment prefix added   |
+| Featured image          | Relative to the owning page output URL         | Site path, with the deployment prefix added   |
+| Markdown image          | Relative to the page output URL                | Browser root, including any deployment prefix |
+| Compiled CSS `url(...)` | Relative to the stylesheet source declaring it | Browser root, including any deployment prefix |
+
+For a site deployed under `/blog`, `asset_url('/images/photo.png')` and Markdown `![Photo](/blog/images/photo.png)` select the same published file. Bundle-relative references such as `assets/photo.png` resolve from the page's output location, including when its slug differs from its source directory. Image dimensions and placeholders use that same published file.
+
+Encode filename components, using `%20` for a space and `%25` for a literal percent sign. Queries and fragments are preserved. External URLs pass through unchanged. A missing local `asset_url()` reference fails the build, while missing Markdown images retain their authored URLs. Relative template references require a page context.
+
+Prepared `featured_image.src` is an absolute URL, ready for image elements and metadata. Protocol-relative featured images inherit the page's scheme. See [Page Bundles](content.md#page-bundles) for frontmatter examples.
 
 ## Stylesheet Sources
 
-Every owner uses the same private entry path:
-
-```text
-my-site/
-├── assets/
-│   ├── css/_src/style.css          # Site source
-│   └── images/                     # Shared public images
-├── content/about/
-│   ├── assets/
-│   │   ├── css/_src/style.css      # Page source
-│   │   └── diagram.svg             # Public page asset
-│   └── index.md
-├── static/                         # Root-level public files
-└── themes/my-theme/
-    └── assets/css/_src/style.css   # Theme source
-```
+Each site, theme or page bundle uses `assets/css/_src/style.css` as its private entry. Shared CSS is written to `public/assets/css/site.css`. Page CSS is written to `public/<page>/assets/css/page.css`, including for a page at the site root. Other CSS files are ordinary public assets and are not automatically loaded.
 
 The site entry takes precedence over the theme entry. To extend theme styles, import them explicitly from the site entry:
 
 ```css
 @import '../../../themes/my-theme/assets/css/_src/style.css';
-
-.site-banner {
-  font-weight: bold;
-}
 ```
 
-Shared CSS is written to `public/assets/css/site.css`. Page CSS is written to `public/<page>/assets/css/page.css`, including for a page at the site root. Other CSS files are ordinary public assets and are not automatically loaded.
-
-Local `@import` rules are bundled and CSS nesting is supported. Relative `url(...)` references resolve from the source file declaring them, including imported partials, and are rewritten for the published stylesheet location. References must resolve to a published shared asset or an asset belonging to the owning page. Private bundle inputs cannot be exposed through CSS. External and root-relative URLs pass through unchanged.
+Local `@import` rules are bundled and CSS nesting is supported. Relative `url(...)` references, including those in imported partials, must resolve to a published shared asset or an asset belonging to the owning page. Private bundle inputs cannot be exposed through CSS. References are rewritten for the published stylesheet location. External URLs and fragment-only references pass through unchanged.
 
 ### Processor Setup
 
-The accepted processors are `"plain"` and `"tailwind"`. An unset value inherits the theme setting, otherwise it uses plain CSS. Set `processor = "plain"` to override a Tailwind theme. Plain CSS needs no external compiler. A theme selects Tailwind in `theme.toml`, and a site can override the same setting in `config.toml`:
+The accepted processors are `"plain"` and `"tailwind"`. An unset value inherits the theme setting, otherwise it uses plain CSS. Set `processor = "plain"` to override a Tailwind theme. A theme selects its processor in `theme.toml`, and a site can override it in `config.toml`:
 
 ```toml
 [css]
 processor = "tailwind"
 ```
 
-kiln's Nix package includes everything needed for Tailwind.
-
-For other installations, install Node.js 20+ and the [Tailwind processor](https://github.com/hakula139/kiln-tailwindcss):
-
-```bash
-npm install -g @kiln-ssg/tailwindcss
-```
-
-This provides `kiln-tailwindcss` on `PATH`. Subsequent builds invoke it automatically, and compiler failures fail the build.
-
-kiln supplies Tailwind scanning for content and site / theme templates. Page entries automatically receive the selected shared entry through `@reference`, so `@apply` and shared theme definitions work without duplicating the shared stylesheet.
+Plain CSS needs no external compiler. Tailwind requires the [optional processor](../README.md#installation), included in kiln's Nix package. kiln supplies scanning for content and site / theme templates. Page entries receive the selected shared entry through `@reference`, so `@apply` and shared theme definitions work without duplicating the shared stylesheet.
 
 ### Template Links and Page Scope
 
@@ -79,18 +63,20 @@ Link the shared stylesheet in the base template and page CSS in post / page temp
 {% if page_css %}<link rel="stylesheet" href="{{ page_css | safe }}">{% endif %}
 ```
 
-Only the owning page receives `page_css`. Its selectors still share a document with theme components. Use a wrapper class to limit rules to the intended content when needed.
+`page_css` contains the fingerprinted stylesheet URL, including the deployment prefix. Only the owning page receives it. Its selectors still share a document with theme components, so use a wrapper class to limit their scope when needed.
 
 ## Fingerprints and Minification
 
-`asset_url(path)` resolves a published site-root-relative path and includes the configured deployment prefix. Encode filename components in the input URL, such as `%20` for a space or `%25` for a literal percent sign. CSS and JavaScript receive a content-hashed filename, such as `/assets/css/site.a1b2c3d4e5f6.css`. Other files keep their original URLs. Missing paths, queries, fragments, and traversal components fail the build. `page_css` already contains the fingerprinted page stylesheet URL.
+Raster images (AVIF, BMP, GIF, ICO, JPEG, PNG and WebP) and fonts (OTF, TTF, WOFF and WOFF2) receive content-hashed URLs under the reserved `/_assets/` directory. Fingerprints use file bytes independently of image decoding and AVIF support. Original published paths remain available.
 
-Original CSS / JS files remain available for relative imports and direct references. Each digest covers one file. Stylesheet source imports are bundled, while ordinary public CSS and JavaScript retain their import URLs. Bundle those entries separately when imported dependencies also need fingerprinted URLs.
+CSS and JavaScript receive sibling content-hashed filenames, preserving relative import locations. Changes to images or fonts referenced by compiled CSS also change its URL. Ordinary public CSS / JS imports retain their original URLs. Bundle those entries separately when their dependencies also need fingerprinted URLs.
 
-`kiln build --minify` minifies published CSS / JS before computing fingerprints, then minifies HTML. Files named `*.min.css` or `*.min.js` pass through unchanged. Inputs that cannot be minified log a warning and keep their original bytes.
+Hosts may cache `/_assets/*` immutably. Other asset types retain their original URLs, including SVG files whose references can depend on the document's exact URL. Original asset URLs and CSS / JS copies need revalidation because their relative dependencies can change. Raw HTML, JavaScript strings and file contents are not rewritten.
+
+`kiln build --minify` fingerprints minified CSS / JS and also minifies HTML. Files named `*.min.css` or `*.min.js` pass through unchanged. Inputs that cannot be minified log a warning and keep their original bytes.
 
 ## Live Reload
 
 `kiln serve` watches existing site `assets/`, `content/`, `i18n/`, `static/`, and `templates/` directories, plus theme configuration and corresponding theme source directories. Imported files within those trees trigger rebuilds.
 
-Restart after creating a top-level source directory that was absent at startup, switching themes, or changing an imported file outside the watched trees.
+Restart after changing `output_dir`, creating a top-level source directory that was absent at startup, switching themes, or changing an imported file outside the watched trees.

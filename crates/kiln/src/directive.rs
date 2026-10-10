@@ -91,6 +91,8 @@ pub struct DirectiveContext {
     pub body_html: String,
     pub body_raw: String,
     pub source_dir: Option<String>,
+    #[serde(rename = "__page_url")]
+    pub page_url: String,
 }
 
 /// Parsed directive arguments from a `{...}` attribute block.
