@@ -3,8 +3,8 @@
   "scripts": {
     "check:node": "node --check npm/launcher.cjs && node --check npm/package.mjs",
     "format": "pnpm format:prettier && pnpm format:markdown && pnpm format:toml",
+    "format:prettier": "prettier --check \"**/*.{cjs,json,mjs,yaml,yml}\"",
     "format:markdown": "dprint check",
-    "format:prettier": "prettier --check \"**/*.{json,cjs,mjs}\" \".github/**/*.{yml,yaml}\"",
     "format:toml": "taplo format --check",
     "lint": "markdownlint-cli2 \"*.md\" \"docs/**/*.md\"",
     "spellcheck": "cspell --no-progress \"**/*\""
