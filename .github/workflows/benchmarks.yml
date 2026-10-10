@@ -35,7 +35,7 @@ defaults:
 
 jobs:
   benchmark:
-    name: Benchmark comparison
+    name: Benchmark Reports
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -61,7 +61,7 @@ jobs:
           git -C base fetch --no-tags --depth=1 origin "$baseline"
           git -C base checkout --detach FETCH_HEAD
 
-      - name: Setup Nix
+      - name: Set up Nix
         uses: ./head/.github/actions/setup-nix
 
       - name: Cache benchmark builds

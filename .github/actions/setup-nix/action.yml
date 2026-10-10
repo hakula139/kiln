@@ -1,4 +1,4 @@
-name: Setup Nix
+name: Set up Nix
 description: Install Nix and configure the Cachix substituter
 
 inputs:
@@ -20,7 +20,7 @@ runs:
           sandbox = true
           sandbox-fallback = false
 
-    - name: Setup Cachix
+    - name: Set up Cachix
       if: ${{ inputs.cachix_name || env.CACHIX_NAME }}
       uses: cachix/cachix-action@v17
       with:

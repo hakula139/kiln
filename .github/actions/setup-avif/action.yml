@@ -1,0 +1,34 @@
+name: Set up AVIF
+description: Configure the optional dav1d dependency
+
+inputs:
+  enabled:
+    description: Make dav1d available for AVIF placeholder decoding
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Disable dav1d discovery
+      if: inputs.enabled != 'true'
+      shell: bash
+      run: echo 'SYSTEM_DEPS_DAV1D_NO_PKG_CONFIG=1' >> "$GITHUB_ENV"
+
+    - name: Install dav1d (Linux)
+      if: inputs.enabled == 'true' && runner.os == 'Linux'
+      shell: bash
+      run: sudo apt-get update && sudo apt-get install -y libdav1d-dev
+
+    - name: Install dav1d (macOS)
+      if: inputs.enabled == 'true' && runner.os == 'macOS'
+      shell: bash
+      run: brew install dav1d
+
+    - name: Install dav1d (Windows)
+      if: inputs.enabled == 'true' && runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        choco install --no-progress pkgconfiglite
+        vcpkg install dav1d:x64-windows-static-md
+        $vcpkgInstalled = "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows-static-md"
+        "PKG_CONFIG_PATH=$vcpkgInstalled\lib\pkgconfig" | Out-File -FilePath $env:GITHUB_ENV -Append
