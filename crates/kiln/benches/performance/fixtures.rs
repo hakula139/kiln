@@ -1,3 +1,4 @@
+use std::fmt::Write;
 use std::fs;
 use std::path::Path;
 
@@ -13,33 +14,40 @@ pub(super) const PROSE: &str = indoc! {r"
     - Second item
 "};
 
+/// Posts per listing page.
+pub(super) const PAGINATE: usize = 10;
+
+/// Number of `Tag {n}` tags that partition the posts round-robin.
+pub(super) const INDEX_TAGS: usize = 4;
+
 /// Owns a temporary site whose files are removed when dropped.
 pub(super) struct Site {
     directory: TempDir,
 }
 
 impl Site {
-    /// Creates `pages` section posts using `body`, with search and Git timestamps disabled.
-    pub(super) fn new(pages: usize, body: &str) -> Self {
+    /// Creates `pages` section posts using `body` and `params` unrelated settings, with search
+    /// disabled.
+    pub(super) fn new(pages: usize, body: &str, params: usize) -> Self {
         let directory = tempfile::tempdir().unwrap();
         let root = directory.path();
         fs::create_dir_all(root.join("content/posts/notes")).unwrap();
         fs::create_dir(root.join("templates")).unwrap();
         fs::create_dir(root.join("static")).unwrap();
-        fs::write(
-            root.join("config.toml"),
-            indoc! {r#"
-                base_url = "https://example.com"
-                title = "Benchmark site"
+        let mut config = formatdoc! {r#"
+            base_url = "https://example.com"
+            title = "Benchmark site"
 
-                [search]
-                enabled = false
+            [search]
+            enabled = false
 
-                [params]
-                paginate = 10
-            "#},
-        )
-        .unwrap();
+            [params]
+            paginate = {PAGINATE}
+        "#};
+        for (name, value) in extra_params(params) {
+            _ = writeln!(config, "{name} = {value}");
+        }
+        fs::write(root.join("config.toml"), config).unwrap();
         write_templates(root);
         fs::write(root.join("static/style.css"), "body { color: #123456; }\n").unwrap();
         fs::write(root.join("static/script.js"), "const value = 42;\n").unwrap();
@@ -59,7 +67,7 @@ impl Site {
                     tags = ["Common", "Tag {}"]
                     +++
                     {body}
-                "#, index % 4},
+                "#, index % INDEX_TAGS},
             )
             .unwrap();
         }
