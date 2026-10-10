@@ -57,7 +57,7 @@ Explicit heading IDs override the auto-generated one:
 <!-- renders as: <h2 id="custom-id">My Section</h2> -->
 ```
 
-Heading IDs are unique across the page body and nested directives. Authored IDs on headings, raw HTML, images, code blocks and directive wrappers are reserved first, so they keep their values. Generated heading and footnote IDs that repeat one of them, or each other, receive numeric suffixes in rendered document order (`name`, `name-1`, `name-2`).
+Heading IDs are unique across the page body and nested directives. Authored IDs on headings, raw HTML, images, code blocks and directive wrappers are reserved first, so they keep their values. When several headings author the same ID, the first keeps it and later ones are suffixed like generated IDs. Generated heading and footnote IDs that repeat one of them, or each other, receive numeric suffixes in rendered document order (`name`, `name-1`, `name-2`).
 
 Page-body headings populate the `toc` variable in post templates. Headings inside directives stay outside this table of contents. See [Post Templates](themes.md#post-templates-posthtml).
 

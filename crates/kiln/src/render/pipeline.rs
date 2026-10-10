@@ -152,9 +152,11 @@ impl PreparedDocument {
                     let heading = headings
                         .next()
                         .expect("collect_headings yields one entry per heading");
-                    if id.is_none() {
-                        heading.id = ids.allocate(&heading.id);
-                    }
+                    heading.id = if id.is_some() {
+                        ids.claim(&heading.id)
+                    } else {
+                        ids.allocate(&heading.id)
+                    };
                     heading.number = numbers
                         .as_mut()
                         .map(|numbers| {
@@ -583,6 +585,41 @@ mod tests {
         }
         for id in ["shared", "shared-2"] {
             assert!(!page.toc_html.contains(&format!(r##"href="#{id}""##)));
+        }
+    }
+
+    #[test]
+    fn render_page_duplicate_explicit_heading_ids_keep_first() {
+        let page = render(indoc! {"
+            ## First {#dup}
+
+            ## Dup
+
+            ::: callout
+            ## Second {#dup}
+            :::
+
+            ## Third {#dup}
+        "});
+        let mut previous = 0;
+        for heading in [
+            r#"<h2 id="dup">First</h2>"#,
+            r#"<h2 id="dup-1">Dup</h2>"#,
+            r#"<h2 id="dup-2">Second</h2>"#,
+            r#"<h2 id="dup-3">Third</h2>"#,
+        ] {
+            let position = page.content_html.find(heading).unwrap();
+            assert!(position >= previous, "{heading}: {}", page.content_html);
+            previous = position;
+        }
+        assert_eq!(
+            page.content_html.matches(r#"id="dup""#).count(),
+            1,
+            "{}",
+            page.content_html
+        );
+        for id in ["dup", "dup-1", "dup-3"] {
+            assert!(page.toc_html.contains(&format!(r##"href="#{id}""##)));
         }
     }
 
