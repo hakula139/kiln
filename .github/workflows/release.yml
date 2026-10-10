@@ -95,10 +95,10 @@ jobs:
 
   package-npm:
     name: Package npm
-    outputs:
-      version: ${{ steps.package.outputs.version }}
     needs: build
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.package.outputs.version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -119,6 +119,7 @@ jobs:
         id: package
         run: |
           node npm/package.mjs release-assets npm-packages
+
           version=$(node -p "require('./npm-packages/kiln/package.json').version")
           echo "version=$version" >> "$GITHUB_OUTPUT"
           if [[ "$GITHUB_REF_TYPE" == 'tag' ]]; then
@@ -171,6 +172,7 @@ jobs:
             npm install --prefix "npm-$variant" --offline --ignore-scripts --no-audit --no-fund \
               "./npm-packages/kiln-ssg-$variant-$VERSION.tgz" \
               "./npm-packages/kiln-ssg-$variant-${{ matrix.platform.package }}-$VERSION.tgz"
+
             export PATH="$PWD/npm-$variant/node_modules/.bin:$PATH"
             test "$(kiln --version)" = "kiln $VERSION"
             if kiln --unknown-option; then
@@ -204,10 +206,12 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           parse-changelog CHANGELOG.md "${GITHUB_REF_NAME#v}" > release-notes.md
+
           options=(--verify-tag --title "$GITHUB_REF_NAME" --notes-file release-notes.md)
           if [[ "$GITHUB_REF_NAME" == *-* ]]; then
             options+=(--prerelease)
           fi
+
           gh release create "$GITHUB_REF_NAME" release-assets/* "${options[@]}"
 
   publish-npm:
@@ -235,9 +239,11 @@ jobs:
           if [[ "$GITHUB_REF_NAME" == *-* ]]; then
             tag=next
           fi
+
           for package in npm-packages/*-{darwin-arm64,linux-x64-gnu,win32-x64-msvc}-*.tgz; do
             npm publish "$package" --tag "$tag"
           done
+
           for variant in kiln kiln-extended; do
             npm publish "npm-packages/kiln-ssg-$variant-${GITHUB_REF_NAME#v}.tgz" --tag "$tag"
           done
