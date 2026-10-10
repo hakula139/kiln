@@ -195,16 +195,7 @@
             # libiconv resolves onig_sys / libwebp-sys link errors on darwin.
             ++ pkgs.lib.optional pkgs.stdenv.isDarwin pkgs.libiconv;
 
-          shellHook =
-            preCommitCheck.shellHook
-            + pkgs.lib.optionalString pkgs.stdenv.isDarwin ''
-              # Point LIBRARY_PATH at the Xcode SDK so rustc can link on Darwin.
-              if command -v xcrun >/dev/null 2>&1; then
-                export LIBRARY_PATH="$(xcrun --show-sdk-path)/usr/lib''${LIBRARY_PATH:+:$LIBRARY_PATH}"
-              else
-                echo "warning: xcrun not found. Run \`xcode-select --install\` so cargo can link against the system SDK" >&2
-              fi
-            '';
+          inherit (preCommitCheck) shellHook;
 
           env.RUST_BACKTRACE = "1";
         };
