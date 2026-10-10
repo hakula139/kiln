@@ -38,7 +38,7 @@ fnm install --latest --use
 npm install -g @kiln-ssg/kiln@next
 ```
 
-Use `@kiln-ssg/kiln-extended@next` for AVIF loading placeholders, with the same [dav1d requirements](RELEASING.md#targets) as the extended archive. Both packages install the `kiln` command. Uninstall the current variant before switching. Prereleases use the `next` npm tag.
+Use `@kiln-ssg/kiln-extended@next` for AVIF loading placeholders, with the same [dav1d requirements](#prebuilt-binary) as the extended archive. Both packages install the `kiln` command. Uninstall the current variant before switching. Prereleases use the `next` npm tag.
 
 Add optional tools to the same installation command when your site needs them:
 
@@ -68,7 +68,7 @@ unzip kiln-x86_64-pc-windows-msvc.zip
 kiln --version
 ```
 
-From 0.5.0 onward, the default archive needs no dav1d, and `kiln-extended-<target>` provides AVIF loading placeholders with [platform requirements](RELEASING.md#targets).
+From 0.5.0 onward, the default archive needs no dav1d, and `kiln-extended-<target>` provides AVIF loading placeholders. Extended Linux binaries need the system `libdav1d` package. On macOS, install it with `brew install dav1d`. Windows extended binaries include dav1d.
 
 The v0.4.0 Linux and macOS binaries require dav1d at runtime.
 
