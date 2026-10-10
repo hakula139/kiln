@@ -46,7 +46,7 @@ Add optional tools to the same installation command when your site needs them:
 npm install -g @kiln-ssg/kiln@next @kiln-ssg/tailwindcss@0.1.2 pagefind@1.5.2
 ```
 
-The Tailwind processor is required by IgnIt. Pagefind is required only when search is enabled. Omit either package when unused. npm selects the binary for Linux x86_64 (glibc), Apple Silicon, or Windows x86_64.
+Install the Tailwind processor when your site or theme compiles Tailwind CSS. Pagefind is required only when search is enabled. Omit either package when unused. npm selects the binary for Linux x86_64 (glibc), Apple Silicon, or Windows x86_64.
 
 ### Prebuilt binary
 
@@ -104,7 +104,7 @@ inputs.kiln.url = "github:hakula139/kiln";
 
 ## First Site
 
-After installing kiln, create a site with [IgnIt](https://github.com/hakula139/IgnIt). Use a kiln version meeting the theme's `min_kiln_version`. Nix includes its Tailwind processor. For other installations, follow [Processor Setup](docs/assets.md#processor-setup).
+After installing kiln, create a site with [IgnIt](https://github.com/hakula139/IgnIt). Use a kiln version meeting the theme's `min_kiln_version`. The Nix package includes the Tailwind processor. For other installations, follow [Processor Setup](docs/assets.md#processor-setup).
 
 ```bash
 git init my-site
