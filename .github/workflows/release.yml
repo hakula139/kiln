@@ -36,7 +36,7 @@ jobs:
       matrix:
         variant:
           - name: base
-            features: ""
+            features: ''
             archive: kiln
           - name: extended
             features: avif

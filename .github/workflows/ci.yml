@@ -64,13 +64,13 @@ jobs:
         include:
           - runner: ubuntu-latest
             variant: base
-            features: ""
+            features: ''
           - runner: ubuntu-latest
             variant: extended
             features: avif
           - runner: windows-latest
             variant: base
-            features: ""
+            features: ''
     defaults:
       run:
         shell: bash
