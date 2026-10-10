@@ -48,7 +48,6 @@ impl ListingArtifacts {
 pub(super) fn build_listing_artifacts(
     ctx: &BuildContext,
     pages: &[Page],
-    content_dir: &Path,
     sections: &[Section],
     taxonomy_set: &TaxonomySet,
 ) -> Result<ListingArtifacts> {
@@ -58,7 +57,7 @@ pub(super) fn build_listing_artifacts(
     for (index, page) in pages.iter().enumerate() {
         let tags = linked_tags(taxonomy_set, index, &ctx.config.base_url);
         prepared.push(
-            prepare_page(ctx, page, content_dir, sections, tags)
+            prepare_page(ctx, page, sections, tags)
                 .with_context(|| format!("failed to prepare {}", page.source_path.display()))?,
         );
         if let PageKind::Post { section } = &page.kind {
@@ -93,11 +92,10 @@ pub(super) fn build_listing_artifacts(
 fn prepare_page(
     ctx: &BuildContext,
     page: &Page,
-    content_dir: &Path,
     sections: &[Section],
     tags: Vec<LinkedTerm>,
 ) -> Result<PreparedPage> {
-    let output_path = page.output_path(content_dir)?;
+    let output_path = page.output_path();
     let url = page_url(&ctx.config.base_url, &output_path);
     let published = page.frontmatter.date;
     let updated = updated_timestamp(

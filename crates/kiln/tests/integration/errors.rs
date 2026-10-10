@@ -70,7 +70,7 @@ fn build_failure_preserves_previous_output_returns_error() {
                 indoc! {r#"
                     +++
                     title = "Hello"
-                    featured_image = "http://["
+                    featured_image = { src = "http://[" }
                     +++
                     Updated body
                 "#},

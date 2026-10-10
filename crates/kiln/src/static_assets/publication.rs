@@ -28,7 +28,6 @@ impl PublishedAssets {
     pub(crate) fn publish(
         root: &Path,
         theme_dir: Option<&Path>,
-        content_dir: &Path,
         pages: &[Page],
         output_dir: &Path,
     ) -> Result<Self> {
@@ -48,7 +47,7 @@ impl PublishedAssets {
 
         let mut page_files = BTreeMap::new();
         for page in pages {
-            let files = copy_page_assets(content_dir, page, output_dir)?;
+            let files = copy_page_assets(page, output_dir)?;
             page_files.insert(
                 page.source_path.clone(),
                 PublishedFiles::new(files, output_dir)?,
@@ -78,17 +77,12 @@ impl PublishedAssets {
     }
 }
 
-fn copy_page_assets(
-    content_dir: &Path,
-    page: &Page,
-    output_dir: &Path,
-) -> Result<BTreeMap<PathBuf, PathBuf>> {
+fn copy_page_assets(page: &Page, output_dir: &Path) -> Result<BTreeMap<PathBuf, PathBuf>> {
     let bundle = page
         .source_path
         .parent()
         .context("page source has no parent")?;
-    let output = page.output_path(content_dir)?;
-    let destination = output_dir.join(output.parent().context("page output has no parent")?);
+    let destination = output_dir.join(&page.output_dir);
     let mut files = BTreeMap::new();
     for asset in &page.assets {
         let relative = asset
@@ -165,6 +159,7 @@ mod tests {
     use indoc::indoc;
 
     use super::*;
+    use crate::content::discovery::discover_content;
 
     // ── PublishedAssets::publish ──
 
@@ -202,8 +197,8 @@ mod tests {
             "#},
         )
         .unwrap();
-        let page = Page::from_file(&source).unwrap();
-        PublishedAssets::publish(root.path(), Some(&theme), &content, &[page], &output).unwrap();
+        let pages = discover_content(root.path()).unwrap().pages;
+        PublishedAssets::publish(root.path(), Some(&theme), &pages, &output).unwrap();
 
         for (path, value) in [
             ("assets/image.svg", "site static"),
@@ -242,14 +237,7 @@ mod tests {
         )
         .unwrap();
         let output = root.path().join("public");
-        let assets = PublishedAssets::publish(
-            root.path(),
-            None,
-            &root.path().join("content"),
-            &[],
-            &output,
-        )
-        .unwrap();
+        let assets = PublishedAssets::publish(root.path(), None, &[], &output).unwrap();
 
         let destination = assets
             .resolve(None, &static_dir.join("linked/../image.svg"))
@@ -292,7 +280,6 @@ mod tests {
         symlink(&page_image, content.join("first/assets/first.svg")).unwrap();
         let page_alias = content.join("first/assets/second.svg");
         symlink(&page_image, &page_alias).unwrap();
-        let mut pages = Vec::new();
         for name in ["first", "second"] {
             let source = content.join(name).join("index.md");
             fs::write(
@@ -304,11 +291,10 @@ mod tests {
                 "#},
             )
             .unwrap();
-            pages.push(Page::from_file(&source).unwrap());
         }
+        let pages = discover_content(root.path()).unwrap().pages;
 
-        let assets =
-            PublishedAssets::publish(root.path(), Some(&theme), &content, &pages, &output).unwrap();
+        let assets = PublishedAssets::publish(root.path(), Some(&theme), &pages, &output).unwrap();
 
         assert_eq!(
             assets.resolve(None, &static_image).unwrap(),

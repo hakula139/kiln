@@ -4,11 +4,11 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, ensure};
 use itertools::Itertools;
 use pulldown_cmark::{Event, Parser, Tag, TagEnd};
-use walkdir::WalkDir;
 
 use super::frontmatter::{self, Frontmatter};
-use super::is_markdown;
+use super::{is_markdown, is_private};
 use crate::markdown::markdown_options;
+use crate::output::walk_directory;
 
 /// Distinguishes blog posts (under `content/posts/`) from standalone pages.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -23,13 +23,13 @@ pub enum PageKind {
 #[derive(Debug)]
 pub struct Page {
     pub frontmatter: Frontmatter,
-    pub raw_content: String,
-    /// Set by content discovery based on position in the content directory. Defaults to
-    /// `PageKind::Page` when created via `from_content`.
+    /// Markdown following the frontmatter block.
+    pub body: String,
     pub kind: PageKind,
-    pub slug: String,
     pub summary: Option<String>,
     pub source_path: PathBuf,
+    /// Directory the page renders into, relative to the build output directory.
+    pub output_dir: PathBuf,
     /// Public co-located non-markdown files for page bundles. Empty for standalone pages.
     pub assets: Vec<PathBuf>,
 }
@@ -37,146 +37,98 @@ pub struct Page {
 const SUMMARY_SEPARATOR: &str = "<!--more-->";
 
 impl Page {
-    /// Loads a page from a markdown file on disk.
+    /// Parses a content file at `path` under `content_dir`, deriving its kind, output directory,
+    /// summary and bundle assets.
     ///
     /// # Errors
     ///
-    /// Returns an error if reading the page or bundle assets fails, frontmatter is invalid, or a
-    /// slug cannot be derived from the file path.
-    pub fn from_file(path: &Path) -> Result<Self> {
-        let content = fs::read_to_string(path)
-            .with_context(|| format!("failed to read {}", path.display()))?;
-        Self::from_content_with_assets(&content, path)
-    }
-
-    /// Parses already-read Markdown and discovers co-located assets for page-bundle source paths.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if parsing or bundle-asset discovery fails.
-    pub(super) fn from_content_with_assets(content: &str, path: &Path) -> Result<Self> {
-        let mut page = Self::from_content(content, path)
-            .with_context(|| format!("failed to parse {}", path.display()))?;
-
-        if is_page_bundle(path)
-            && let Some(dir) = path.parent()
-        {
-            page.assets = discover_assets(dir)
-                .with_context(|| format!("failed to read assets in {}", dir.display()))?;
-        }
-
-        Ok(page)
-    }
-
-    /// Parses a page from its raw content string and source path.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the frontmatter is invalid or a slug cannot be derived.
-    pub fn from_content(content: &str, path: &Path) -> Result<Self> {
+    /// Returns an error if the frontmatter or slug is invalid, a section name is not UTF-8, or
+    /// bundle assets cannot be read.
+    pub(super) fn parse(content: &str, path: &Path, content_dir: &Path) -> Result<Self> {
+        let relative = path
+            .strip_prefix(content_dir)
+            .expect("content discovery only yields paths under the content directory");
         let (frontmatter, body) = frontmatter::parse(content)
             .with_context(|| format!("invalid frontmatter in {}", path.display()))?;
-
-        let slug = frontmatter
-            .slug
-            .clone()
-            .or_else(|| derive_slug(path))
-            .with_context(|| {
-                format!(
-                    "cannot derive slug from {}: \
-                     page bundles (index.md) must be inside a named directory",
-                    path.display()
-                )
-            })?;
-        validate_slug(&slug, path)?;
-        let summary = extract_summary(body);
+        let output_dir = output_dir(relative, frontmatter.slug.as_deref())
+            .with_context(|| format!("invalid slug in {}", path.display()))?;
+        let kind = page_kind(relative)
+            .with_context(|| format!("invalid section in {}", path.display()))?;
+        let assets = match path.parent() {
+            Some(dir) if is_page_bundle(path) => discover_assets(dir)
+                .with_context(|| format!("failed to read assets in {}", dir.display()))?,
+            _ => Vec::new(),
+        };
 
         Ok(Self {
+            summary: extract_summary(body),
+            body: body.to_owned(),
             frontmatter,
-            raw_content: body.to_owned(),
-            kind: PageKind::Page,
-            slug,
-            summary,
+            kind,
             source_path: path.to_owned(),
-            assets: Vec::new(),
+            output_dir,
+            assets,
         })
     }
 
-    /// Computes the output path relative to the build output directory.
-    ///
-    /// - `content/posts/foo/bar/index.md` → `posts/foo/bar/index.html`
-    /// - `content/posts/hello-world.md` → `posts/hello-world/index.html`
-    /// - `content/example/index.md` → `example/index.html`
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the source path is not under the given content directory.
-    pub fn output_path(&self, content_dir: &Path) -> Result<PathBuf> {
-        let relative = self
-            .source_path
-            .strip_prefix(content_dir)
-            .with_context(|| {
-                format!(
-                    "{} is not under {}",
-                    self.source_path.display(),
-                    content_dir.display()
-                )
-            })?;
-
-        let mut directory = if is_page_bundle(relative) {
-            relative.parent().unwrap_or(Path::new("")).to_owned()
-        } else {
-            relative.with_extension("")
-        };
-        if let Some(slug) = &self.frontmatter.slug {
-            validate_slug(slug, &self.source_path)?;
-            directory.pop();
-            directory.push(slug);
-        }
-        Ok(directory.join("index.html"))
+    /// Output file path relative to the build output directory.
+    #[must_use]
+    pub fn output_path(&self) -> PathBuf {
+        self.output_dir.join("index.html")
     }
 }
 
-fn validate_slug(slug: &str, source: &Path) -> Result<()> {
-    let mut components = Path::new(slug).components();
-    ensure!(
-        matches!(components.next(), Some(std::path::Component::Normal(_)))
-            && components.next().is_none()
-            && !slug.contains(['/', '\\']),
-        "slug must be a single nonempty path component in {}",
-        source.display()
-    );
-    Ok(())
+/// Derives the output directory from a content-relative source path and an optional slug.
+///
+/// - `posts/foo/bar/index.md` → `posts/foo/bar`
+/// - `posts/hello-world.md` → `posts/hello-world`
+/// - `index.md` → the output root
+///
+/// A slug replaces the final component.
+fn output_dir(relative: &Path, slug: Option<&str>) -> Result<PathBuf> {
+    let mut directory = if is_page_bundle(relative) {
+        relative.parent().unwrap_or(Path::new("")).to_owned()
+    } else {
+        relative.with_extension("")
+    };
+    if let Some(slug) = slug {
+        let mut components = Path::new(slug).components();
+        ensure!(
+            matches!(components.next(), Some(std::path::Component::Normal(_)))
+                && components.next().is_none()
+                && !slug.contains(['/', '\\']),
+            "slug must be a single nonempty path component"
+        );
+        directory.set_file_name(slug);
+    }
+    Ok(directory)
 }
 
-/// Derives the page kind from its position in the content directory.
+/// Derives the page kind from its content-relative path.
 ///
-/// Pages under `content/posts/` are posts. The first directory after `posts/`
-/// is the section when the remaining path is deep enough:
+/// Pages under `posts/` are posts. The first directory after `posts/` is the section when the
+/// remaining path is deep enough:
 ///
 /// - Bundles need 3+ components: `posts/note/slug/index.md` → section "note"
 /// - Non-bundles need 2+: `posts/note/hello.md` → section "note"
 ///
-/// Shallower paths (`posts/slug/index.md`, `posts/hello.md`) are orphan posts.
-/// Everything outside `content/posts/` is a standalone page.
-pub fn derive_page_kind(source_path: &Path, content_dir: &Path) -> PageKind {
-    let Ok(relative) = source_path.strip_prefix(content_dir) else {
-        return PageKind::Page;
-    };
-
+/// Shallower paths (`posts/slug/index.md`, `posts/hello.md`) are orphan posts. Everything outside
+/// `posts/` is a standalone page.
+fn page_kind(relative: &Path) -> Result<PageKind> {
     let Ok(after_posts) = relative.strip_prefix("posts") else {
-        return PageKind::Page;
+        return Ok(PageKind::Page);
     };
 
-    let components: Vec<_> = after_posts.components().collect();
-    let min_depth = if is_page_bundle(source_path) { 3 } else { 2 };
-    let section = if components.len() >= min_depth {
-        components[0].as_os_str().to_str().map(String::from)
-    } else {
-        None
+    let min_depth = if is_page_bundle(relative) { 3 } else { 2 };
+    let section = match after_posts.iter().next() {
+        Some(name) if after_posts.iter().count() >= min_depth => Some(
+            name.to_str()
+                .with_context(|| format!("section name {} is not UTF-8", name.display()))?
+                .to_owned(),
+        ),
+        _ => None,
     };
-
-    PageKind::Post { section }
+    Ok(PageKind::Post { section })
 }
 
 /// Returns `true` if the file is a page bundle entry point (`index.md`).
@@ -184,29 +136,21 @@ pub(crate) fn is_page_bundle(path: &Path) -> bool {
     path.file_stem().and_then(|s| s.to_str()) == Some("index")
 }
 
-/// Returns sorted public assets owned by this bundle, stopping at nested bundle roots.
+/// Returns sorted public assets owned by this bundle, excluding nested bundle subtrees.
 fn discover_assets(dir: &Path) -> Result<Vec<PathBuf>> {
     let mut assets = Vec::new();
-    let mut entries = WalkDir::new(dir).follow_links(true).into_iter();
-    while let Some(entry) = entries.next() {
-        if let Err(error) = &entry
-            && error
-                .path()
-                .and_then(Path::file_name)
-                .is_some_and(super::is_private)
-        {
-            continue;
-        }
+    let mut nested_bundle: Option<PathBuf> = None;
+    for entry in walk_directory(dir, &|name| !is_private(name)) {
         let entry = entry.with_context(|| format!("failed to read entry in {}", dir.display()))?;
-        if entry.depth() > 0 && super::is_private(entry.file_name()) {
-            if entry.file_type().is_dir() {
-                entries.skip_current_dir();
-            }
+        if nested_bundle
+            .as_deref()
+            .is_some_and(|bundle| entry.path().starts_with(bundle))
+        {
             continue;
         }
         if entry.file_type().is_dir() {
             if entry.depth() > 0 && contains_bundle(entry.path())? {
-                entries.skip_current_dir();
+                nested_bundle = Some(entry.into_path());
             }
         } else if entry.file_type().is_file() && !is_markdown(entry.path()) {
             assets.push(entry.into_path());
@@ -218,36 +162,12 @@ fn discover_assets(dir: &Path) -> Result<Vec<PathBuf>> {
 
 fn contains_bundle(dir: &Path) -> Result<bool> {
     for entry in fs::read_dir(dir)? {
-        let entry = entry?;
-        if entry.file_type()?.is_file()
-            && is_markdown(&entry.path())
-            && is_page_bundle(&entry.path())
-        {
+        let path = entry?.path();
+        if is_markdown(&path) && is_page_bundle(&path) && path.is_file() {
             return Ok(true);
         }
     }
     Ok(false)
-}
-
-/// Derives the page slug from its file path, or `None` if empty.
-fn derive_slug(path: &Path) -> Option<String> {
-    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-
-    let slug = if stem == "index" {
-        // Page bundle: use parent directory name.
-        path.parent()
-            .and_then(Path::file_name)
-            .and_then(|s| s.to_str())
-            .unwrap_or("")
-    } else {
-        stem
-    };
-
-    if slug.is_empty() {
-        None
-    } else {
-        Some(slug.to_owned())
-    }
 }
 
 /// Extracts summary text before `<!--more-->`, stripped to plain text.
@@ -255,12 +175,8 @@ fn derive_slug(path: &Path) -> Option<String> {
 /// Parses the full body so reference link definitions after the separator still resolve.
 fn extract_summary(body: &str) -> Option<String> {
     let separator_offset = body.find(SUMMARY_SEPARATOR)?;
-    let raw = body[..separator_offset].trim();
-    if raw.is_empty() {
-        return None;
-    }
     let plain = strip_markdown(body, separator_offset);
-    if plain.is_empty() { None } else { Some(plain) }
+    (!plain.is_empty()).then_some(plain)
 }
 
 /// Strips markdown to plain text from the region before `summary_end`.
@@ -298,28 +214,53 @@ fn strip_markdown(full_text: &str, summary_end: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
     use indoc::indoc;
 
     use super::*;
     #[cfg(unix)]
     use crate::test_utils::PermissionGuard;
-    use crate::test_utils::test_page;
+    use crate::test_utils::write_test_file;
 
-    // ── from_file ──
+    const MINIMAL: &str = indoc! {r#"
+        +++
+        title = "Example"
+        +++
+        Body
+    "#};
+
+    /// Writes `content` to `relative` under `<root>/content` and parses it.
+    fn parse_at(root: &Path, relative: &str, content: &str) -> Result<Page> {
+        write_test_file(root, &format!("content/{relative}"), content);
+        let content_dir = root.join("content");
+        Page::parse(content, &content_dir.join(relative), &content_dir)
+    }
+
+    // ── Page::parse ──
 
     #[test]
-    fn from_file_basic() {
-        let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("test.md");
-        fs::write(
-            &file,
+    fn parse_bundle_derives_metadata_and_assets() {
+        let root = tempfile::tempdir().unwrap();
+        let bundle = root.path().join("content/posts/note/hello");
+        for (path, contents) in [
+            ("cover.webp", "fake-webp"),
+            ("assets/screenshot.webp", "fake-webp"),
+            ("assets/data.json", "{}"),
+            ("notes.md", "other markdown"),
+            ("assets/notes.md", "nested markdown"),
+            ("_private.txt", "private"),
+            ("nested/index.md", "nested bundle"),
+            ("nested/photo.webp", "nested bundle asset"),
+        ] {
+            write_test_file(&bundle, path, contents);
+        }
+
+        let page = parse_at(
+            root.path(),
+            "posts/note/hello/index.md",
             indoc! {r#"
                 +++
-                title = "Test"
+                title = "Hello"
                 +++
-
                 Summary here.
 
                 <!--more-->
@@ -329,39 +270,24 @@ mod tests {
         )
         .unwrap();
 
-        let page = Page::from_file(&file).unwrap();
-        assert_eq!(page.frontmatter.title, "Test");
-        assert_eq!(page.slug, "test");
-        assert_eq!(page.summary.unwrap(), "Summary here.");
-    }
-
-    #[test]
-    fn from_file_page_bundle_discovers_assets_recursively() {
-        let dir = tempfile::tempdir().unwrap();
-        let bundle = dir.path().join("content").join("posts").join("hello");
-        let assets_dir = bundle.join("assets");
-        fs::create_dir_all(&assets_dir).unwrap();
-        fs::write(
-            bundle.join("index.md"),
-            indoc! {r#"
-                +++
-                title = "Hello"
-                +++
-                Body
-            "#},
-        )
-        .unwrap();
-        fs::write(bundle.join("cover.webp"), "fake-webp").unwrap();
-        fs::write(assets_dir.join("screenshot.webp"), "fake-webp").unwrap();
-        fs::write(assets_dir.join("data.json"), "{}").unwrap();
-        fs::write(bundle.join("notes.md"), "other markdown").unwrap();
-        fs::write(assets_dir.join("notes.md"), "nested markdown").unwrap();
-
-        let page = Page::from_file(&bundle.join("index.md")).unwrap();
+        assert_eq!(page.frontmatter.title, "Hello");
+        assert_eq!(
+            page.body,
+            "Summary here.\n\n<!--more-->\n\nFull content here.\n"
+        );
+        assert_eq!(page.summary.as_deref(), Some("Summary here."));
+        assert_eq!(
+            page.kind,
+            PageKind::Post {
+                section: Some("note".into())
+            }
+        );
+        assert_eq!(page.output_dir, Path::new("posts/note/hello"));
+        assert_eq!(page.output_path(), Path::new("posts/note/hello/index.html"));
         let relative_paths: Vec<_> = page
             .assets
             .iter()
-            .map(|p| p.strip_prefix(&bundle).unwrap())
+            .map(|path| path.strip_prefix(&bundle).unwrap())
             .collect();
         assert_eq!(
             relative_paths,
@@ -370,169 +296,109 @@ mod tests {
     }
 
     #[test]
-    fn from_file_non_index_has_no_assets() {
-        let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("standalone.md");
-        fs::write(
-            &file,
-            indoc! {r#"
-                +++
-                title = "Standalone"
-                +++
-                Body
-            "#},
-        )
-        .unwrap();
-        fs::write(dir.path().join("image.png"), "fake-png").unwrap();
+    fn parse_standalone_file_has_no_assets() {
+        let root = tempfile::tempdir().unwrap();
+        write_test_file(root.path(), "content/image.png", "fake-png");
 
-        let page = Page::from_file(&file).unwrap();
+        let page = parse_at(root.path(), "standalone.md", MINIMAL).unwrap();
+
+        assert_eq!(page.kind, PageKind::Page);
+        assert_eq!(page.output_dir, Path::new("standalone"));
         assert_eq!(page.assets, Vec::<PathBuf>::new());
     }
 
     #[test]
-    fn from_file_nonexistent_returns_error() {
-        let err = Page::from_file(Path::new("/nonexistent/test.md"))
-            .unwrap_err()
-            .to_string();
-        assert!(
-            err.contains("failed to read"),
-            "should report read failure, got: {err}"
-        );
-    }
-
-    #[test]
-    fn from_file_invalid_frontmatter_returns_error() {
-        let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("bad.md");
-        fs::write(
-            &file,
-            indoc! {"
-                +++
-                not valid {{{
-                +++
-            "},
-        )
-        .unwrap();
-
-        let err = Page::from_file(&file).unwrap_err().to_string();
-        assert!(
-            err.contains("failed to parse"),
-            "should report parse failure, got: {err}"
-        );
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn from_file_excludes_private_invalid_asset_symlinks() {
-        let dir = tempfile::tempdir().unwrap();
-        fs::write(
-            dir.path().join("index.md"),
-            indoc! {r#"
-                +++
-                title = "Example"
-                +++
-            "#},
-        )
-        .unwrap();
-        let public = dir.path().join("visible.txt");
-        fs::write(&public, "published").unwrap();
-        std::os::unix::fs::symlink(dir.path().join("missing"), dir.path().join("_broken")).unwrap();
-        std::os::unix::fs::symlink(dir.path(), dir.path().join("_cycle")).unwrap();
-
-        let page = Page::from_file(&dir.path().join("index.md")).unwrap();
-
-        assert_eq!(page.assets, vec![public]);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn from_file_unreadable_bundle_dir_returns_error() {
-        let dir = tempfile::tempdir().unwrap();
-        let bundle = dir.path().join("hello");
-        fs::create_dir_all(&bundle).unwrap();
-        fs::write(
-            bundle.join("index.md"),
-            indoc! {r#"
-                +++
-                title = "Hello"
-                +++
-                Body
-            "#},
-        )
-        .unwrap();
-
-        // Remove read permission but keep execute so the file can still be read by path.
-        let _guard = PermissionGuard::restrict(&bundle, 0o111);
-
-        let err = Page::from_file(&bundle.join("index.md"))
-            .unwrap_err()
-            .to_string();
-        assert!(
-            err.contains("failed to read assets"),
-            "should report asset discovery failure, got: {err}"
-        );
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn from_file_unreadable_subdir_returns_error() {
-        let dir = tempfile::tempdir().unwrap();
-        let bundle = dir.path().join("hello");
-        let subdir = bundle.join("broken");
-        fs::create_dir_all(&subdir).unwrap();
-        fs::write(
-            bundle.join("index.md"),
-            indoc! {r#"
-                +++
-                title = "Hello"
-                +++
-                Body
-            "#},
-        )
-        .unwrap();
-        fs::write(subdir.join("file.txt"), "content").unwrap();
-
-        // Make the subdirectory unreadable so WalkDir yields an error entry.
-        let _guard = PermissionGuard::restrict(&subdir, 0o000);
-
-        let err = Page::from_file(&bundle.join("index.md"))
-            .unwrap_err()
-            .to_string();
-        assert!(
-            err.contains("failed to read"),
-            "should report entry read failure, got: {err}"
-        );
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn from_file_invalid_asset_symlink_returns_error() {
-        for cycle in [false, true] {
-            let dir = tempfile::tempdir().unwrap();
-            fs::write(
-                dir.path().join("index.md"),
+    fn parse_invalid_metadata_returns_error() {
+        for (content, expected) in [
+            (
+                indoc! {"
+                    +++
+                    not valid {{{
+                    +++
+                "},
+                "invalid frontmatter",
+            ),
+            (
                 indoc! {r#"
                     +++
-                    title = "Post A"
+                    slug = "../other"
                     +++
                 "#},
+                "invalid slug",
+            ),
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let error = parse_at(root.path(), "bad.md", content).unwrap_err();
+            assert!(
+                error.to_string().starts_with(expected),
+                "{expected}: {error:#}"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn parse_excludes_private_invalid_asset_symlinks() {
+        let root = tempfile::tempdir().unwrap();
+        let bundle = root.path().join("content/example");
+        write_test_file(&bundle, "visible.txt", "published");
+        std::os::unix::fs::symlink(bundle.join("missing"), bundle.join("_broken")).unwrap();
+        std::os::unix::fs::symlink(&bundle, bundle.join("_cycle")).unwrap();
+
+        let page = parse_at(root.path(), "example/index.md", MINIMAL).unwrap();
+
+        assert_eq!(page.assets, [bundle.join("visible.txt")]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn parse_unreadable_bundle_returns_error() {
+        for unreadable in ["", "broken"] {
+            let root = tempfile::tempdir().unwrap();
+            let bundle = root.path().join("content/hello");
+            write_test_file(&bundle, "index.md", MINIMAL);
+            write_test_file(&bundle, "broken/file.txt", "content");
+            let directory = bundle.join(unreadable);
+
+            // Keep execute on the bundle itself so the entry point stays readable by path.
+            let mode = if unreadable.is_empty() { 0o111 } else { 0o000 };
+            let _guard = PermissionGuard::restrict(&directory, mode);
+
+            let error = Page::parse(
+                MINIMAL,
+                &bundle.join("index.md"),
+                &root.path().join("content"),
             )
-            .unwrap();
+            .unwrap_err();
+            assert!(
+                error.to_string().contains("failed to read assets"),
+                "{unreadable}: {error:#}"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn parse_invalid_asset_symlink_returns_error() {
+        for cycle in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let bundle = root.path().join("content/example");
+            std::fs::create_dir_all(&bundle).unwrap();
             let target = if cycle {
-                dir.path().to_owned()
+                bundle.clone()
             } else {
-                dir.path().join("missing")
+                bundle.join("missing")
             };
-            let link = dir.path().join("asset");
+            let link = bundle.join("asset");
             std::os::unix::fs::symlink(&target, &link).unwrap();
 
-            let err = Page::from_file(&dir.path().join("index.md")).unwrap_err();
+            let error = parse_at(root.path(), "example/index.md", MINIMAL).unwrap_err();
 
-            assert!(err.to_string().contains("failed to read assets"));
-            let walk_error = err.downcast_ref::<walkdir::Error>().unwrap();
+            assert!(error.to_string().contains("failed to read assets"));
+            let walk_error = error.downcast_ref::<walkdir::Error>().unwrap();
             assert_eq!(walk_error.path(), Some(link.as_path()));
             if cycle {
-                assert_eq!(walk_error.loop_ancestor(), Some(dir.path()));
+                assert_eq!(walk_error.loop_ancestor(), Some(bundle.as_path()));
             } else {
                 assert_eq!(
                     walk_error.io_error().unwrap().kind(),
@@ -542,106 +408,37 @@ mod tests {
         }
     }
 
-    // ── from_content ──
+    // ── output_dir ──
 
     #[test]
-    fn from_content_basic() {
-        let content = indoc! {r#"
-            +++
-            title = "Test"
-            +++
-
-            Summary here.
-
-            <!--more-->
-
-            Full content here.
-        "#};
-        let page = Page::from_content(content, Path::new("content/posts/test/index.md")).unwrap();
-        assert_eq!(page.frontmatter.title, "Test");
-        assert_eq!(page.slug, "test");
-        assert_eq!(page.summary.unwrap(), "Summary here.");
-    }
-
-    #[test]
-    fn from_content_explicit_slug_overrides_filename() {
-        let content = indoc! {r#"
-            +++
-            title = "My Post"
-            slug = "custom-slug"
-            +++
-            Body
-        "#};
-        let page = Page::from_content(content, Path::new("content/posts/foobar/index.md")).unwrap();
-        assert_eq!(page.slug, "custom-slug");
-    }
-
-    #[test]
-    fn from_content_bare_index_no_slug_returns_error() {
-        let content = indoc! {r#"
-            +++
-            title = "Test"
-            +++
-            Body
-        "#};
-        let err = Page::from_content(content, Path::new("index.md"))
-            .unwrap_err()
-            .to_string();
-        assert!(
-            err.contains("cannot derive slug"),
-            "should report slug derivation failure, got: {err}"
-        );
-    }
-
-    // ── output_path ──
-
-    #[test]
-    fn output_path_uses_source_location_and_slug() {
-        for (slug, source, expected) in [
-            ("bar", "posts/foo/bar/index.md", "posts/foo/bar/index.html"),
-            ("example", "example/index.md", "example/index.html"),
+    fn output_dir_uses_source_location_and_slug() {
+        for (source, slug, expected) in [
+            ("posts/foo/bar/index.md", None, "posts/foo/bar"),
+            ("example/index.md", None, "example"),
+            ("posts/hello-world.md", None, "posts/hello-world"),
+            ("index.md", None, ""),
             (
-                "hello-world",
-                "posts/hello-world.md",
-                "posts/hello-world/index.html",
+                "posts/note/original/index.md",
+                Some("custom"),
+                "posts/note/custom",
             ),
+            (
+                "posts/note/original.md",
+                Some("custom"),
+                "posts/note/custom",
+            ),
+            ("index.md", Some("custom"), "custom"),
         ] {
-            let mut page = test_page(slug);
-            let root = Path::new("/site/content");
-            page.source_path = root.join(source);
             assert_eq!(
-                page.output_path(root).unwrap(),
-                PathBuf::from(expected),
-                "{source}"
+                output_dir(Path::new(source), slug).unwrap(),
+                Path::new(expected),
+                "{source}, {slug:?}"
             );
         }
     }
 
     #[test]
-    fn output_path_slug_replaces_terminal_component() {
-        for (source, expected) in [
-            (
-                "content/posts/note/original/index.md",
-                "posts/note/custom/index.html",
-            ),
-            (
-                "content/posts/note/original.md",
-                "posts/note/custom/index.html",
-            ),
-            ("content/index.md", "custom/index.html"),
-        ] {
-            let mut page = test_page("Original");
-            page.source_path = source.into();
-            page.frontmatter.slug = Some("custom".into());
-            assert_eq!(
-                page.output_path(Path::new("content")).unwrap(),
-                Path::new(expected)
-            );
-        }
-    }
-
-    #[test]
-    fn output_path_invalid_slug_returns_error() {
+    fn output_dir_invalid_slug_returns_error() {
         for slug in [
             "",
             ".",
@@ -651,63 +448,44 @@ mod tests {
             r"one\two",
             "/absolute",
         ] {
-            let mut page = test_page("Original");
-            page.frontmatter.slug = Some(slug.into());
-            assert!(page.output_path(Path::new("content")).is_err(), "{slug}");
+            assert!(
+                output_dir(Path::new("example/index.md"), Some(slug)).is_err(),
+                "{slug}"
+            );
         }
     }
 
-    #[test]
-    fn output_path_outside_content_dir_returns_error() {
-        let mut page = test_page("test");
-        page.source_path = PathBuf::from("/other/dir/test.md");
-        assert!(page.output_path(Path::new("/site/content")).is_err());
-    }
-
-    // ── derive_page_kind ──
+    // ── page_kind ──
 
     #[test]
-    fn derive_page_kind_classifies_content_paths() {
+    fn page_kind_classifies_content_paths() {
+        let note = PageKind::Post {
+            section: Some("note".into()),
+        };
+        let orphan = PageKind::Post { section: None };
         for (path, expected) in [
-            (
-                "posts/note/deep/nested/index.md",
-                PageKind::Post {
-                    section: Some("note".into()),
-                },
-            ),
-            (
-                "posts/note/my-post/index.md",
-                PageKind::Post {
-                    section: Some("note".into()),
-                },
-            ),
-            (
-                "posts/note/hello.md",
-                PageKind::Post {
-                    section: Some("note".into()),
-                },
-            ),
-            ("posts/hello/index.md", PageKind::Post { section: None }),
-            ("posts/hello.md", PageKind::Post { section: None }),
-            ("about-me/index.md", PageKind::Page),
-            ("/other/path/page.md", PageKind::Page),
+            ("posts/note/deep/nested/index.md", &note),
+            ("posts/note/my-post/index.md", &note),
+            ("posts/note/hello.md", &note),
+            ("posts/hello/index.md", &orphan),
+            ("posts/hello.md", &orphan),
+            ("posts.md", &PageKind::Page),
+            ("about-me/index.md", &PageKind::Page),
         ] {
-            let root = Path::new("/site/content");
-            assert_eq!(derive_page_kind(&root.join(path), root), expected, "{path}");
+            assert_eq!(&page_kind(Path::new(path)).unwrap(), expected, "{path}");
         }
     }
 
-    // ── derive_slug ──
-
+    #[cfg(unix)]
     #[test]
-    fn derive_slug_uses_bundle_directory_or_file_stem() {
-        for (path, expected) in [
-            ("content/posts/foo/bar/index.md", Some("bar")),
-            ("content/posts/hello-world.md", Some("hello-world")),
-            ("index.md", None),
-        ] {
-            assert_eq!(derive_slug(Path::new(path)).as_deref(), expected, "{path}");
-        }
+    fn page_kind_non_utf8_section_returns_error() {
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt;
+
+        let path = Path::new("posts")
+            .join(OsStr::from_bytes(&[0xff]))
+            .join("hello.md");
+        assert!(page_kind(&path).is_err());
     }
 
     // ── extract_summary ──

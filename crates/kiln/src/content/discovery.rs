@@ -2,7 +2,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
-use super::page::{Page, derive_page_kind};
+use super::frontmatter::has_frontmatter;
+use super::page::Page;
 use crate::output::walk_directory;
 
 /// All content discovered from the content directory.
@@ -53,12 +54,12 @@ pub fn discover_content(root: &Path) -> Result<ContentSet> {
 
         let content = std::fs::read_to_string(path)
             .with_context(|| format!("failed to read {}", path.display()))?;
-        if has_frontmatter(&content) {
-            let mut page = Page::from_content_with_assets(&content, path)?;
-            if !page.frontmatter.draft {
-                page.kind = derive_page_kind(&page.source_path, &content_dir);
-                pages.push(page);
-            }
+        if !has_frontmatter(&content) {
+            continue;
+        }
+        let page = Page::parse(&content, path, &content_dir)?;
+        if !page.frontmatter.draft {
+            pages.push(page);
         }
     }
 
@@ -74,13 +75,6 @@ pub fn discover_content(root: &Path) -> Result<ContentSet> {
     Ok(ContentSet { pages, content_dir })
 }
 
-/// Returns `true` if content starts with a `+++` frontmatter delimiter (optionally preceded
-/// by a UTF-8 BOM). Files without frontmatter are skipped during discovery.
-fn has_frontmatter(content: &str) -> bool {
-    let content = content.strip_prefix('\u{feff}').unwrap_or(content);
-    content.starts_with("+++")
-}
-
 #[cfg(test)]
 mod tests {
     #[cfg(unix)]
@@ -91,37 +85,9 @@ mod tests {
     use indoc::indoc;
 
     use super::*;
-    use crate::content::page::PageKind;
     use crate::test_utils::write_test_file;
 
     // ── discover_content ──
-
-    #[test]
-    fn discover_content_preserves_bundle_assets() {
-        let root = tempfile::tempdir().unwrap();
-        write_test_file(
-            root.path(),
-            "content/posts/example/index.md",
-            indoc! {r#"
-                +++
-                title = "Example"
-                +++
-                Body
-            "#},
-        );
-        write_test_file(
-            root.path(),
-            "content/posts/example/images/photo.png",
-            "image",
-        );
-
-        let set = discover_content(root.path()).unwrap();
-        assert_eq!(set.pages[0].frontmatter.title, "Example");
-        assert_eq!(
-            set.pages[0].assets,
-            [root.path().join("content/posts/example/images/photo.png")],
-        );
-    }
 
     #[test]
     fn discover_content_excludes_drafts_private_paths_and_non_content_files() {
@@ -236,70 +202,6 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["New", "Old", "Alpha", "Beta"]
         );
-    }
-
-    #[test]
-    fn discover_content_assigns_page_kind() {
-        let root = tempfile::tempdir().unwrap();
-        write_test_file(
-            root.path(),
-            "content/posts/note/sectioned/index.md",
-            indoc! {r#"
-                +++
-                title = "Sectioned Post"
-                +++
-                Body
-            "#},
-        );
-        write_test_file(
-            root.path(),
-            "content/posts/orphan/index.md",
-            indoc! {r#"
-                +++
-                title = "Orphan Post"
-                +++
-                Body
-            "#},
-        );
-        write_test_file(
-            root.path(),
-            "content/about-me/index.md",
-            indoc! {r#"
-                +++
-                title = "About Me"
-                +++
-                Body
-            "#},
-        );
-
-        let set = discover_content(root.path()).unwrap();
-        assert_eq!(set.pages.len(), 3);
-
-        let section_post = set
-            .pages
-            .iter()
-            .find(|p| p.frontmatter.title == "Sectioned Post")
-            .unwrap();
-        assert_eq!(
-            section_post.kind,
-            PageKind::Post {
-                section: Some("note".into())
-            }
-        );
-
-        let orphan = set
-            .pages
-            .iter()
-            .find(|p| p.frontmatter.title == "Orphan Post")
-            .unwrap();
-        assert_eq!(orphan.kind, PageKind::Post { section: None });
-
-        let about = set
-            .pages
-            .iter()
-            .find(|p| p.frontmatter.title == "About Me")
-            .unwrap();
-        assert_eq!(about.kind, PageKind::Page);
     }
 
     #[test]

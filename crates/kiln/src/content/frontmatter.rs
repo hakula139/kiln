@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Result, bail};
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 
@@ -6,54 +6,46 @@ const DELIMITER: &str = "+++";
 
 /// Metadata parsed from the TOML frontmatter of a content file.
 #[derive(Debug, Default, PartialEq, Deserialize, Serialize)]
+#[serde(default)]
 pub struct Frontmatter {
-    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub title: String,
 
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
 
-    /// Explicit slug override. When set, takes priority over the filename-derived slug.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Explicit slug override. When set, replaces the final component of the page route.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub slug: Option<String>,
 
     #[serde(
-        default,
         deserialize_with = "timestamp_serde::deserialize_option",
-        serialize_with = "timestamp_serde::serialize_option",
         skip_serializing_if = "Option::is_none"
     )]
     pub date: Option<Timestamp>,
 
     #[serde(
-        default,
         deserialize_with = "timestamp_serde::deserialize_option",
-        serialize_with = "timestamp_serde::serialize_option",
         skip_serializing_if = "Option::is_none"
     )]
     pub updated: Option<Timestamp>,
 
-    #[serde(
-        default,
-        alias = "featuredImage",
-        deserialize_with = "featured_image_serde::deserialize_option",
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub featured_image: Option<FeaturedImage>,
 
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
 
-    #[serde(default, skip_serializing_if = "is_default")]
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub draft: bool,
 
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub weight: Option<i64>,
 
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub license: Option<String>,
 
-    #[serde(default, skip_serializing_if = "is_default")]
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub heading_numbering: bool,
 }
 
@@ -81,25 +73,32 @@ pub struct FeaturedImage {
     pub lqip_uri: Option<String>,
 }
 
+impl FeaturedImage {
+    /// Authored keys, which `kiln convert` keeps while reporting any others.
+    pub(crate) const FIELDS: [&str; 3] = ["src", "position", "credit"];
+}
+
 /// Attribution metadata for a featured image.
 #[derive(Debug, Default, Clone, PartialEq, Deserialize, Serialize)]
+#[serde(default)]
 pub struct ImageCredit {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
 
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub author: Option<String>,
 
     /// Link to the original work (e.g., a Pixiv artwork page).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
 }
 
-fn is_default<T: Default + PartialEq>(t: &T) -> bool {
-    *t == T::default()
+impl ImageCredit {
+    /// Authored keys, which `kiln convert` keeps while reporting any others.
+    pub(crate) const FIELDS: [&str; 3] = ["title", "author", "url"];
 }
 
-/// Handles (de)serialization of `jiff::Timestamp` as a string.
+/// Deserializes `jiff::Timestamp` from a string.
 ///
 /// This is format-agnostic: it handles both TOML (where the `toml` crate passes native datetimes
 /// through as single-entry maps) and YAML (where datetimes are plain strings).
@@ -107,7 +106,6 @@ mod timestamp_serde {
     use std::fmt;
 
     use jiff::Timestamp;
-    use serde::Serializer;
     use serde::de::{self, Deserializer, MapAccess, Visitor};
 
     pub fn deserialize_option<'de, D>(deserializer: D) -> Result<Option<Timestamp>, D::Error>
@@ -115,20 +113,6 @@ mod timestamp_serde {
         D: Deserializer<'de>,
     {
         deserializer.deserialize_option(OptionVisitor)
-    }
-
-    #[expect(
-        clippy::ref_option,
-        reason = "serde's `serialize_with` requires &Option<T> here"
-    )]
-    pub fn serialize_option<S>(ts: &Option<Timestamp>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        match ts {
-            Some(ts) => serializer.serialize_str(&ts.to_string()),
-            None => serializer.serialize_none(),
-        }
     }
 
     struct OptionVisitor;
@@ -186,57 +170,27 @@ mod timestamp_serde {
     }
 }
 
-/// Handles deserialization of `FeaturedImage` from either a string (Hugo YAML compat:
-/// `featuredImage: /img.webp`) or a TOML table.
-mod featured_image_serde {
-    use serde::{Deserialize, Deserializer};
-
-    use super::FeaturedImage;
-
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum Raw {
-        Simple(String),
-        Detailed(FeaturedImage),
-    }
-
-    pub fn deserialize_option<'de, D>(deserializer: D) -> Result<Option<FeaturedImage>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        Option::<Raw>::deserialize(deserializer).map(|opt| {
-            opt.map(|raw| match raw {
-                Raw::Simple(src) => FeaturedImage {
-                    src,
-                    ..Default::default()
-                },
-                Raw::Detailed(fi) => fi,
-            })
-        })
-    }
-}
-
 /// Parses a content file into its `Frontmatter` and body text.
 ///
 /// # Errors
 ///
 /// Returns an error if the frontmatter delimiters are missing or the TOML is invalid.
 pub(crate) fn parse(content: &str) -> Result<(Frontmatter, &str)> {
-    let (raw_fm, body) = split_frontmatter(content)?;
+    let (raw_fm, body) = split_delimited_frontmatter(content, DELIMITER)?;
     let fm: Frontmatter = toml::from_str(raw_fm)?;
     Ok((fm, body))
 }
 
-/// Splits content into raw TOML frontmatter and the remaining body.
-///
-/// # Errors
-///
-/// Returns an error if the `+++` delimiters are missing or malformed.
-pub(crate) fn split_frontmatter(content: &str) -> Result<(&str, &str)> {
-    split_delimited_frontmatter(content, DELIMITER)
+/// Returns `true` if content opens with a `+++` frontmatter delimiter, after an optional UTF-8
+/// BOM. Content discovery skips other Markdown files.
+pub(crate) fn has_frontmatter(content: &str) -> bool {
+    strip_bom(content).starts_with(DELIMITER)
 }
 
 /// Splits content into raw frontmatter and body using the given delimiter.
+///
+/// This line-level search cannot tell a real closing delimiter from one on its own line inside a
+/// multi-line string literal. Hugo and other delimiter-based parsers share this limitation.
 ///
 /// # Errors
 ///
@@ -245,59 +199,31 @@ pub(crate) fn split_delimited_frontmatter<'a>(
     content: &'a str,
     delimiter: &str,
 ) -> Result<(&'a str, &'a str)> {
-    let content = content.strip_prefix('\u{feff}').unwrap_or(content);
-    let rest = content
-        .strip_prefix(delimiter)
-        .ok_or_else(|| anyhow::anyhow!("missing opening `{delimiter}` delimiter"))?;
-
-    let rest = rest
+    let Some(rest) = strip_bom(content).strip_prefix(delimiter) else {
+        bail!("missing opening `{delimiter}` delimiter");
+    };
+    let Some(rest) = rest
         .strip_prefix('\n')
         .or_else(|| rest.strip_prefix("\r\n"))
-        .ok_or_else(|| anyhow::anyhow!("opening `{delimiter}` must be on its own line"))?;
+    else {
+        bail!("opening `{delimiter}` must be on its own line");
+    };
 
-    let newline_delimiter = format!("\n{delimiter}");
-    let closing = find_closing_delimiter(rest, delimiter, &newline_delimiter)
-        .ok_or_else(|| anyhow::anyhow!("missing closing `{delimiter}` delimiter"))?;
-
-    let frontmatter = &rest[..closing];
-    let after_delim = &rest[closing + delimiter.len()..];
-
-    let body = after_delim
-        .strip_prefix('\n')
-        .or_else(|| after_delim.strip_prefix("\r\n"))
-        .unwrap_or(after_delim);
-
-    Ok((frontmatter, body))
-}
-
-/// Finds the byte offset of the closing delimiter within the frontmatter region.
-///
-/// This text-level search cannot tell a real closing delimiter from one on its own line inside a
-/// multi-line string literal. Hugo and other delimiter-based parsers share this limitation.
-fn find_closing_delimiter(s: &str, delimiter: &str, newline_delimiter: &str) -> Option<usize> {
-    // Check the very start (empty frontmatter).
-    if let Some(after) = s.strip_prefix(delimiter)
-        && at_line_boundary(after)
-    {
-        return Some(0);
-    }
-
-    let mut search_from = 0;
-    while let Some(pos) = s[search_from..].find(newline_delimiter) {
-        let abs = search_from + pos + 1; // skip the `\n`
-        let after = &s[abs + delimiter.len()..];
-        if at_line_boundary(after) {
-            return Some(abs);
+    let mut offset = 0;
+    for line in rest.split_inclusive('\n') {
+        let text = line
+            .strip_suffix('\n')
+            .map_or(line, |line| line.strip_suffix('\r').unwrap_or(line));
+        if text == delimiter {
+            return Ok((&rest[..offset], &rest[offset + line.len()..]));
         }
-        search_from = abs + delimiter.len();
+        offset += line.len();
     }
-
-    None
+    bail!("missing closing `{delimiter}` delimiter")
 }
 
-/// Returns `true` if the string is empty or starts with a line ending.
-fn at_line_boundary(s: &str) -> bool {
-    s.is_empty() || s.starts_with('\n') || s.starts_with("\r\n")
+fn strip_bom(content: &str) -> &str {
+    content.strip_prefix('\u{feff}').unwrap_or(content)
 }
 
 #[cfg(test)]
@@ -306,72 +232,35 @@ mod tests {
 
     use super::*;
 
-    // ── deserialize: YAML ──
+    // ── Frontmatter::serialize ──
 
     #[test]
-    fn deserialize_yaml_basic() {
-        let yaml = indoc! {"
-            title: Hello
-            date: 2024-06-15T12:34:56+08:00
-        "};
-        let fm: Frontmatter = serde_yaml::from_str(yaml).unwrap();
-        assert_eq!(fm.title, "Hello");
+    fn serialize_omits_unset_and_derived_fields() {
+        let frontmatter = Frontmatter {
+            featured_image: Some(FeaturedImage {
+                src: "/img.webp".into(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
         assert_eq!(
-            fm.date.unwrap(),
-            "2024-06-15T04:34:56Z".parse::<Timestamp>().unwrap()
+            toml::to_string(&frontmatter).unwrap(),
+            indoc! {r#"
+                [featured_image]
+                src = "/img.webp"
+            "#}
         );
     }
 
     #[test]
-    fn deserialize_yaml_alias_featured_image() {
-        let yaml = indoc! {"
-            featuredImage: /img.webp
-        "};
-        let fm: Frontmatter = serde_yaml::from_str(yaml).unwrap();
-        let fi = fm.featured_image.as_ref().unwrap();
-        assert_eq!(fi.src, "/img.webp");
-        assert!(fi.position.is_none());
-        assert!(fi.credit.is_none());
-    }
-
-    #[test]
-    fn deserialize_yaml_unknown_fields_ignored() {
-        let yaml = indoc! {"
-            title: Test
-            unknownField: dropped
-            code:
-              maxShownLines: 10
-        "};
-        let fm: Frontmatter = serde_yaml::from_str(yaml).unwrap();
-        assert_eq!(fm.title, "Test");
-    }
-
-    #[test]
-    fn deserialize_yaml_null_date() {
-        let yaml = indoc! {"
-            date: ~
-        "};
-        let fm: Frontmatter = serde_yaml::from_str(yaml).unwrap();
-        assert!(fm.date.is_none());
-    }
-
-    // ── serialize ──
-
-    #[test]
-    fn serialize_featured_image_skips_unset_auto_fields() {
-        let fi = FeaturedImage {
-            src: "/img.webp".into(),
-            ..Default::default()
-        };
-        let serialized = toml::to_string(&fi).unwrap();
-        assert_eq!(serialized, "src = \"/img.webp\"\n");
-    }
-
-    #[test]
-    fn serialize_heading_numbering() {
-        for (numbering, expected) in [(false, ""), (true, "heading_numbering = true\n")] {
+    fn serialize_round_trips_flags() {
+        for (enabled, expected) in [
+            (false, ""),
+            (true, "draft = true\nheading_numbering = true\n"),
+        ] {
             let frontmatter = Frontmatter {
-                heading_numbering: numbering,
+                draft: enabled,
+                heading_numbering: enabled,
                 ..Default::default()
             };
             let serialized = toml::to_string(&frontmatter).unwrap();
@@ -380,6 +269,38 @@ mod tests {
                 toml::from_str::<Frontmatter>(&serialized).unwrap(),
                 frontmatter
             );
+        }
+    }
+
+    // ── FIELDS ──
+
+    #[test]
+    fn fields_match_authored_keys() {
+        let credit = ImageCredit {
+            title: Some("Example".into()),
+            author: Some("Artist".into()),
+            url: Some("https://example.com/artworks/123".into()),
+        };
+        let image = FeaturedImage {
+            src: "/img.webp".into(),
+            position: Some("top".into()),
+            credit: Some(credit.clone()),
+            width: None,
+            height: None,
+            lqip_uri: None,
+        };
+        for (table, fields) in [
+            (
+                toml::Table::try_from(&image).unwrap(),
+                FeaturedImage::FIELDS,
+            ),
+            (toml::Table::try_from(&credit).unwrap(), ImageCredit::FIELDS),
+        ] {
+            let mut keys: Vec<_> = table.keys().map(String::as_str).collect();
+            let mut fields = fields.to_vec();
+            keys.sort_unstable();
+            fields.sort_unstable();
+            assert_eq!(keys, fields);
         }
     }
 
@@ -472,20 +393,6 @@ mod tests {
     }
 
     #[test]
-    fn parse_featured_image_flat_string() {
-        let input = indoc! {r#"
-            +++
-            featured_image = "/images/cover.webp"
-            +++
-        "#};
-        let (fm, _) = parse(input).unwrap();
-        let fi = fm.featured_image.as_ref().unwrap();
-        assert_eq!(fi.src, "/images/cover.webp");
-        assert!(fi.position.is_none());
-        assert!(fi.credit.is_none());
-    }
-
-    #[test]
     fn parse_featured_image_ignores_derived_metadata() {
         let (frontmatter, _) = parse(indoc! {r#"
             +++
@@ -528,13 +435,15 @@ mod tests {
     }
 
     #[test]
-    fn parse_wrong_type_for_date_returns_error() {
-        let input = indoc! {r"
-            +++
-            date = 42
-            +++
-        "};
-        assert!(parse(input).is_err());
+    fn parse_wrong_type_returns_error() {
+        for field in ["date = 42", r#"featured_image = "/images/cover.webp""#] {
+            let input = formatdoc! {"
+                +++
+                {field}
+                +++
+            "};
+            assert!(parse(&input).is_err(), "{field}");
+        }
     }
 
     #[test]
@@ -564,17 +473,31 @@ mod tests {
         }
     }
 
-    // ── split_frontmatter ──
+    // ── has_frontmatter ──
 
     #[test]
-    fn split_frontmatter_basic() {
+    fn has_frontmatter_accepts_bom_and_rejects_other_markdown() {
+        for (content, expected) in [
+            ("+++\ntitle = \"A\"\n+++\n", true),
+            ("\u{feff}+++\n+++\n", true),
+            ("# Notes\n", false),
+            ("---\ntitle: A\n---\n", false),
+        ] {
+            assert_eq!(has_frontmatter(content), expected, "{content:?}");
+        }
+    }
+
+    // ── split_delimited_frontmatter ──
+
+    #[test]
+    fn split_delimited_frontmatter_basic() {
         let input = indoc! {r#"
             +++
             title = "Hello"
             +++
             Body text here.
         "#};
-        let (fm, body) = split_frontmatter(input).unwrap();
+        let (fm, body) = split_delimited_frontmatter(input, DELIMITER).unwrap();
         assert_eq!(
             fm,
             indoc! {r#"
@@ -585,43 +508,43 @@ mod tests {
     }
 
     #[test]
-    fn split_frontmatter_with_bom() {
+    fn split_delimited_frontmatter_with_bom() {
         // BOM (\u{feff}) can't appear in raw strings, so use concat! here.
         let input = concat!("\u{feff}", "+++\ntitle = \"BOM\"\n+++\nBody\n");
-        let (fm, body) = split_frontmatter(input).unwrap();
+        let (fm, body) = split_delimited_frontmatter(input, DELIMITER).unwrap();
         assert_eq!(fm, "title = \"BOM\"\n");
         assert_eq!(body, "Body\n");
     }
 
     #[test]
-    fn split_frontmatter_crlf() {
+    fn split_delimited_frontmatter_crlf() {
         // Explicit \r\n line endings can't be expressed in indoc.
         let input = "+++\r\ntitle = \"Windows\"\r\n+++\r\nBody\r\n";
-        let (fm, body) = split_frontmatter(input).unwrap();
+        let (fm, body) = split_delimited_frontmatter(input, DELIMITER).unwrap();
         assert_eq!(fm, "title = \"Windows\"\r\n");
         assert_eq!(body, "Body\r\n");
     }
 
     #[test]
-    fn split_frontmatter_empty() {
+    fn split_delimited_frontmatter_empty() {
         let input = indoc! {r"
             +++
             +++
             Body
         "};
-        let (fm, body) = split_frontmatter(input).unwrap();
+        let (fm, body) = split_delimited_frontmatter(input, DELIMITER).unwrap();
         assert_eq!(fm, "");
         assert_eq!(body, "Body\n");
     }
 
     #[test]
-    fn split_frontmatter_no_body() {
+    fn split_delimited_frontmatter_no_body() {
         let input = indoc! {r#"
             +++
             title = "No Body"
             +++
         "#};
-        let (fm, body) = split_frontmatter(input).unwrap();
+        let (fm, body) = split_delimited_frontmatter(input, DELIMITER).unwrap();
         assert_eq!(
             fm,
             indoc! {r#"
@@ -632,14 +555,14 @@ mod tests {
     }
 
     #[test]
-    fn split_frontmatter_closing_delimiter_inside_value_ignored() {
+    fn split_delimited_frontmatter_closing_delimiter_inside_value_ignored() {
         let input = indoc! {r#"
             +++
             foo = "+++ not a delimiter"
             +++
             Body
         "#};
-        let (fm, body) = split_frontmatter(input).unwrap();
+        let (fm, body) = split_delimited_frontmatter(input, DELIMITER).unwrap();
         assert_eq!(
             fm,
             indoc! {r#"
@@ -650,7 +573,7 @@ mod tests {
     }
 
     #[test]
-    fn split_frontmatter_closing_delimiter_must_end_line() {
+    fn split_delimited_frontmatter_closing_delimiter_must_end_line() {
         let input = indoc! {r#"
             +++
             title = "test"
@@ -658,7 +581,7 @@ mod tests {
             +++
             Body
         "#};
-        let (fm, body) = split_frontmatter(input).unwrap();
+        let (fm, body) = split_delimited_frontmatter(input, DELIMITER).unwrap();
         assert_eq!(
             fm,
             indoc! {r#"
@@ -670,12 +593,14 @@ mod tests {
     }
 
     #[test]
-    fn split_frontmatter_opening_not_on_own_line_returns_error() {
+    fn split_delimited_frontmatter_opening_not_on_own_line_returns_error() {
         let input = indoc! {"
             +++extra
             +++
         "};
-        let err = split_frontmatter(input).unwrap_err().to_string();
+        let err = split_delimited_frontmatter(input, DELIMITER)
+            .unwrap_err()
+            .to_string();
         assert!(
             err.contains("must be on its own line"),
             "should reject opening delimiter with trailing content, got: {err}"
@@ -683,13 +608,15 @@ mod tests {
     }
 
     #[test]
-    fn split_frontmatter_missing_opening_returns_error() {
+    fn split_delimited_frontmatter_missing_opening_returns_error() {
         let input = indoc! {r#"
             title = "Hello"
             +++
             Body
         "#};
-        let err = split_frontmatter(input).unwrap_err().to_string();
+        let err = split_delimited_frontmatter(input, DELIMITER)
+            .unwrap_err()
+            .to_string();
         assert!(
             err.contains("missing opening `+++` delimiter"),
             "should report missing opening delimiter, got: {err}"
@@ -697,12 +624,14 @@ mod tests {
     }
 
     #[test]
-    fn split_frontmatter_missing_closing_returns_error() {
+    fn split_delimited_frontmatter_missing_closing_returns_error() {
         let input = indoc! {r#"
             +++
             title = "Hello"
         "#};
-        let err = split_frontmatter(input).unwrap_err().to_string();
+        let err = split_delimited_frontmatter(input, DELIMITER)
+            .unwrap_err()
+            .to_string();
         assert!(
             err.contains("missing closing `+++` delimiter"),
             "should report missing closing delimiter, got: {err}"

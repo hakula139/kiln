@@ -112,14 +112,8 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
     let transaction = OutputTransaction::new(output_dir)?;
     let output_dir = transaction.path().to_owned();
 
-    let assets = PublishedAssets::publish(
-        root,
-        theme_dir.as_deref(),
-        &content.content_dir,
-        &content.pages,
-        &output_dir,
-    )?;
-    let stylesheets = Stylesheets::discover(root, &config, &content.content_dir, &content.pages)?;
+    let assets = PublishedAssets::publish(root, theme_dir.as_deref(), &content.pages, &output_dir)?;
+    let stylesheets = Stylesheets::discover(root, &config, &content.pages)?;
     let mut static_assets = StaticAssetManifest::build_media(&output_dir)?;
     stylesheets.compile(root, &config, &assets, &static_assets, &output_dir)?;
 
@@ -159,13 +153,7 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
     let sections = collect_sections(&content.pages, &content.content_dir)?;
     let taxonomy_set = build_taxonomies(&content.pages, Some(&content.content_dir))?;
 
-    let artifacts = build_listing_artifacts(
-        &ctx,
-        &content.pages,
-        &content.content_dir,
-        &sections,
-        &taxonomy_set,
-    )?;
+    let artifacts = build_listing_artifacts(&ctx, &content.pages, &sections, &taxonomy_set)?;
 
     let posts_title = load_index_title(&content.content_dir.join("posts"))?
         .unwrap_or_else(|| ctx.i18n.t("all_posts").into_owned());
@@ -302,7 +290,7 @@ fn build_page(
     prepared: &PreparedPage,
 ) -> Result<()> {
     let rendered = render_page(
-        &page.raw_content,
+        &page.body,
         &ctx.template_engine,
         &ctx.config,
         &ctx.render_options,

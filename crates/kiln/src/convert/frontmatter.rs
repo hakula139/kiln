@@ -2,34 +2,27 @@ use std::collections::BTreeMap;
 
 use anyhow::{Context, Result};
 use serde::Deserialize;
+use serde_yaml::{Mapping, Value};
 
-use crate::content::frontmatter::{Frontmatter, split_delimited_frontmatter};
-
-const DELIMITER: &str = "---";
-
-/// Splits content into raw YAML frontmatter and the remaining body.
-///
-/// # Errors
-///
-/// Returns an error if the `---` delimiters are missing or malformed.
-pub(crate) fn split_yaml_frontmatter(content: &str) -> Result<(&str, &str)> {
-    split_delimited_frontmatter(content, DELIMITER)
-}
+use crate::content::frontmatter::{FeaturedImage, Frontmatter, ImageCredit};
 
 #[derive(Deserialize)]
 struct MigrationFrontmatter {
     #[serde(flatten)]
     supported: Frontmatter,
     #[serde(flatten)]
-    unsupported: BTreeMap<String, serde_yaml::Value>,
+    unsupported: BTreeMap<String, Value>,
 }
 
 /// Converts supported YAML metadata and reports fields that require manual migration.
+///
+/// Hugo's `featuredImage` key and bare-string image sources become a `featured_image` table.
 pub(crate) fn convert_frontmatter(yaml_str: &str) -> Result<(String, Vec<String>)> {
-    let value: serde_yaml::Value =
+    let mut value: Value =
         serde_yaml::from_str(yaml_str).context("failed to parse YAML frontmatter")?;
     let mut unsupported = Vec::new();
     collect_image_fields(&value, &mut unsupported);
+    normalize_featured_image(&mut value);
     let fm: MigrationFrontmatter =
         serde_yaml::from_value(value).context("failed to parse YAML frontmatter")?;
     unsupported.extend(fm.unsupported.into_keys());
@@ -38,17 +31,17 @@ pub(crate) fn convert_frontmatter(yaml_str: &str) -> Result<(String, Vec<String>
     Ok((toml_str, unsupported))
 }
 
-fn collect_image_fields(value: &serde_yaml::Value, unsupported: &mut Vec<String>) {
+fn collect_image_fields(value: &Value, unsupported: &mut Vec<String>) {
     for field in ["featured_image", "featuredImage"] {
-        let Some(image) = value.get(field).and_then(serde_yaml::Value::as_mapping) else {
+        let Some(image) = value.get(field).and_then(Value::as_mapping) else {
             continue;
         };
-        collect_unknown_fields(image, field, &["src", "position", "credit"], unsupported);
-        if let Some(credit) = image.get("credit").and_then(serde_yaml::Value::as_mapping) {
+        collect_unknown_fields(image, field, &FeaturedImage::FIELDS, unsupported);
+        if let Some(credit) = image.get("credit").and_then(Value::as_mapping) {
             collect_unknown_fields(
                 credit,
                 &format!("{field}.credit"),
-                &["title", "author", "url"],
+                &ImageCredit::FIELDS,
                 unsupported,
             );
         }
@@ -56,15 +49,30 @@ fn collect_image_fields(value: &serde_yaml::Value, unsupported: &mut Vec<String>
 }
 
 fn collect_unknown_fields(
-    mapping: &serde_yaml::Mapping,
+    mapping: &Mapping,
     prefix: &str,
     supported: &[&str],
     unsupported: &mut Vec<String>,
 ) {
-    for key in mapping.keys().filter_map(serde_yaml::Value::as_str) {
+    for key in mapping.keys().filter_map(Value::as_str) {
         if !supported.contains(&key) {
             unsupported.push(format!("{prefix}.{key}"));
         }
+    }
+}
+
+fn normalize_featured_image(value: &mut Value) {
+    let Some(mapping) = value.as_mapping_mut() else {
+        return;
+    };
+    if !mapping.contains_key("featured_image")
+        && let Some(image) = mapping.remove("featuredImage")
+    {
+        mapping.insert("featured_image".into(), image);
+    }
+    if let Some(image @ Value::String(_)) = mapping.get_mut("featured_image") {
+        let src = std::mem::take(image);
+        *image = Value::Mapping(Mapping::from_iter([("src".into(), src)]));
     }
 }
 
@@ -73,38 +81,6 @@ mod tests {
     use indoc::indoc;
 
     use super::*;
-
-    // ── split_yaml_frontmatter ──
-
-    #[test]
-    fn split_yaml_frontmatter_basic() {
-        let input = indoc! {r"
-            ---
-            title: Hello
-            ---
-            Body text here.
-        "};
-        let (fm, body) = split_yaml_frontmatter(input).unwrap();
-        assert_eq!(fm, "title: Hello\n");
-        assert_eq!(body, "Body text here.\n");
-    }
-
-    #[test]
-    fn split_yaml_frontmatter_no_body() {
-        let input = indoc! {"
-            ---
-            title: No Body
-            ---
-        "};
-        let (fm, body) = split_yaml_frontmatter(input).unwrap();
-        assert_eq!(fm, "title: No Body\n");
-        assert_eq!(body, "");
-    }
-
-    #[test]
-    fn split_yaml_frontmatter_missing_delimiter_returns_error() {
-        assert!(split_yaml_frontmatter("No frontmatter here").is_err());
-    }
 
     // ── convert_frontmatter ──
 
@@ -161,6 +137,26 @@ mod tests {
     }
 
     #[test]
+    fn convert_frontmatter_maps_hugo_featured_image_forms() {
+        for yaml in [
+            "featured_image: /img.webp",
+            "featuredImage: /img.webp",
+            "featuredImage:\n  src: /img.webp",
+        ] {
+            let (toml, unsupported) = convert_frontmatter(yaml).unwrap();
+            assert_eq!(
+                toml,
+                indoc! {r#"
+                    [featured_image]
+                    src = "/img.webp"
+                "#},
+                "{yaml}"
+            );
+            assert_eq!(unsupported, Vec::<String>::new(), "{yaml}");
+        }
+    }
+
+    #[test]
     fn convert_frontmatter_reports_nested_fields() {
         let (toml, unsupported) = convert_frontmatter(indoc! {r"
             featuredImage:
@@ -207,14 +203,18 @@ mod tests {
 
     #[test]
     fn convert_frontmatter_invalid_yaml_returns_error() {
-        let yaml = indoc! {"
-            :
-              invalid: [yaml
-        "};
-        let err = convert_frontmatter(yaml).unwrap_err();
-        assert!(
-            err.to_string().contains("failed to parse YAML"),
-            "got: {err}"
-        );
+        for yaml in [
+            indoc! {"
+                :
+                  invalid: [yaml
+            "},
+            "- not a mapping",
+        ] {
+            let err = convert_frontmatter(yaml).unwrap_err();
+            assert!(
+                err.to_string().contains("failed to parse YAML"),
+                "{yaml}: {err}"
+            );
+        }
     }
 }

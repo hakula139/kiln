@@ -37,13 +37,8 @@ impl Stylesheets {
     ///
     /// # Errors
     ///
-    /// Returns an error when a page source or output path cannot be resolved.
-    pub(crate) fn discover(
-        root: &Path,
-        config: &Config,
-        content_dir: &Path,
-        pages: &[Page],
-    ) -> Result<Self> {
+    /// Returns an error when a page source has no parent directory.
+    pub(crate) fn discover(root: &Path, config: &Config, pages: &[Page]) -> Result<Self> {
         let shared_source = std::iter::once(root.to_owned())
             .chain(config.theme_dir(root))
             .map(|dir| dir.join(ENTRY))
@@ -64,16 +59,12 @@ impl Stylesheets {
                 .context("page source has no parent")?;
             let source = bundle.join(ENTRY);
             if source.is_file() {
-                let output = page.output_path(content_dir)?;
                 styles.insert(
                     page.source_path.clone(),
                     Stylesheet {
                         source,
                         page: Some(page.source_path.clone()),
-                        output: output
-                            .parent()
-                            .context("page output has no parent")?
-                            .join("assets/css/page.css"),
+                        output: page.output_dir.join("assets/css/page.css"),
                     },
                 );
             }
@@ -331,6 +322,7 @@ mod tests {
     use indoc::indoc;
 
     use super::*;
+    use crate::content::discovery::discover_content;
     use crate::test_utils::write_test_file;
 
     // ── Stylesheets::page_url ──
@@ -352,21 +344,11 @@ mod tests {
             "content/a % # 世界/assets/css/_src/style.css",
             ".page { color: red; }",
         );
-        let page = Page::from_file(&root.path().join("content/a % # 世界/index.md")).unwrap();
+        let pages = discover_content(root.path()).unwrap().pages;
         let config = Config::default();
-        let pages = [page];
-        let stylesheets =
-            Stylesheets::discover(root.path(), &config, &root.path().join("content"), &pages)
-                .unwrap();
+        let stylesheets = Stylesheets::discover(root.path(), &config, &pages).unwrap();
         let output = root.path().join("public");
-        let assets = PublishedAssets::publish(
-            root.path(),
-            None,
-            &root.path().join("content"),
-            &pages,
-            &output,
-        )
-        .unwrap();
+        let assets = PublishedAssets::publish(root.path(), None, &pages, &output).unwrap();
         stylesheets
             .compile(
                 root.path(),
@@ -406,14 +388,8 @@ mod tests {
             page: None,
             output: PathBuf::from("assets/css/site.css"),
         };
-        let assets = PublishedAssets::publish(
-            root.path(),
-            None,
-            &root.path().join("content"),
-            &[],
-            &root.path().join("public"),
-        )
-        .unwrap();
+        let assets =
+            PublishedAssets::publish(root.path(), None, &[], &root.path().join("public")).unwrap();
         let manifest = StaticAssetManifest::default();
         let css = compile_plain(&assets, &manifest, "", &style).unwrap();
         for url in [
@@ -438,14 +414,7 @@ mod tests {
         );
         write_test_file(root.path(), "static/a % # 世界.svg", "image");
         let output = root.path().join("public");
-        let assets = PublishedAssets::publish(
-            root.path(),
-            None,
-            &root.path().join("content"),
-            &[],
-            &output,
-        )
-        .unwrap();
+        let assets = PublishedAssets::publish(root.path(), None, &[], &output).unwrap();
         let style = Stylesheet {
             source: root.path().join(ENTRY),
             page: None,
@@ -487,14 +456,8 @@ mod tests {
             page: None,
             output: PathBuf::from("assets/css/site.css"),
         };
-        let assets = PublishedAssets::publish(
-            root.path(),
-            None,
-            &root.path().join("content"),
-            &[],
-            &root.path().join("public"),
-        )
-        .unwrap();
+        let assets =
+            PublishedAssets::publish(root.path(), None, &[], &root.path().join("public")).unwrap();
         let manifest = StaticAssetManifest::build_media(&root.path().join("public")).unwrap();
         let css = compile_plain(&assets, &manifest, "", &style).unwrap();
         assert!(css.contains("../../alias.svg"), "{css}");
@@ -518,14 +481,8 @@ mod tests {
             page: Some(root.path().join("content/example/index.md")),
             output: PathBuf::from("example/assets/css/page.css"),
         };
-        let assets = PublishedAssets::publish(
-            root.path(),
-            None,
-            &root.path().join("content"),
-            &[],
-            &root.path().join("public"),
-        )
-        .unwrap();
+        let assets =
+            PublishedAssets::publish(root.path(), None, &[], &root.path().join("public")).unwrap();
         let private = published_url(
             &assets,
             &StaticAssetManifest::default(),
