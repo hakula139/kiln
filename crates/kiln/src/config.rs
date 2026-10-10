@@ -236,10 +236,10 @@ impl Config {
         }
         validate_output_overlap(&root.join("themes"), &canonical)?;
         if let Some(theme) = self.theme_dir(root) {
-            validate_output_overlap(&theme, &canonical)?;
             for name in ["assets", "i18n", "static", "templates", "theme.toml"] {
                 validate_input_tree(&theme.join(name), &canonical)?;
             }
+            validate_git_metadata(&theme, &canonical, true)?;
         }
         validate_output_overlap(&root.join("config.toml"), &canonical)?;
         for ancestor in canonical_root.ancestors() {
@@ -1290,27 +1290,54 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn resolved_output_dir_external_theme_overlap_returns_error() {
-        let root = tempfile::tempdir().unwrap();
-        let theme = tempfile::tempdir().unwrap();
-        let output = tempfile::tempdir().unwrap();
-        std::os::unix::fs::symlink(output.path(), theme.path().join("assets")).unwrap();
-        let config = Config {
-            theme: Some(theme.path().to_string_lossy().into_owned()),
-            ..Config::default()
-        };
+    fn resolved_output_dir_linked_theme_protects_inputs_and_metadata() {
+        use std::os::unix::fs::symlink;
 
-        for path in [
-            theme.path().join("generated"),
-            output.path().join("generated"),
+        let theme = tempfile::tempdir().unwrap();
+        let external_site = tempfile::tempdir().unwrap();
+        let linked_assets = tempfile::tempdir().unwrap();
+        fs::write(theme.path().join("theme.toml"), "").unwrap();
+        symlink(linked_assets.path(), theme.path().join("assets")).unwrap();
+        fs::create_dir(theme.path().join(".git")).unwrap();
+
+        for root in [
+            theme.path().join("example"),
+            external_site.path().join("site"),
         ] {
-            assert!(
-                config
-                    .validate_output_dir(root.path(), &path)
-                    .unwrap_err()
-                    .to_string()
-                    .contains("overlaps project input")
+            fs::create_dir_all(root.join("themes")).unwrap();
+            let target = if root.starts_with(theme.path()) {
+                Path::new("../..")
+            } else {
+                theme.path()
+            };
+            symlink(target, root.join("themes/example")).unwrap();
+            fs::write(root.join("config.toml"), r#"theme = "example""#).unwrap();
+            let config = Config::load(&root).unwrap();
+            assert_eq!(
+                config.resolved_output_dir(&root).unwrap(),
+                root.canonicalize().unwrap().join("public")
             );
+            assert_eq!(
+                config
+                    .validate_output_dir(&root, &theme.path().join("generated"))
+                    .unwrap(),
+                theme.path().canonicalize().unwrap().join("generated")
+            );
+
+            for output in [
+                theme.path().join("theme.toml/generated"),
+                theme.path().join("i18n/generated"),
+                theme.path().join("static/generated"),
+                theme.path().join("templates/generated"),
+                linked_assets.path().join("generated"),
+                theme.path().join(".git/generated"),
+            ] {
+                let error = config.validate_output_dir(&root, &output).unwrap_err();
+                assert!(error.to_string().contains("overlaps project input"));
+            }
+            for output in [theme.path(), theme.path().parent().unwrap()] {
+                assert!(config.validate_output_dir(&root, output).is_err());
+            }
         }
     }
 
