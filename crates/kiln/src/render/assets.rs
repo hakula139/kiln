@@ -225,8 +225,8 @@ mod tests {
         assets.add_feature(Feature::Math);
         assets.add_feature(Feature::Mermaid);
         assert_eq!(
-            assets.features().iter().collect::<Vec<_>>(),
-            [&Feature::Math, &Feature::Mermaid]
+            assets.features(),
+            &BTreeSet::from([Feature::Math, Feature::Mermaid])
         );
     }
 

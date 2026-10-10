@@ -6,7 +6,6 @@ use itertools::Itertools;
 use syntect::html::{ClassStyle, line_tokens_to_classed_spans};
 use syntect::parsing::{ParseState, ScopeStack, ScopeStackOp, SyntaxReference, SyntaxSet};
 use syntect::util::LinesWithEndings;
-
 use tracing::{debug, warn};
 
 use super::code_block::{CodeBlockSpec, Disclosure};
@@ -36,7 +35,7 @@ fn highlight_with(
 ) -> String {
     let lang = spec.lang.as_deref().unwrap_or("").to_ascii_lowercase();
     let syntax = syntax_set.find_syntax_by_token(&lang).unwrap_or_else(|| {
-        if !lang.is_empty() {
+        if !is_plain_text(&lang) {
             debug!(lang, "unrecognized language, falling back to plain text");
         }
         syntax_set.find_syntax_plain_text()
@@ -161,10 +160,16 @@ fn highlight_lines(syntax_set: &SyntaxSet, syntax: &SyntaxReference, code: &str)
     let mut scope_stack = ScopeStack::new();
     let mut lines: Vec<_> = LinesWithEndings::from(code)
         .map(|line| {
-            highlight_line(syntax_set, &mut parse_state, &mut scope_stack, line).unwrap_or_else(|e| {
-                warn!(lang = syntax.name, error = %e, "syntax highlighting failed for line, falling back to plain text");
-                escape(line.trim_end_matches(['\r', '\n']))
-            })
+            highlight_line(syntax_set, &mut parse_state, &mut scope_stack, line).unwrap_or_else(
+                |error| {
+                    warn!(
+                        lang = syntax.name,
+                        %error,
+                        "syntax highlighting failed for line, falling back to plain text"
+                    );
+                    escape(line.trim_end_matches(['\r', '\n']))
+                },
+            )
         })
         .collect();
 
@@ -207,7 +212,7 @@ fn highlight_line(
 /// cased. Per-block overrides go through the `title="..."` fence attribute instead.
 fn display_label(lang: &str) -> String {
     let mapped: &str = match lang {
-        "" | "plain" | "plaintext" | "text" => "Plain Text",
+        _ if is_plain_text(lang) => "Plain Text",
 
         // Short alias → canonical name (sorted by output).
         "js" | "jsx" => "JavaScript",
@@ -238,6 +243,10 @@ fn display_label(lang: &str) -> String {
         _ => return capitalize(lang),
     };
     mapped.to_string()
+}
+
+fn is_plain_text(lang: &str) -> bool {
+    matches!(lang, "" | "plain" | "plaintext" | "text")
 }
 
 #[cfg(test)]

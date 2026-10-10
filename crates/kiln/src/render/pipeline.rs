@@ -1050,9 +1050,11 @@ mod tests {
             ```
             :::
         "});
-        assert_eq!(
-            page.content_html.matches("<pre><code>").count(),
-            1,
+        assert!(
+            page.content_html
+                .match_indices("<pre><code>")
+                .all(|(start, tag)| page.content_html[start + tag.len()..]
+                    .starts_with(r#"<span class="line">"#)),
             "rendered body must not be reparsed as markdown, html:\n{}",
             page.content_html
         );

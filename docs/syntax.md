@@ -122,7 +122,7 @@ Blocks use native disclosure and start open unless `collapse` is set. The site s
 
 #### Fence Attributes
 
-A [Pandoc-style attribute block](#pandoc-style-attributes) can follow the language tag to refine a fenced code block:
+A [Pandoc-style attribute block](#pandoc-style-attributes) refines a fenced code block. It can follow the language tag, with or without a space, or replace it:
 
 ````markdown
 ```rust {#example .compact title="src/main.rs" highlight="1,3-5" collapse}
@@ -137,7 +137,7 @@ Recognized keys:
 | Key                 | Effect                                                                               |
 | ------------------- | ------------------------------------------------------------------------------------ |
 | `#id`               | Sets the `id` attribute on the wrapper `<details class="code-block">`                |
-| `.class`            | Appends additional CSS classes to the wrapper                                        |
+| `.class`            | Appends additional CSS classes to the wrapper, without setting the language tag      |
 | `title="..."`       | Renders a `<span class="code-title">` in place of the language pill                  |
 | `highlight="1,3-5"` | Comma-separated lines / ranges to mark with `class="line hl"` (and `line-number hl`) |
 

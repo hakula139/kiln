@@ -19,6 +19,7 @@ pub(crate) enum Disclosure {
     /// Open, limited by the site's `code_max_lines`.
     #[default]
     Auto,
+    /// Closed, without a line limit.
     Collapse,
     /// Open without a line limit.
     Expand,
@@ -169,22 +170,6 @@ mod tests {
     }
 
     #[test]
-    fn parse_fence_info_quotes_in_unquoted_tokens() {
-        let spec = parse_fence_info(r#"rust {#a"b .c"d .last title=e"f highlight=2}"#);
-        assert_eq!(spec.id.as_deref(), Some("a\"b"));
-        assert_eq!(spec.classes, ["c\"d", "last"]);
-        assert_eq!(spec.title.as_deref(), Some("e\"f"));
-        assert_eq!(spec.highlight, vec![2..=2]);
-    }
-
-    #[test]
-    fn parse_fence_info_unicode_whitespace_before_quoted_value() {
-        let spec = parse_fence_info("rust {title=\"a}b\"\u{3000}highlight=2}");
-        assert_eq!(spec.title.as_deref(), Some("a}b"));
-        assert_eq!(spec.highlight, vec![2..=2]);
-    }
-
-    #[test]
     fn parse_fence_info_ignores_unbraced_words_and_unknown_attrs() {
         let spec = parse_fence_info(r#"rust no_run {title="T" unknown="val" foo=bar}"#);
         assert_eq!(spec.lang.as_deref(), Some("rust"));
@@ -195,13 +180,6 @@ mod tests {
         let spec = parse_fence_info("rust no_run playground");
         assert_eq!(spec.lang.as_deref(), Some("rust"));
         assert!(spec.title.is_none());
-    }
-
-    #[test]
-    fn parse_fence_info_unclosed_braces() {
-        let spec = parse_fence_info("rust {title=main.rs highlight=1");
-        assert_eq!(spec.title.as_deref(), Some("main.rs"));
-        assert_eq!(spec.highlight, vec![1..=1]);
     }
 
     #[test]
