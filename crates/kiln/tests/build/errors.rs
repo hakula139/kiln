@@ -213,6 +213,22 @@ fn build_failed_render_preserves_previous_output() {
     fs::write(root.path().join("templates/post.html"), "{% invalid %}").unwrap();
 
     assert!(build(root.path(), BuildOptions::default()).is_err());
+    assert_eq!(fs::read_to_string(&output).unwrap(), previous);
+
+    copy_templates(&root.path().join("templates"));
+    write_page(
+        root.path(),
+        "posts/example",
+        indoc! {r#"
+            +++
+            title = "Example"
+            featured_image = "http://["
+            +++
+            Updated body
+        "#},
+    );
+    let error = build(root.path(), BuildOptions::default()).unwrap_err();
+    assert!(format!("{error:#}").contains("invalid featured image URL"));
     assert_eq!(fs::read_to_string(output).unwrap(), previous);
 }
 

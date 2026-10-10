@@ -37,7 +37,7 @@ pub struct PageResources<'a> {
 }
 
 impl PageResources<'_> {
-    pub(super) fn image_url(&self, src: &str) -> String {
+    pub(super) fn markdown_image_url(&self, src: &str) -> String {
         self.assets
             .resolve(src, self.page_url, self.deployment_prefix)
             .unwrap_or_else(|| src.to_owned())

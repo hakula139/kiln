@@ -5,7 +5,7 @@ use minijinja::value::Kwargs;
 use crate::i18n::I18n;
 use crate::render::assets::{AssetsHandle, LoadStrategy, ScriptTag};
 use crate::static_assets::StaticAssetManifest;
-use crate::url::join_site_url;
+use crate::url::site_asset_url;
 
 // ── Date / Time ──
 
@@ -138,10 +138,12 @@ pub(super) fn tpl_asset_url(
             )
         })?
     };
-    let local = (url.starts_with('/') && !crate::static_assets::is_external(url))
-        .then(|| join_site_url(deployment_prefix, url));
     manifest
-        .resolve(local.as_deref().unwrap_or(url), base, deployment_prefix)
+        .resolve(
+            &site_asset_url(url, deployment_prefix),
+            base,
+            deployment_prefix,
+        )
         .ok_or_else(|| {
             minijinja::Error::new(
                 minijinja::ErrorKind::InvalidOperation,

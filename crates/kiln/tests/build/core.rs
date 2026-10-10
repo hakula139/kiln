@@ -1,9 +1,7 @@
 use std::fs;
 use std::path::Path;
 
-#[cfg(unix)]
-use indoc::formatdoc;
-use indoc::indoc;
+use indoc::{formatdoc, indoc};
 use scraper::{Html, Selector};
 use sha2::{Digest, Sha256};
 
@@ -372,10 +370,14 @@ fn build_fingerprints_bundle_assets_after_static_collisions() {
 #[test]
 fn build_updates_managed_image_urls_and_retires_previous_fingerprints() {
     let root = tempfile::tempdir().unwrap();
-    write_image_site(root.path());
     let public = root.path().join("public");
     let mut previous = None;
-    for bytes in ["original image", "changed image", "changed image"] {
+    for (bytes, featured) in [
+        ("original image", "photo%20%25.avif?quality=1#view"),
+        ("changed image", "/example/photo%20%25.avif?quality=1#view"),
+        ("changed image", "photo%20%25.avif?quality=1#view"),
+    ] {
+        write_image_site(root.path(), featured);
         write_test_file(root.path(), "content/example/photo %.avif", bytes);
         build(
             root.path(),
@@ -400,7 +402,7 @@ fn build_updates_managed_image_urls_and_retires_previous_fingerprints() {
         assert_eq!(
             images,
             [
-                url.as_str(),
+                &format!("https://example.com{url}"),
                 url.as_str(),
                 "//example.org/logo.svg",
                 url.as_str(),
@@ -441,7 +443,7 @@ fn build_updates_managed_image_urls_and_retires_previous_fingerprints() {
     }
 }
 
-fn write_image_site(root: &Path) {
+fn write_image_site(root: &Path, featured: &str) {
     copy_templates(&root.join("templates"));
     write_test_file(
         root,
@@ -470,10 +472,10 @@ fn write_image_site(root: &Path) {
     write_page(
         root,
         "example",
-        indoc! {r#"
+        &formatdoc! {r#"
             +++
             title = "Example"
-            featured_image = "photo%20%25.avif?quality=1#view"
+            featured_image = {featured:?}
             +++
             ![Block](./photo%20%25.avif?quality=1#view)
 
@@ -484,7 +486,7 @@ fn write_image_site(root: &Path) {
             ![External](https://example.org/image.avif)
 
             ::: box
-            ::: link {url="https://example.org/target/" logo="photo%20%25.avif?quality=1#view"}
+            ::: link {{url="https://example.org/target/" logo="photo%20%25.avif?quality=1#view"}}
             :::
             :::
         "#},

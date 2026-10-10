@@ -14,7 +14,7 @@ Files and directories beginning with `_` are private within `assets/` and conten
 
 Site files override theme files. Within each owner, `static/` overlays `assets/` at the output root. Page bundle assets are published next, followed by compiled stylesheets.
 
-Reference shared files through `asset_url()` in templates. Markdown and featured images resolve local URLs against the page output URL. Root-relative Markdown and CSS URLs must include any deployment prefix. Bundle-relative URLs such as `assets/photo.avif` remain unchanged in source. See [Page Bundles](content.md#page-bundles) for frontmatter examples.
+Reference shared files through `asset_url()` in templates. Relative Markdown and featured image URLs resolve against the page output URL. Root-relative featured images use site paths, and prepared featured image URLs are absolute so templates can use them directly in image elements and metadata. Root-relative Markdown and CSS URLs must include any deployment prefix. Bundle-relative URLs such as `assets/photo.avif` remain unchanged in source. See [Page Bundles](content.md#page-bundles) for frontmatter examples.
 
 ## Stylesheet Sources
 

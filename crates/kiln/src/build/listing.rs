@@ -9,11 +9,11 @@ use super::BuildContext;
 use super::git::updated_timestamp;
 use crate::content::frontmatter::FeaturedImage;
 use crate::content::page::{Page, PageKind};
-use crate::render::lqip::ImageResolver;
+use crate::render::PageResources;
 use crate::section::Section;
 use crate::taxonomy::TaxonomySet;
 use crate::template::vars::{BucketSummary, LinkedTerm, PageGroup, PageSummary};
-use crate::url::{encode_component, join_site_url, page_url, resolve_relative_url};
+use crate::url::{encode_component, join_site_url, page_url, site_asset_url};
 
 // ── Prepared pages ──
 
@@ -105,18 +105,16 @@ fn prepare_page(
         &page.source_path,
         ctx.git_info.as_ref(),
     );
-    let mut featured_image = resolve_featured_image(
+    let featured_image = resolve_featured_image(
         page.frontmatter.featured_image.as_ref(),
-        &url,
-        &ctx.image_resolver,
-        page.source_path.parent(),
-    );
-    if let Some(image) = &mut featured_image {
-        image.src = ctx
-            .static_assets
-            .resolve(&image.src, &url, &ctx.deployment_prefix)
-            .unwrap_or_else(|| image.src.clone());
-    }
+        &PageResources {
+            source_dir: page.source_path.parent(),
+            images: &ctx.image_resolver,
+            assets: &ctx.static_assets,
+            page_url: &url,
+            deployment_prefix: &ctx.deployment_prefix,
+        },
+    )?;
     Ok(PreparedPage {
         output_path,
         summary: PageSummary {
@@ -279,27 +277,33 @@ pub(super) fn page_section(
     })
 }
 
-/// Resolves a `FeaturedImage`'s `src` path against the page's output URL and stamps on
-/// dimensions plus an LQIP placeholder when the image is local and decodable.
-#[must_use]
+/// Prepares an absolute featured image URL and local image metadata.
 pub(super) fn resolve_featured_image(
     featured_image: Option<&FeaturedImage>,
-    page_url: &str,
-    image_resolver: &ImageResolver,
-    base_dir: Option<&Path>,
-) -> Option<FeaturedImage> {
-    let fi = featured_image?;
-    let resolved_src = resolve_relative_url(&fi.src, page_url);
+    resources: &PageResources<'_>,
+) -> Result<Option<FeaturedImage>> {
+    let Some(fi) = featured_image else {
+        return Ok(None);
+    };
+    let source = site_asset_url(&fi.src, resources.deployment_prefix);
+    let published = resources
+        .assets
+        .resolve(&source, resources.page_url, resources.deployment_prefix)
+        .unwrap_or(source);
+    let resolved_src = url::Url::parse(resources.page_url)?
+        .join(&published)
+        .with_context(|| format!("invalid featured image URL: {}", fi.src))?
+        .into();
     let mut out = FeaturedImage {
         src: resolved_src,
         ..fi.clone()
     };
-    if let Some(meta) = image_resolver.resolve(&fi.src, base_dir) {
+    if let Some(meta) = resources.images.resolve(&fi.src, resources.source_dir) {
         out.width = Some(meta.width);
         out.height = Some(meta.height);
         out.lqip_uri.clone_from(&meta.lqip_uri);
     }
-    Some(out)
+    Ok(Some(out))
 }
 
 fn linked_tags(taxonomy: &TaxonomySet, page_index: usize, base_url: &str) -> Vec<LinkedTerm> {
@@ -339,7 +343,8 @@ mod tests {
 
     use super::*;
     use crate::content::frontmatter::ImageCredit;
-    use crate::render::lqip::ImageConfig;
+    use crate::render::lqip::{ImageConfig, ImageResolver};
+    use crate::static_assets::StaticAssetManifest;
 
     static EMPTY_RESOLVER: LazyLock<ImageResolver> =
         LazyLock::new(|| ImageResolver::new(Path::new(""), ImageConfig::default()));
@@ -451,21 +456,46 @@ mod tests {
     // ── resolve_featured_image ──
 
     #[test]
-    fn resolve_featured_image_resolves_relative_and_external_sources() {
+    fn resolve_featured_image_resolves_site_and_page_urls() {
         for (source, expected) in [
-            ("assets/cover.webp", "/posts/section/page/assets/cover.webp"),
+            (
+                "/images/cover.webp",
+                "https://example.com/blog/images/cover.webp",
+            ),
+            (
+                "/blog/cover.webp",
+                "https://example.com/blog/blog/cover.webp",
+            ),
+            (
+                "assets/cover.webp?q=1#view",
+                "https://example.com/blog/posts/foo/assets/cover.webp?q=1#view",
+            ),
+            ("../cover.webp", "https://example.com/blog/posts/cover.webp"),
             (
                 "https://cdn.example.com/img.jpg",
                 "https://cdn.example.com/img.jpg",
             ),
+            (
+                "//cdn.example.com/img.jpg",
+                "https://cdn.example.com/img.jpg",
+            ),
+            (
+                "data:image/png;base64,example",
+                "data:image/png;base64,example",
+            ),
         ] {
-            let image = make_featured_image(source);
+            let fi = make_featured_image(source);
             let resolved = resolve_featured_image(
-                Some(&image),
-                "https://example.com/posts/section/page/",
-                &EMPTY_RESOLVER,
-                None,
+                Some(&fi),
+                &PageResources {
+                    source_dir: None,
+                    images: &EMPTY_RESOLVER,
+                    assets: &StaticAssetManifest::default(),
+                    page_url: "https://example.com/blog/posts/foo/",
+                    deployment_prefix: "/blog",
+                },
             )
+            .unwrap()
             .unwrap();
             assert_eq!(resolved.src, expected);
         }
@@ -485,12 +515,17 @@ mod tests {
         };
         let resolved = resolve_featured_image(
             Some(&fi),
-            "https://example.com/posts/foo/",
-            &EMPTY_RESOLVER,
-            None,
+            &PageResources {
+                source_dir: None,
+                images: &EMPTY_RESOLVER,
+                assets: &StaticAssetManifest::default(),
+                page_url: "https://example.com/posts/foo/",
+                deployment_prefix: "",
+            },
         )
+        .unwrap()
         .unwrap();
-        assert_eq!(resolved.src, "/images/cover.webp");
+        assert_eq!(resolved.src, "https://example.com/images/cover.webp");
         assert_eq!(resolved.position.as_deref(), Some("top"));
         let credit = resolved.credit.as_ref().unwrap();
         assert_eq!(credit.title.as_deref(), Some("Work"));
@@ -514,10 +549,15 @@ mod tests {
         let fi = make_featured_image("cover.png");
         let stamped = resolve_featured_image(
             Some(&fi),
-            "https://example.com/posts/foo/",
-            &img_resolver,
-            Some(&bundle),
+            &PageResources {
+                source_dir: Some(&bundle),
+                images: &img_resolver,
+                assets: &StaticAssetManifest::default(),
+                page_url: "https://example.com/posts/foo/",
+                deployment_prefix: "",
+            },
         )
+        .unwrap()
         .unwrap();
 
         assert_eq!(stamped.width, Some(4));
@@ -535,10 +575,15 @@ mod tests {
         assert!(
             resolve_featured_image(
                 None,
-                "https://example.com/posts/foo/",
-                &EMPTY_RESOLVER,
-                None
+                &PageResources {
+                    source_dir: None,
+                    images: &EMPTY_RESOLVER,
+                    assets: &StaticAssetManifest::default(),
+                    page_url: "https://example.com/posts/foo/",
+                    deployment_prefix: "",
+                }
             )
+            .unwrap()
             .is_none()
         );
     }

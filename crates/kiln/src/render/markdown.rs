@@ -251,7 +251,13 @@ impl MarkdownRenderer<'_> {
             self.resources.source_dir,
         );
         Event::Html(
-            render_inline_image(&self.resources.image_url(src), &alt, title, attrs.as_ref()).into(),
+            render_inline_image(
+                &self.resources.markdown_image_url(src),
+                &alt,
+                title,
+                attrs.as_ref(),
+            )
+            .into(),
         )
     }
 }
@@ -297,7 +303,7 @@ fn try_render_block_image(
         resources.source_dir,
     );
     Some(render_block_image(
-        &resources.image_url(&src),
+        &resources.markdown_image_url(&src),
         &alt,
         &title,
         enriched.as_ref(),
