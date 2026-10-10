@@ -89,7 +89,7 @@ See [Usage](../README.md#usage) and [Live Reload](assets.md#live-reload).
 ### Hugo Content Migration
 
 - `kiln convert` migrates content and static files between separate site roots while preserving existing destination files.
-- Supported YAML frontmatter becomes TOML. Category indexes become post-section indexes, while post, section and tag indexes keep their location.
+- Supported YAML frontmatter becomes TOML. `categories/<slug>/_index.md` becomes `posts/<slug>/_index.md`, while `posts/_index.md`, `posts/<slug>/_index.md` and `tags/<slug>/_index.md` keep their location.
 - Admonition, image and Mermaid shortcodes receive native equivalents. Other standalone shortcodes become directives for matching theme templates.
 - Unsupported metadata produces omission warnings. Malformed recognized frontmatter and unsupported content-bearing shortcodes fail conversion.
 

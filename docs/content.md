@@ -212,7 +212,7 @@ It migrates:
 - `content/`, translating supported YAML frontmatter to TOML.
 - `static/`, copied into the destination.
 - Admonition, image and Mermaid shortcodes into native equivalents. Other standalone shortcodes become directives requiring matching theme templates.
-- Category indexes into post-section indexes. Post, section and tag indexes retain their location, and other Hugo section indexes are skipped.
+- `categories/<slug>/_index.md` into `posts/<slug>/_index.md`. `posts/_index.md`, `posts/<slug>/_index.md` and `tags/<slug>/_index.md` keep their location, and other `_index.md` files are skipped. Two indexes that convert to the same path fail conversion before anything is written.
 
 Migrate configuration, theme templates and unsupported Hugo features manually. Review omission warnings for unsupported metadata. Malformed recognized frontmatter and unsupported content-bearing shortcodes fail conversion.
 

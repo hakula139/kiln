@@ -22,8 +22,8 @@ use crate::content::is_markdown;
 ///
 /// # Errors
 ///
-/// Returns an error if `source/content` is missing, two indexes map to the same destination, or
-/// any file fails to read, convert, or write.
+/// Returns an error if `source/content` is missing, any file fails to read, convert, or write, or
+/// two indexes map to the same destination. The index check runs before anything is written.
 pub fn convert(source: &Path, dest: &Path) -> Result<()> {
     ensure!(
         source.join("content").is_dir(),
@@ -48,7 +48,8 @@ pub fn convert(source: &Path, dest: &Path) -> Result<()> {
         );
     }
 
-    convert_tree(&source.join("content"), &dest.join("content"), true)?;
+    let content_source = source.join("content");
+    convert_tree(&content_source, &dest.join("content"), true)?;
     let static_source = source.join("static");
     if static_source.is_dir() {
         convert_tree(&static_source, &dest.join("static"), false)?;
@@ -72,16 +73,45 @@ fn resolve_destination(path: &Path) -> Result<PathBuf> {
 
 fn convert_tree(source: &Path, dest: &Path, markdown: bool) -> Result<()> {
     let resolved_dest = resolve_destination(dest)?;
+    for (source_file, destination) in plan_tree(source, dest, markdown)? {
+        if fs::symlink_metadata(&destination).is_ok() {
+            continue;
+        }
+        ensure!(
+            resolve_destination(&destination)?.starts_with(&resolved_dest),
+            "conversion destination escapes its root: {}",
+            destination.display()
+        );
+        if let Some(parent) = destination.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        if markdown && is_markdown(&source_file) {
+            convert_or_copy_markdown(&source_file, &destination)?;
+        } else {
+            fs::copy(&source_file, &destination)?;
+        }
+    }
+    Ok(())
+}
+
+/// Pairs each file under `source` with its destination under `dest`, in file name order.
+///
+/// # Errors
+///
+/// Returns an error if the walk fails or two indexes convert to the same destination.
+fn plan_tree(source: &Path, dest: &Path, markdown: bool) -> Result<Vec<(PathBuf, PathBuf)>> {
+    let mut files = Vec::new();
     let mut index_sources = HashMap::new();
-    for entry in WalkDir::new(source).follow_links(false) {
+    for entry in WalkDir::new(source).follow_links(false).sort_by_file_name() {
         let entry = entry?;
         if entry.file_type().is_dir() {
             continue;
         }
 
         let relative = entry.path().strip_prefix(source)?;
-        let markdown_file = markdown && is_markdown(relative);
-        let destination = if markdown_file
+        let destination = if markdown
+            && is_markdown(relative)
             && relative.file_stem().is_some_and(|stem| stem == "_index")
         {
             let Some(index) = index_destination(relative) else {
@@ -100,25 +130,9 @@ fn convert_tree(source: &Path, dest: &Path, markdown: bool) -> Result<()> {
         } else {
             dest.join(relative)
         };
-        if fs::symlink_metadata(&destination).is_ok() {
-            continue;
-        }
-        ensure!(
-            resolve_destination(&destination)?.starts_with(&resolved_dest),
-            "conversion destination escapes its root: {}",
-            destination.display()
-        );
-        if let Some(parent) = destination.parent() {
-            fs::create_dir_all(parent)?;
-        }
-
-        if markdown_file {
-            convert_or_copy_markdown(entry.path(), &destination)?;
-        } else {
-            fs::copy(entry.path(), &destination)?;
-        }
+        files.push((entry.into_path(), destination));
     }
-    Ok(())
+    Ok(files)
 }
 
 /// Returns the content-relative destination of an `_index.md` file, or `None` to skip it.
@@ -130,8 +144,8 @@ fn index_destination(relative: &Path) -> Option<PathBuf> {
     match components[..] {
         [kind, _] if kind == "posts" => Some(relative.to_owned()),
         [kind, _, _] if kind == "posts" || kind == "tags" => Some(relative.to_owned()),
-        [kind, slug, file] if kind == "categories" => {
-            Some(Path::new("posts").join(slug).join(file))
+        [kind, slug, _] if kind == "categories" => {
+            Some(Path::new("posts").join(slug).join("_index.md"))
         }
         _ => None,
     }
@@ -266,7 +280,7 @@ mod tests {
             fs::create_dir_all(index.parent().unwrap()).unwrap();
             fs::write(
                 index,
-                formatdoc! {"
+                formatdoc! {r"
                     ---
                     title: {title}
                     ---
@@ -306,12 +320,19 @@ mod tests {
     fn convert_colliding_section_indexes_returns_error() {
         let dir = tempfile::tempdir().unwrap();
         let source = dir.path().join("source");
-        for path in ["posts/anime/_index.md", "categories/anime/_index.md"] {
-            let index = source.join("content").join(path);
-            fs::create_dir_all(index.parent().unwrap()).unwrap();
+        let dest = dir.path().join("dest");
+        let content_source = source.join("content");
+
+        for path in [
+            "about.md",
+            "posts/anime/_index.md",
+            "categories/anime/_index.md",
+        ] {
+            let file = content_source.join(path);
+            fs::create_dir_all(file.parent().unwrap()).unwrap();
             fs::write(
-                index,
-                indoc! {"
+                file,
+                indoc! {r"
                     ---
                     title: Anime
                     ---
@@ -320,14 +341,21 @@ mod tests {
             .unwrap();
         }
 
-        let error = convert(&source, &dir.path().join("dest")).unwrap_err();
-        assert!(
-            error.to_string().ends_with(&format!(
-                "both convert to {}",
-                Path::new("posts").join("anime").join("_index.md").display()
-            )),
-            "{error}"
+        let error = convert(&source, &dest).unwrap_err();
+        let section = Path::new("posts").join("anime").join("_index.md");
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "{} and {} both convert to {}",
+                Path::new("categories")
+                    .join("anime")
+                    .join("_index.md")
+                    .display(),
+                section.display(),
+                section.display()
+            )
         );
+        assert!(!dest.exists());
     }
 
     #[test]
