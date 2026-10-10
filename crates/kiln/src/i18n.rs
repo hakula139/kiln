@@ -438,7 +438,8 @@ mod tests {
             let site = tempfile::tempdir().unwrap();
             let theme = tempfile::tempdir().unwrap();
             write_test_file(theme.path(), "i18n/en.toml", "");
-            let locale = if in_theme { theme.path() } else { site.path() }.join("i18n/fr.toml");
+            let locale_dir = if in_theme { theme.path() } else { site.path() }.join("i18n");
+            let locale = locale_dir.join("fr.toml");
             fs::create_dir_all(&locale).unwrap();
 
             let err = I18n::load(site.path(), Some(theme.path()), "fr")
