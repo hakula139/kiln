@@ -113,7 +113,7 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
     let output_dir = transaction.path().to_owned();
 
     let assets = PublishedAssets::publish(root, theme_dir.as_deref(), &content.pages, &output_dir)?;
-    let stylesheets = Stylesheets::discover(root, &config, &content.pages)?;
+    let stylesheets = Stylesheets::discover(root, &config, &content.pages);
     let mut static_assets = StaticAssetManifest::build_media(&output_dir)?;
     stylesheets.compile(root, &config, &assets, &static_assets, &output_dir)?;
 

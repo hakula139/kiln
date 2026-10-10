@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
-use super::frontmatter::has_frontmatter;
+use super::frontmatter::{TOML_DELIMITER, has_delimited_frontmatter};
 use super::page::Page;
 use crate::output::walk_directory;
 
@@ -39,7 +39,7 @@ pub fn discover_content(root: &Path) -> Result<ContentSet> {
 
     let mut pages = Vec::new();
 
-    for entry in walk_directory(&content_dir, &|name| !super::is_private(name)) {
+    for entry in walk_directory(&content_dir, &super::is_public) {
         let entry =
             entry.with_context(|| format!("failed to read entry in {}", content_dir.display()))?;
 
@@ -54,10 +54,10 @@ pub fn discover_content(root: &Path) -> Result<ContentSet> {
 
         let content = std::fs::read_to_string(path)
             .with_context(|| format!("failed to read {}", path.display()))?;
-        if !has_frontmatter(&content) {
+        if !has_delimited_frontmatter(&content, TOML_DELIMITER) {
             continue;
         }
-        let page = Page::parse(&content, path, &content_dir)?;
+        let page = Page::load(&content, path, &content_dir)?;
         if !page.frontmatter.draft {
             pages.push(page);
         }

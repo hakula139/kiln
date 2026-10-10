@@ -78,16 +78,15 @@ impl PublishedAssets {
 }
 
 fn copy_page_assets(page: &Page, output_dir: &Path) -> Result<BTreeMap<PathBuf, PathBuf>> {
-    let bundle = page
-        .source_path
-        .parent()
-        .context("page source has no parent")?;
-    let destination = output_dir.join(&page.output_dir);
     let mut files = BTreeMap::new();
+    let Some(bundle) = page.bundle_dir() else {
+        return Ok(files);
+    };
+    let destination = output_dir.join(&page.output_dir);
     for asset in &page.assets {
         let relative = asset
             .strip_prefix(bundle)
-            .context("asset is outside its bundle")?;
+            .expect("bundle assets are discovered under the bundle directory");
         let target = destination.join(relative);
         copy_file(asset, &target)
             .with_context(|| format!("failed to copy asset {}", asset.display()))?;

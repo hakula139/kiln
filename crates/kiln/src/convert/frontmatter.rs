@@ -6,6 +6,9 @@ use serde_yaml::{Mapping, Value};
 
 use crate::content::frontmatter::{FeaturedImage, Frontmatter, ImageCredit};
 
+/// Delimiter around Hugo YAML frontmatter.
+pub(crate) const YAML_DELIMITER: &str = "---";
+
 #[derive(Deserialize)]
 struct MigrationFrontmatter {
     #[serde(flatten)]
@@ -22,7 +25,7 @@ pub(crate) fn convert_frontmatter(yaml_str: &str) -> Result<(String, Vec<String>
         serde_yaml::from_str(yaml_str).context("failed to parse YAML frontmatter")?;
     let mut unsupported = Vec::new();
     collect_image_fields(&value, &mut unsupported);
-    normalize_featured_image(&mut value);
+    normalize_featured_image(&mut value, &mut unsupported);
     let fm: MigrationFrontmatter =
         serde_yaml::from_value(value).context("failed to parse YAML frontmatter")?;
     unsupported.extend(fm.unsupported.into_keys());
@@ -61,14 +64,16 @@ fn collect_unknown_fields(
     }
 }
 
-fn normalize_featured_image(value: &mut Value) {
+fn normalize_featured_image(value: &mut Value, unsupported: &mut Vec<String>) {
     let Some(mapping) = value.as_mapping_mut() else {
         return;
     };
-    if !mapping.contains_key("featured_image")
-        && let Some(image) = mapping.remove("featuredImage")
-    {
-        mapping.insert("featured_image".into(), image);
+    if let Some(image) = mapping.remove("featuredImage") {
+        if mapping.contains_key("featured_image") {
+            unsupported.push("featuredImage".into());
+        } else {
+            mapping.insert("featured_image".into(), image);
+        }
     }
     if let Some(image @ Value::String(_)) = mapping.get_mut("featured_image") {
         let src = std::mem::take(image);
@@ -138,10 +143,23 @@ mod tests {
 
     #[test]
     fn convert_frontmatter_maps_hugo_featured_image_forms() {
-        for yaml in [
-            "featured_image: /img.webp",
-            "featuredImage: /img.webp",
-            "featuredImage:\n  src: /img.webp",
+        for (yaml, expected_unsupported) in [
+            ("featured_image: /img.webp", Vec::<&str>::new()),
+            ("featuredImage: /img.webp", vec![]),
+            (
+                indoc! {"
+                    featuredImage:
+                      src: /img.webp
+                "},
+                vec![],
+            ),
+            (
+                indoc! {"
+                    featured_image: /img.webp
+                    featuredImage: /other.webp
+                "},
+                vec!["featuredImage"],
+            ),
         ] {
             let (toml, unsupported) = convert_frontmatter(yaml).unwrap();
             assert_eq!(
@@ -152,7 +170,7 @@ mod tests {
                 "#},
                 "{yaml}"
             );
-            assert_eq!(unsupported, Vec::<String>::new(), "{yaml}");
+            assert_eq!(unsupported, expected_unsupported, "{yaml}");
         }
     }
 

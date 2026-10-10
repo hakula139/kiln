@@ -8,7 +8,7 @@ use crate::content::page::{Page, PageKind};
 use crate::text::titlecase;
 
 /// A content section derived from the directory structure under `content/posts/`.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Section {
     pub slug: String,
     pub title: String,

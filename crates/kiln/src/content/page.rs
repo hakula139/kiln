@@ -1,12 +1,12 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use anyhow::{Context, Result, ensure};
 use itertools::Itertools;
 use pulldown_cmark::{Event, Parser, Tag, TagEnd};
 
 use super::frontmatter::{self, Frontmatter};
-use super::{is_markdown, is_private};
+use super::{is_markdown, is_public};
 use crate::markdown::markdown_options;
 use crate::output::walk_directory;
 
@@ -37,14 +37,14 @@ pub struct Page {
 const SUMMARY_SEPARATOR: &str = "<!--more-->";
 
 impl Page {
-    /// Parses a content file at `path` under `content_dir`, deriving its kind, output directory,
-    /// summary and bundle assets.
+    /// Loads the page whose source at `path` under `content_dir` holds `content`, deriving its
+    /// kind, output directory and summary and discovering its bundle assets on disk.
     ///
     /// # Errors
     ///
     /// Returns an error if the frontmatter or slug is invalid, a section name is not UTF-8, or
     /// bundle assets cannot be read.
-    pub(super) fn parse(content: &str, path: &Path, content_dir: &Path) -> Result<Self> {
+    pub(super) fn load(content: &str, path: &Path, content_dir: &Path) -> Result<Self> {
         let relative = path
             .strip_prefix(content_dir)
             .expect("content discovery only yields paths under the content directory");
@@ -54,21 +54,30 @@ impl Page {
             .with_context(|| format!("invalid slug in {}", path.display()))?;
         let kind = page_kind(relative)
             .with_context(|| format!("invalid section in {}", path.display()))?;
-        let assets = match path.parent() {
-            Some(dir) if is_page_bundle(path) => discover_assets(dir)
-                .with_context(|| format!("failed to read assets in {}", dir.display()))?,
-            _ => Vec::new(),
-        };
 
-        Ok(Self {
+        let mut page = Self {
             summary: extract_summary(body),
             body: body.to_owned(),
             frontmatter,
             kind,
             source_path: path.to_owned(),
             output_dir,
-            assets,
-        })
+            assets: Vec::new(),
+        };
+        if let Some(dir) = page.bundle_dir() {
+            let assets = discover_assets(dir)
+                .with_context(|| format!("failed to read assets in {}", dir.display()))?;
+            page.assets = assets;
+        }
+        Ok(page)
+    }
+
+    /// Directory owning the co-located assets of a page bundle, or `None` for a standalone page.
+    #[must_use]
+    pub fn bundle_dir(&self) -> Option<&Path> {
+        self.source_path
+            .parent()
+            .filter(|_| is_page_bundle(&self.source_path))
     }
 
     /// Output file path relative to the build output directory.
@@ -94,7 +103,7 @@ fn output_dir(relative: &Path, slug: Option<&str>) -> Result<PathBuf> {
     if let Some(slug) = slug {
         let mut components = Path::new(slug).components();
         ensure!(
-            matches!(components.next(), Some(std::path::Component::Normal(_)))
+            matches!(components.next(), Some(Component::Normal(_)))
                 && components.next().is_none()
                 && !slug.contains(['/', '\\']),
             "slug must be a single nonempty path component"
@@ -136,23 +145,13 @@ pub(crate) fn is_page_bundle(path: &Path) -> bool {
     path.file_stem().and_then(|s| s.to_str()) == Some("index")
 }
 
-/// Returns sorted public assets owned by this bundle, excluding nested bundle subtrees.
+/// Returns sorted public assets owned by this bundle, pruning nested bundle subtrees.
 fn discover_assets(dir: &Path) -> Result<Vec<PathBuf>> {
+    let include = |path: &Path| is_public(path) && !(path.is_dir() && contains_bundle(path));
     let mut assets = Vec::new();
-    let mut nested_bundle: Option<PathBuf> = None;
-    for entry in walk_directory(dir, &|name| !is_private(name)) {
+    for entry in walk_directory(dir, &include) {
         let entry = entry.with_context(|| format!("failed to read entry in {}", dir.display()))?;
-        if nested_bundle
-            .as_deref()
-            .is_some_and(|bundle| entry.path().starts_with(bundle))
-        {
-            continue;
-        }
-        if entry.file_type().is_dir() {
-            if entry.depth() > 0 && contains_bundle(entry.path())? {
-                nested_bundle = Some(entry.into_path());
-            }
-        } else if entry.file_type().is_file() && !is_markdown(entry.path()) {
+        if entry.file_type().is_file() && !is_markdown(entry.path()) {
             assets.push(entry.into_path());
         }
     }
@@ -160,14 +159,16 @@ fn discover_assets(dir: &Path) -> Result<Vec<PathBuf>> {
     Ok(assets)
 }
 
-fn contains_bundle(dir: &Path) -> Result<bool> {
-    for entry in fs::read_dir(dir)? {
-        let path = entry?.path();
-        if is_markdown(&path) && is_page_bundle(&path) && path.is_file() {
-            return Ok(true);
-        }
-    }
-    Ok(false)
+/// Unreadable directories count as bundle-free, so the walk descends and reports their error.
+fn contains_bundle(dir: &Path) -> bool {
+    fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .any(|entry| {
+            let path = entry.path();
+            is_markdown(&path) && is_page_bundle(&path) && path.is_file()
+        })
 }
 
 /// Extracts summary text before `<!--more-->`, stripped to plain text.
@@ -229,16 +230,16 @@ mod tests {
     "#};
 
     /// Writes `content` to `relative` under `<root>/content` and parses it.
-    fn parse_at(root: &Path, relative: &str, content: &str) -> Result<Page> {
+    fn load_at(root: &Path, relative: &str, content: &str) -> Result<Page> {
         write_test_file(root, &format!("content/{relative}"), content);
         let content_dir = root.join("content");
-        Page::parse(content, &content_dir.join(relative), &content_dir)
+        Page::load(content, &content_dir.join(relative), &content_dir)
     }
 
-    // ── Page::parse ──
+    // ── Page::load ──
 
     #[test]
-    fn parse_bundle_derives_metadata_and_assets() {
+    fn load_bundle_derives_metadata_and_assets() {
         let root = tempfile::tempdir().unwrap();
         let bundle = root.path().join("content/posts/note/hello");
         for (path, contents) in [
@@ -254,7 +255,7 @@ mod tests {
             write_test_file(&bundle, path, contents);
         }
 
-        let page = parse_at(
+        let page = load_at(
             root.path(),
             "posts/note/hello/index.md",
             indoc! {r#"
@@ -296,11 +297,11 @@ mod tests {
     }
 
     #[test]
-    fn parse_standalone_file_has_no_assets() {
+    fn load_standalone_file_has_no_assets() {
         let root = tempfile::tempdir().unwrap();
         write_test_file(root.path(), "content/image.png", "fake-png");
 
-        let page = parse_at(root.path(), "standalone.md", MINIMAL).unwrap();
+        let page = load_at(root.path(), "standalone.md", MINIMAL).unwrap();
 
         assert_eq!(page.kind, PageKind::Page);
         assert_eq!(page.output_dir, Path::new("standalone"));
@@ -308,7 +309,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_invalid_metadata_returns_error() {
+    fn load_invalid_metadata_returns_error() {
         for (content, expected) in [
             (
                 indoc! {"
@@ -328,7 +329,7 @@ mod tests {
             ),
         ] {
             let root = tempfile::tempdir().unwrap();
-            let error = parse_at(root.path(), "bad.md", content).unwrap_err();
+            let error = load_at(root.path(), "bad.md", content).unwrap_err();
             assert!(
                 error.to_string().starts_with(expected),
                 "{expected}: {error:#}"
@@ -338,21 +339,23 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn parse_excludes_private_invalid_asset_symlinks() {
+    fn load_skips_private_and_nested_bundle_invalid_symlinks() {
         let root = tempfile::tempdir().unwrap();
         let bundle = root.path().join("content/example");
         write_test_file(&bundle, "visible.txt", "published");
+        write_test_file(&bundle, "nested/index.md", MINIMAL);
         std::os::unix::fs::symlink(bundle.join("missing"), bundle.join("_broken")).unwrap();
         std::os::unix::fs::symlink(&bundle, bundle.join("_cycle")).unwrap();
+        std::os::unix::fs::symlink(bundle.join("missing"), bundle.join("nested/broken")).unwrap();
 
-        let page = parse_at(root.path(), "example/index.md", MINIMAL).unwrap();
+        let page = load_at(root.path(), "example/index.md", MINIMAL).unwrap();
 
         assert_eq!(page.assets, [bundle.join("visible.txt")]);
     }
 
     #[cfg(unix)]
     #[test]
-    fn parse_unreadable_bundle_returns_error() {
+    fn load_unreadable_bundle_returns_error() {
         for unreadable in ["", "broken"] {
             let root = tempfile::tempdir().unwrap();
             let bundle = root.path().join("content/hello");
@@ -364,7 +367,7 @@ mod tests {
             let mode = if unreadable.is_empty() { 0o111 } else { 0o000 };
             let _guard = PermissionGuard::restrict(&directory, mode);
 
-            let error = Page::parse(
+            let error = Page::load(
                 MINIMAL,
                 &bundle.join("index.md"),
                 &root.path().join("content"),
@@ -379,26 +382,26 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn parse_invalid_asset_symlink_returns_error() {
+    fn load_invalid_asset_symlink_returns_error() {
         for cycle in [false, true] {
             let root = tempfile::tempdir().unwrap();
-            let bundle = root.path().join("content/example");
-            std::fs::create_dir_all(&bundle).unwrap();
+            let assets = root.path().join("content/example/assets");
+            std::fs::create_dir_all(&assets).unwrap();
             let target = if cycle {
-                bundle.clone()
+                assets.clone()
             } else {
-                bundle.join("missing")
+                assets.join("missing")
             };
-            let link = bundle.join("asset");
+            let link = assets.join("asset");
             std::os::unix::fs::symlink(&target, &link).unwrap();
 
-            let error = parse_at(root.path(), "example/index.md", MINIMAL).unwrap_err();
+            let error = load_at(root.path(), "example/index.md", MINIMAL).unwrap_err();
 
             assert!(error.to_string().contains("failed to read assets"));
             let walk_error = error.downcast_ref::<walkdir::Error>().unwrap();
             assert_eq!(walk_error.path(), Some(link.as_path()));
             if cycle {
-                assert_eq!(walk_error.loop_ancestor(), Some(bundle.as_path()));
+                assert_eq!(walk_error.loop_ancestor(), Some(assets.as_path()));
             } else {
                 assert_eq!(
                     walk_error.io_error().unwrap().kind(),

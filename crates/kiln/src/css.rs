@@ -13,7 +13,7 @@ use lightningcss::values::string::CSSString;
 use percent_encoding::percent_decode_str;
 
 use crate::config::{Config, CssProcessor};
-use crate::content::page::{Page, is_page_bundle};
+use crate::content::page::Page;
 use crate::output::write_output;
 use crate::static_assets::StaticAssetManifest;
 use crate::static_assets::publication::PublishedAssets;
@@ -34,11 +34,7 @@ pub(crate) struct Stylesheets {
 
 impl Stylesheets {
     /// Resolves site overrides and page-owned entry points before compiling any sources.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when a page source has no parent directory.
-    pub(crate) fn discover(root: &Path, config: &Config, pages: &[Page]) -> Result<Self> {
+    pub(crate) fn discover(root: &Path, config: &Config, pages: &[Page]) -> Self {
         let shared_source = std::iter::once(root.to_owned())
             .chain(config.theme_dir(root))
             .map(|dir| dir.join(ENTRY))
@@ -50,13 +46,9 @@ impl Stylesheets {
         });
         let mut styles = BTreeMap::new();
         for page in pages {
-            if !is_page_bundle(&page.source_path) {
+            let Some(bundle) = page.bundle_dir() else {
                 continue;
-            }
-            let bundle = page
-                .source_path
-                .parent()
-                .context("page source has no parent")?;
+            };
             let source = bundle.join(ENTRY);
             if source.is_file() {
                 styles.insert(
@@ -69,10 +61,10 @@ impl Stylesheets {
                 );
             }
         }
-        Ok(Self {
+        Self {
             shared,
             pages: styles,
-        })
+        }
     }
 
     /// Compiles private sources into the build output, preserving published asset references.
@@ -346,7 +338,7 @@ mod tests {
         );
         let pages = discover_content(root.path()).unwrap().pages;
         let config = Config::default();
-        let stylesheets = Stylesheets::discover(root.path(), &config, &pages).unwrap();
+        let stylesheets = Stylesheets::discover(root.path(), &config, &pages);
         let output = root.path().join("public");
         let assets = PublishedAssets::publish(root.path(), None, &pages, &output).unwrap();
         stylesheets

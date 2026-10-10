@@ -1,12 +1,17 @@
 use anyhow::{Result, bail};
 use jiff::Timestamp;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, de};
 
-const DELIMITER: &str = "+++";
+/// Delimiter around native TOML frontmatter.
+pub(crate) const TOML_DELIMITER: &str = "+++";
 
 /// Metadata parsed from the TOML frontmatter of a content file.
 #[derive(Debug, Default, PartialEq, Deserialize, Serialize)]
 #[serde(default)]
+#[expect(
+    clippy::manual_non_exhaustive,
+    reason = "the private unit field rejects Hugo's `featuredImage` key during deserialization"
+)]
 pub struct Frontmatter {
     #[serde(skip_serializing_if = "String::is_empty")]
     pub title: String,
@@ -33,6 +38,14 @@ pub struct Frontmatter {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub featured_image: Option<FeaturedImage>,
 
+    /// Hugo's `featuredImage` key, rejected so the image is not silently dropped.
+    #[serde(
+        rename = "featuredImage",
+        skip_serializing,
+        deserialize_with = "reject_featured_image_alias"
+    )]
+    pub(crate) featured_image_alias: (),
+
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
 
@@ -52,6 +65,7 @@ pub struct Frontmatter {
 /// Featured image metadata. `width` / `height` / `lqip_uri` are stamped by
 /// the build pipeline from the on-disk source, not authored.
 #[derive(Debug, Default, Clone, PartialEq, Deserialize, Serialize)]
+#[serde(expecting = "a `[featured_image]` table with a `src` key")]
 pub struct FeaturedImage {
     pub src: String,
 
@@ -63,13 +77,13 @@ pub struct FeaturedImage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub credit: Option<ImageCredit>,
 
-    #[serde(default, skip_deserializing, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_deserializing, skip_serializing_if = "Option::is_none")]
     pub width: Option<u32>,
 
-    #[serde(default, skip_deserializing, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_deserializing, skip_serializing_if = "Option::is_none")]
     pub height: Option<u32>,
 
-    #[serde(default, skip_deserializing, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_deserializing, skip_serializing_if = "Option::is_none")]
     pub lqip_uri: Option<String>,
 }
 
@@ -96,6 +110,12 @@ pub struct ImageCredit {
 impl ImageCredit {
     /// Authored keys, which `kiln convert` keeps while reporting any others.
     pub(crate) const FIELDS: [&str; 3] = ["title", "author", "url"];
+}
+
+fn reject_featured_image_alias<'de, D: Deserializer<'de>>(_: D) -> Result<(), D::Error> {
+    Err(de::Error::custom(
+        "`featuredImage` is not supported, use a `[featured_image]` table",
+    ))
 }
 
 /// Deserializes `jiff::Timestamp` from a string.
@@ -125,11 +145,6 @@ mod timestamp_serde {
         }
 
         fn visit_none<E: de::Error>(self) -> Result<Self::Value, E> {
-            Ok(None)
-        }
-
-        // Flattened YAML nulls, as in `kiln convert`, arrive as unit values.
-        fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
             Ok(None)
         }
 
@@ -176,15 +191,14 @@ mod timestamp_serde {
 ///
 /// Returns an error if the frontmatter delimiters are missing or the TOML is invalid.
 pub(crate) fn parse(content: &str) -> Result<(Frontmatter, &str)> {
-    let (raw_fm, body) = split_delimited_frontmatter(content, DELIMITER)?;
+    let (raw_fm, body) = split_delimited_frontmatter(content, TOML_DELIMITER)?;
     let fm: Frontmatter = toml::from_str(raw_fm)?;
     Ok((fm, body))
 }
 
-/// Returns `true` if content opens with a `+++` frontmatter delimiter, after an optional UTF-8
-/// BOM. Content discovery skips other Markdown files.
-pub(crate) fn has_frontmatter(content: &str) -> bool {
-    strip_bom(content).starts_with(DELIMITER)
+/// Returns `true` if content opens with `delimiter`, after an optional UTF-8 BOM.
+pub(crate) fn has_delimited_frontmatter(content: &str, delimiter: &str) -> bool {
+    strip_bom(content).starts_with(delimiter)
 }
 
 /// Splits content into raw frontmatter and body using the given delimiter.
@@ -256,7 +270,13 @@ mod tests {
     fn serialize_round_trips_flags() {
         for (enabled, expected) in [
             (false, ""),
-            (true, "draft = true\nheading_numbering = true\n"),
+            (
+                true,
+                indoc! {"
+                    draft = true
+                    heading_numbering = true
+                "},
+            ),
         ] {
             let frontmatter = Frontmatter {
                 draft: enabled,
@@ -272,7 +292,7 @@ mod tests {
         }
     }
 
-    // ── FIELDS ──
+    // ── FeaturedImage::FIELDS / ImageCredit::FIELDS ──
 
     #[test]
     fn fields_match_authored_keys() {
@@ -436,13 +456,24 @@ mod tests {
 
     #[test]
     fn parse_wrong_type_returns_error() {
-        for field in ["date = 42", r#"featured_image = "/images/cover.webp""#] {
+        for (field, expected) in [
+            ("date = 42", "a datetime string with UTC offset"),
+            (
+                r#"featured_image = "/images/cover.webp""#,
+                "expected a `[featured_image]` table with a `src` key",
+            ),
+            (
+                r#"featuredImage = "/images/cover.webp""#,
+                "`featuredImage` is not supported, use a `[featured_image]` table",
+            ),
+        ] {
             let input = formatdoc! {"
                 +++
                 {field}
                 +++
             "};
-            assert!(parse(&input).is_err(), "{field}");
+            let error = format!("{:#}", parse(&input).unwrap_err());
+            assert!(error.contains(expected), "{field}: {error}");
         }
     }
 
@@ -473,17 +504,21 @@ mod tests {
         }
     }
 
-    // ── has_frontmatter ──
+    // ── has_delimited_frontmatter ──
 
     #[test]
-    fn has_frontmatter_accepts_bom_and_rejects_other_markdown() {
+    fn has_delimited_frontmatter_accepts_bom_and_rejects_other_markdown() {
         for (content, expected) in [
             ("+++\ntitle = \"A\"\n+++\n", true),
             ("\u{feff}+++\n+++\n", true),
             ("# Notes\n", false),
             ("---\ntitle: A\n---\n", false),
         ] {
-            assert_eq!(has_frontmatter(content), expected, "{content:?}");
+            assert_eq!(
+                has_delimited_frontmatter(content, TOML_DELIMITER),
+                expected,
+                "{content:?}"
+            );
         }
     }
 
@@ -497,7 +532,7 @@ mod tests {
             +++
             Body text here.
         "#};
-        let (fm, body) = split_delimited_frontmatter(input, DELIMITER).unwrap();
+        let (fm, body) = split_delimited_frontmatter(input, TOML_DELIMITER).unwrap();
         assert_eq!(
             fm,
             indoc! {r#"
@@ -511,7 +546,7 @@ mod tests {
     fn split_delimited_frontmatter_with_bom() {
         // BOM (\u{feff}) can't appear in raw strings, so use concat! here.
         let input = concat!("\u{feff}", "+++\ntitle = \"BOM\"\n+++\nBody\n");
-        let (fm, body) = split_delimited_frontmatter(input, DELIMITER).unwrap();
+        let (fm, body) = split_delimited_frontmatter(input, TOML_DELIMITER).unwrap();
         assert_eq!(fm, "title = \"BOM\"\n");
         assert_eq!(body, "Body\n");
     }
@@ -520,7 +555,7 @@ mod tests {
     fn split_delimited_frontmatter_crlf() {
         // Explicit \r\n line endings can't be expressed in indoc.
         let input = "+++\r\ntitle = \"Windows\"\r\n+++\r\nBody\r\n";
-        let (fm, body) = split_delimited_frontmatter(input, DELIMITER).unwrap();
+        let (fm, body) = split_delimited_frontmatter(input, TOML_DELIMITER).unwrap();
         assert_eq!(fm, "title = \"Windows\"\r\n");
         assert_eq!(body, "Body\r\n");
     }
@@ -532,7 +567,7 @@ mod tests {
             +++
             Body
         "};
-        let (fm, body) = split_delimited_frontmatter(input, DELIMITER).unwrap();
+        let (fm, body) = split_delimited_frontmatter(input, TOML_DELIMITER).unwrap();
         assert_eq!(fm, "");
         assert_eq!(body, "Body\n");
     }
@@ -544,7 +579,7 @@ mod tests {
             title = "No Body"
             +++
         "#};
-        let (fm, body) = split_delimited_frontmatter(input, DELIMITER).unwrap();
+        let (fm, body) = split_delimited_frontmatter(input, TOML_DELIMITER).unwrap();
         assert_eq!(
             fm,
             indoc! {r#"
@@ -562,7 +597,7 @@ mod tests {
             +++
             Body
         "#};
-        let (fm, body) = split_delimited_frontmatter(input, DELIMITER).unwrap();
+        let (fm, body) = split_delimited_frontmatter(input, TOML_DELIMITER).unwrap();
         assert_eq!(
             fm,
             indoc! {r#"
@@ -581,7 +616,7 @@ mod tests {
             +++
             Body
         "#};
-        let (fm, body) = split_delimited_frontmatter(input, DELIMITER).unwrap();
+        let (fm, body) = split_delimited_frontmatter(input, TOML_DELIMITER).unwrap();
         assert_eq!(
             fm,
             indoc! {r#"
@@ -598,7 +633,7 @@ mod tests {
             +++extra
             +++
         "};
-        let err = split_delimited_frontmatter(input, DELIMITER)
+        let err = split_delimited_frontmatter(input, TOML_DELIMITER)
             .unwrap_err()
             .to_string();
         assert!(
@@ -614,7 +649,7 @@ mod tests {
             +++
             Body
         "#};
-        let err = split_delimited_frontmatter(input, DELIMITER)
+        let err = split_delimited_frontmatter(input, TOML_DELIMITER)
             .unwrap_err()
             .to_string();
         assert!(
@@ -629,7 +664,7 @@ mod tests {
             +++
             title = "Hello"
         "#};
-        let err = split_delimited_frontmatter(input, DELIMITER)
+        let err = split_delimited_frontmatter(input, TOML_DELIMITER)
             .unwrap_err()
             .to_string();
         assert!(

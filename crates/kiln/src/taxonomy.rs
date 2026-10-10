@@ -8,7 +8,7 @@ use crate::content::page::Page;
 use crate::text::slugify;
 
 /// A unique term within a taxonomy (e.g., the tag "rust").
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Term {
     /// Display name (first occurrence preserved, e.g., "Rust").
     pub name: String,

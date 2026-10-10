@@ -84,7 +84,7 @@ pub fn copy_directory(
     let destination = dest
         .canonicalize()
         .with_context(|| format!("failed to resolve destination {}", dest.display()))?;
-    for entry in walk_directory(src, &include) {
+    for entry in walk_directory(src, &|path| path.file_name().is_none_or(&include)) {
         let entry = entry.with_context(|| format!("failed to read entry in {}", src.display()))?;
         if entry.path_is_symlink() {
             validate_source_link(entry.path(), &destination)?;
@@ -108,20 +108,19 @@ pub fn copy_directory(
     Ok(files)
 }
 
-/// Walks included names recursively, excluding errors from links with excluded names.
+/// Walks included paths recursively, pruning excluded subtrees and dropping errors from excluded
+/// links.
 pub(crate) fn walk_directory<'a>(
     src: &Path,
-    include: &'a impl Fn(&OsStr) -> bool,
+    include: &'a impl Fn(&Path) -> bool,
 ) -> impl Iterator<Item = walkdir::Result<walkdir::DirEntry>> + 'a {
     WalkDir::new(src)
         .follow_links(true)
         .into_iter()
-        .filter_entry(move |entry| entry.depth() == 0 || include(entry.file_name()))
+        .filter_entry(move |entry| entry.depth() == 0 || include(entry.path()))
         .filter(move |entry| match entry {
             Ok(_) => true,
-            Err(error) => {
-                error.depth() == 0 || error.path().and_then(Path::file_name).is_none_or(include)
-            }
+            Err(error) => error.depth() == 0 || error.path().is_none_or(include),
         })
 }
 
