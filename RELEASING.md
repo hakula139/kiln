@@ -69,7 +69,7 @@ Add new targets to the matrix in `release.yml` and the platform table in `npm/pa
 
 `npm/package.mjs` builds eight packages from the six release archives: `@kiln-ssg/kiln` and `@kiln-ssg/kiln-extended`, each with exact-version optional dependencies on its three platform packages. Versions come from `workspace.package.version`. Tag builds reject a mismatched version. The shared launcher delegates to the selected native binary without downloading files during installation.
 
-The npm channel is disabled until registry setup is complete. For the first npm release, publish the generated tarballs once using an npm account authorized for the `@kiln-ssg` scope. Publish the six platform packages before the entry packages, using `--access public` and `--tag next` for a prerelease. Configure each package's [trusted publisher](https://docs.npmjs.com/trusted-publishers/) for GitHub owner `hakula139`, repository `kiln`, and workflow `release.yml`, with permission to run `npm publish`. Enable subsequent tag publication with:
+The npm channel is disabled until registry setup is complete. For the first npm release, publish the generated tarballs once using an npm account authorized for the `@kiln-ssg` scope. Publish the six platform packages before the entry packages, using `--access public` and `--tag next` for a prerelease. Before the next tag release, configure each package's [trusted publisher](https://docs.npmjs.com/trusted-publishers/) for GitHub owner `hakula139`, repository `kiln`, and workflow `release.yml`, with permission to run `npm publish`. New configurations expire after two days unless a publication validates them. Enable the npm channel with:
 
 ```bash
 gh variable set NPM_PUBLISH_ENABLED --body true --repo hakula139/kiln

@@ -156,6 +156,7 @@ jobs:
           node-version: 24
 
       - name: Set up AVIF
+        if: runner.os != 'Windows'
         uses: ./.github/actions/setup-avif
         with:
           enabled: true
