@@ -18,11 +18,15 @@ use itertools::Itertools;
 use notify::{EventKind, RecursiveMode, Watcher};
 use tokio::sync::{mpsc, watch};
 use tower::ServiceExt;
+use tower::util::MapRequest;
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::set_status::SetStatus;
 
 use crate::build::BuildOptions;
 use crate::config::{self, Config};
+
+/// The custom 404 page, served without the validators and ranges meant for the missing path.
+type NotFoundPage = MapRequest<ServeFile, fn(Request) -> Request>;
 
 /// WebSocket endpoint path, prefixed to avoid conflicts with site content.
 const LIVE_RELOAD_PATH: &str = "/__kiln_live_reload";
@@ -277,12 +281,30 @@ fn rebuild(root: &Path, base_url: &str, output_dir: &Path) -> Result<()> {
 fn build_router(output_dir: &Path, reload_tx: watch::Sender<()>) -> Router {
     let serve_dir = ServeDir::new(output_dir)
         .append_index_html_on_directories(true)
-        .not_found_service(ServeFile::new(output_dir.join("404.html")));
+        .not_found_service(NotFoundPage::new(
+            ServeFile::new(output_dir.join("404.html")),
+            without_validators,
+        ));
 
     Router::new()
         .route(LIVE_RELOAD_PATH, get(ws_handler))
         .fallback(move |request| serve_request(serve_dir.clone(), request))
         .with_state(reload_tx)
+}
+
+/// Strips conditional and range headers, which would otherwise yield an empty or partial 404.
+fn without_validators(mut request: Request) -> Request {
+    for name in [
+        header::IF_MATCH,
+        header::IF_MODIFIED_SINCE,
+        header::IF_NONE_MATCH,
+        header::IF_RANGE,
+        header::IF_UNMODIFIED_SINCE,
+        header::RANGE,
+    ] {
+        request.headers_mut().remove(name);
+    }
+    request
 }
 
 /// WebSocket upgrade handler that sends `"reload"` after each successful rebuild.
@@ -315,7 +337,7 @@ async fn ws_relay(mut socket: WebSocket, mut reload_rx: watch::Receiver<()>) {
 
 /// Injects live reload into complete HTML pages while preserving static HTTP semantics.
 async fn serve_request(
-    serve_dir: ServeDir<SetStatus<ServeFile>>,
+    serve_dir: ServeDir<SetStatus<NotFoundPage>>,
     mut request: Request,
 ) -> Response {
     // axum derives HEAD's Content-Length from the injected GET body, then drops the body.
@@ -920,12 +942,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn build_router_serves_custom_404_page_when_present() {
+    async fn build_router_not_found_serves_empty_or_full_custom_page() {
         let dir = tempfile::tempdir().unwrap();
         let app = setup_router(dir.path());
-        let request = || Request::get("/nonexistent").body(Body::empty()).unwrap();
+        let request = || Request::get("/nonexistent");
 
-        let response = app.clone().oneshot(request()).await.unwrap();
+        let response = app
+            .clone()
+            .oneshot(request().body(Body::empty()).unwrap())
+            .await
+            .unwrap();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
         assert_eq!(collect_body(response).await, "");
 
@@ -934,13 +960,42 @@ mod tests {
             "<html><body><h1>Not Found</h1></body></html>",
         )
         .unwrap();
-        let response = app.oneshot(request()).await.unwrap();
-        assert_eq!(response.status(), StatusCode::NOT_FOUND);
-        assert_eq!(response.headers()[header::CACHE_CONTROL], "no-cache");
-        assert_eq!(
-            collect_body(response).await,
-            format!("<html><body><h1>Not Found</h1>{LIVE_RELOAD_SCRIPT}</body></html>")
-        );
+        let response = app
+            .clone()
+            .oneshot(request().body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        let etag = response.headers()[header::ETAG].clone();
+        let last_modified = response.headers()[header::LAST_MODIFIED].clone();
+        for (name, value) in [
+            (None, None),
+            (Some(header::IF_NONE_MATCH), Some(etag.clone())),
+            (Some(header::IF_MODIFIED_SINCE), Some(last_modified.clone())),
+            (Some(header::IF_MATCH), Some(r#""other""#.parse().unwrap())),
+            (
+                Some(header::IF_UNMODIFIED_SINCE),
+                Some("Thu, 01 Jan 1970 00:00:00 GMT".parse().unwrap()),
+            ),
+            (Some(header::RANGE), Some("bytes=0-5".parse().unwrap())),
+        ] {
+            let mut request = request();
+            if let (Some(name), Some(value)) = (&name, value) {
+                request = request.header(name, value);
+            }
+            let response = app
+                .clone()
+                .oneshot(request.body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+
+            assert_eq!(response.status(), StatusCode::NOT_FOUND, "{name:?}");
+            assert_eq!(response.headers()[header::CACHE_CONTROL], "no-cache");
+            assert_eq!(
+                collect_body(response).await,
+                format!("<html><body><h1>Not Found</h1>{LIVE_RELOAD_SCRIPT}</body></html>"),
+                "{name:?}"
+            );
+        }
     }
 
     /// Creates a router backed by a directory of static files.
