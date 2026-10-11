@@ -3,7 +3,7 @@ use std::path::Path;
 use anyhow::{Context, Result};
 
 use super::BuildContext;
-use super::bucket::Listing;
+use super::bucket::{Listing, Listings};
 use super::listing::group_by_year;
 use super::paginate::{paginated_path, write_paginated};
 use crate::template::vars::{ArchivePageVars, PageMetadata};
@@ -14,7 +14,7 @@ use crate::url::page_url;
 /// Skipped when `archive.html` is not present in the template set.
 pub(super) fn build_archive_pages(
     ctx: &BuildContext,
-    buckets: &[Listing<'_>],
+    listings: &Listings<'_>,
     output_dir: &Path,
 ) -> Result<usize> {
     if !ctx.template_engine.has_template("archive.html") {
@@ -22,7 +22,7 @@ pub(super) fn build_archive_pages(
     }
 
     let mut page_count = 0;
-    for bucket in buckets {
+    for bucket in listings.iter() {
         page_count += write_archive(ctx, bucket, output_dir)?;
     }
 

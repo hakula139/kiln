@@ -18,20 +18,23 @@ use crate::url::{page_url, site_asset_url};
 pub(super) struct PreparedPage<'a> {
     pub(super) page: &'a Page,
     pub(super) summary: PageSummary,
-    pub(super) published: Option<Timestamp>,
     pub(super) updated: Option<Timestamp>,
     pub(super) year: String,
 }
 
 impl PreparedPage<'_> {
+    pub(super) fn published(&self) -> Option<Timestamp> {
+        self.page.frontmatter.date
+    }
+
     /// Last modification time, falling back to publication when the page was never updated.
     pub(super) fn modified(&self) -> Option<Timestamp> {
-        self.updated.or(self.published)
+        self.updated.or(self.published())
     }
 
     /// Sort key placing newer pages first, with ties broken by URL.
     pub(super) fn date_order(&self) -> (Reverse<Option<Timestamp>>, &str) {
-        (Reverse(self.published), &self.summary.url)
+        (Reverse(self.published()), &self.summary.url)
     }
 }
 
@@ -42,7 +45,7 @@ pub(super) fn prepare_pages<'a>(
     taxonomy: &Taxonomy,
 ) -> Result<Vec<PreparedPage<'a>>> {
     let links: Vec<_> = taxonomy
-        .buckets
+        .terms
         .iter()
         .map(|bucket| bucket.link(&ctx.config.base_url))
         .collect();
@@ -101,7 +104,6 @@ fn prepare_page<'a>(
             tags,
             section,
         },
-        published,
         updated,
         year: published
             .map(|date| page_year(date, &ctx.config.timezone))
@@ -195,7 +197,6 @@ pub(super) fn prepared_page(
             tags: Vec::new(),
             section: None,
         },
-        published,
         updated: None,
         year: published
             .map(|date| page_year(date, &TimeZone::UTC))

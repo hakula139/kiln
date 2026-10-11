@@ -6,7 +6,7 @@ use jiff::Timestamp;
 use jiff::tz::TimeZone;
 
 use super::BuildContext;
-use super::bucket::Listing;
+use super::bucket::Listings;
 use super::listing::{PreparedPage, newest};
 use crate::html::{self, writeln_indented};
 use crate::output::write_output;
@@ -31,7 +31,7 @@ struct Channel<'a> {
 pub(super) fn build_feeds(
     ctx: &BuildContext,
     listed_posts: &[&PreparedPage],
-    buckets: &[Listing<'_>],
+    listings: &Listings<'_>,
     output_dir: &Path,
 ) -> Result<()> {
     write_feed(
@@ -41,7 +41,7 @@ pub(super) fn build_feeds(
         listed_posts,
         output_dir,
     )?;
-    for bucket in buckets {
+    for bucket in listings.iter() {
         let title = format!("{} - {}", bucket.name, ctx.config.title);
         write_feed(ctx, &title, &bucket.path(), &bucket.pages, output_dir)?;
     }
@@ -104,7 +104,7 @@ fn generate_rss(channel: &Channel<'_>, pages: &[&PreparedPage]) -> String {
             write_escaped_element(&mut xml, 3, "description", &summary.description);
         }
 
-        if let Some(date) = page.published {
+        if let Some(date) = page.published() {
             write_escaped_element(&mut xml, 3, "pubDate", &format_rfc2822(date));
         }
 

@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, HashMap};
+use std::iter;
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 
@@ -41,6 +42,16 @@ impl BucketKind {
         matches!(self, Self::Section | Self::Tag)
     }
 
+    /// Archive directory of the bucket `slug` relative to the output root, which is also where
+    /// its `_index.md` lives under `content/`.
+    pub(super) fn path(self, slug: &str) -> PathBuf {
+        match self {
+            Self::Posts => PathBuf::from("posts"),
+            Self::Section => Path::new("posts").join(slug),
+            Self::Tag => Path::new("tags").join(slug),
+        }
+    }
+
     pub(super) fn page_size(self, paginate: &Paginate) -> NonZeroUsize {
         match self {
             Self::Posts | Self::Section => paginate.section,
@@ -64,14 +75,8 @@ pub(super) struct Bucket<P> {
 pub(super) type Listing<'a> = Bucket<&'a PreparedPage<'a>>;
 
 impl<P> Bucket<P> {
-    /// Archive directory relative to the output root, which is also where its `_index.md` lives
-    /// under `content/`.
     pub(super) fn path(&self) -> PathBuf {
-        match self.kind {
-            BucketKind::Posts => PathBuf::from("posts"),
-            BucketKind::Section => Path::new("posts").join(&self.slug),
-            BucketKind::Tag => Path::new("tags").join(&self.slug),
-        }
+        self.kind.path(&self.slug)
     }
 
     pub(super) fn url(&self, base_url: &BaseUrl) -> String {
@@ -95,19 +100,18 @@ impl Bucket<usize> {
         pages: Vec<usize>,
         content_dir: &Path,
     ) -> Result<Self> {
-        let mut bucket = Self {
+        let name =
+            load_index_title(&content_dir.join(kind.path(&slug)))?.unwrap_or_else(default_name);
+        Ok(Self {
             kind,
             slug,
-            name: String::new(),
+            name,
             pages,
-        };
-        bucket.name =
-            load_index_title(&content_dir.join(bucket.path()))?.unwrap_or_else(default_name);
-        Ok(bucket)
+        })
     }
 
     /// Replaces page indices with the prepared pages, newest first.
-    pub(super) fn resolve<'a>(self, pages: &'a [PreparedPage<'a>]) -> Listing<'a> {
+    fn resolve<'a>(self, pages: &'a [PreparedPage<'a>]) -> Listing<'a> {
         let mut members: Vec<_> = self.pages.into_iter().map(|index| &pages[index]).collect();
         members.sort_by_key(|&page| page.date_order());
         Bucket {
@@ -133,13 +137,22 @@ impl<'a> Listing<'a> {
 /// Every bucket with its member page indices, plus the buckets each page links to.
 #[derive(Debug)]
 pub(super) struct Taxonomy {
-    /// The all-posts bucket, then sections by slug, then tags by descending page count.
-    pub(super) buckets: Vec<Bucket<usize>>,
+    pub(super) posts: Bucket<usize>,
+    /// Sections by slug, then tags by descending page count.
+    pub(super) terms: Vec<Bucket<usize>>,
     /// Section and tag bucket indices for each input page.
     pub(super) page_terms: Vec<PageTerms>,
 }
 
-/// Indices into [`Taxonomy::buckets`] for the section and tags of one page.
+/// Every resolved listing, with pages newest first.
+#[derive(Debug)]
+pub(super) struct Listings<'a> {
+    pub(super) posts: Listing<'a>,
+    /// Sections by slug, then tags by descending page count.
+    pub(super) terms: Vec<Listing<'a>>,
+}
+
+/// Indices into [`Taxonomy::terms`] for the section and tags of one page.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(super) struct PageTerms {
     pub(super) section: Option<usize>,
@@ -176,15 +189,16 @@ impl Taxonomy {
             page_tag_slugs.push(collect_tags(&page.frontmatter.tags, index, &mut tags)?);
         }
 
-        let mut buckets = vec![Bucket::load(
+        let posts = Bucket::load(
             BucketKind::Posts,
             "posts".into(),
             posts_name,
             posts,
             content_dir,
-        )?];
+        )?;
+        let mut terms = Vec::new();
         for (slug, members) in sections {
-            buckets.push(Bucket::load(
+            terms.push(Bucket::load(
                 BucketKind::Section,
                 slug.to_owned(),
                 || titlecase(slug),
@@ -206,9 +220,9 @@ impl Taxonomy {
                 .then_with(|| a.name.cmp(&b.name))
                 .then_with(|| a.slug.cmp(&b.slug))
         });
-        buckets.extend(tag_buckets);
+        terms.extend(tag_buckets);
 
-        let indices: HashMap<_, _> = buckets
+        let indices: HashMap<_, _> = terms
             .iter()
             .enumerate()
             .map(|(index, bucket)| ((bucket.kind, bucket.slug.as_str()), index))
@@ -231,9 +245,29 @@ impl Taxonomy {
             .collect();
 
         Ok(Self {
-            buckets,
+            posts,
+            terms,
             page_terms,
         })
+    }
+
+    /// Replaces page indices in every bucket with the prepared pages.
+    pub(super) fn resolve<'a>(self, pages: &'a [PreparedPage<'a>]) -> Listings<'a> {
+        Listings {
+            posts: self.posts.resolve(pages),
+            terms: self
+                .terms
+                .into_iter()
+                .map(|bucket| bucket.resolve(pages))
+                .collect(),
+        }
+    }
+}
+
+impl<'a> Listings<'a> {
+    /// All posts, then every section and tag.
+    pub(super) fn iter(&self) -> impl Iterator<Item = &Listing<'a>> {
+        iter::once(&self.posts).chain(&self.terms)
     }
 }
 
@@ -292,6 +326,7 @@ mod tests {
     use indoc::formatdoc;
 
     use super::*;
+    use crate::build::listing::prepared_page;
     use crate::test_utils::{test_page, write_test_file};
 
     // ── Bucket::url ──
@@ -352,17 +387,17 @@ mod tests {
             taxonomy.page_terms,
             [
                 PageTerms {
-                    section: Some(2),
-                    tags: vec![3, 4],
+                    section: Some(1),
+                    tags: vec![2, 3],
                 },
                 PageTerms {
-                    section: Some(1),
-                    tags: vec![3],
+                    section: Some(0),
+                    tags: vec![2],
                 },
                 PageTerms::default(),
                 PageTerms {
                     section: None,
-                    tags: vec![4, 3],
+                    tags: vec![3, 2],
                 },
             ]
         );
@@ -421,7 +456,7 @@ mod tests {
                 (BucketKind::Tag, "web", "web", vec![0]),
             ]
         );
-        assert_eq!(taxonomy.page_terms[0].tags, [2, 1]);
+        assert_eq!(taxonomy.page_terms[0].tags, [1, 0]);
     }
 
     #[test]
@@ -490,6 +525,44 @@ mod tests {
         );
     }
 
+    // ── Taxonomy::resolve ──
+
+    #[test]
+    fn resolve_orders_pages_newest_first_with_url_tiebreak() {
+        let pages = [
+            prepared_page("B", Some("2026-01-01T00:00:00Z"), None),
+            prepared_page("D", None, None),
+            prepared_page("C", Some("2026-03-01T00:00:00Z"), None),
+            prepared_page("A", Some("2026-01-01T00:00:00Z"), None),
+        ];
+        let bucket = |kind, slug: &str| Bucket {
+            kind,
+            slug: slug.into(),
+            name: String::new(),
+            pages: vec![0, 1, 2, 3],
+        };
+        let listings = Taxonomy {
+            posts: bucket(BucketKind::Posts, "posts"),
+            terms: vec![bucket(BucketKind::Tag, "rust")],
+            page_terms: Vec::new(),
+        }
+        .resolve(&pages);
+
+        for listing in listings.iter() {
+            assert_eq!(
+                listing
+                    .pages
+                    .iter()
+                    .map(|page| page.summary.title.as_str())
+                    .collect::<Vec<_>>(),
+                ["C", "A", "B", "D"],
+                "{}",
+                listing.slug
+            );
+        }
+        assert_eq!(listings.iter().count(), 2);
+    }
+
     fn collect(pages: &[Page], setup: impl FnOnce(&Path)) -> Taxonomy {
         try_collect(pages, setup).unwrap()
     }
@@ -501,9 +574,8 @@ mod tests {
     }
 
     fn summarize(taxonomy: &Taxonomy) -> Vec<(BucketKind, &str, &str, Vec<usize>)> {
-        taxonomy
-            .buckets
-            .iter()
+        iter::once(&taxonomy.posts)
+            .chain(&taxonomy.terms)
             .map(|bucket| {
                 (
                     bucket.kind,

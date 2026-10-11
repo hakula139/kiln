@@ -137,21 +137,17 @@ pub fn build(root: &Path, options: &BuildOptions<'_>) -> Result<()> {
         ctx.i18n.t("all_posts").into_owned()
     })?;
     let prepared = prepare_pages(&ctx, &content.pages, &taxonomy)?;
-    let buckets: Vec<_> = taxonomy
-        .buckets
-        .into_iter()
-        .map(|bucket| bucket.resolve(&prepared))
-        .collect();
-    let posts = &buckets[0].pages;
+    let listings = taxonomy.resolve(&prepared);
+    let posts = &listings.posts.pages;
 
-    let plan = RoutePlan::new(&ctx, &prepared, posts, &buckets, &output_dir)?;
+    let plan = RoutePlan::new(&ctx, &prepared, posts, &listings, &output_dir)?;
     build_content_pages(&ctx, &prepared, &output_dir)?;
     let mut page_count = content.pages.len();
     page_count += home::build_home_pages(&ctx, posts, &output_dir)?;
-    page_count += archive::build_archive_pages(&ctx, &buckets, &output_dir)?;
-    page_count += overview::build_overview_pages(&ctx, &buckets, &output_dir)?;
+    page_count += archive::build_archive_pages(&ctx, &listings, &output_dir)?;
+    page_count += overview::build_overview_pages(&ctx, &listings, &output_dir)?;
 
-    feed::build_feeds(&ctx, posts, &buckets, &output_dir)?;
+    feed::build_feeds(&ctx, posts, &listings, &output_dir)?;
     sitemap::build_sitemap_and_robots(&ctx, &plan, &output_dir)?;
     page_count += error::build_404(&ctx, &output_dir)?;
 

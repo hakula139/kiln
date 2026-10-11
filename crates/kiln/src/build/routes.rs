@@ -7,7 +7,7 @@ use jiff::Timestamp;
 use strum::IntoEnumIterator;
 
 use super::BuildContext;
-use super::bucket::{BucketKind, Listing};
+use super::bucket::{BucketKind, Listings};
 use super::listing::{PreparedPage, newest};
 use super::paginate::paginated_path;
 use super::sitemap::SitemapEntry;
@@ -31,7 +31,7 @@ impl RoutePlan {
         ctx: &BuildContext,
         pages: &[PreparedPage],
         posts: &[&PreparedPage],
-        buckets: &[Listing<'_>],
+        listings: &Listings<'_>,
         output_dir: &Path,
     ) -> Result<Self> {
         let mut plan = Self::default();
@@ -45,11 +45,11 @@ impl RoutePlan {
                 }),
             )?;
         }
-        plan.listings(ctx, posts, buckets)?;
+        plan.listings(ctx, posts, listings)?;
         for path in ["index.xml", "sitemap.xml", "robots.txt"] {
             plan.insert(PathBuf::from(path), format!("generated {path}"), None)?;
         }
-        for bucket in buckets {
+        for bucket in listings.iter() {
             plan.insert(
                 bucket.path().join("index.xml"),
                 format!("{} feed", bucket.name),
@@ -74,7 +74,7 @@ impl RoutePlan {
         &mut self,
         ctx: &BuildContext,
         posts: &[&PreparedPage],
-        buckets: &[Listing<'_>],
+        listings: &Listings<'_>,
     ) -> Result<()> {
         if ctx.template_engine.has_template("home.html") {
             self.paginated(
@@ -86,7 +86,7 @@ impl RoutePlan {
             )?;
         }
         if ctx.template_engine.has_template("archive.html") {
-            for bucket in buckets {
+            for bucket in listings.iter() {
                 let per_page = bucket.kind.page_size(&ctx.config.paginate).get();
                 self.paginated(
                     ctx,
