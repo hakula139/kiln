@@ -7,11 +7,11 @@ use jiff::Timestamp;
 use strum::IntoEnumIterator;
 
 use super::BuildContext;
-use super::listing::{BucketKind, ListingArtifacts, ListingBucket};
+use super::listing::{BucketKind, ListingArtifacts, ListingBucket, newest};
 use super::paginate::paginated_path;
+use super::sitemap::SitemapEntry;
 use crate::content::page::Page;
 use crate::pagination::Paginator;
-use crate::sitemap::SitemapEntry;
 use crate::static_assets::MEDIA_DIRECTORY;
 use crate::url::page_url;
 
@@ -21,6 +21,7 @@ struct PlannedOutput {
 }
 
 /// All generated destinations, validated before rendering into the staged output.
+#[derive(Default)]
 pub(super) struct RoutePlan {
     outputs: BTreeMap<PathBuf, PlannedOutput>,
 }
@@ -33,19 +34,14 @@ impl RoutePlan {
         buckets: &[ListingBucket<'_>],
         output_dir: &Path,
     ) -> Result<Self> {
-        let mut plan = Self {
-            outputs: BTreeMap::new(),
-        };
+        let mut plan = Self::default();
         for (page, prepared) in pages.iter().zip(&artifacts.pages) {
             plan.insert(
                 prepared.output_path.clone(),
                 page.source_path.display().to_string(),
                 Some(SitemapEntry {
                     loc: prepared.summary.url.clone(),
-                    lastmod: prepared
-                        .updated
-                        .or(prepared.published)
-                        .map(|date| date.to_string()),
+                    lastmod: prepared.modified(),
                 }),
             )?;
         }
@@ -70,7 +66,7 @@ impl RoutePlan {
                 None,
             )?;
         }
-        plan.validate_assets(output_dir)?;
+        plan.reserve_on_disk(output_dir)?;
         Ok(plan)
     }
 
@@ -82,18 +78,17 @@ impl RoutePlan {
     ) -> Result<()> {
         if ctx.template_engine.has_template("home.html") {
             let posts = artifacts.posts();
-            let per_page = super::home::page_size(ctx);
             self.paginated(
                 ctx,
                 Path::new(""),
-                Paginator::new(&posts, per_page).total_pages(),
+                Paginator::new(&posts, ctx.config.paginate.home.get()).total_pages(),
                 "home",
                 newest(&posts),
             )?;
         }
         if ctx.template_engine.has_template("archive.html") {
             for bucket in buckets {
-                let per_page = super::archive::page_size(ctx, bucket.kind);
+                let per_page = bucket.kind.page_size(&ctx.config.paginate).get();
                 self.paginated(
                     ctx,
                     &bucket.base_path(),
@@ -125,7 +120,7 @@ impl RoutePlan {
         base: &Path,
         count: usize,
         owner: &str,
-        updated: Option<Timestamp>,
+        lastmod: Option<Timestamp>,
     ) -> Result<()> {
         for number in 1..=count {
             let path = paginated_path(base, number);
@@ -134,7 +129,7 @@ impl RoutePlan {
                 format!("{owner} page {number}"),
                 Some(SitemapEntry {
                     loc: page_url(&ctx.config.base_url, &path),
-                    lastmod: updated.map(|date| date.to_string()),
+                    lastmod,
                 }),
             )?;
         }
@@ -170,7 +165,9 @@ impl RoutePlan {
         Ok(())
     }
 
-    fn validate_assets(&self, output_dir: &Path) -> Result<()> {
+    /// Creates every planned file in `output_dir` to surface collisions with published assets,
+    /// file / directory conflicts and filesystem aliases, then removes the reservations.
+    fn reserve_on_disk(&self, output_dir: &Path) -> Result<()> {
         let mut reserved = BTreeMap::new();
         for (path, output) in &self.outputs {
             let destination = output_dir.join(path);
@@ -198,12 +195,18 @@ impl RoutePlan {
                     )
                 });
             }
-            reserved.insert(destination.canonicalize()?, output.owner.clone());
+            let canonical = destination
+                .canonicalize()
+                .with_context(|| format!("failed to resolve {}", destination.display()))?;
+            reserved.insert(canonical, output.owner.clone());
         }
 
         // Keep every reservation until native filesystem aliases have been checked together.
         for path in self.outputs.keys() {
-            fs::remove_file(output_dir.join(path))?;
+            let destination = output_dir.join(path);
+            fs::remove_file(&destination).with_context(|| {
+                format!("failed to remove reservation {}", destination.display())
+            })?;
         }
         Ok(())
     }
@@ -216,13 +219,6 @@ impl RoutePlan {
     }
 }
 
-fn newest(pages: &[&super::listing::PreparedPage]) -> Option<Timestamp> {
-    pages
-        .iter()
-        .filter_map(|page| page.updated.or(page.published))
-        .max()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -231,9 +227,7 @@ mod tests {
 
     #[test]
     fn insert_conflicting_files_returns_error() {
-        let mut plan = RoutePlan {
-            outputs: BTreeMap::new(),
-        };
+        let mut plan = RoutePlan::default();
         plan.insert("posts/index.html".into(), "first source".into(), None)
             .unwrap();
         let error = plan
@@ -247,9 +241,7 @@ mod tests {
 
     #[test]
     fn insert_reserved_asset_directory_returns_error() {
-        let mut plan = RoutePlan {
-            outputs: BTreeMap::new(),
-        };
+        let mut plan = RoutePlan::default();
         for path in [
             "_assets/index.html",
             "_ASSETS/index.html",
@@ -260,31 +252,27 @@ mod tests {
         }
     }
 
-    // ── RoutePlan::validate_assets ──
+    // ── RoutePlan::reserve_on_disk ──
 
     #[test]
-    fn validate_assets_removes_reservations_before_rendering() {
+    fn reserve_on_disk_removes_reservations_before_rendering() {
         let directory = tempfile::tempdir().unwrap();
-        let mut plan = RoutePlan {
-            outputs: BTreeMap::new(),
-        };
+        let mut plan = RoutePlan::default();
         plan.insert("posts/index.html".into(), "archive".into(), None)
             .unwrap();
-        plan.validate_assets(directory.path()).unwrap();
+        plan.reserve_on_disk(directory.path()).unwrap();
         assert!(!directory.path().join("posts/index.html").exists());
     }
 
     #[test]
-    fn validate_assets_conflicting_destinations_returns_error() {
+    fn reserve_on_disk_conflicting_destinations_returns_error() {
         let directory = tempfile::tempdir().unwrap();
         std::fs::write(directory.path().join("posts"), "asset").unwrap();
-        let mut plan = RoutePlan {
-            outputs: BTreeMap::new(),
-        };
+        let mut plan = RoutePlan::default();
         plan.insert("posts/index.html".into(), "archive".into(), None)
             .unwrap();
         assert!(
-            plan.validate_assets(directory.path())
+            plan.reserve_on_disk(directory.path())
                 .unwrap_err()
                 .to_string()
                 .contains("published asset")
@@ -292,27 +280,23 @@ mod tests {
     }
 
     #[test]
-    fn validate_assets_file_directory_collision_returns_error() {
+    fn reserve_on_disk_file_directory_collision_returns_error() {
         let directory = tempfile::tempdir().unwrap();
-        let mut plan = RoutePlan {
-            outputs: BTreeMap::new(),
-        };
+        let mut plan = RoutePlan::default();
         plan.insert("sitemap.xml/index.html".into(), "content page".into(), None)
             .unwrap();
         plan.insert("sitemap.xml".into(), "generated sitemap".into(), None)
             .unwrap();
-        let error = plan.validate_assets(directory.path()).unwrap_err();
+        let error = plan.reserve_on_disk(directory.path()).unwrap_err();
         let message = format!("{error:#}");
         assert!(message.contains("content page"));
         assert!(message.contains("generated sitemap"));
     }
 
     #[test]
-    fn validate_assets_reserved_directory_descendant_returns_error() {
+    fn reserve_on_disk_reserved_directory_descendant_returns_error() {
         let directory = tempfile::tempdir().unwrap();
-        let mut plan = RoutePlan {
-            outputs: BTreeMap::new(),
-        };
+        let mut plan = RoutePlan::default();
         plan.insert("pagefind".into(), "search index".into(), None)
             .unwrap();
         plan.insert(
@@ -322,14 +306,14 @@ mod tests {
         )
         .unwrap();
 
-        let message = format!("{:#}", plan.validate_assets(directory.path()).unwrap_err());
+        let message = format!("{:#}", plan.reserve_on_disk(directory.path()).unwrap_err());
         assert!(message.contains("search index"));
         assert!(message.contains("content page"));
         assert!(message.contains("pagefind/article/index.html"));
     }
 
     #[test]
-    fn validate_assets_native_alias_returns_error() {
+    fn reserve_on_disk_native_alias_returns_error() {
         let directory = tempfile::tempdir().unwrap();
         let probe = directory.path().join("CaseProbe");
         fs::write(&probe, "probe").unwrap();
@@ -338,14 +322,12 @@ mod tests {
         if !insensitive {
             return;
         }
-        let mut plan = RoutePlan {
-            outputs: BTreeMap::new(),
-        };
+        let mut plan = RoutePlan::default();
         plan.insert("Page/index.html".into(), "first source".into(), None)
             .unwrap();
         plan.insert("page/index.html".into(), "second source".into(), None)
             .unwrap();
-        let error = plan.validate_assets(directory.path()).unwrap_err();
+        let error = plan.reserve_on_disk(directory.path()).unwrap_err();
         let message = format!("{error:#}");
         assert!(message.contains("first source"));
         assert!(message.contains("second source"));

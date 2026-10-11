@@ -105,7 +105,7 @@ fn build_compiles_page_styles_with_private_sources_and_final_hashes() {
     .write("content/other/style.css", ".ordinary { color: blue; }")
     .write("static/_custom/settings.txt", "published");
 
-    site.build_with(BuildOptions {
+    site.build_with(&BuildOptions {
         base_url_override: Some("https://example.com/subsite"),
         minify: true,
         ..Default::default()
@@ -142,7 +142,7 @@ fn build_compiles_page_styles_with_private_sources_and_final_hashes() {
         "content/example/child/assets/css/_src/style.css",
         ".rating { color: blue; }",
     );
-    site.build_with(BuildOptions {
+    site.build_with(&BuildOptions {
         minify: true,
         ..Default::default()
     })
@@ -236,7 +236,7 @@ fn build_compiles_tailwind_with_shared_context_and_fresh_candidates() {
     fs::write(content, markdown.replace(".bg-brand", ".text-brand")).unwrap();
     build(
         &site.root().canonicalize().unwrap(),
-        BuildOptions::default(),
+        &BuildOptions::default(),
     )
     .unwrap();
     let rebuilt = site.read("assets/css/site.css");

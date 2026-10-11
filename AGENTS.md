@@ -42,15 +42,15 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 ├── build/               # Listing pipeline and output generator submodules
 │   ├── archive.rs       # Paginated year-grouped archive pages (/posts/, /posts/<section>/, /tags/<slug>/)
 │   ├── error.rs         # 404 error page generation
-│   ├── feed.rs          # RSS feed orchestration (main + per-section + per-term feeds)
+│   ├── feed.rs          # RSS 2.0 feeds (main + per-section + per-tag)
 │   ├── git.rs           # Optional content-file commit timestamps for post templates
 │   ├── home.rs          # Paginated home page generation
 │   ├── listing.rs       # Prepared page metadata and borrowed listing collections
 │   ├── overview.rs      # Bucket overview index pages (/sections/, /tags/)
-│   ├── paginate.rs      # Generic write_paginated, paginate_config
+│   ├── paginate.rs      # Generic write_paginated and paginated output paths
 │   ├── routes.rs        # Enabled route planning, collision validation and sitemap entries
 │   └── sitemap.rs       # sitemap.xml + robots.txt generation
-├── config.rs            # Strict TOML site configuration (validated base URL, time zone, image options), theme resolution, param merging
+├── config.rs            # Strict TOML site configuration (validated base URL, time zone, image options, page sizes), theme resolution, param merging
 ├── content.rs           # Content submodule declarations and shared source name / file helpers
 ├── content/             # Content model submodules
 │   ├── discovery.rs     # Recursive content walking with draft / _-prefix / no-frontmatter exclusion
@@ -67,7 +67,6 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 │   ├── callout.rs       # Callout types and option validation for the theme's callout template
 │   ├── div.rs           # `<div>` fallback for anonymous and template-less directives
 │   └── parser.rs        # Nested directive tree with source ranges and parsed attributes
-├── feed.rs              # RSS 2.0 XML generation (Channel, generate_rss, RFC 2822 date formatting)
 ├── html.rs              # Shared HTML utilities (escape, indent, writeln_indented)
 ├── i18n.rs              # Layered i18n resolver (site → theme lang → theme English), t() with placeholder interpolation
 ├── init.rs              # Theme scaffolding (kiln init-theme)
@@ -100,7 +99,6 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 ├── search.rs            # Pagefind search indexing (external binary invocation)
 ├── section.rs           # Section struct, collect_sections() from page kinds, _index.md title loading
 ├── serve.rs             # Dev server with file watching, WebSocket live reload, script injection
-├── sitemap.rs           # Sitemap XML + robots.txt generation
 ├── static_assets.rs     # Published asset manifest + content-hashed asset URLs
 ├── static_assets/
 │   └── publication.rs   # Static / bundle asset publication and source → output paths

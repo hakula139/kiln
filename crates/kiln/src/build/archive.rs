@@ -3,8 +3,8 @@ use std::path::Path;
 use anyhow::{Context, Result};
 
 use super::BuildContext;
-use super::listing::{BucketKind, ListingBucket, group_by_year};
-use super::paginate::{paginate_config, paginated_path, write_paginated};
+use super::listing::{ListingBucket, group_by_year};
+use super::paginate::{paginated_path, write_paginated};
 use crate::template::vars::{ArchivePageVars, PageMetadata};
 use crate::url::page_url;
 
@@ -22,8 +22,7 @@ pub(super) fn build_archive_pages(
 
     let mut page_count = 0;
     for bucket in buckets {
-        let per_page = page_size(ctx, bucket.kind);
-        page_count += write_archive(ctx, bucket, per_page, output_dir)?;
+        page_count += write_archive(ctx, bucket, output_dir)?;
     }
 
     Ok(page_count)
@@ -34,13 +33,12 @@ pub(super) fn build_archive_pages(
 fn write_archive(
     ctx: &BuildContext,
     bucket: &ListingBucket<'_>,
-    per_page: usize,
     output_dir: &Path,
 ) -> Result<usize> {
     let base_path = bucket.base_path();
     write_paginated(
         &bucket.pages,
-        per_page,
+        bucket.kind.page_size(&ctx.config.paginate).get(),
         &base_path,
         ctx.config.base_url.prefix(),
         output_dir,
@@ -73,12 +71,4 @@ fn write_archive(
             })
         },
     )
-}
-
-pub(super) fn page_size(ctx: &BuildContext, kind: BucketKind) -> usize {
-    let paths: &[&[&str]] = match kind {
-        BucketKind::Tag => &[&["paginate"]],
-        BucketKind::Posts | BucketKind::Section => &[&["section", "paginate"], &["paginate"]],
-    };
-    paginate_config(&ctx.config.params, paths, 10)
 }

@@ -89,7 +89,7 @@ fn convert_build_preserves_callout_and_bundle_ownership() {
         "destination/templates/directives/callout.html",
         r#"<details class="callout {{ type }}"{% if open %} open{% endif %}><summary>{{ title }}</summary>{{ body_html | safe }}</details>"#,
     );
-    build(&destination, BuildOptions::default()).unwrap();
+    build(&destination, &BuildOptions::default()).unwrap();
 
     let output = destination.join("public");
     let html = fs::read_to_string(output.join("posts/parent/index.html")).unwrap();

@@ -70,13 +70,9 @@ pub struct BuildOptions<'a> {
 /// # Errors
 ///
 /// Returns an error if any build stage fails.
-#[expect(
-    clippy::needless_pass_by_value,
-    reason = "callers construct BuildOptions inline with `..Default::default()`, so taking it by value keeps call sites concise"
-)]
-pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
+pub fn build(root: &Path, options: &BuildOptions<'_>) -> Result<()> {
     let started = Instant::now();
-    let BuildOptions {
+    let &BuildOptions {
         base_url_override,
         output_dir_override,
         minify,
@@ -91,13 +87,6 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
     let site_templates = root.join("templates");
     let theme_dir = config.theme_dir(root);
     let theme_templates = theme_dir.as_ref().map(|d| d.join("templates"));
-
-    if config.theme.is_none() {
-        tracing::warn!("no theme configured; set `theme` in config.toml to use a theme");
-    }
-    if !site_templates.is_dir() && theme_templates.as_ref().is_none_or(|d| !d.is_dir()) {
-        tracing::warn!("no templates found; provide templates/ or configure a theme");
-    }
 
     let i18n = I18n::load(root, theme_dir.as_deref(), &config.language)
         .context("failed to load i18n strings")?;
@@ -311,8 +300,5 @@ fn build_page(
     }
     .with_context(|| format!("failed to render {}", page.source_path.display()))?;
 
-    let dest = output_dir.join(&prepared.output_path);
-    write_output(&dest, &html).with_context(|| format!("failed to write {}", dest.display()))?;
-
-    Ok(())
+    write_output(&output_dir.join(&prepared.output_path), &html)
 }

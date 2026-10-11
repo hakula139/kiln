@@ -269,7 +269,7 @@ async fn watch_loop(
 fn rebuild(root: &Path, base_url: &str, output_dir: &Path) -> Result<()> {
     crate::build(
         root,
-        BuildOptions {
+        &BuildOptions {
             base_url_override: Some(base_url),
             output_dir_override: Some(output_dir),
             ..Default::default()

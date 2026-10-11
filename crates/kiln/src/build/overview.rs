@@ -65,6 +65,5 @@ fn write_overview(
         .render_overview(&vars)
         .with_context(|| format!("failed to render {} overview", kind.plural()))?;
 
-    let dest = output_dir.join(kind.plural()).join("index.html");
-    write_output(&dest, &html).with_context(|| format!("failed to write {}", dest.display()))
+    write_output(&output_dir.join(kind.plural()).join("index.html"), &html)
 }

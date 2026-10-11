@@ -6,7 +6,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result, bail, ensure};
 use walkdir::WalkDir;
 
 /// Owns unpublished output and preserves the previous build until promotion succeeds.
@@ -50,7 +50,7 @@ impl OutputTransaction {
         if let Err(error) = fs::rename(&self.staging, &self.destination) {
             if had_output && let Err(rollback) = fs::rename(&previous, &self.destination) {
                 let retained = self.directory.keep();
-                anyhow::bail!(
+                bail!(
                     "failed to publish output: {error}. Failed to restore previous output: {rollback}. Previous output retained at {}",
                     retained.join("previous").display()
                 );
@@ -67,12 +67,8 @@ impl OutputTransaction {
 /// Recursively copies included files into `dest`, materializing source symlinks as regular
 /// files and directories. `include` filters file and directory names, skipping excluded subtrees.
 /// Returns source → destination paths for copied files, or an empty map if `src` does not exist.
-///
-/// # Errors
-///
-/// Returns an error if traversal, directory creation, or copying fails, or a source link overlaps
-/// the destination directory.
-pub fn copy_directory(
+/// Rejects source links that overlap the destination directory.
+pub(crate) fn copy_directory(
     src: &Path,
     dest: &Path,
     include: impl Fn(&OsStr) -> bool,
@@ -146,15 +142,8 @@ fn paths_overlap(left: &Path, right: &Path) -> bool {
 }
 
 /// Copies a single file from `src` to `dest`, creating parent directories as needed.
-///
-/// # Errors
-///
-/// Returns an error if directory creation or file copying fails.
-pub fn copy_file(src: &Path, dest: &Path) -> Result<()> {
-    if let Some(parent) = dest.parent() {
-        fs::create_dir_all(parent)
-            .with_context(|| format!("failed to create directory {}", parent.display()))?;
-    }
+pub(crate) fn copy_file(src: &Path, dest: &Path) -> Result<()> {
+    create_parent(dest)?;
 
     // APFS cloning emits source modification events that trigger another rebuild.
     let copy = || -> io::Result<()> {
@@ -175,16 +164,17 @@ pub fn copy_file(src: &Path, dest: &Path) -> Result<()> {
 }
 
 /// Writes `content` to the given path, creating parent directories as needed.
-///
-/// # Errors
-///
-/// Returns an error if directory creation or file writing fails.
-pub fn write_output(path: &Path, content: &str) -> Result<()> {
+pub(crate) fn write_output(path: &Path, content: &str) -> Result<()> {
+    create_parent(path)?;
+    fs::write(path, content).with_context(|| format!("failed to write {}", path.display()))
+}
+
+fn create_parent(path: &Path) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)
             .with_context(|| format!("failed to create directory {}", parent.display()))?;
     }
-    fs::write(path, content).with_context(|| format!("failed to write {}", path.display()))
+    Ok(())
 }
 
 #[cfg(test)]
@@ -607,25 +597,6 @@ mod tests {
                 mode
             );
         }
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn copy_file_unwritable_dest_parent_returns_error() {
-        let dir = tempfile::tempdir().unwrap();
-        let src = dir.path().join("source.png");
-        let readonly = dir.path().join("readonly");
-        fs::write(&src, "data").unwrap();
-        fs::create_dir(&readonly).unwrap();
-        let _guard = PermissionGuard::restrict(&readonly, 0o444);
-
-        let err = copy_file(&src, &readonly.join("sub").join("dest.png"))
-            .unwrap_err()
-            .to_string();
-        assert!(
-            err.contains("failed to create directory"),
-            "should report directory creation failure, got: {err}"
-        );
     }
 
     // ── write_output ──

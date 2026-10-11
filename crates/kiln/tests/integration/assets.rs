@@ -70,7 +70,7 @@ fn build_fingerprints_bundle_assets_after_static_collisions() {
             .write(&format!("static/example/assets/{name}"), shared);
     }
 
-    site.build_with(BuildOptions {
+    site.build_with(&BuildOptions {
         minify: true,
         ..Default::default()
     })
@@ -201,7 +201,7 @@ fn build_updates_managed_image_urls_and_retires_previous_fingerprints() {
         write_image_lifecycle_page(&site, featured);
         site.write("content/example/photo %.avif", bytes);
 
-        site.build_with(BuildOptions {
+        site.build_with(&BuildOptions {
             minify: true,
             ..Default::default()
         })

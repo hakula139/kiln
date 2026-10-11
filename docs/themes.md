@@ -68,7 +68,7 @@ The site keeps `emojis = true` and uses five posts per home page. Pagination set
 | Posts / sections | `params.section.paginate` → `params.paginate` → 10 |
 | Tags             | `params.paginate` → 10                             |
 
-Non-positive values fall through to the next setting.
+Each setting must be a positive integer. Any other value fails configuration loading.
 
 ### Navigation Menus
 

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -6,6 +7,7 @@ use jiff::{Timestamp, tz::TimeZone};
 use strum::{EnumIter, IntoStaticStr};
 
 use super::BuildContext;
+use crate::config::Paginate;
 use crate::content::frontmatter::FeaturedImage;
 use crate::content::page::{Page, PageKind};
 use crate::render::PageResources;
@@ -25,6 +27,13 @@ pub(super) struct PreparedPage {
     pub(super) updated: Option<Timestamp>,
     pub(super) weight: Option<i64>,
     pub(super) year: String,
+}
+
+impl PreparedPage {
+    /// Last modification time, falling back to publication when the page was never updated.
+    pub(super) fn modified(&self) -> Option<Timestamp> {
+        self.updated.or(self.published)
+    }
 }
 
 pub(super) struct ListingArtifacts {
@@ -160,6 +169,13 @@ impl BucketKind {
     pub(super) fn has_overview(self) -> bool {
         matches!(self, Self::Section | Self::Tag)
     }
+
+    pub(super) fn page_size(self, paginate: &Paginate) -> NonZeroUsize {
+        match self {
+            Self::Posts | Self::Section => paginate.section,
+            Self::Tag => paginate.tag,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -249,14 +265,14 @@ pub(super) fn group_by_year<'a>(pages: &[&'a PreparedPage]) -> Vec<PageGroup<'a>
     groups
 }
 
+/// Returns the newest modification time among `pages`.
+pub(super) fn newest(pages: &[&PreparedPage]) -> Option<Timestamp> {
+    pages.iter().filter_map(|page| page.modified()).max()
+}
+
 // ── Page metadata helpers ──
 
-#[must_use]
-pub(super) fn page_section(
-    page: &Page,
-    base_url: &BaseUrl,
-    sections: &[Section],
-) -> Option<LinkedTerm> {
+fn page_section(page: &Page, base_url: &BaseUrl, sections: &[Section]) -> Option<LinkedTerm> {
     let PageKind::Post {
         section: Some(ref slug),
     } = page.kind
@@ -274,7 +290,7 @@ pub(super) fn page_section(
 }
 
 /// Prepares an absolute featured image URL and local image metadata.
-pub(super) fn resolve_featured_image(
+fn resolve_featured_image(
     featured_image: Option<&FeaturedImage>,
     resources: &PageResources<'_>,
 ) -> Result<Option<FeaturedImage>> {
@@ -313,16 +329,38 @@ fn linked_tags(taxonomy: &TaxonomySet, page_index: usize, base_url: &BaseUrl) ->
 }
 
 /// Formats a page date for templates in the site time zone.
-#[must_use]
 pub(super) fn format_page_date(date: Timestamp, time_zone: &TimeZone) -> String {
     date.display_with_offset(time_zone.to_offset(date))
         .to_string()
 }
 
 /// Returns the grouping year for a page date in the configured site time zone.
-#[must_use]
-pub(super) fn page_year(date: Timestamp, time_zone: &TimeZone) -> String {
+fn page_year(date: Timestamp, time_zone: &TimeZone) -> String {
     time_zone.to_datetime(date).year().to_string()
+}
+
+#[cfg(test)]
+pub(super) fn prepared_page(title: &str, date: Option<&str>, weight: Option<i64>) -> PreparedPage {
+    let published = date.map(|date| date.parse().unwrap());
+    PreparedPage {
+        output_path: PathBuf::from(title).join("index.html"),
+        summary: PageSummary {
+            title: title.into(),
+            url: format!("/{title}/"),
+            date: date.map(str::to_owned),
+            pinned: weight.is_some(),
+            description: String::new(),
+            featured_image: None,
+            tags: Vec::new(),
+            section: None,
+        },
+        published,
+        updated: None,
+        weight,
+        year: published
+            .map(|date| page_year(date, &TimeZone::UTC))
+            .unwrap_or_default(),
+    }
 }
 
 #[cfg(test)]
@@ -343,13 +381,13 @@ mod tests {
     #[test]
     fn sort_pinned_first_orders_weights_timestamps_and_tied_urls() {
         let pages = [
-            prepared("undated", None, None),
-            prepared("old", Some("2024-01-01T00:00:00Z"), None),
-            prepared("negative", None, Some(-1)),
-            prepared("z", Some("2024-11-03T01:30:00-04:00"), Some(0)),
-            prepared("a", Some("2024-11-03T01:30:00-04:00"), Some(0)),
-            prepared("new", Some("2024-11-03T01:15:00-05:00"), Some(0)),
-            prepared("positive", Some("2025-01-01T00:00:00Z"), Some(1)),
+            prepared_page("undated", None, None),
+            prepared_page("old", Some("2024-01-01T00:00:00Z"), None),
+            prepared_page("negative", None, Some(-1)),
+            prepared_page("z", Some("2024-11-03T01:30:00-04:00"), Some(0)),
+            prepared_page("a", Some("2024-11-03T01:30:00-04:00"), Some(0)),
+            prepared_page("new", Some("2024-11-03T01:15:00-05:00"), Some(0)),
+            prepared_page("positive", Some("2025-01-01T00:00:00Z"), Some(1)),
         ];
         let mut sorted: Vec<_> = pages.iter().collect();
         sort_pinned_first(&mut sorted);
@@ -362,38 +400,15 @@ mod tests {
         );
     }
 
-    fn prepared(title: &str, date: Option<&str>, weight: Option<i64>) -> PreparedPage {
-        let published = date.map(|date| date.parse().unwrap());
-        PreparedPage {
-            output_path: PathBuf::from(title).join("index.html"),
-            summary: PageSummary {
-                title: title.into(),
-                url: format!("/{title}/"),
-                date: date.map(str::to_owned),
-                pinned: weight.is_some(),
-                description: String::new(),
-                featured_image: None,
-                tags: Vec::new(),
-                section: None,
-            },
-            published,
-            updated: None,
-            weight,
-            year: published
-                .map(|date| page_year(date, &TimeZone::UTC))
-                .unwrap_or_default(),
-        }
-    }
-
     // ── group_by_year ──
 
     #[test]
     fn group_by_year_preserves_members_and_separates_consecutive_groups() {
         let pages = [
-            prepared("a", Some("2025-01-01T00:00:00Z"), None),
-            prepared("b", Some("2025-06-01T00:00:00Z"), None),
-            prepared("c", None, None),
-            prepared("d", Some("2025-02-01T00:00:00Z"), None),
+            prepared_page("a", Some("2025-01-01T00:00:00Z"), None),
+            prepared_page("b", Some("2025-06-01T00:00:00Z"), None),
+            prepared_page("c", None, None),
+            prepared_page("d", Some("2025-02-01T00:00:00Z"), None),
         ];
         let refs: Vec<_> = pages.iter().collect();
         let grouped = group_by_year(&refs);

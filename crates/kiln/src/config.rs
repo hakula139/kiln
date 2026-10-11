@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::fs;
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, ensure};
@@ -25,6 +26,8 @@ pub(crate) const SITE_INPUTS: &[&str] = &[
 
 /// Theme directory entries that feed a build.
 pub(crate) const THEME_INPUTS: &[&str] = &["assets", "i18n", "static", "templates", "theme.toml"];
+
+const DEFAULT_PAGE_SIZE: NonZeroUsize = NonZeroUsize::new(10).unwrap();
 
 /// Site-wide configuration loaded from `config.toml`.
 #[derive(Debug, Deserialize, Serialize)]
@@ -53,6 +56,10 @@ pub struct Config {
     /// Free-form key-value bag for theme and site settings.
     /// Theme defaults from `theme.toml` are merged in at load time.
     pub params: toml::Table,
+
+    /// Listing page sizes resolved from `params` at load time.
+    #[serde(skip)]
+    pub paginate: Paginate,
 
     pub search: Search,
 
@@ -144,6 +151,15 @@ pub struct ImageConfig {
     pub lqip_quality: u8,
 }
 
+/// Posts per listing page.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Paginate {
+    pub home: NonZeroUsize,
+    /// Applies to the all-posts archive and section archives.
+    pub section: NonZeroUsize,
+    pub tag: NonZeroUsize,
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -158,6 +174,7 @@ impl Default for Config {
             output_dir: PathBuf::from("public"),
             theme: None,
             params: toml::Table::new(),
+            paginate: Paginate::default(),
             search: Search::default(),
             css: Css::default(),
             menu: BTreeMap::new(),
@@ -172,6 +189,16 @@ impl Default for ImageConfig {
         Self {
             lqip_size: 16,
             lqip_quality: 25,
+        }
+    }
+}
+
+impl Default for Paginate {
+    fn default() -> Self {
+        Self {
+            home: DEFAULT_PAGE_SIZE,
+            section: DEFAULT_PAGE_SIZE,
+            tag: DEFAULT_PAGE_SIZE,
         }
     }
 }
@@ -206,6 +233,8 @@ impl Config {
             config.css.processor = config.css.processor.or(theme.css.processor);
         }
 
+        config.paginate = Paginate::from_params(&config.params)?;
+
         for items in config.menu.values_mut() {
             items.sort_by_key(|item| item.weight);
         }
@@ -238,6 +267,35 @@ impl ImageConfig {
             "image.lqip_quality must be between 1 and 100"
         );
         Ok(())
+    }
+}
+
+impl Paginate {
+    /// Reads `paginate`, with `home.paginate` and `section.paginate` overriding it per listing.
+    fn from_params(params: &toml::Table) -> Result<Self> {
+        #[derive(Default, Deserialize)]
+        #[serde(default)]
+        struct Params {
+            paginate: Option<NonZeroUsize>,
+            home: Scope,
+            section: Scope,
+        }
+
+        #[derive(Default, Deserialize)]
+        #[serde(default)]
+        struct Scope {
+            paginate: Option<NonZeroUsize>,
+        }
+
+        let params: Params = toml::Value::Table(params.clone())
+            .try_into()
+            .context("invalid pagination in [params]")?;
+        let default = params.paginate.unwrap_or(DEFAULT_PAGE_SIZE);
+        Ok(Self {
+            home: params.home.paginate.unwrap_or(default),
+            section: params.section.paginate.unwrap_or(default),
+            tag: default,
+        })
     }
 }
 
@@ -484,11 +542,48 @@ mod tests {
             (r#"language = "../etc/passwd""#, "invalid language tag"),
             (r#"language = "1en""#, "invalid language tag"),
             (r#"language = "en_US""#, "invalid language tag"),
+            ("params.paginate = 0", "invalid pagination in [params]"),
+            (
+                "params.section.paginate = -1",
+                "invalid pagination in [params]",
+            ),
+            (
+                r#"params.home.paginate = "8""#,
+                "invalid pagination in [params]",
+            ),
         ] {
             let root = tempfile::tempdir().unwrap();
             write_test_file(root.path(), "config.toml", contents);
             let error = format!("{:#}", Config::load(root.path()).unwrap_err());
             assert!(error.contains(expected), "{contents}: {error}");
+        }
+    }
+
+    #[test]
+    fn load_resolves_pagination_overrides() {
+        for (params, expected) in [
+            ("", (10, 10, 10)),
+            ("paginate = 6", (6, 6, 6)),
+            (
+                indoc! {"
+                    paginate = 6
+                    home.paginate = 4
+                    section.paginate = 8
+                "},
+                (4, 8, 6),
+            ),
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            write_test_file(
+                root.path(),
+                "config.toml",
+                &formatdoc! {"
+                    [params]
+                    {params}
+                "},
+            );
+            let Paginate { home, section, tag } = Config::load(root.path()).unwrap().paginate;
+            assert_eq!((home.get(), section.get(), tag.get()), expected, "{params}");
         }
     }
 

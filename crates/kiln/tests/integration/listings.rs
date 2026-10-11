@@ -315,55 +315,6 @@ fn build_tag_archive_pagination() {
     );
 }
 
-#[test]
-fn build_zero_paginate_falls_back_to_defaults() {
-    let site = TestSite::new(indoc! {r#"
-        base_url = "https://example.com"
-
-        [params]
-        paginate = 0
-
-        [params.home]
-        paginate = 0
-
-        [params.section]
-        paginate = 0
-    "#});
-    for i in 1..=11 {
-        site.page(
-            &format!("posts/note/post-{i:02}"),
-            &formatdoc! {r#"
-                +++
-                title = "Post {i}"
-                tags = ["example"]
-                date = "2026-01-{i:02}T00:00:00Z"
-                +++
-                Body
-            "#},
-        );
-    }
-
-    site.build().unwrap();
-
-    let page1: Vec<_> = (2..=11)
-        .rev()
-        .map(|i| format!(r#"<a href="https://example.com/posts/note/post-{i:02}/">Post {i}</a>"#))
-        .collect();
-    let page1: Vec<_> = page1.iter().map(String::as_str).collect();
-    let page2 = [r#"<a href="https://example.com/posts/note/post-01/">Post 1</a>"#];
-    for (path, navigation) in [
-        ("", None),
-        ("posts", Some(("/posts/page/2/", "/posts/"))),
-        ("posts/note", Some(("/posts/note/page/2/", "/posts/note/"))),
-        (
-            "tags/example",
-            Some(("/tags/example/page/2/", "/tags/example/")),
-        ),
-    ] {
-        assert_paginated_listing(&site, path, &page1, &page2, navigation);
-    }
-}
-
 /// Writes posts 1 to 3 under `post_dir` on consecutive days, each tagged with `tag` if given.
 fn write_paginated_posts(site: &TestSite, post_dir: &str, tag: Option<&str>) {
     let tags = tag.map_or_else(String::new, |tag| format!(r#"tags = ["{tag}"]"#));

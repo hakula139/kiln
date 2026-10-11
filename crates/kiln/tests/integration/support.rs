@@ -102,10 +102,10 @@ impl TestSite {
     }
 
     pub(super) fn build(&self) -> anyhow::Result<()> {
-        self.build_with(BuildOptions::default())
+        self.build_with(&BuildOptions::default())
     }
 
-    pub(super) fn build_with(&self, options: BuildOptions<'_>) -> anyhow::Result<()> {
+    pub(super) fn build_with(&self, options: &BuildOptions<'_>) -> anyhow::Result<()> {
         build(self.root(), options)
     }
 
