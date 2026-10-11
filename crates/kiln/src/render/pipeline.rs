@@ -111,7 +111,7 @@ impl PreparedDocument {
                 Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(info))) => {
                     let spec = parse_fence_info(info);
                     if !spec.is_mermaid()
-                        && let Some(id) = spec.id
+                        && let Some(id) = spec.identity.id
                     {
                         ids.reserve(&id);
                     }

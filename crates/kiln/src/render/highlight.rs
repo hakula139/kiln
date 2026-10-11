@@ -18,7 +18,6 @@ static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(two_face::syntax::extra_n
 ///
 /// `code_max_lines` applies unless the fence sets `collapse` or `expand`. Unrecognized languages
 /// render as plain text, and the display label comes from the language tag via [`display_label`].
-#[must_use]
 pub(super) fn highlight_code(code: &str, spec: &CodeBlockSpec, options: &RenderOptions) -> String {
     highlight_with(&SYNTAX_SET, code, spec, options)
 }
@@ -40,15 +39,7 @@ fn highlight_with(
 
     // ── Wrapper open ──
 
-    let classes = std::iter::once("code-block")
-        .chain(spec.classes.iter().map(String::as_str))
-        .map(escape)
-        .join(" ");
-    let id_attr = spec
-        .id
-        .as_deref()
-        .map(|id| format!(r#" id="{}""#, escape(id)))
-        .unwrap_or_default();
+    let identity_attrs = spec.identity.html_attrs(&["code-block"]);
     let lang_attr = spec
         .lang
         .as_deref()
@@ -62,7 +53,7 @@ fn highlight_with(
     writeln_indented!(
         &mut html,
         0,
-        r#"<details class="{classes}"{id_attr}{lang_attr}{open_attr}>"#
+        "<details{identity_attrs}{lang_attr}{open_attr}>"
     );
 
     // ── Header ──
@@ -268,7 +259,7 @@ mod tests {
         assert_eq!(
             highlight("text {#my-code .wide}", "a <b>\n\nc\n"),
             indoc! {r#"
-                <details class="code-block wide" id="my-code" data-lang="text" open>
+                <details id="my-code" class="code-block wide" data-lang="text" open>
                   <summary class="code-header">
                     <span class="code-lang" data-pagefind-ignore>Plain Text</span>
                     <button class="copy-btn" data-pagefind-ignore aria-label="复制 &quot;代码&quot;">复制 &lt;&amp;&gt;</button>
@@ -537,63 +528,34 @@ mod tests {
     // ── display_label ──
 
     #[test]
-    fn capitalizes_unknown_tokens() {
-        assert_eq!(display_label("rust"), "Rust");
-        assert_eq!(display_label("python"), "Python");
-        assert_eq!(display_label("go"), "Go");
-        assert_eq!(display_label("dockerfile"), "Dockerfile");
-        assert_eq!(display_label("unknown-lang"), "Unknown-lang");
-    }
-
-    #[test]
-    fn labels_plain_text_aliases() {
-        for token in ["", "plain", "plaintext", "text"] {
-            assert_eq!(display_label(token), "Plain Text", "for input {token:?}");
-        }
-    }
-
-    #[test]
-    fn expands_short_forms() {
-        assert_eq!(display_label("js"), "JavaScript");
-        assert_eq!(display_label("kt"), "Kotlin");
-        assert_eq!(display_label("md"), "Markdown");
-        assert_eq!(display_label("ps1"), "PowerShell");
-        assert_eq!(display_label("py"), "Python");
-        assert_eq!(display_label("rs"), "Rust");
-        assert_eq!(display_label("ts"), "TypeScript");
-    }
-
-    #[test]
-    fn collapses_shell_family() {
-        // Different shell flavors share the syntect grammar, so the label collapses to "Shell".
-        for shell in ["bash", "fish", "sh", "zsh"] {
-            assert_eq!(display_label(shell), "Shell", "for input {shell:?}");
-        }
-    }
-
-    #[test]
-    fn spells_punctuated_names() {
-        assert_eq!(display_label("cs"), "C#");
-        assert_eq!(display_label("cpp"), "C++");
-        assert_eq!(display_label("c++"), "C++");
-        assert_eq!(display_label("fs"), "F#");
-    }
-
-    #[test]
-    fn keeps_brand_casing() {
-        assert_eq!(display_label("gql"), "GraphQL");
-        assert_eq!(display_label("graphql"), "GraphQL");
-        assert_eq!(display_label("sass"), "Sass");
-    }
-
-    #[test]
-    fn uppercases_acronyms() {
-        for token in ["css", "html", "json", "php", "scss", "toml", "yaml"] {
-            assert_eq!(
-                display_label(token),
-                token.to_uppercase(),
-                "for input {token:?}"
-            );
+    fn labels_each_token_group() {
+        for (token, expected) in [
+            ("", "Plain Text"),
+            ("plain", "Plain Text"),
+            ("plaintext", "Plain Text"),
+            ("text", "Plain Text"),
+            ("js", "JavaScript"),
+            ("kts", "Kotlin"),
+            ("tex", "LaTeX"),
+            ("mdx", "Markdown"),
+            ("objc", "Objective-C"),
+            ("ps1", "PowerShell"),
+            ("py", "Python"),
+            ("rb", "Ruby"),
+            ("rs", "Rust"),
+            ("fish", "Shell"),
+            ("tsx", "TypeScript"),
+            ("csharp", "C#"),
+            ("c++", "C++"),
+            ("fsharp", "F#"),
+            ("gql", "GraphQL"),
+            ("sass", "Sass"),
+            ("wasm", "WASM"),
+            ("yml", "YML"),
+            ("dockerfile", "Dockerfile"),
+            ("unknown-lang", "Unknown-lang"),
+        ] {
+            assert_eq!(display_label(token), expected, "{token:?}");
         }
     }
 
