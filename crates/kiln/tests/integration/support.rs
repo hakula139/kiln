@@ -146,7 +146,7 @@ impl TestSite {
         let [name] = names.as_slice() else {
             panic!("expected one published name for {rel_path}: {names:?}");
         };
-        let path = parent.join(name).to_str().unwrap().to_owned();
+        let path = format!("{}/{name}", parent.to_str().unwrap());
         let bytes = fs::read(self.output(&path)).unwrap();
         assert_eq!(name, &format!("{stem}.{}.{extension}", fingerprint(bytes)));
         path
