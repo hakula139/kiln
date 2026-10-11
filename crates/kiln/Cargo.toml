@@ -37,6 +37,7 @@ percent-encoding = { workspace = true }
 pulldown-cmark = { workspace = true }
 rayon = { workspace = true }
 regex = { workspace = true }
+same-file = { workspace = true }
 scraper = { workspace = true }
 semver = { workspace = true }
 serde = { workspace = true }
@@ -49,6 +50,7 @@ swc_ecma_codegen = { workspace = true }
 swc_ecma_minifier = { workspace = true }
 swc_ecma_parser = { workspace = true }
 swc_ecma_transforms_base = { workspace = true }
+swc_ecma_visit = { workspace = true }
 swc_html_ast = { workspace = true }
 swc_html_codegen = { workspace = true }
 swc_html_minifier = { workspace = true }

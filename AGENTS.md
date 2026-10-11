@@ -101,7 +101,8 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 ├── serve.rs             # Dev server with file watching, WebSocket live reload, script injection
 ├── static_assets.rs     # Published asset manifest + content-hashed asset URLs
 ├── static_assets/
-│   └── publication.rs   # Static / bundle asset publication and source → output paths
+│   ├── publication.rs   # Static / bundle asset publication and source → output paths
+│   └── script.rs        # Module import analysis and content-addressed script names
 ├── template.rs          # MiniJinja layered template engine, directive / archive / overview / error rendering
 ├── template/            # Template submodules
 │   ├── functions.rs     # MiniJinja template functions (now, read_file, parse_csv, t, asset_url, register_script)

@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::ops::Range;
 use std::vec;
 
+use anyhow::Result;
 use itertools::Either;
 use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, LinkType, Parser, Tag, TagEnd};
 
@@ -56,31 +57,56 @@ impl MarkdownDocument {
     }
 }
 
+/// Image URLs and attributes, keyed by the image's offset in the parsed source.
+type ResolvedImages = HashMap<usize, (String, Option<ImageAttrs>)>;
+
 /// Renders a document with allocated IDs to HTML, adding auto-detected features (math, mermaid)
 /// to `assets`.
-#[must_use]
+///
+/// # Errors
+///
+/// Returns an error for a site image without a published file.
 pub(super) fn render_document(
     document: MarkdownDocument,
     resources: &PageResources<'_>,
     options: &RenderOptions,
     assets: &mut PageAssets,
-) -> String {
+) -> Result<String> {
+    let images = resolve_images(&document, resources)?;
     let MarkdownDocument {
         body,
         notes,
         headings,
-        image_attrs,
+        ..
     } = document;
     let mut renderer = MarkdownRenderer {
-        image_attrs: &image_attrs,
-        resources,
+        images,
         options,
         assets,
         headings: headings.into_iter(),
     };
     let mut html = renderer.render_events(body);
     notes.render(&mut html, |events| renderer.render_events(events));
-    html
+    Ok(html)
+}
+
+/// Resolves every image in the document, merging authored attributes with on-disk metadata.
+fn resolve_images(
+    document: &MarkdownDocument,
+    resources: &PageResources<'_>,
+) -> Result<ResolvedImages> {
+    document
+        .events()
+        .filter_map(|(event, range)| match event {
+            Event::Start(Tag::Image { dest_url, .. }) => Some((range.start, dest_url)),
+            _ => None,
+        })
+        .map(|(offset, src)| {
+            let (url, meta) = resources.resolve_image(src)?;
+            let attrs = enrich_image_attrs(document.image_attrs.get(&offset), meta.as_deref());
+            Ok((offset, (url, attrs)))
+        })
+        .collect()
 }
 
 /// Consumes the events inside an image whose `Start` was just taken, through its matching `End`.
@@ -99,8 +125,7 @@ pub(super) fn image_content<T: Borrow<Spanned>>(
 }
 
 struct MarkdownRenderer<'a> {
-    image_attrs: &'a HashMap<usize, ImageAttrs>,
-    resources: &'a PageResources<'a>,
+    images: ResolvedImages,
     options: &'a RenderOptions,
     assets: &'a mut PageAssets,
     headings: vec::IntoIter<TocEntry>,
@@ -171,11 +196,9 @@ impl MarkdownRenderer<'_> {
                     ));
                 }
 
-                Event::Start(Tag::Image {
-                    dest_url, title, ..
-                }) => {
+                Event::Start(Tag::Image { title, .. }) => {
                     let inner: Vec<_> = image_content(&mut events).collect();
-                    let (url, alt, attrs) = self.image_parts(&dest_url, range.start, &inner);
+                    let (url, alt, attrs) = self.image_parts(range.start, &inner);
                     output.push(Event::Html(
                         render_inline_image(&url, &alt, &title, attrs.as_ref()).into(),
                     ));
@@ -209,14 +232,9 @@ impl MarkdownRenderer<'_> {
     }
 
     /// Renders a paragraph holding exactly one image as a figure.
-    fn block_image(&self, body: &[Spanned]) -> Option<String> {
+    fn block_image(&mut self, body: &[Spanned]) -> Option<String> {
         let [
-            (
-                Event::Start(Tag::Image {
-                    dest_url, title, ..
-                }),
-                range,
-            ),
+            (Event::Start(Tag::Image { title, .. }), range),
             inner @ ..,
             (Event::End(TagEnd::Image), _),
         ] = body
@@ -231,15 +249,13 @@ impl MarkdownRenderer<'_> {
         }) {
             return None;
         }
-        let (url, alt, attrs) = self.image_parts(dest_url, range.start, inner);
+        let (url, alt, attrs) = self.image_parts(range.start, inner);
         Some(render_block_image(&url, &alt, title, attrs.as_ref()))
     }
 
-    /// Resolves an image's URL, plain-text alt, and authored attributes merged with on-disk
-    /// metadata.
+    /// Takes an image's resolved URL and attributes, and collects its plain-text alt.
     fn image_parts(
-        &self,
-        src: &str,
+        &mut self,
         offset: usize,
         inner: &[Spanned],
     ) -> (String, String, Option<ImageAttrs>) {
@@ -247,8 +263,10 @@ impl MarkdownRenderer<'_> {
         for (event, _) in inner {
             push_plain_text(&mut alt, event);
         }
-        let (url, meta) = self.resources.resolve_image(src);
-        let attrs = enrich_image_attrs(self.image_attrs.get(&offset), meta.as_deref());
+        let (url, attrs) = self
+            .images
+            .remove(&offset)
+            .expect("resolve_images resolves every image");
         (url, alt, attrs)
     }
 }
@@ -719,12 +737,15 @@ mod tests {
     #[test]
     fn render_document_footnotes_inline_markup_in_reference_paragraph() {
         let md = indoc! {"
-            Math $x$[^1] and ![icon](a.png)[^1].
+            Math $x$[^1] and ![icon](https://example.com/a.png)[^1].
 
             [^1]: Note.
         "};
         let out = render(md);
-        assert!(out.content_html.contains(r#"src="a.png""#));
+        assert!(
+            out.content_html
+                .contains(r#"src="https://example.com/a.png""#)
+        );
         assert!(
             out.content_html
                 .contains(r#"<span class="math math-inline">"#)
@@ -740,18 +761,24 @@ mod tests {
             Body[^a].
 
             [^a]:
-                Math $x$ and ![inline](inline.png).
+                Math $x$ and ![inline](https://example.com/inline.png).
 
                 ```text
                 first
                   second
                 ```
 
-                ![block](block.png)
+                ![block](https://example.com/block.png)
         "});
         assert!(out.content_html.contains(r#"class="math math-inline""#));
-        assert!(out.content_html.contains(r#"src="inline.png""#));
-        assert!(out.content_html.contains(r#"src="block.png""#));
+        assert!(
+            out.content_html
+                .contains(r#"src="https://example.com/inline.png""#)
+        );
+        assert!(
+            out.content_html
+                .contains(r#"src="https://example.com/block.png""#)
+        );
         assert!(out.content_html.contains("<figure"));
         let plain = render(indoc! {"
             ```text
@@ -773,7 +800,7 @@ mod tests {
     #[test]
     fn render_document_footnote_syntax_interrupts_image_parsing() {
         let out = render(indoc! {"
-            ![Alt[^a]](image.png)
+            ![Alt[^a]](https://example.com/image.png)
 
             [^a]: Visible.
         "});
@@ -948,7 +975,7 @@ mod tests {
 
     #[test]
     fn render_document_block_image() {
-        let md = "![A photo](img.png)\n";
+        let md = "![A photo](https://example.com/img.png)\n";
         let out = render(md);
         assert!(
             out.content_html.contains("<figure>"),
@@ -970,7 +997,7 @@ mod tests {
 
     #[test]
     fn render_document_block_image_with_title() {
-        let md = "![alt text](img.png \"My Title\")\n";
+        let md = "![alt text](https://example.com/img.png \"My Title\")\n";
         let out = render(md);
         assert!(
             out.content_html.contains("<figure>"),
@@ -997,7 +1024,7 @@ mod tests {
 
     #[test]
     fn render_document_block_image_with_formatted_alt() {
-        let md = "![*bold* alt](img.png)\n";
+        let md = "![*bold* alt](https://example.com/img.png)\n";
         let out = render(md);
         assert!(
             out.content_html.contains("<figure>"),
@@ -1021,7 +1048,7 @@ mod tests {
     fn render_document_block_image_with_soft_break_in_alt() {
         let md = indoc! {"
             ![line1
-            line2](img.png)
+            line2](https://example.com/img.png)
         "};
         let out = render(md);
         assert!(
@@ -1044,7 +1071,7 @@ mod tests {
 
     #[test]
     fn render_document_inline_image() {
-        let md = "Text ![icon](icon.png) more text\n";
+        let md = "Text ![icon](https://example.com/icon.png) more text\n";
         let out = render(md);
         assert!(
             !out.content_html.contains("<figure>"),
@@ -1065,19 +1092,21 @@ mod tests {
 
     #[test]
     fn render_document_inline_image_with_nested_alt_preserves_surrounding_text() {
-        let out = render("Before ![outer ![inner](inner.png)](outer.png) after.");
+        let out = render(
+            "Before ![outer ![inner](https://example.com/inner.png)](https://example.com/outer.png) after.",
+        );
 
         assert_eq!(
             out.content_html,
             indoc! {r#"
-                <p>Before <img src="outer.png" alt="outer inner" loading="lazy" decoding="async" /> after.</p>
+                <p>Before <img src="https://example.com/outer.png" alt="outer inner" loading="lazy" decoding="async" /> after.</p>
             "#},
         );
     }
 
     #[test]
     fn render_document_image_with_trailing_text_stays_inline() {
-        let md = "![icon](icon.png) followed by text\n";
+        let md = "![icon](https://example.com/icon.png) followed by text\n";
         let out = render(md);
         assert!(
             !out.content_html.contains("<figure>"),
@@ -1093,7 +1122,7 @@ mod tests {
 
     #[test]
     fn render_document_multiple_images_stay_inline() {
-        let md = "![a](a.png) ![b](b.png)\n";
+        let md = "![a](https://example.com/a.png) ![b](https://example.com/b.png)\n";
         let out = render(md);
         assert!(
             !out.content_html.contains("<figure>"),
@@ -1190,6 +1219,28 @@ mod tests {
                 .select(&scraper::Selector::parse("figure").unwrap())
                 .next()
                 .is_none()
+        );
+    }
+
+    #[test]
+    fn render_document_missing_site_image_in_footnote_returns_error() {
+        let err = render_page(
+            indoc! {"
+                Body[^a].
+
+                [^a]: ![Missing](missing.png?q=1)
+            "},
+            &test_engine(),
+            &RenderOptions::default(),
+            &test_resources(),
+            false,
+        )
+        .err()
+        .unwrap();
+
+        assert!(
+            format!("{err:#}").contains("static asset not found: missing.png?q=1"),
+            "{err:#}"
         );
     }
 

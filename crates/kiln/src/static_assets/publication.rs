@@ -2,7 +2,9 @@ use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
 
 use anyhow::{Context, Result};
+use same_file::is_same_file;
 
+use super::{is_media, is_script, rename_fingerprinted};
 use crate::content::is_private;
 use crate::content::page::Page;
 use crate::output::{copy_directory, copy_file};
@@ -17,14 +19,32 @@ struct PublishedFiles {
 pub(crate) struct PublishedAssets {
     shared_files: PublishedFiles,
     pages: BTreeMap<PathBuf, PublishedFiles>,
+    /// Source-named output paths mapped to the paths their files were published at.
+    outputs: BTreeMap<PathBuf, PathBuf>,
+    /// Published script paths, marking those from `assets/` and page bundles.
+    scripts: BTreeMap<PathBuf, bool>,
+}
+
+/// Output files with the publication of their final writer.
+#[derive(Default)]
+struct OutputFiles {
+    /// Whether each file is published from `assets/` or a page bundle.
+    addressed: BTreeMap<PathBuf, bool>,
+    /// The first output path recorded for each case-folded path.
+    folded: BTreeMap<String, PathBuf>,
+    /// Paths that a case-insensitive filesystem resolved to an earlier output file.
+    aliases: BTreeMap<PathBuf, PathBuf>,
 }
 
 impl PublishedAssets {
     /// Copies theme, site, and page assets and records their paths relative to `output_dir`.
     ///
+    /// Media from `assets/` and page bundles are published only under content-addressed names.
+    ///
     /// # Errors
     ///
-    /// Returns an error if an asset cannot be copied or its source or output path cannot be resolved.
+    /// Returns an error if an asset cannot be copied, renamed, or its source or output path
+    /// cannot be resolved.
     pub(crate) fn publish(
         root: &Path,
         theme_dir: Option<&Path>,
@@ -32,34 +52,61 @@ impl PublishedAssets {
         output_dir: &Path,
     ) -> Result<Self> {
         let mut shared_files = PublishedFiles::default();
+        let mut written = OutputFiles::default();
         for owner in theme_dir.into_iter().chain(std::iter::once(root)) {
-            shared_files.extend(PublishedFiles::new(
+            let assets = PublishedFiles::new(
                 copy_directory(&owner.join("assets"), &output_dir.join("assets"), |name| {
                     !is_private(name)
                 })?,
                 output_dir,
-            )?);
-            shared_files.extend(PublishedFiles::new(
+            )?;
+            written.record(output_dir, &assets, true)?;
+            shared_files.extend(assets);
+            let statics = PublishedFiles::new(
                 copy_directory(&owner.join("static"), output_dir, |_| true)?,
                 output_dir,
-            )?);
+            )?;
+            written.record(output_dir, &statics, false)?;
+            shared_files.extend(statics);
         }
 
         let mut page_files = BTreeMap::new();
         for page in pages {
-            let files = copy_page_assets(page, output_dir)?;
-            page_files.insert(
-                page.source_path.clone(),
-                PublishedFiles::new(files, output_dir)?,
-            );
+            let files = PublishedFiles::new(copy_page_assets(page, output_dir)?, output_dir)?;
+            written.record(output_dir, &files, true)?;
+            page_files.insert(page.source_path.clone(), files);
+        }
+
+        let mut outputs = BTreeMap::new();
+        let mut scripts = BTreeMap::new();
+        for (path, addressed) in written.addressed {
+            let published = if addressed && is_media(&path) {
+                rename_fingerprinted(output_dir, &path)?
+            } else {
+                path.clone()
+            };
+            if is_script(&path) {
+                scripts.insert(path.clone(), addressed);
+            }
+            outputs.insert(path, published);
+        }
+        for (alias, path) in written.aliases {
+            let published = outputs[&path].clone();
+            outputs.insert(alias, published);
+        }
+        for files in std::iter::once(&mut shared_files).chain(page_files.values_mut()) {
+            files.relocate(&outputs);
         }
         Ok(Self {
             shared_files,
             pages: page_files,
+            outputs,
+            scripts,
         })
     }
 
-    /// Resolves a copied source path, preferring owning-page assets and explicit aliases.
+    /// Resolves a copied source path to its published path, preferring owning-page assets and
+    /// explicit aliases.
     ///
     /// Returns `None` when the source is outside the page's and site's published files.
     ///
@@ -74,6 +121,46 @@ impl PublishedAssets {
             return Ok(Some(path));
         }
         self.shared_files.resolve(&source)
+    }
+
+    /// Returns source-named output paths and the paths their files were published at.
+    pub(crate) fn outputs(&self) -> &BTreeMap<PathBuf, PathBuf> {
+        &self.outputs
+    }
+
+    /// Returns published script paths, marking those that may take content-addressed names.
+    pub(crate) fn scripts(&self) -> &BTreeMap<PathBuf, bool> {
+        &self.scripts
+    }
+}
+
+impl OutputFiles {
+    /// Records published files over the files they overlay.
+    fn record(
+        &mut self,
+        output_dir: &Path,
+        files: &PublishedFiles,
+        content_addressed: bool,
+    ) -> Result<()> {
+        for output in files.paths.values() {
+            let folded = output.to_string_lossy().to_lowercase();
+            let path = match self.folded.get(&folded) {
+                Some(first)
+                    if first != output
+                        && is_same_file(output_dir.join(first), output_dir.join(output))? =>
+                {
+                    self.aliases.insert(output.clone(), first.clone());
+                    first.clone()
+                }
+                Some(_) => output.clone(),
+                None => {
+                    self.folded.insert(folded, output.clone());
+                    output.clone()
+                }
+            };
+            self.addressed.insert(path, content_addressed);
+        }
+        Ok(())
     }
 }
 
@@ -109,6 +196,14 @@ impl PublishedFiles {
             published.paths.insert(source, output);
         }
         Ok(published)
+    }
+
+    /// Replaces source-named output paths with the paths their files were published at.
+    fn relocate(&mut self, outputs: &BTreeMap<PathBuf, PathBuf>) {
+        for output in self.paths.values_mut().chain(self.aliases.values_mut()) {
+            // Every recorded output path has a published entry.
+            output.clone_from(&outputs[output]);
+        }
     }
 
     fn extend(&mut self, files: Self) {
@@ -159,6 +254,7 @@ mod tests {
 
     use super::*;
     use crate::content::discovery::discover_content;
+    use crate::static_assets::content_fingerprint;
 
     // ── PublishedAssets::publish ──
 
@@ -211,6 +307,151 @@ mod tests {
                 "{path}"
             );
         }
+    }
+
+    #[test]
+    fn publish_content_addresses_asset_and_bundle_media_only() {
+        let root = tempfile::tempdir().unwrap();
+        let theme = root.path().join("themes/example");
+        let content = root.path().join("content");
+        let output = root.path().join("public");
+        for (path, value) in [
+            (theme.join("assets/images/theme.png"), "theme"),
+            (theme.join("assets/images/override.png"), "theme override"),
+            (
+                root.path().join("assets/images/override.png"),
+                "site override",
+            ),
+            (root.path().join("assets/images/shadowed.png"), "asset"),
+            (
+                root.path().join("static/assets/images/shadowed.png"),
+                "static",
+            ),
+            (root.path().join("assets/js/app.js"), "script"),
+            (root.path().join("static/favicon.ico"), "icon"),
+            (root.path().join("static/vendor.js"), "vendor"),
+            (content.join("example/photo.webp"), "photo"),
+        ] {
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, value).unwrap();
+        }
+        let source = content.join("example/index.md");
+        fs::write(
+            &source,
+            indoc! {r#"
+                +++
+                title = "Example"
+                +++
+            "#},
+        )
+        .unwrap();
+        let pages = discover_content(root.path()).unwrap().pages;
+
+        let assets = PublishedAssets::publish(root.path(), Some(&theme), &pages, &output).unwrap();
+
+        let hashed = |path: &str, value: &str| {
+            let (stem, extension) = path.rsplit_once('.').unwrap();
+            format!(
+                "{stem}.{}.{extension}",
+                content_fingerprint(value.as_bytes())
+            )
+        };
+        let expected = [
+            (
+                "assets/images/override.png",
+                hashed("assets/images/override.png", "site override"),
+            ),
+            (
+                "assets/images/shadowed.png",
+                "assets/images/shadowed.png".to_owned(),
+            ),
+            (
+                "assets/images/theme.png",
+                hashed("assets/images/theme.png", "theme"),
+            ),
+            ("assets/js/app.js", "assets/js/app.js".to_owned()),
+            ("example/photo.webp", hashed("example/photo.webp", "photo")),
+            ("favicon.ico", "favicon.ico".to_owned()),
+            ("vendor.js", "vendor.js".to_owned()),
+        ]
+        .map(|(source, published)| (PathBuf::from(source), PathBuf::from(published)));
+        assert_eq!(assets.outputs(), &BTreeMap::from(expected.clone()));
+        assert_eq!(
+            assets.scripts(),
+            &BTreeMap::from([
+                (PathBuf::from("assets/js/app.js"), true),
+                (PathBuf::from("vendor.js"), false),
+            ])
+        );
+        let mut files: Vec<_> = walkdir::WalkDir::new(&output)
+            .into_iter()
+            .map(|entry| entry.unwrap())
+            .filter(|entry| entry.file_type().is_file())
+            .map(|entry| entry.path().strip_prefix(&output).unwrap().to_owned())
+            .collect();
+        files.sort();
+        let mut published: Vec<_> = expected.into_iter().map(|(_, path)| path).collect();
+        published.sort();
+        assert_eq!(files, published);
+        assert_eq!(
+            assets
+                .resolve(
+                    Some(&content.join("example/index.md")),
+                    &content.join("example/photo.webp")
+                )
+                .unwrap(),
+            Some(Path::new(&hashed("example/photo.webp", "photo"))),
+        );
+        assert_eq!(
+            assets
+                .resolve(None, &theme.join("assets/images/override.png"))
+                .unwrap(),
+            Some(Path::new(&hashed(
+                "assets/images/override.png",
+                "site override"
+            ))),
+        );
+    }
+
+    #[test]
+    fn publish_case_variant_overlays_follow_the_filesystem() {
+        let root = tempfile::tempdir().unwrap();
+        let theme = root.path().join("themes/example");
+        let output = root.path().join("public");
+        for (path, value) in [
+            (theme.join("static/assets/Logo.png"), "theme"),
+            (root.path().join("assets/logo.png"), "site"),
+        ] {
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, value).unwrap();
+        }
+        fs::write(root.path().join("probe"), "").unwrap();
+        let case_insensitive = root.path().join("PROBE").exists();
+
+        let assets = PublishedAssets::publish(root.path(), Some(&theme), &[], &output).unwrap();
+
+        let site = format!("assets/logo.{}.png", content_fingerprint(b"site"));
+        let theme_output = if case_insensitive {
+            format!("assets/Logo.{}.png", content_fingerprint(b"site"))
+        } else {
+            "assets/Logo.png".to_owned()
+        };
+        let published = if case_insensitive {
+            &theme_output
+        } else {
+            &site
+        };
+        assert_eq!(
+            assets.outputs(),
+            &BTreeMap::from([
+                (
+                    PathBuf::from("assets/Logo.png"),
+                    PathBuf::from(&theme_output)
+                ),
+                (PathBuf::from("assets/logo.png"), PathBuf::from(published)),
+            ])
+        );
+        assert_eq!(fs::read_to_string(output.join(published)).unwrap(), "site");
     }
 
     // ── PublishedAssets::resolve ──

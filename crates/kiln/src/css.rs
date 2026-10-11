@@ -18,8 +18,8 @@ use tempfile::TempDir;
 use crate::config::{Config, CssProcessor};
 use crate::content::page::Page;
 use crate::output::write_output;
-use crate::static_assets::StaticAssetManifest;
 use crate::static_assets::publication::PublishedAssets;
+use crate::static_assets::{StaticAssetManifest, is_passthrough};
 use crate::url::{join_site_url, path_url};
 
 pub(crate) const ENTRY: &str = "assets/css/_src/style.css";
@@ -113,6 +113,22 @@ impl Stylesheets {
             let css =
                 css.with_context(|| format!("failed to compile {}", style.source.display()))?;
             write_output(&output_dir.join(&style.output), &css)?;
+        }
+        Ok(())
+    }
+
+    /// Publishes compiled stylesheets under content-addressed names.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a compiled stylesheet cannot be read or renamed.
+    pub(crate) fn fingerprint(
+        &self,
+        manifest: &mut StaticAssetManifest,
+        output_dir: &Path,
+    ) -> Result<()> {
+        for style in self.shared.iter().chain(self.pages.values()) {
+            manifest.fingerprint(output_dir, &style.output)?;
         }
         Ok(())
     }
@@ -272,7 +288,7 @@ impl SourceProvider for CssProvider {
     }
 
     fn resolve(&self, specifier: &str, origin: &Path) -> std::io::Result<ResolveResult> {
-        if is_external(specifier) {
+        if is_unbundled_import(specifier) {
             Ok(ResolveResult::External(specifier.to_owned()))
         } else {
             self.0.resolve(specifier, origin)
@@ -318,16 +334,20 @@ fn published_url(
     source: &Path,
     url: &str,
 ) -> Result<String> {
-    if crate::static_assets::is_external(url) || url.starts_with('#') {
+    if is_passthrough(url) {
         return Ok(url.to_owned());
     }
     let split = url.find(['?', '#']).unwrap_or(url.len());
     let (path, suffix) = url.split_at(split);
-    let destination_url = if path.starts_with('/') {
-        let Some(destination) = manifest.resolve(path, "/", prefix) else {
+    let destination = if path.starts_with('/') {
+        let Some(asset) = manifest.resolve_local(path, "/", prefix)? else {
             return Ok(url.to_owned());
         };
-        destination[prefix.trim_end_matches('/').len()..].to_owned()
+        PathBuf::from(
+            percent_decode_str(asset.path.trim_start_matches('/'))
+                .decode_utf8()?
+                .as_ref(),
+        )
     } else {
         let decoded = percent_decode_str(path)
             .decode_utf8()
@@ -336,7 +356,7 @@ fn published_url(
             .parent()
             .context("CSS source has no parent")?
             .join(decoded.as_ref());
-        let destination = assets
+        assets
             .resolve(style.page.as_deref(), &referenced)
             .with_context(|| format!("cannot resolve CSS asset {url} from {}", source.display()))?
             .with_context(|| {
@@ -344,22 +364,20 @@ fn published_url(
                     "CSS asset {url} from {} is not a published static file or owning-page asset",
                     source.display()
                 )
-            })?;
-        manifest
-            .asset_url(&format!("/{}", path_url(destination)))?
+            })?
             .to_owned()
     };
-    let destination = percent_decode_str(destination_url.trim_start_matches('/')).decode_utf8()?;
     let relative = pathdiff::diff_paths(
-        destination.as_ref(),
+        destination,
         style.output.parent().context("CSS output has no parent")?,
     )
     .context("cannot resolve published CSS asset path")?;
     Ok(format!("{}{suffix}", path_url(&relative)))
 }
 
-fn is_external(url: &str) -> bool {
-    url.starts_with('/') || url.starts_with('#') || url::Url::parse(url).is_ok()
+/// Whether the bundler leaves an `@import` for the browser to load.
+fn is_unbundled_import(url: &str) -> bool {
+    url.starts_with('/') || is_passthrough(url)
 }
 
 fn css_string(value: &str) -> Result<String> {
@@ -402,22 +420,24 @@ mod tests {
         let stylesheets = Stylesheets::discover(root.path(), &config, &pages);
         let output = root.path().join("public");
         let assets = PublishedAssets::publish(root.path(), None, &pages, &output).unwrap();
+        let mut manifest = StaticAssetManifest::new(assets.outputs());
         stylesheets
-            .compile(
-                root.path(),
-                &config,
-                &assets,
-                &StaticAssetManifest::default(),
-                &output,
-            )
+            .compile(root.path(), &config, &assets, &manifest, &output)
             .unwrap();
-        let manifest = StaticAssetManifest::build(&output).unwrap();
-        let encoded = "/a%20%25%20%23%20%E4%B8%96%E7%95%8C/assets/css/page.css";
+        stylesheets.fingerprint(&mut manifest, &output).unwrap();
+
+        let css =
+            fs::read_to_string(output.join("a % # 世界/assets/css/page.65f6d4d0a9a8.css")).unwrap();
+        assert!(css.contains(".page"), "{css}");
+        assert!(!output.join("a % # 世界/assets/css/page.css").exists());
         assert_eq!(
             stylesheets
                 .page_url("/blog/", &manifest, &pages[0])
                 .unwrap(),
-            Some(format!("/blog{}", manifest.asset_url(encoded).unwrap())),
+            Some(
+                "/blog/a%20%25%20%23%20%E4%B8%96%E7%95%8C/assets/css/page.65f6d4d0a9a8.css"
+                    .to_owned()
+            ),
         );
     }
 
@@ -444,7 +464,7 @@ mod tests {
         let assets =
             PublishedAssets::publish(root.path(), None, &[], &root.path().join("public")).unwrap();
         let manifest = StaticAssetManifest::default();
-        let css = compile_plain(&assets, &manifest, "", &style).unwrap();
+        let css = compile_plain(&assets, &manifest, "/blog/", &style).unwrap();
         for url in [
             "https://example.com/base.css",
             "/images/root.svg",
@@ -473,7 +493,7 @@ mod tests {
             page: None,
             output: PathBuf::from("assets/css/site.css"),
         };
-        let manifest = StaticAssetManifest::build_media(&root.path().join("public")).unwrap();
+        let manifest = StaticAssetManifest::new(assets.outputs());
         let css = compile_plain(&assets, &manifest, "", &style).unwrap();
         assert!(
             css.contains("../../a%20%25%20%23%20%E4%B8%96%E7%95%8C.svg?v=1#icon"),
@@ -511,7 +531,7 @@ mod tests {
         };
         let assets =
             PublishedAssets::publish(root.path(), None, &[], &root.path().join("public")).unwrap();
-        let manifest = StaticAssetManifest::build_media(&root.path().join("public")).unwrap();
+        let manifest = StaticAssetManifest::new(assets.outputs());
         let css = compile_plain(&assets, &manifest, "", &style).unwrap();
         assert!(css.contains("../../alias.svg"), "{css}");
         assert!(css.contains("../../shared/image.svg"), "{css}");
@@ -617,7 +637,23 @@ mod tests {
                 url,
             )
             .unwrap_err();
-            assert!(error.to_string().contains("published"), "{error}");
+            assert!(error.to_string().contains("not a published"), "{error}");
         }
+
+        let missing = published_url(
+            &assets,
+            &StaticAssetManifest::default(),
+            "/blog/",
+            &root_style,
+            &root_style.source,
+            "/blog/missing.svg?v=1",
+        )
+        .unwrap_err();
+        assert!(
+            missing
+                .to_string()
+                .contains("static asset not found: /blog/missing.svg"),
+            "{missing}"
+        );
     }
 }

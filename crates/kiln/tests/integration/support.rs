@@ -125,6 +125,37 @@ impl TestSite {
     pub(super) fn read(&self, rel_path: &str) -> String {
         fs::read_to_string(self.output(rel_path)).unwrap()
     }
+
+    /// Returns the only content-addressed name published for the source-named `rel_path`,
+    /// checking that the name carries its file's fingerprint and the source name is unpublished.
+    pub(super) fn hashed_path(&self, rel_path: &str) -> String {
+        let source = Path::new(rel_path);
+        assert!(!self.output(rel_path).exists(), "{rel_path} is published");
+        let stem = source.file_stem().unwrap().to_str().unwrap();
+        let extension = source.extension().unwrap().to_str().unwrap();
+        let parent = source.parent().unwrap();
+        let names: Vec<_> = fs::read_dir(self.output(parent.to_str().unwrap()))
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+            .filter(|name| {
+                name.strip_prefix(&format!("{stem}."))
+                    .and_then(|rest| rest.strip_suffix(&format!(".{extension}")))
+                    .is_some_and(|hash| hash.len() == 12)
+            })
+            .collect();
+        let [name] = names.as_slice() else {
+            panic!("expected one published name for {rel_path}: {names:?}");
+        };
+        let path = parent.join(name).to_str().unwrap().to_owned();
+        let bytes = fs::read(self.output(&path)).unwrap();
+        assert_eq!(name, &format!("{stem}.{}.{extension}", fingerprint(bytes)));
+        path
+    }
+
+    /// Reads the content-addressed file published for the source-named `rel_path`.
+    pub(super) fn read_hashed(&self, rel_path: &str) -> String {
+        self.read(&self.hashed_path(rel_path))
+    }
 }
 
 // ── Listing fixtures ──

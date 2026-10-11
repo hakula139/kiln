@@ -40,14 +40,20 @@ pub struct PageResources<'a> {
 }
 
 impl PageResources<'_> {
-    pub(crate) fn resolve_image(&self, src: &str) -> (String, Option<Arc<ImageMeta>>) {
-        match self
+    /// Resolves an image to its public URL and the published file's metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for a site image without a published file.
+    pub(crate) fn resolve_image(&self, src: &str) -> Result<(String, Option<Arc<ImageMeta>>)> {
+        let Some(asset) = self
             .assets
-            .resolve_local(src, self.page_url, self.deployment_prefix)
-        {
-            Some(asset) => (asset.url, self.images.resolve(asset.original_url, None)),
-            None => (src.to_owned(), None),
-        }
+            .resolve_local(src, self.page_url, self.deployment_prefix)?
+        else {
+            return Ok((src.to_owned(), None));
+        };
+        let meta = self.images.resolve(asset.path, None);
+        Ok((asset.url, meta))
     }
 }
 

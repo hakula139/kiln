@@ -1,4 +1,5 @@
 use std::fs;
+use std::path::Path;
 use std::time::Duration;
 
 use criterion::{Criterion, SamplingMode};
@@ -72,16 +73,33 @@ fn verify_build(site: &Site) {
         String::from_utf8_lossy(&result.stderr)
     );
     let output = site.root().join("public");
-    let shared = fs::read_to_string(output.join("assets/css/site.css")).unwrap();
+    let shared = read_stylesheet(&output.join("assets/css"), "site");
     assert!(shared.contains(".italic"), "{shared}");
     for index in 0..PAGE_STYLES {
-        let page = fs::read_to_string(
-            output.join(format!("posts/notes/styled-{index}/assets/css/page.css")),
-        )
-        .unwrap();
+        let page = read_stylesheet(
+            &output.join(format!("posts/notes/styled-{index}/assets/css")),
+            "page",
+        );
         assert!(
             page.contains(&format!(".styled-{index}")) && page.contains("text-decoration-line"),
             "{page}"
         );
     }
+}
+
+/// Reads the compiled stylesheet published as `<stem>.<hash>.css` in `dir`.
+fn read_stylesheet(dir: &Path, stem: &str) -> String {
+    let prefix = format!("{stem}.");
+    let path = fs::read_dir(dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|path| {
+            path.extension().is_some_and(|extension| extension == "css")
+                && path
+                    .file_stem()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.starts_with(&prefix))
+        })
+        .unwrap_or_else(|| panic!("no {stem} stylesheet in {}", dir.display()));
+    fs::read_to_string(path).unwrap()
 }

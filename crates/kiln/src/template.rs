@@ -506,7 +506,7 @@ mod tests {
         };
         assert_eq!(
             engine.render_404(&vars).unwrap(),
-            "Not Found|Description|https://example.com/404.html|/_assets/bg.8f8cbb7dcf46.png|0"
+            "Not Found|Description|https://example.com/404.html|/bg.8f8cbb7dcf46.png|0"
         );
     }
 

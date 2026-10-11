@@ -7,7 +7,7 @@ use minijinja::{Error, ErrorKind, State};
 
 use crate::i18n::I18n;
 use crate::render::assets::{AssetsHandle, LoadStrategy, ScriptTag};
-use crate::static_assets::{StaticAssetManifest, is_external};
+use crate::static_assets::{StaticAssetManifest, is_passthrough};
 use crate::url::site_asset_url;
 
 // ── Date / Time ──
@@ -99,16 +99,21 @@ pub(super) struct AssetUrls {
 impl AssetUrls {
     /// Resolves a site-root-relative or page-relative path to its published asset URL.
     fn resolve(&self, state: &State, url: &str) -> Result<String, Error> {
+        if is_passthrough(url) {
+            return Ok(url.to_owned());
+        }
         let page_url = state.lookup("__page_url");
         let page_url = page_url.as_ref().and_then(Value::as_str);
-        let base = if url.starts_with('/') || is_external(url) {
+        let base = if url.starts_with('/') {
             "/"
         } else {
             page_url.ok_or_else(|| invalid("relative asset paths require a page URL"))?
         };
         self.manifest
-            .resolve(&site_asset_url(url, &self.prefix), base, &self.prefix)
-            .ok_or_else(|| invalid(format!("static asset not found: {url}")))
+            .resolve_local(&site_asset_url(url, &self.prefix), base, &self.prefix)
+            .map_err(|error| invalid(error.to_string()))?
+            .map(|asset| asset.url)
+            .ok_or_else(|| invalid(format!("static asset path is outside the site: {url}")))
     }
 }
 
@@ -379,8 +384,8 @@ mod tests {
             .add_template(
                 "page.html",
                 indoc! {r#"
-                    <link rel="stylesheet" href="{{ asset_url('/shared.css') }}">
-                    <link rel="stylesheet" href="{{ asset_url('/blog/shared.css') }}">
+                    <img src="{{ asset_url('/shared.png') }}">
+                    <img src="{{ asset_url('/blog/shared.png') }}">
                     <script src="{{ asset_url('/page%20script.js') }}"></script>
                     <img src="{{ asset_url('https://example.org/a.png?w=1&h=2') }}">
                 "#},
@@ -395,9 +400,9 @@ mod tests {
                 .render(())
                 .unwrap(),
             indoc! {r#"
-                <link rel="stylesheet" href="/blog/shared.ba7816bf8f01.css">
-                <link rel="stylesheet" href="/blog/blog/shared.9d6f965ac832.css">
-                <script src="/blog/page%20script.ba7816bf8f01.js"></script>
+                <img src="/blog/shared.ba7816bf8f01.png">
+                <img src="/blog/blog/shared.9d6f965ac832.png">
+                <script src="/blog/page%20script.js"></script>
                 <img src="https://example.org/a.png?w=1&amp;h=2">
             "#}
             .trim_end(),
@@ -437,7 +442,7 @@ mod tests {
         assert_eq!(
             assets.snapshot().scripts(),
             [ScriptTag {
-                url: "/blog/shared.ba7816bf8f01.js".into(),
+                url: "/blog/shared.js".into(),
                 load: LoadStrategy::Defer,
                 module: false,
             }]
@@ -468,7 +473,7 @@ mod tests {
         for (template, message) in [
             (
                 r#"{{ register_script("/missing.js") }}"#,
-                "static asset not found: /missing.js",
+                "static asset not found: /blog/missing.js",
             ),
             (
                 r#"{{ register_script("/x.js", load="sync", module=true) }}"#,
@@ -538,8 +543,8 @@ mod tests {
         fs::create_dir_all(static_dir.join("blog")).unwrap();
         fs::create_dir(&templates).unwrap();
         for (path, content) in [
-            ("shared.css", "abc"),
-            ("blog/shared.css", "different"),
+            ("shared.png", "abc"),
+            ("blog/shared.png", "different"),
             ("shared.js", "abc"),
             ("page script.js", "abc"),
             ("x.js", "abc"),

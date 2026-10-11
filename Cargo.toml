@@ -52,6 +52,7 @@ pulldown-cmark = "0.13"
 rayon = "1"
 regex = "1"
 reqwest = { version = "0.13", default-features = false }
+same-file = "1"
 scraper = { version = "0.27", default-features = false }
 semver = { version = "1", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
@@ -64,6 +65,7 @@ swc_ecma_codegen = "32"
 swc_ecma_minifier = "63"
 swc_ecma_parser = "46"
 swc_ecma_transforms_base = "50"
+swc_ecma_visit = "29"
 swc_html_ast = "26"
 swc_html_codegen = "27"
 swc_html_minifier = { version = "63", default-features = false, features = [

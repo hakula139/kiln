@@ -734,17 +734,26 @@ mod tests {
         fs::create_dir_all(&css_dir).unwrap();
         fs::write(css_dir.join("style.css"), ".before { color: red; }").unwrap();
         let output_dir = root.path().join("public");
+        let site_css = || {
+            let paths: Vec<_> = fs::read_dir(output_dir.join("assets/css"))
+                .unwrap()
+                .map(|entry| entry.unwrap().path())
+                .collect();
+            let [path] = paths.as_slice() else {
+                panic!("expected one compiled stylesheet: {paths:?}");
+            };
+            fs::read_to_string(path).unwrap()
+        };
         rebuild(root.path(), "http://localhost:0", &output_dir).unwrap();
-        let output = output_dir.join("assets/css/site.css");
-        let original = fs::read_to_string(&output).unwrap();
+        let original = site_css();
 
         fs::write(css_dir.join("style.css"), r#"@import "missing.css";"#).unwrap();
         assert!(rebuild(root.path(), "http://localhost:0", &output_dir).is_err());
-        assert_eq!(fs::read_to_string(&output).unwrap(), original);
+        assert_eq!(site_css(), original);
 
         fs::write(css_dir.join("missing.css"), ".recovered { color: blue; }").unwrap();
         rebuild(root.path(), "http://localhost:0", &output_dir).unwrap();
-        assert!(fs::read_to_string(&output).unwrap().contains(".recovered"));
+        assert!(site_css().contains(".recovered"));
     }
 
     // ── build_router ──

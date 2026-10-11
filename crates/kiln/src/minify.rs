@@ -5,11 +5,10 @@
 //! worker stack and aborts the process.
 
 use std::borrow::Cow;
-use std::collections::BTreeSet;
 use std::fmt;
 use std::fs;
 use std::ops::AddAssign;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::LazyLock;
 
 use anyhow::{Context, Result};
@@ -99,52 +98,33 @@ impl fmt::Display for MinifyStats {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum AssetKind {
+pub(crate) enum AssetKind {
     Html,
     Css,
     Script,
     Module,
 }
 
+/// Minifies CSS and JS files under `output_dir` in place.
 pub(crate) fn minify_static_assets(output_dir: &Path) -> Result<MinifyStats> {
-    minify_output_dir_filtered(output_dir, &BTreeSet::new(), false)
+    minify_matching(output_dir, |kind| kind != AssetKind::Html)
 }
 
-pub(crate) fn minify_output_dir_excluding(
-    output_dir: &Path,
-    excluded: &BTreeSet<PathBuf>,
-) -> Result<MinifyStats> {
-    minify_output_dir_filtered(output_dir, excluded, true)
+/// Minifies HTML files under `output_dir` in place.
+pub(crate) fn minify_html(output_dir: &Path) -> Result<MinifyStats> {
+    minify_matching(output_dir, |kind| kind == AssetKind::Html)
 }
 
-fn minify_output_dir_filtered(
-    output_dir: &Path,
-    excluded: &BTreeSet<PathBuf>,
-    include_html: bool,
-) -> Result<MinifyStats> {
+fn minify_matching(output_dir: &Path, include: impl Fn(AssetKind) -> bool) -> Result<MinifyStats> {
     let mut files = Vec::new();
     for entry in WalkDir::new(output_dir).follow_links(false) {
         let entry = entry.with_context(|| format!("failed to walk {}", output_dir.display()))?;
         if !entry.file_type().is_file() {
             continue;
         }
-        let path = entry.path();
-        let relative = path.strip_prefix(output_dir).with_context(|| {
-            format!(
-                "output file {} is not under {}",
-                path.display(),
-                output_dir.display()
-            )
-        })?;
-        if excluded.contains(relative) {
-            continue;
-        }
-        let Some(kind) = classify(path) else {
+        let Some(kind) = classify(entry.path()).filter(|&kind| include(kind)) else {
             continue;
         };
-        if kind == AssetKind::Html && !include_html {
-            continue;
-        }
         files.push((entry.into_path(), kind));
     }
 
@@ -178,7 +158,12 @@ fn classify(path: &Path) -> Option<AssetKind> {
     if name.ends_with(".min.css") || name.ends_with(".min.js") {
         return None;
     }
-    match Path::new(&name).extension()?.to_str()? {
+    asset_kind(path)
+}
+
+/// Returns the kind of an HTML, CSS or JavaScript file from its extension, case-insensitively.
+pub(crate) fn asset_kind(path: &Path) -> Option<AssetKind> {
+    match path.extension()?.to_str()?.to_ascii_lowercase().as_str() {
         "html" | "htm" => Some(AssetKind::Html),
         "css" => Some(AssetKind::Css),
         "js" => Some(AssetKind::Script),
@@ -419,28 +404,18 @@ fn minified_printer<'a>() -> PrinterOptions<'a> {
     }
 }
 
-/// Parses `is_module` sources as ES modules and detects module syntax in the rest.
 fn minify_js_bytes(input: &[u8], path: &Path, is_module: bool) -> Option<Vec<u8>> {
     let source = decode_utf8(input, path, "JS")?;
 
     GLOBALS.set(&Globals::new(), || {
         let cm = Lrc::new(SourceMap::default());
-        let fm = cm.new_source_file(Lrc::new(FileName::Anon), source.to_owned());
-        let target = EsVersion::latest();
-        let mut errors = Vec::new();
-        let parsed = if is_module {
-            parse_file_as_module(&fm, Syntax::default(), target, None, &mut errors)
-                .map(Program::Module)
-        } else {
-            parse_file_as_program(&fm, Syntax::default(), target, None, &mut errors)
-        };
-        if let Some(error) = parsed.as_ref().err().or(errors.first()) {
-            let message = error.kind().msg();
-            tracing::warn!("skipping {} (JS parse failed): {message}", path.display());
-            return None;
-        }
-        let program = parsed.ok()?;
+        let program = parse_js(&cm, source, is_module)
+            .map_err(|message| {
+                tracing::warn!("skipping {} (JS parse failed): {message}", path.display());
+            })
+            .ok()?;
         let is_module = matches!(program, Program::Module(_));
+        let target = EsVersion::latest();
 
         let unresolved_mark = Mark::new();
         let top_level_mark = Mark::new();
@@ -473,6 +448,27 @@ fn minify_js_bytes(input: &[u8], path: &Path, is_module: bool) -> Option<Vec<u8>
         .ok()?;
         Some(output)
     })
+}
+
+/// Parses `is_module` sources as ES modules and detects module syntax in the rest, returning the
+/// first parse error's message on failure.
+pub(crate) fn parse_js(
+    cm: &Lrc<SourceMap>,
+    source: &str,
+    is_module: bool,
+) -> Result<Program, Cow<'static, str>> {
+    let fm = cm.new_source_file(Lrc::new(FileName::Anon), source.to_owned());
+    let target = EsVersion::latest();
+    let mut errors = Vec::new();
+    let parsed = if is_module {
+        parse_file_as_module(&fm, Syntax::default(), target, None, &mut errors).map(Program::Module)
+    } else {
+        parse_file_as_program(&fm, Syntax::default(), target, None, &mut errors)
+    };
+    match (parsed, errors.into_iter().next()) {
+        (Ok(program), None) => Ok(program),
+        (Err(error), _) | (Ok(_), Some(error)) => Err(error.kind().msg()),
+    }
 }
 
 fn js_minify_options(module: bool) -> JsMinifyOptions {
@@ -576,10 +572,33 @@ mod tests {
         );
     }
 
-    // ── minify_output_dir_excluding ──
+    // ── minify_html ──
 
     #[test]
-    fn minify_output_dir_excluding_processes_mixed_tree() {
+    fn minify_html_skips_css_and_js() {
+        let dir = tempfile::tempdir().unwrap();
+        let html = "<html>  <body>  text  </body>  </html>";
+        let css = ".foo { color: #ff0000; margin: 0px; }\n";
+        fs::write(dir.path().join("index.html"), html).unwrap();
+        fs::write(dir.path().join("style.css"), css).unwrap();
+
+        let stats = minify_html(dir.path()).unwrap();
+
+        assert_eq!(stats.files_processed, 1);
+        assert_eq!(
+            fs::read_to_string(dir.path().join("index.html")).unwrap(),
+            "text"
+        );
+        assert_eq!(
+            fs::read_to_string(dir.path().join("style.css")).unwrap(),
+            css
+        );
+    }
+
+    // ── minify_matching ──
+
+    #[test]
+    fn minify_matching_processes_mixed_tree() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
 
@@ -611,7 +630,7 @@ mod tests {
         fs::write(root.join("image.png"), png).unwrap();
         fs::write(root.join("vendor.min.css"), already_min).unwrap();
 
-        let stats = minify_output_dir_excluding(root, &BTreeSet::new()).unwrap();
+        let stats = minify_matching(root, |_| true).unwrap();
         assert_eq!(
             stats.files_processed, 4,
             "should process html / css / js / mjs"
@@ -652,28 +671,7 @@ mod tests {
     }
 
     #[test]
-    fn minify_output_dir_excluding_skips_selected_paths() {
-        let dir = tempfile::tempdir().unwrap();
-        let original = ".foo { color: #ff0000; margin: 0px; }\n";
-        fs::write(dir.path().join("keep.css"), original).unwrap();
-        fs::write(dir.path().join("minify.css"), original).unwrap();
-        let excluded = BTreeSet::from([PathBuf::from("keep.css")]);
-
-        let stats = minify_output_dir_excluding(dir.path(), &excluded).unwrap();
-
-        assert_eq!(stats.files_processed, 1);
-        assert_eq!(
-            fs::read_to_string(dir.path().join("keep.css")).unwrap(),
-            original
-        );
-        assert_eq!(
-            fs::read_to_string(dir.path().join("minify.css")).unwrap(),
-            ".foo{color:red;margin:0}"
-        );
-    }
-
-    #[test]
-    fn minify_output_dir_excluding_handles_deeply_nested_input() {
+    fn minify_matching_handles_deeply_nested_input() {
         let dir = tempfile::tempdir().unwrap();
         let chain = format!(
             "var a = 1;\nconsole.log({});\n",
@@ -687,7 +685,7 @@ mod tests {
         fs::write(dir.path().join("chain.js"), &chain).unwrap();
         fs::write(dir.path().join("spans.html"), &spans).unwrap();
 
-        let stats = minify_output_dir_excluding(dir.path(), &BTreeSet::new()).unwrap();
+        let stats = minify_matching(dir.path(), |_| true).unwrap();
 
         assert_eq!(stats.files_shrunk, 2);
         assert_eq!(
@@ -701,12 +699,12 @@ mod tests {
     }
 
     #[test]
-    fn minify_output_dir_excluding_preserves_smaller_original() {
+    fn minify_matching_preserves_smaller_original() {
         let dir = tempfile::tempdir().unwrap();
         let original = "console.log(1)";
         fs::write(dir.path().join("app.js"), original).unwrap();
 
-        let stats = minify_output_dir_excluding(dir.path(), &BTreeSet::new()).unwrap();
+        let stats = minify_matching(dir.path(), |_| true).unwrap();
 
         assert_eq!(stats.files_processed, 1);
         assert_eq!(stats.files_shrunk, 0);
@@ -719,7 +717,7 @@ mod tests {
     }
 
     #[test]
-    fn minify_output_dir_excluding_tolerates_broken_asset() {
+    fn minify_matching_tolerates_broken_asset() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
 
@@ -729,7 +727,7 @@ mod tests {
         fs::write(root.join("style.css"), good_css).unwrap();
         fs::write(root.join("broken.js"), broken_js).unwrap();
 
-        let stats = minify_output_dir_excluding(root, &BTreeSet::new()).unwrap();
+        let stats = minify_matching(root, |_| true).unwrap();
         assert_eq!(stats.files_processed, 2);
         assert_eq!(stats.files_shrunk, 1, "only CSS should shrink");
         assert_eq!(stats.bytes_in, (good_css.len() + broken_js.len()) as u64);
@@ -742,9 +740,9 @@ mod tests {
     }
 
     #[test]
-    fn minify_output_dir_excluding_empty_directory_returns_zero_stats() {
+    fn minify_matching_empty_directory_returns_zero_stats() {
         let dir = tempfile::tempdir().unwrap();
-        let stats = minify_output_dir_excluding(dir.path(), &BTreeSet::new()).unwrap();
+        let stats = minify_matching(dir.path(), |_| true).unwrap();
         assert_eq!(stats.files_processed, 0);
         assert_eq!(stats.files_shrunk, 0);
         assert_eq!(stats.bytes_in, 0);
