@@ -277,13 +277,13 @@ impl Paginate {
         #[serde(default)]
         struct Params {
             paginate: Option<NonZeroUsize>,
-            home: Scope,
-            section: Scope,
+            home: ListingParams,
+            section: ListingParams,
         }
 
         #[derive(Default, Deserialize)]
         #[serde(default)]
-        struct Scope {
+        struct ListingParams {
             paginate: Option<NonZeroUsize>,
         }
 
@@ -551,6 +551,7 @@ mod tests {
                 r#"params.home.paginate = "8""#,
                 "invalid pagination in [params]",
             ),
+            (r#"params.home = "wide""#, "expected struct ListingParams"),
         ] {
             let root = tempfile::tempdir().unwrap();
             write_test_file(root.path(), "config.toml", contents);
