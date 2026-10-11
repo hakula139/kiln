@@ -226,17 +226,10 @@ mod tests {
         Body
     "#};
 
-    /// Writes `content` to `relative` under `<root>/content` and parses it.
-    fn load_at(root: &Path, relative: &str, content: &str) -> Result<Page> {
-        write_test_file(root, &format!("content/{relative}"), content);
-        let content_dir = root.join("content");
-        Page::load(content, &content_dir.join(relative), &content_dir)
-    }
-
     // ── Page::load ──
 
     #[test]
-    fn load_bundle_derives_metadata_and_assets() {
+    fn bundle_derives_metadata_and_assets() {
         let root = tempfile::tempdir().unwrap();
         let bundle = root.path().join("content/posts/note/hello");
         for (path, contents) in [
@@ -294,7 +287,7 @@ mod tests {
     }
 
     #[test]
-    fn load_standalone_file_has_no_assets() {
+    fn standalone_file_has_no_assets() {
         let root = tempfile::tempdir().unwrap();
         write_test_file(root.path(), "content/image.png", "fake-png");
 
@@ -306,7 +299,7 @@ mod tests {
     }
 
     #[test]
-    fn load_invalid_metadata_returns_error() {
+    fn reports_invalid_frontmatter_and_slug() {
         for (content, expected) in [
             (
                 indoc! {"
@@ -336,7 +329,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn load_skips_private_and_nested_bundle_invalid_symlinks() {
+    fn skips_private_and_nested_bundle_symlinks() {
         let root = tempfile::tempdir().unwrap();
         let bundle = root.path().join("content/example");
         write_test_file(&bundle, "visible.txt", "published");
@@ -352,7 +345,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn load_unreadable_bundle_returns_error() {
+    fn reports_unreadable_bundle() {
         for unreadable in ["", "broken"] {
             let root = tempfile::tempdir().unwrap();
             let bundle = root.path().join("content/hello");
@@ -379,7 +372,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn load_invalid_asset_symlink_returns_error() {
+    fn reports_broken_and_cyclic_asset_symlinks() {
         for cycle in [false, true] {
             let root = tempfile::tempdir().unwrap();
             let assets = root.path().join("content/example/assets");
@@ -411,7 +404,7 @@ mod tests {
     // ── output_dir ──
 
     #[test]
-    fn output_dir_uses_source_location_and_slug() {
+    fn uses_source_location_and_slug() {
         for (source, slug, expected) in [
             ("posts/foo/bar/index.md", None, "posts/foo/bar"),
             ("example/index.md", None, "example"),
@@ -438,7 +431,7 @@ mod tests {
     }
 
     #[test]
-    fn output_dir_invalid_slug_returns_error() {
+    fn rejects_slugs_other_than_one_component() {
         for slug in [
             "",
             ".",
@@ -449,8 +442,10 @@ mod tests {
             "c:drive",
             "/absolute",
         ] {
-            assert!(
-                output_dir(Path::new("example/index.md"), Some(slug)).is_err(),
+            let error = output_dir(Path::new("example/index.md"), Some(slug)).unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                "slug must be a single nonempty path component",
                 "{slug}"
             );
         }
@@ -459,7 +454,7 @@ mod tests {
     // ── page_kind ──
 
     #[test]
-    fn page_kind_classifies_content_paths() {
+    fn classifies_content_paths() {
         let note = PageKind::Post {
             section: Some("note".into()),
         };
@@ -479,20 +474,21 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn page_kind_non_utf8_section_returns_error() {
+    fn rejects_non_utf8_section() {
         use std::ffi::OsStr;
         use std::os::unix::ffi::OsStrExt;
 
         let path = Path::new("posts")
             .join(OsStr::from_bytes(&[0xff]))
             .join("hello.md");
-        assert!(page_kind(&path).is_err());
+        let error = page_kind(&path).unwrap_err();
+        assert!(error.to_string().ends_with("is not UTF-8"), "{error}");
     }
 
     // ── extract_summary ──
 
     #[test]
-    fn extract_summary_basic() {
+    fn extracts_text_before_separator() {
         let body = indoc! {r"
             This is the summary.
 
@@ -504,61 +500,41 @@ mod tests {
     }
 
     #[test]
-    fn extract_summary_strips_reference_links() {
-        let body = indoc! {r"
-            See [the docs][docs-ref] and the [home page].
+    fn reduces_markup_to_plain_text() {
+        for (summary, expected) in [
+            (
+                indoc! {r"
+                    See [the docs][docs-ref] and the [home page].
 
-            [docs-ref]: https://example.com/docs
-            [home page]: https://example.com
-
-            <!--more-->
-
-            Full content here.
-        "};
-        assert_eq!(
-            extract_summary(body).unwrap(),
-            "See the docs and the home page."
-        );
+                    [docs-ref]: https://example.com/docs
+                    [home page]: https://example.com
+                "},
+                "See the docs and the home page.",
+            ),
+            (
+                "A **bold** and *italic* intro with [a link](https://example.com).",
+                "A bold and italic intro with a link.",
+            ),
+            (
+                "Text before ![an image](photo.jpg) and after.",
+                "Text before and after.",
+            ),
+            (
+                "Use `strip_markdown` to clean text.",
+                "Use strip_markdown to clean text.",
+            ),
+            (
+                r#""Quoted" text -- with 'marks'..."#,
+                r#""Quoted" text -- with 'marks'..."#,
+            ),
+        ] {
+            let body = format!("{summary}\n\n<!--more-->\n");
+            assert_eq!(extract_summary(&body).unwrap(), expected, "{summary}");
+        }
     }
 
     #[test]
-    fn extract_summary_strips_inline_links_and_formatting() {
-        let body = indoc! {r"
-            A **bold** and *italic* intro with [a link](https://example.com).
-
-            <!--more-->
-        "};
-        assert_eq!(
-            extract_summary(body).unwrap(),
-            "A bold and italic intro with a link."
-        );
-    }
-
-    #[test]
-    fn extract_summary_strips_images() {
-        let body = indoc! {r"
-            Text before ![an image](photo.jpg) and after.
-
-            <!--more-->
-        "};
-        assert_eq!(extract_summary(body).unwrap(), "Text before and after.");
-    }
-
-    #[test]
-    fn extract_summary_preserves_inline_code() {
-        let body = indoc! {r"
-            Use `strip_markdown` to clean text.
-
-            <!--more-->
-        "};
-        assert_eq!(
-            extract_summary(body).unwrap(),
-            "Use strip_markdown to clean text."
-        );
-    }
-
-    #[test]
-    fn extract_summary_resolves_reference_links_after_separator() {
+    fn resolves_reference_links_after_separator() {
         let body = indoc! {r"
             See [the project][project-ref] for details.
 
@@ -575,7 +551,7 @@ mod tests {
     }
 
     #[test]
-    fn extract_summary_preserves_paragraph_breaks() {
+    fn preserves_paragraph_breaks() {
         let body = indoc! {r"
             First
             paragraph.
@@ -592,31 +568,23 @@ mod tests {
     }
 
     #[test]
-    fn extract_summary_keeps_authored_punctuation() {
-        let body = indoc! {r#"
-            "Quoted" text -- with 'marks'...
+    fn none_without_separator_or_summary_text() {
+        for body in [
+            "No summary separator in this content.",
+            indoc! {r"
+                <!--more-->
 
-            <!--more-->
-        "#};
-        assert_eq!(
-            extract_summary(body).unwrap(),
-            r#""Quoted" text -- with 'marks'..."#
-        );
+                Content after.
+            "},
+        ] {
+            assert_eq!(extract_summary(body), None, "{body}");
+        }
     }
 
-    #[test]
-    fn extract_summary_no_separator_returns_none() {
-        let body = "No summary separator in this content.";
-        assert!(extract_summary(body).is_none());
-    }
-
-    #[test]
-    fn extract_summary_empty_before_separator_returns_none() {
-        let body = indoc! {r"
-            <!--more-->
-
-            Content after.
-        "};
-        assert!(extract_summary(body).is_none());
+    /// Writes `content` to `relative` under `<root>/content` and parses it.
+    fn load_at(root: &Path, relative: &str, content: &str) -> Result<Page> {
+        write_test_file(root, &format!("content/{relative}"), content);
+        let content_dir = root.join("content");
+        Page::load(content, &content_dir.join(relative), &content_dir)
     }
 }

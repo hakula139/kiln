@@ -26,7 +26,7 @@ mod tests {
     // ── load_index_title ──
 
     #[test]
-    fn load_index_title_missing_empty_and_named() {
+    fn returns_title_only_when_named() {
         let directory = tempfile::tempdir().unwrap();
         assert_eq!(load_index_title(directory.path()).unwrap(), None);
         for (content, expected) in [
@@ -56,7 +56,7 @@ mod tests {
     }
 
     #[test]
-    fn load_index_title_malformed_or_unreadable_returns_error() {
+    fn reports_malformed_or_unreadable_index() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("_index.md");
         fs::write(
@@ -69,9 +69,17 @@ mod tests {
         )
         .unwrap();
         let error = load_index_title(directory.path()).unwrap_err();
-        assert!(format!("{error:#}").contains("_index.md"));
+        assert_eq!(
+            error.to_string(),
+            format!("invalid frontmatter in {}", path.display())
+        );
+
         fs::remove_file(&path).unwrap();
         fs::create_dir(&path).unwrap();
-        assert!(load_index_title(directory.path()).is_err());
+        let error = load_index_title(directory.path()).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            format!("failed to read {}", path.display())
+        );
     }
 }
