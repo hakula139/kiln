@@ -351,6 +351,28 @@ mod tests {
     }
 
     #[test]
+    fn parse_pandoc_attrs_splits_tokens_on_unicode_whitespace() {
+        let result = parse_pandoc_attrs("title=\"a}b\"\u{3000}\"c d\"\u{3000}highlight=2");
+        assert_eq!(
+            result.named,
+            [
+                ("title", Cow::Borrowed("a}b")),
+                ("highlight", Cow::Borrowed("2"))
+            ]
+        );
+        assert_eq!(result.positional, ["c d"]);
+    }
+
+    #[test]
+    fn parse_pandoc_attrs_keeps_quotes_inside_unquoted_tokens() {
+        let result = parse_pandoc_attrs(r#"#a"b .c"d .last title=e"f"#);
+        assert_eq!(result.id, Some(r#"a"b"#));
+        assert_eq!(result.classes, [r#"c"d"#, "last"]);
+        assert_eq!(result.named, [("title", Cow::Borrowed(r#"e"f"#))]);
+        assert_eq!(result.positional, Vec::<Cow<'_, str>>::new());
+    }
+
+    #[test]
     fn parse_pandoc_attrs_empty() {
         let result = parse_pandoc_attrs("");
         assert!(result.id.is_none());
