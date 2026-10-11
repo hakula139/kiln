@@ -144,6 +144,11 @@ mod timestamp_serde {
             Ok(None)
         }
 
+        // Flattened YAML nulls, as in `kiln convert`, arrive as unit values.
+        fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+
         fn visit_some<D: Deserializer<'de>>(self, d: D) -> Result<Self::Value, D::Error> {
             d.deserialize_any(TimestampVisitor).map(Some)
         }

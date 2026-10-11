@@ -112,6 +112,8 @@ mod tests {
     fn convert_frontmatter_minimal() {
         let yaml = indoc! {"
             title: Minimal
+            date: ~
+            updated: null
         "};
         let (toml, _) = convert_frontmatter(yaml).unwrap();
         assert_eq!(
