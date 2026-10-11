@@ -236,10 +236,23 @@ jobs:
             tag=next
           fi
 
+          version=${GITHUB_REF_NAME#v}
+
+          # npm versions are immutable, so a rerun skips what an earlier attempt published.
+          publish() {
+            local name
+            name=$(tar -xOzf "$1" package/package.json | jq -r .name)
+            if npm view "$name@$version" version > /dev/null 2>&1; then
+              echo "Skipping $name@$version, which is already published."
+              return
+            fi
+            npm publish "$1" --tag "$tag"
+          }
+
           for package in npm-packages/*-{darwin-arm64,linux-x64-gnu,win32-x64-msvc}-*.tgz; do
-            npm publish "$package" --tag "$tag"
+            publish "$package"
           done
 
           for variant in kiln kiln-extended; do
-            npm publish "npm-packages/kiln-ssg-$variant-${GITHUB_REF_NAME#v}.tgz" --tag "$tag"
+            publish "npm-packages/kiln-ssg-$variant-$version.tgz"
           done
