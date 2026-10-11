@@ -8,7 +8,8 @@ pub(crate) const YAML_DELIMITER: &str = "---";
 
 /// Converts supported YAML metadata and reports the sorted fields that need manual migration.
 ///
-/// Hugo's `featuredImage` key and bare-string image sources become a `featured_image` table.
+/// Hugo's `lastmod` becomes `updated`, and its `featuredImage` key and bare-string image sources
+/// become a `featured_image` table.
 pub(crate) fn convert_frontmatter(yaml_str: &str) -> Result<(String, Vec<String>)> {
     let mut value: Value =
         serde_yaml::from_str(yaml_str).context("failed to parse YAML frontmatter")?;
@@ -33,7 +34,7 @@ pub(crate) fn convert_frontmatter(yaml_str: &str) -> Result<(String, Vec<String>
                 );
             }
         }
-        normalize_featured_image(mapping);
+        normalize_hugo_keys(mapping);
         retain_fields(mapping, "", &Frontmatter::FIELDS, &mut unsupported);
     }
     unsupported.sort();
@@ -64,11 +65,14 @@ fn retain_fields(
     });
 }
 
-fn normalize_featured_image(mapping: &mut Mapping) {
-    if !mapping.contains_key("featured_image")
-        && let Some(image) = mapping.remove("featuredImage")
-    {
-        mapping.insert("featured_image".into(), image);
+/// Renames Hugo keys to their kiln equivalents unless the kiln key is already authored.
+fn normalize_hugo_keys(mapping: &mut Mapping) {
+    for (hugo, kiln) in [("featuredImage", "featured_image"), ("lastmod", "updated")] {
+        if !mapping.contains_key(kiln)
+            && let Some(value) = mapping.remove(hugo)
+        {
+            mapping.insert(kiln.into(), value);
+        }
     }
     if let Some(image @ Value::String(_)) = mapping.get_mut("featured_image") {
         let src = std::mem::take(image);
@@ -107,14 +111,22 @@ mod tests {
             description: A description
             slug: my-slug
             date: 2024-01-15T10:30:00+08:00
-            featuredImage: /img.webp
+            lastmod: 2024-02-01T08:00:00+08:00
+            featuredImage:
+              src: /img.webp
+              position: top
+              credit:
+                title: Artwork
+                author: Example
+                url: https://example.com/art
             tags: [a, b]
             categories: [tutorial]
             draft: true
             weight: -3
             license: CC BY-NC-SA 4.0
+            heading_numbering: true
         "};
-        let (toml, _) = convert_frontmatter(yaml).unwrap();
+        let (toml, unsupported) = convert_frontmatter(yaml).unwrap();
         assert_eq!(
             toml,
             indoc! {r#"
@@ -122,6 +134,7 @@ mod tests {
                 description = "A description"
                 slug = "my-slug"
                 date = "2024-01-15T02:30:00Z"
+                updated = "2024-02-01T00:00:00Z"
                 tags = [
                     "a",
                     "b",
@@ -129,11 +142,35 @@ mod tests {
                 draft = true
                 weight = -3
                 license = "CC BY-NC-SA 4.0"
+                heading_numbering = true
 
                 [featured_image]
                 src = "/img.webp"
+                position = "top"
+
+                [featured_image.credit]
+                title = "Artwork"
+                author = "Example"
+                url = "https://example.com/art"
             "#}
         );
+        assert_eq!(unsupported, ["categories"]);
+    }
+
+    #[test]
+    fn keeps_authored_updated_over_lastmod() {
+        let (toml, unsupported) = convert_frontmatter(indoc! {"
+            updated: 2024-03-01T00:00:00Z
+            lastmod: 2024-02-01T00:00:00Z
+        "})
+        .unwrap();
+        assert_eq!(
+            toml,
+            indoc! {r#"
+                updated = "2024-03-01T00:00:00Z"
+            "#}
+        );
+        assert_eq!(unsupported, ["lastmod"]);
     }
 
     #[test]

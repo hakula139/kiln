@@ -177,23 +177,51 @@ fn convert_malformed_frontmatter_without_output_file_returns_error() {
 
 #[cfg(unix)]
 #[test]
-fn convert_source_file_symlink_copies_contents() {
+fn convert_source_symlinks_copy_contents() {
     let site = TestSite::empty();
     let (source, destination) = (site.path("source"), site.path("destination"));
-    site.write("outside.txt", "outside");
-    fs::create_dir_all(source.join("content")).unwrap();
+    site.write("outside.txt", "outside")
+        .write("bundle/index.md", "Linked bundle");
+    fs::create_dir_all(source.join("content/posts")).unwrap();
     symlink(site.path("outside.txt"), source.join("content/link.txt")).unwrap();
+    symlink(site.path("bundle"), source.join("content/posts/linked")).unwrap();
 
     convert(&source, &destination).unwrap();
 
-    let converted = destination.join("content/link.txt");
-    assert_eq!(fs::read_to_string(&converted).unwrap(), "outside");
-    assert!(
-        !fs::symlink_metadata(converted)
-            .unwrap()
-            .file_type()
-            .is_symlink()
-    );
+    for (path, contents) in [
+        ("content/link.txt", "outside"),
+        ("content/posts/linked/index.md", "Linked bundle"),
+    ] {
+        let converted = destination.join(path);
+        assert_eq!(fs::read_to_string(&converted).unwrap(), contents, "{path}");
+        assert!(
+            !fs::symlink_metadata(&converted)
+                .unwrap()
+                .file_type()
+                .is_symlink(),
+            "{path}"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn convert_invalid_source_links_return_error() {
+    for (target, expected) in [
+        ("destination/content", "overlaps destination"),
+        ("missing", "failed to read entry in"),
+    ] {
+        let site = TestSite::empty();
+        let (source, destination) = (site.path("source"), site.path("destination"));
+        site.write("destination/content/existing.txt", "existing");
+        fs::create_dir_all(source.join("content")).unwrap();
+        symlink(site.path(target), source.join("content/link")).unwrap();
+
+        let error = convert(&source, &destination).unwrap_err();
+
+        assert!(error.to_string().contains(expected), "{target}: {error}");
+        assert!(!destination.join("content/link").exists(), "{target}");
+    }
 }
 
 #[cfg(unix)]
