@@ -1,21 +1,32 @@
 {
   avifSupport ? true,
-  cargoLock,
   cssCompiler,
   dav1d,
   git,
   lib,
   makeWrapper,
+  pagefind,
   pkg-config,
   rustPlatform,
-  src,
   tzdata,
-  version,
 }:
 
+let
+  fs = lib.fileset;
+in
 rustPlatform.buildRustPackage {
   pname = "kiln";
-  inherit cargoLock src version;
+  inherit ((lib.importTOML ./Cargo.toml).workspace.package) version;
+
+  src = fs.toSource {
+    root = ./.;
+    fileset = fs.unions [
+      ./Cargo.toml
+      ./Cargo.lock
+      ./crates
+    ];
+  };
+  cargoLock.lockFile = ./Cargo.lock;
 
   buildFeatures = lib.optional avifSupport "avif";
 
@@ -30,6 +41,7 @@ rustPlatform.buildRustPackage {
   nativeCheckInputs = [
     cssCompiler
     git
+    pagefind
     tzdata
   ];
   preCheck = ''
@@ -37,7 +49,12 @@ rustPlatform.buildRustPackage {
   '';
 
   postFixup = ''
-    wrapProgram $out/bin/kiln --prefix PATH : ${lib.makeBinPath [ cssCompiler ]}
+    wrapProgram $out/bin/kiln --prefix PATH : ${
+      lib.makeBinPath [
+        cssCompiler
+        pagefind
+      ]
+    }
   '';
 
   meta = {

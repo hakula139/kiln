@@ -106,10 +106,10 @@ To use kiln in another flake, add this input:
 
 ```nix
 inputs.kiln.url = "github:hakula139/kiln";
-# Outputs: packages.${system}.{default,kiln,kiln-tailwindcss,pagefind}
+# Outputs: packages.${system}.{default,kiln}
 ```
 
-`pagefind` ships alongside `kiln` so consumers don't have to pin the search backend separately.
+The Nix package puts the Tailwind compiler and Pagefind on kiln's `PATH`, so stylesheet compilation and search work without separate installs.
 
 ## First Site
 

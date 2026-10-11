@@ -30,8 +30,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 ├── .github/       # CI, release and benchmark workflows, plus shared setup actions
 ├── crates/kiln/   # SSG engine: library (lib.rs) + CLI binary (main.rs), tests and benches
 ├── docs/          # User guides, benchmarks and roadmap
-├── npm/           # npm launcher and release packaging script
-└── packages/      # Nix package definitions used by flake.nix
+└── npm/           # npm launcher and release packaging script
 ```
 
 ### Crate Structure (`crates/kiln/src/`)
@@ -238,11 +237,11 @@ Append to `devShells.default.packages` in `flake.nix`. `*-sys` crates that use `
 Run after implementation and before review:
 
 ```bash
-cargo fmt --all --check                                                                # formatting
+cargo fmt --all --check                                           # formatting
 cargo build
-cargo clippy --all-targets --all-features -- -D warnings                               # zero warnings (pedantic lints)
-cargo test --all-features -- --include-ignored
-cargo llvm-cov --all-features --ignore-filename-regex 'main\.rs' -- --include-ignored  # check test coverage
+cargo clippy --all-targets --all-features -- -D warnings          # zero warnings (pedantic lints)
+cargo test --all-features
+cargo llvm-cov --all-features --ignore-filename-regex 'main\.rs'  # check test coverage
 ```
 
 ## Code Review
