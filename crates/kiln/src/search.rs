@@ -7,24 +7,15 @@ use indoc::formatdoc;
 const DEFAULT_BINARY: &str = "pagefind";
 
 /// Indexes built site HTML in `output_dir`, writing search assets to `output_dir/pagefind/`.
-///
-/// # Errors
-///
-/// Returns an error if the output path is not UTF-8, the binary cannot be executed, or it exits
-/// with a non-zero status. Exit failures include stdout and stderr.
-pub fn run_pagefind(output_dir: &Path, binary: Option<&str>) -> Result<()> {
+pub(crate) fn run_pagefind(output_dir: &Path, binary: Option<&str>) -> Result<()> {
     let command = binary.unwrap_or(DEFAULT_BINARY);
-    let site_arg = output_dir
-        .to_str()
-        .context("output directory path is not valid UTF-8")?;
+    let run = |program: &str| Command::new(program).arg("--site").arg(output_dir).output();
 
-    let output = Command::new(command).args(["--site", site_arg]).output();
+    let output = run(command);
     #[cfg(windows)]
     let output = output.or_else(|error| {
         if binary.is_none() && error.kind() == std::io::ErrorKind::NotFound {
-            Command::new("pagefind.cmd")
-                .args(["--site", site_arg])
-                .output()
+            run("pagefind.cmd")
         } else {
             Err(error)
         }

@@ -52,7 +52,7 @@ fn build_renders_post_with_and_without_minification() {
         );
     }
 
-    site.build_with(BuildOptions {
+    site.build_with(&BuildOptions {
         minify: true,
         ..Default::default()
     })
@@ -84,7 +84,7 @@ fn build_output_dir_override_preserves_configured_output() {
     let output = tempfile::tempdir().unwrap();
     fs::write(output.path().join("stale.html"), "Stale page").unwrap();
 
-    site.build_with(BuildOptions {
+    site.build_with(&BuildOptions {
         output_dir_override: Some(output.path()),
         ..Default::default()
     })
@@ -107,7 +107,7 @@ fn build_base_url_override() {
     )
     .titled_page("posts/hello", "Hello");
 
-    site.build_with(BuildOptions {
+    site.build_with(&BuildOptions {
         base_url_override: Some("http://localhost:5456/"),
         ..Default::default()
     })

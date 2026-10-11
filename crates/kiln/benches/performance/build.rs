@@ -7,8 +7,6 @@ use criterion::{BenchmarkId, Criterion, SamplingMode, Throughput};
 use scraper::{Html, Selector};
 use walkdir::WalkDir;
 
-use kiln::feed::DEFAULT_FEED_LIMIT;
-
 use super::fixtures::{COMMITTED, INDEX_TAGS, PAGINATE, PROSE, Site};
 
 /// Includes CLI startup and prior-output cleanup, with fixture validation outside sampling.
@@ -72,10 +70,7 @@ fn verify_build(site: &Site, pages: usize, minify: bool, git: bool) {
     );
     verify_listings(&output, pages);
     let feed = fs::read_to_string(output.join("index.xml")).unwrap();
-    assert_eq!(
-        feed.matches("<item>").count(),
-        pages.min(DEFAULT_FEED_LIMIT)
-    );
+    assert_eq!(feed.matches("<item>").count(), pages.min(20));
     assert!(feed.contains("<title>Post 0</title>"));
     let sitemap = fs::read_to_string(output.join("sitemap.xml")).unwrap();
     let lastmods = sitemap.matches("<lastmod>").count();

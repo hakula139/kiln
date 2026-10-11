@@ -85,7 +85,7 @@ fn main() -> Result<()> {
             let base_url = base_url.filter(|s| !s.is_empty());
             kiln::build(
                 &root,
-                BuildOptions {
+                &BuildOptions {
                     minify,
                     base_url_override: base_url.as_deref(),
                     ..Default::default()

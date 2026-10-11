@@ -39,7 +39,7 @@ fn build_fingerprints_merged_static_assets_after_minification() {
             ".site { color: #ff0000; margin: 0px; }\n",
         );
 
-    site.build_with(BuildOptions {
+    site.build_with(&BuildOptions {
         minify: true,
         ..Default::default()
     })

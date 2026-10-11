@@ -92,7 +92,7 @@ fn build_failure_preserves_previous_output_returns_error() {
         break_site(&site);
 
         let error = site
-            .build_with(BuildOptions {
+            .build_with(&BuildOptions {
                 base_url_override,
                 ..Default::default()
             })
@@ -122,7 +122,7 @@ fn build_existing_file_output_returns_error() {
         site.write("config.toml", &format!(r#"output_dir = "{configured}""#));
 
         let error = site
-            .build_with(BuildOptions {
+            .build_with(&BuildOptions {
                 output_dir_override,
                 ..Default::default()
             })
@@ -144,7 +144,7 @@ fn build_output_override_input_overlap_returns_error() {
     for name in ["content", "assets", "static", ".git"] {
         let output = site.path(name);
         let error = site
-            .build_with(BuildOptions {
+            .build_with(&BuildOptions {
                 output_dir_override: Some(&output),
                 ..Default::default()
             })
