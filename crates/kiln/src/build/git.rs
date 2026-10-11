@@ -98,16 +98,10 @@ mod tests {
     use super::*;
     use crate::test_utils::{git, git_commit};
 
-    fn repo() -> TempDir {
-        let dir = tempfile::tempdir().unwrap();
-        git(dir.path(), &["init", "-q"]);
-        dir
-    }
-
     // ── GitInfo::new ──
 
     #[test]
-    fn git_info_new_resolves_nested_site_files() {
+    fn resolves_nested_site_files() {
         let dir = repo();
         let content = dir.path().join("my site/content");
         fs::create_dir_all(&content).unwrap();
@@ -126,7 +120,7 @@ mod tests {
     }
 
     #[test]
-    fn git_info_new_omits_missing_empty_and_shallow_history() {
+    fn omits_missing_empty_and_shallow_history() {
         let dir = repo();
         let content = dir.path().join("content");
         fs::create_dir(&content).unwrap();
@@ -151,7 +145,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn git_info_new_reads_site_with_leading_colon() {
+    fn reads_site_with_leading_colon() {
         let dir = repo();
         let content = dir.path().join(":my site/content");
         fs::create_dir_all(&content).unwrap();
@@ -170,7 +164,7 @@ mod tests {
     // ── GitInfo::last_modified ──
 
     #[test]
-    fn last_modified_uses_newest_commit_per_file() {
+    fn uses_newest_commit_per_file() {
         let dir = repo();
         let content = dir.path().join("content");
         fs::create_dir(&content).unwrap();
@@ -240,7 +234,7 @@ mod tests {
     // ── newest_timestamps ──
 
     #[test]
-    fn newest_timestamps_keeps_first_commit_and_skips_non_utf8_paths() {
+    fn keeps_first_commit_and_skips_non_utf8_paths() {
         let log = b"\x002024-02-01T00:00:00Z\x00\nbad\xff.md\x00post.md\x00\x002024-01-01T00:00:00Z\x00\npost.md\x00old.md\x00";
 
         assert_eq!(
@@ -256,5 +250,11 @@ mod tests {
                 ),
             ]))
         );
+    }
+
+    fn repo() -> TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        git(dir.path(), &["init", "-q"]);
+        dir
     }
 }
