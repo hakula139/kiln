@@ -204,7 +204,7 @@ impl MarkdownRenderer<'_> {
             self.assets.add_feature(Feature::Mermaid);
             render_mermaid(&code)
         } else {
-            highlight_code(&code, &spec, self.options.code_max_lines)
+            highlight_code(&code, &spec, self.options)
         }
     }
 

@@ -25,6 +25,7 @@ use pulldown_cmark::Event;
 use serde::{Deserialize, Deserializer};
 
 use self::lqip::{ImageMeta, ImageResolver};
+use crate::i18n::I18n;
 use crate::static_assets::StaticAssetManifest;
 
 type Spanned = (Event<'static>, Range<usize>);
@@ -50,7 +51,8 @@ impl PageResources<'_> {
     }
 }
 
-/// Site-wide render settings read from the `[params]` table.
+/// Site-wide render settings read from the `[params]` table, plus the localized strings the
+/// renderer emits.
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub struct RenderOptions {
@@ -61,6 +63,8 @@ pub struct RenderOptions {
     pub fontawesome: bool,
     /// In terminal columns.
     pub table_nowrap_width: Option<usize>,
+    #[serde(skip)]
+    pub copy_button: CopyButton,
 }
 
 impl RenderOptions {
@@ -81,6 +85,24 @@ fn deserialize_line_limit<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Option<NonZeroUsize>, D::Error> {
     Ok(Option::<usize>::deserialize(deserializer)?.and_then(NonZeroUsize::new))
+}
+
+/// Localized labels of the code-block copy button.
+#[derive(Debug, Default)]
+pub struct CopyButton {
+    pub text: String,
+    pub aria_label: String,
+}
+
+impl CopyButton {
+    /// Resolves the `copy` and `copy_code` translation keys.
+    #[must_use]
+    pub(crate) fn new(i18n: &I18n) -> Self {
+        Self {
+            text: i18n.t("copy").into_owned(),
+            aria_label: i18n.t("copy_code").into_owned(),
+        }
+    }
 }
 
 #[cfg(test)]

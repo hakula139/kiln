@@ -1,5 +1,4 @@
 use std::fmt::Write;
-use std::num::NonZeroUsize;
 use std::sync::LazyLock;
 
 use itertools::Itertools;
@@ -8,6 +7,7 @@ use syntect::parsing::{ParseState, ScopeStack, ScopeStackOp, SyntaxReference, Sy
 use syntect::util::LinesWithEndings;
 use tracing::{debug, warn};
 
+use super::RenderOptions;
 use super::code_block::{CodeBlockSpec, Disclosure};
 use crate::html::{escape, indent, writeln_indented};
 use crate::text::capitalize;
@@ -16,22 +16,18 @@ static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(two_face::syntax::extra_n
 
 /// Highlights a code block with line numbers and a header (language pill or title, copy button).
 ///
-/// `max_lines` applies unless the fence sets `collapse` or `expand`. Unrecognized languages render
-/// as plain text, and the display label comes from the language tag via [`display_label`].
+/// `code_max_lines` applies unless the fence sets `collapse` or `expand`. Unrecognized languages
+/// render as plain text, and the display label comes from the language tag via [`display_label`].
 #[must_use]
-pub(super) fn highlight_code(
-    code: &str,
-    spec: &CodeBlockSpec,
-    max_lines: Option<NonZeroUsize>,
-) -> String {
-    highlight_with(&SYNTAX_SET, code, spec, max_lines)
+pub(super) fn highlight_code(code: &str, spec: &CodeBlockSpec, options: &RenderOptions) -> String {
+    highlight_with(&SYNTAX_SET, code, spec, options)
 }
 
 fn highlight_with(
     syntax_set: &SyntaxSet,
     code: &str,
     spec: &CodeBlockSpec,
-    max_lines: Option<NonZeroUsize>,
+    options: &RenderOptions,
 ) -> String {
     let lang = spec.lang.as_deref().unwrap_or("");
     let syntax = syntax_set.find_syntax_by_token(lang).unwrap_or_else(|| {
@@ -90,13 +86,16 @@ fn highlight_with(
     writeln_indented!(
         &mut html,
         2,
-        r#"<button class="copy-btn" aria-label="Copy code">Copy</button>"#
+        r#"<button class="copy-btn" aria-label="{}">{}</button>"#,
+        escape(&options.copy_button.aria_label),
+        escape(&options.copy_button.text)
     );
     writeln_indented!(&mut html, 1, "</summary>");
 
     // ── Code body ──
 
-    let max_lines_attr = max_lines
+    let max_lines_attr = options
+        .code_max_lines
         .filter(|_| spec.disclosure == Disclosure::Auto)
         .map(|n| format!(r#" data-max-lines="{n}" style="--max-lines: {n}""#))
         .unwrap_or_default();
@@ -252,25 +251,27 @@ fn is_plain_text(lang: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
+    use std::num::NonZeroUsize;
 
     use indoc::indoc;
     use syntect::parsing::syntax_definition::{Context, MatchOperation, MatchPattern, Pattern};
     use syntect::parsing::{Scope, SyntaxDefinition, SyntaxSetBuilder};
 
     use super::*;
+    use crate::render::CopyButton;
     use crate::render::code_block::parse_fence_info;
 
     // ── highlight_code ──
 
     #[test]
-    fn renders_details_table() {
+    fn renders_details_table_with_escaped_copy_labels() {
         assert_eq!(
             highlight("text {#my-code .wide}", "a <b>\n\nc\n"),
             indoc! {r#"
                 <details class="code-block wide" id="my-code" data-lang="text" open>
                   <summary class="code-header">
                     <span class="code-lang">Plain Text</span>
-                    <button class="copy-btn" aria-label="Copy code">Copy</button>
+                    <button class="copy-btn" aria-label="复制 &quot;代码&quot;">复制 &lt;&amp;&gt;</button>
                   </summary>
                   <div class="code-body">
                     <div class="highlight">
@@ -449,7 +450,10 @@ mod tests {
             let html = highlight_code(
                 "fn main() {}\n",
                 &parse_fence_info(info),
-                NonZeroUsize::new(40),
+                &RenderOptions {
+                    code_max_lines: NonZeroUsize::new(40),
+                    ..RenderOptions::default()
+                },
             );
             let fragment = scraper::Html::parse_fragment(&html);
             let select = |selector| {
@@ -517,7 +521,7 @@ mod tests {
         let spec = parse_fence_info(r#"example {highlight="2"}"#);
 
         for code in [code, code.trim_end(), &crlf] {
-            let html = highlight_with(&syntax_set, code, &spec, None);
+            let html = highlight_with(&syntax_set, code, &spec, &RenderOptions::default());
 
             assert_eq!(
                 rendered_rows(&html),
@@ -594,7 +598,14 @@ mod tests {
     }
 
     fn highlight(info: &str, code: &str) -> String {
-        highlight_code(code, &parse_fence_info(info), None)
+        let options = RenderOptions {
+            copy_button: CopyButton {
+                text: "复制 <&>".into(),
+                aria_label: r#"复制 "代码""#.into(),
+            },
+            ..RenderOptions::default()
+        };
+        highlight_code(code, &parse_fence_info(info), &options)
     }
 
     /// Returns the rendered code text and each row's text and `hl` flag.

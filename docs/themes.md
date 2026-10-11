@@ -328,7 +328,7 @@ Repeated identical declarations produce one script in registration order. Confli
 
 ### Code Blocks
 
-Highlighted code uses `<details class="code-block" data-lang="...">`, a `<summary class="code-header">`, and a `.code-body > .highlight` containing line numbers and code. `data-lang` holds the lowercased language tag and is omitted when the block has no language tag, as with indented blocks. The header contains either `.code-lang` or `.code-title` and a `.copy-btn`. Themes provide styling and copy behavior. Native disclosure controls the open state.
+Highlighted code uses `<details class="code-block" data-lang="...">`, a `<summary class="code-header">`, and a `.code-body > .highlight` containing line numbers and code. `data-lang` holds the lowercased language tag and is omitted when the block has no language tag, as with indented blocks. The header contains either `.code-lang` or `.code-title` and a `.copy-btn`. The button text and its `aria-label` come from the `copy` and `copy_code` translation keys, so the theme or site must define both. Themes provide styling and copy behavior. Native disclosure controls the open state.
 
 A positive `code_max_lines` adds `data-max-lines` and sets `--max-lines` on the `.code-body` of blocks without `collapse` or `expand`. Themes use that value to limit the highlighted area. Zero omits the limit, so a site can disable a theme default.
 

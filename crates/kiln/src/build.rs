@@ -27,8 +27,8 @@ use crate::i18n::I18n;
 use crate::minify::{self, MinifyStats};
 use crate::output::OutputTransaction;
 use crate::output::guard::resolve_output_dir;
-use crate::render::RenderOptions;
 use crate::render::lqip::ImageResolver;
+use crate::render::{CopyButton, RenderOptions};
 use crate::search;
 use crate::static_assets::StaticAssetManifest;
 use crate::static_assets::publication::PublishedAssets;
@@ -76,7 +76,6 @@ pub fn build(root: &Path, options: &BuildOptions<'_>) -> Result<()> {
     if let Some(base_url) = base_url_override {
         config.base_url = base_url.parse()?;
     }
-    let render_options = RenderOptions::from_params(&config.params)?;
 
     let site_templates = root.join("templates");
     let theme_dir = config.theme_dir(root);
@@ -84,6 +83,10 @@ pub fn build(root: &Path, options: &BuildOptions<'_>) -> Result<()> {
 
     let i18n = I18n::load(root, theme_dir.as_deref(), &config.language)
         .context("failed to load i18n strings")?;
+    let render_options = RenderOptions {
+        copy_button: CopyButton::new(&i18n),
+        ..RenderOptions::from_params(&config.params)?
+    };
 
     let content = discover_content(root)?;
     let output_dir = resolve_output_dir(root, &config, output_dir_override)?;
