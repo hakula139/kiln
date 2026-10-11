@@ -23,14 +23,6 @@ pub(crate) fn page_dir(base: &Path, number: usize) -> PathBuf {
     }
 }
 
-/// URL of page `number` of the listing at `listing_url`, which ends in `/`.
-fn numbered_url(listing_url: &str, number: usize) -> String {
-    format!(
-        "{listing_url}{}",
-        directory_url(&page_dir(Path::new(""), number))
-    )
-}
-
 /// Template-friendly pagination metadata.
 #[derive(Debug, Serialize)]
 pub struct PaginationVars {
@@ -72,6 +64,14 @@ impl PaginationVars {
             items: pagination_items(current_page, total_pages, url),
         }
     }
+}
+
+/// URL of page `number` of the listing at `listing_url`, which ends in `/`.
+fn numbered_url(listing_url: &str, number: usize) -> String {
+    format!(
+        "{listing_url}{}",
+        directory_url(&page_dir(Path::new(""), number))
+    )
 }
 
 fn pagination_items(

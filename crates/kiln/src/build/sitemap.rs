@@ -11,6 +11,7 @@ pub(super) struct SitemapEntry {
     pub(super) lastmod: Option<Timestamp>,
 }
 
+/// Renders a `sitemap.xml` with one `<url>` per entry.
 pub(super) fn render_sitemap(entries: &[SitemapEntry]) -> String {
     let mut xml = String::from(indoc! {r#"
         <?xml version="1.0" encoding="utf-8" standalone="yes"?>
