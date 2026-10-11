@@ -96,7 +96,7 @@ fn build_fingerprints_bundle_assets_after_static_collisions() {
 fn build_image_urls_and_metadata_share_published_paths() {
     let site = TestSite::new(r#"base_url = "https://example.com/blog""#);
     site.write(
-        "templates/page.html",
+        "templates/post.html",
         indoc! {r#"
             <span style="--lqip-uri:url('{{ featured_image.lqip_uri | safe }}')">
               <img src="{{ featured_image.src | safe }}" width="{{ featured_image.width }}" height="{{ featured_image.height }}">
@@ -250,7 +250,7 @@ fn build_updates_managed_image_urls_and_retires_previous_fingerprints() {
 
 fn write_image_lifecycle_templates(site: &TestSite) {
     site.write(
-        "templates/page.html",
+        "templates/post.html",
         indoc! {r#"
             <img id="featured" src="{{ featured_image.src }}">
             <img id="template" src="{{ asset_url('photo%20%25.avif?quality=1#view') }}">

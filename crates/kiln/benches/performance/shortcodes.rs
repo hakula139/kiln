@@ -17,14 +17,21 @@ pub(super) fn benchmarks(criterion: &mut Criterion) {
     let site = Site::new(0, PROSE, 0);
     let config = Config::load(site.root()).unwrap();
     let i18n = I18n::load(site.root(), None, &Language::default()).unwrap();
-    let engine = TemplateEngine::new(Some(&site.root().join("templates")), None, &i18n).unwrap();
+    let manifest = StaticAssetManifest::default();
+    let engine = TemplateEngine::new(
+        Some(&site.root().join("templates")),
+        None,
+        &config,
+        &i18n,
+        &manifest,
+    )
+    .unwrap();
     let options = RenderOptions {
         emojis: true,
         fontawesome: true,
         ..RenderOptions::default()
     };
     let resolver = ImageResolver::new(&site.root().join("static"), config.image.clone());
-    let manifest = StaticAssetManifest::default();
     let resources = PageResources {
         source_dir: None,
         images: &resolver,
@@ -38,7 +45,7 @@ pub(super) fn benchmarks(criterion: &mut Criterion) {
         ("colons", ": ".repeat(5_000)),
     ] {
         let input = format!("{prefix}:smile: :(fas fa-link):");
-        let page = render_page(&input, &engine, &config, &options, &resources, false).unwrap();
+        let page = render_page(&input, &engine, &options, &resources, false).unwrap();
         assert_eq!(
             page.content_html,
             format!(
@@ -51,15 +58,7 @@ pub(super) fn benchmarks(criterion: &mut Criterion) {
             &input,
             |bencher, input| {
                 bencher.iter(|| {
-                    render_page(
-                        black_box(input),
-                        &engine,
-                        &config,
-                        &options,
-                        &resources,
-                        false,
-                    )
-                    .unwrap()
+                    render_page(black_box(input), &engine, &options, &resources, false).unwrap()
                 });
             },
         );

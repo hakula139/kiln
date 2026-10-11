@@ -106,11 +106,11 @@ pub fn build(root: &Path, options: &BuildOptions<'_>) -> Result<()> {
     static_assets
         .fingerprint_code(&output_dir)
         .context("failed to fingerprint static assets")?;
-    let template_engine = TemplateEngine::new_with_assets(
+    let template_engine = TemplateEngine::new(
         Some(&site_templates),
         theme_templates.as_deref(),
+        &config,
         &i18n,
-        config.base_url.prefix(),
         &static_assets,
     )
     .context("failed to initialize template engine")?;

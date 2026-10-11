@@ -4,7 +4,7 @@ use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Result, bail, ensure};
-use strum::EnumIter;
+use strum::{AsRefStr, EnumIter};
 
 use super::listing::PreparedPage;
 use crate::config::Paginate;
@@ -14,7 +14,8 @@ use crate::template::vars::{BucketSummary, LinkedTerm};
 use crate::text::{slugify, titlecase};
 use crate::url::{BaseUrl, directory_url};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumIter)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, AsRefStr, EnumIter)]
+#[strum(serialize_all = "lowercase")]
 pub(super) enum BucketKind {
     Posts,
     Section,
@@ -22,14 +23,6 @@ pub(super) enum BucketKind {
 }
 
 impl BucketKind {
-    pub(super) fn singular(self) -> &'static str {
-        match self {
-            Self::Posts => "post",
-            Self::Section => "section",
-            Self::Tag => "tag",
-        }
-    }
-
     pub(super) fn plural(self) -> &'static str {
         match self {
             Self::Posts => "posts",
@@ -127,7 +120,6 @@ impl<'a> Listing<'a> {
     pub(super) fn summary(&self, base_url: &BaseUrl) -> BucketSummary<'a> {
         BucketSummary {
             name: self.name.clone(),
-            slug: self.slug.clone(),
             url: self.url(base_url),
             pages: self.pages.iter().map(|page| &page.summary).collect(),
         }

@@ -59,9 +59,6 @@ pub(crate) struct DirectiveContext<'a> {
     /// Validated `type`, `title` and `open` values of a `callout` directive.
     #[serde(flatten)]
     pub callout: Option<Callout<'a>>,
-    pub source_dir: Option<Cow<'a, str>>,
-    #[serde(rename = "__page_url")]
-    pub page_url: &'a str,
 }
 
 #[cfg(test)]

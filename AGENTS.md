@@ -104,7 +104,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 │   └── publication.rs   # Static / bundle asset publication and source → output paths
 ├── template.rs          # MiniJinja layered template engine, directive / archive / overview / error rendering
 ├── template/            # Template submodules
-│   ├── functions.rs     # MiniJinja template functions (now, read_file, parse_csv, t, register_script)
+│   ├── functions.rs     # MiniJinja template functions (now, read_file, parse_csv, t, asset_url, register_script)
 │   └── vars.rs          # Template variables structs (PostTemplateVars, PageSummary, etc.)
 ├── test_utils.rs        # Shared test infrastructure (templates, helpers, Page factory)
 ├── text.rs              # Shared format-agnostic text utilities (slugify, titlecase)

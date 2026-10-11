@@ -1,18 +1,14 @@
-use std::borrow::Cow;
-
 use serde::Serialize;
 
-use crate::config::Config;
 use crate::content::frontmatter::FeaturedImage;
 use crate::pagination::PaginationVars;
-use crate::render::assets::PageAssets;
 
-/// Common metadata for content and listing templates.
+/// Common metadata for every page template.
 #[derive(Debug, Serialize)]
 pub struct PageMetadata<'a> {
     pub title: &'a str,
     pub description: &'a str,
-    pub url: Cow<'a, str>,
+    pub url: &'a str,
 }
 
 /// Template variables for rendering a post page.
@@ -30,12 +26,8 @@ pub struct PostTemplateVars<'a> {
     pub updated: Option<String>,
     pub tags: &'a [LinkedTerm],
     pub section: Option<&'a LinkedTerm>,
-    /// Auto-detected runtime dependencies (math, mermaid, registered scripts). Themes iterate
-    /// `assets.features` and `assets.scripts` to load the right CSS / JS.
-    pub assets: PageAssets,
     pub content: &'a str,
     pub toc: &'a str,
-    pub config: &'a Config,
 }
 
 /// A named item with a URL, used for tags and sections in post and listing templates.
@@ -73,7 +65,6 @@ pub struct HomePageVars<'a> {
     pub metadata: PageMetadata<'a>,
     pub pages: Vec<&'a PageSummary>,
     pub pagination: PaginationVars,
-    pub config: &'a Config,
 }
 
 /// Template variables for a paginated, year-grouped archive page (`/posts/`, per-section, per-tag).
@@ -81,13 +72,10 @@ pub struct HomePageVars<'a> {
 pub struct ArchivePageVars<'a> {
     #[serde(flatten)]
     pub metadata: PageMetadata<'a>,
+    /// `"posts"`, `"section"` or `"tag"`.
     pub kind: &'a str,
-    pub singular: &'a str,
-    pub name: &'a str,
-    pub slug: &'a str,
     pub page_groups: Vec<PageGroup<'a>>,
     pub pagination: PaginationVars,
-    pub config: &'a Config,
 }
 
 /// Template variables for a bucket overview page (e.g., `/tags/`, `/sections/`).
@@ -95,10 +83,9 @@ pub struct ArchivePageVars<'a> {
 pub struct OverviewPageVars<'a> {
     #[serde(flatten)]
     pub metadata: PageMetadata<'a>,
+    /// `"section"` or `"tag"`.
     pub kind: &'a str,
-    pub singular: &'a str,
     pub buckets: Vec<BucketSummary<'a>>,
-    pub config: &'a Config,
 }
 
 /// A bucket entry for overview pages.
@@ -107,15 +94,7 @@ pub struct OverviewPageVars<'a> {
 #[derive(Debug, Clone, Serialize)]
 pub struct BucketSummary<'a> {
     pub name: String,
-    pub slug: String,
     pub url: String,
     /// All pages in this bucket, sorted by date descending.
     pub pages: Vec<&'a PageSummary>,
-}
-
-/// Template variables for the 404 error page.
-#[derive(Debug, Serialize)]
-pub struct ErrorPageVars<'a> {
-    pub title: &'a str,
-    pub config: &'a Config,
 }

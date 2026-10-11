@@ -17,15 +17,11 @@ pub(super) fn render(
         metadata: PageMetadata {
             title: &bucket.name,
             description: &ctx.config.description,
-            url: url.into(),
+            url,
         },
-        kind: bucket.kind.plural(),
-        singular: bucket.kind.singular(),
-        name: &bucket.name,
-        slug: &bucket.slug,
+        kind: bucket.kind.as_ref(),
         page_groups: group_by_year(page.pages),
         pagination: page.pagination(ctx.config.base_url.prefix()),
-        config: &ctx.config,
     };
     ctx.template_engine.render_archive(&vars).with_context(|| {
         format!(

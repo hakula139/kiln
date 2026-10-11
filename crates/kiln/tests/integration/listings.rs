@@ -159,6 +159,7 @@ fn build_index_files_title_archives() {
 fn build_empty_listing_states_generate_listings_feed_and_error_page() {
     for content in [None, Some("about"), Some("posts/hello")] {
         let site = TestSite::new("");
+        site.write("i18n/en.toml", r#"error_404_title = "Page Missing""#);
         if let Some(path) = content {
             site.titled_page(path, "Hello");
         }
@@ -191,7 +192,7 @@ fn build_empty_listing_states_generate_listings_feed_and_error_page() {
         );
         assert!(!feed.contains("<lastBuildDate>"), "{feed}");
         let error = site.read("404.html");
-        assert!(error.contains("<h1>404 Not Found</h1>"), "{error}");
+        assert!(error.contains("<h1>Page Missing</h1>"), "{error}");
     }
 }
 

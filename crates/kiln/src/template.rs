@@ -2,6 +2,7 @@ mod functions;
 pub mod vars;
 
 use std::path::Path;
+use std::sync::Arc;
 
 use anyhow::{Context, Result, ensure};
 use minijinja::path_loader;
@@ -9,15 +10,14 @@ use minijinja::value::{Kwargs, Value, merge_maps};
 use serde::Serialize;
 
 use self::functions::{
-    tpl_asset_url, tpl_now, tpl_parse_csv, tpl_read_file, tpl_register_script, tpl_t,
+    AssetUrls, tpl_asset_url, tpl_now, tpl_parse_csv, tpl_read_file, tpl_register_script, tpl_t,
 };
-use self::vars::{
-    ArchivePageVars, ErrorPageVars, HomePageVars, OverviewPageVars, PostTemplateVars,
-};
+use self::vars::{ArchivePageVars, HomePageVars, OverviewPageVars, PageMetadata, PostTemplateVars};
 use crate::config::Config;
 use crate::directive::DirectiveContext;
 use crate::i18n::I18n;
-use crate::render::assets::AssetsHandle;
+use crate::render::PageResources;
+use crate::render::assets::{AssetsHandle, PageAssets};
 use crate::static_assets::StaticAssetManifest;
 
 #[derive(Debug)]
@@ -29,31 +29,18 @@ impl TemplateEngine {
     /// Creates a layered template engine: `site_dir` overrides `theme_dir`.
     ///
     /// `site_dir` is silently ignored when missing (optional override). `theme_dir`, when set,
-    /// must be a directory. At least one usable directory is required. `i18n` backs `t()`.
+    /// must be a directory. At least one usable directory is required. Every template sees
+    /// `config` as a global, `t()` looks up `i18n`, and `asset_url()` resolves through
+    /// `static_assets`.
     ///
     /// # Errors
     ///
     /// Returns an error if no usable template directory exists or the theme directory is invalid.
-    pub fn new(site_dir: Option<&Path>, theme_dir: Option<&Path>, i18n: &I18n) -> Result<Self> {
-        Self::new_with_assets(
-            site_dir,
-            theme_dir,
-            i18n,
-            "/",
-            &StaticAssetManifest::default(),
-        )
-    }
-
-    /// Creates a template engine backed by a static asset manifest.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if no usable template directory exists or the theme directory is invalid.
-    pub fn new_with_assets(
+    pub fn new(
         site_dir: Option<&Path>,
         theme_dir: Option<&Path>,
+        config: &Config,
         i18n: &I18n,
-        deployment_prefix: &str,
         static_assets: &StaticAssetManifest,
     ) -> Result<Self> {
         if let Some(d) = theme_dir {
@@ -86,20 +73,23 @@ impl TemplateEngine {
             }
             Ok(None)
         });
+        env.add_global("config", Value::from_serialize(config));
         env.add_function("now", tpl_now);
         env.add_function("read_file", tpl_read_file);
         env.add_function("parse_csv", tpl_parse_csv);
 
-        let asset_manifest = static_assets.clone();
-        let deployment_prefix = deployment_prefix.to_owned();
-        env.add_function("asset_url", move |state: &minijinja::State, url: &str| {
-            tpl_asset_url(state, &asset_manifest, &deployment_prefix, url)
+        let asset_urls = Arc::new(AssetUrls {
+            manifest: static_assets.clone(),
+            prefix: config.base_url.prefix().to_owned(),
         });
-
+        let urls = Arc::clone(&asset_urls);
+        env.add_function("asset_url", move |state: &minijinja::State, url: &str| {
+            tpl_asset_url(state, &urls, url)
+        });
         env.add_function(
             "register_script",
-            |state: &minijinja::State, url: &str, kwargs: Kwargs| {
-                tpl_register_script(state, url, &kwargs)
+            move |state: &minijinja::State, url: &str, kwargs: Kwargs| {
+                tpl_register_script(state, &asset_urls, url, &kwargs)
             },
         );
 
@@ -111,22 +101,13 @@ impl TemplateEngine {
         Ok(Self { env })
     }
 
-    /// Renders a post page using the `post.html` template.
+    /// Renders a post or standalone page using the `post.html` template.
     ///
     /// # Errors
     ///
     /// Returns an error if the template is missing or rendering fails.
-    pub fn render_post(&self, vars: &PostTemplateVars<'_>) -> Result<String> {
-        self.render_required_template("post.html", vars, &vars.metadata.url)
-    }
-
-    /// Renders a standalone page using the `page.html` template.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the template is missing or rendering fails.
-    pub fn render_page(&self, vars: &PostTemplateVars<'_>) -> Result<String> {
-        self.render_required_template("page.html", vars, &vars.metadata.url)
+    pub fn render_post(&self, vars: &PostTemplateVars<'_>, assets: &PageAssets) -> Result<String> {
+        self.render_page_template("post.html", vars, vars.metadata.url, assets)
     }
 
     /// Renders the home page using the `home.html` template.
@@ -135,7 +116,7 @@ impl TemplateEngine {
     ///
     /// Returns an error if the template is missing or rendering fails.
     pub fn render_home(&self, vars: &HomePageVars<'_>) -> Result<String> {
-        self.render_required_template("home.html", vars, &vars.metadata.url)
+        self.render_generated("home.html", vars, vars.metadata.url)
     }
 
     /// Renders an archive page using the `archive.html` template.
@@ -144,7 +125,7 @@ impl TemplateEngine {
     ///
     /// Returns an error if the template is missing or rendering fails.
     pub fn render_archive(&self, vars: &ArchivePageVars<'_>) -> Result<String> {
-        self.render_required_template("archive.html", vars, &vars.metadata.url)
+        self.render_generated("archive.html", vars, vars.metadata.url)
     }
 
     /// Renders a bucket overview page (e.g., `/tags/`, `/sections/`).
@@ -153,16 +134,16 @@ impl TemplateEngine {
     ///
     /// Returns an error if the template is missing or rendering fails.
     pub fn render_overview(&self, vars: &OverviewPageVars<'_>) -> Result<String> {
-        self.render_required_template("overview.html", vars, &vars.metadata.url)
+        self.render_generated("overview.html", vars, vars.metadata.url)
     }
 
     /// Renders the 404 error page using the `404.html` template.
     ///
-    /// Returns `None` if the template does not exist. Returns `Some(Err(_))`
-    /// if loading or rendering the template fails.
-    pub fn render_404(&self, vars: &ErrorPageVars<'_>) -> Option<Result<String>> {
-        self.render_optional_template("404.html", vars)
-            .map(|result| result.context("failed to render 404 template"))
+    /// # Errors
+    ///
+    /// Returns an error if the template is missing or rendering fails.
+    pub fn render_404(&self, vars: &PageMetadata<'_>) -> Result<String> {
+        self.render_generated("404.html", vars, vars.url)
     }
 
     /// Tries to render a directive using `directives/<name>.html`.
@@ -171,23 +152,27 @@ impl TemplateEngine {
     pub(crate) fn render_directive(
         &self,
         ctx: &DirectiveContext<'_>,
+        resources: &PageResources<'_>,
         assets: &AssetsHandle,
-        config: &Config,
     ) -> Option<Result<String>> {
-        let template_name = format!("directives/{}.html", ctx.name);
-        let merged = merge_maps([
-            minijinja::context! {
-                __assets => Value::from_object(assets.clone()),
-                config => Value::from_serialize(config),
-            },
+        let name = format!("directives/{}.html", ctx.name);
+        let template = match self.env.get_template(&name) {
+            Err(error) if error.kind() == minijinja::ErrorKind::TemplateNotFound => return None,
+            template => template,
+        };
+        let context = merge_maps([
             Value::from_serialize(ctx),
+            minijinja::context! {
+                __page_url => resources.page_url,
+                __source_dir => resources.source_dir.map(Path::to_string_lossy),
+                __assets => Value::from_object(assets.clone()),
+            },
         ]);
-        self.render_optional_template(&template_name, merged)
-            .map(|result| {
-                result.with_context(|| {
-                    format!("failed to render directive template: {template_name}")
-                })
-            })
+        Some(
+            template
+                .and_then(|template| template.render(context))
+                .with_context(|| format!("failed to render directive template: {name}")),
+        )
     }
 
     /// Returns `true` if a template with the given name exists.
@@ -201,36 +186,30 @@ impl TemplateEngine {
         }
     }
 
-    fn render_required_template(
+    /// Renders a generated page, whose lack of Markdown content leaves no assets to register.
+    fn render_generated(&self, name: &str, vars: impl Serialize, page_url: &str) -> Result<String> {
+        self.render_page_template(name, vars, page_url, &PageAssets::default())
+    }
+
+    /// Renders a whole page, exposing `assets` and the page URL that `asset_url()` resolves
+    /// relative paths against.
+    fn render_page_template(
         &self,
         name: &str,
         vars: impl Serialize,
         page_url: &str,
+        assets: &PageAssets,
     ) -> Result<String> {
+        let context = merge_maps([
+            Value::from_serialize(vars),
+            minijinja::context! { __page_url => page_url, assets },
+        ]);
         self.env
             .get_template(name)
             .with_context(|| format!("failed to load {name} template"))?
-            .render(page_context(vars, page_url))
+            .render(context)
             .with_context(|| format!("failed to render {name} template"))
     }
-
-    fn render_optional_template(
-        &self,
-        name: &str,
-        vars: impl Serialize,
-    ) -> Option<Result<String, minijinja::Error>> {
-        match self.env.get_template(name) {
-            Err(error) if error.kind() == minijinja::ErrorKind::TemplateNotFound => None,
-            result => Some(result.and_then(|template| template.render(vars))),
-        }
-    }
-}
-
-fn page_context(vars: impl Serialize, page_url: &str) -> Value {
-    merge_maps([
-        minijinja::context! { __page_url => page_url },
-        Value::from_serialize(vars),
-    ])
 }
 
 #[cfg(test)]
@@ -244,12 +223,11 @@ mod tests {
     use crate::content::frontmatter::FeaturedImage;
     use crate::directive::DirectiveArgs;
     use crate::pagination::PaginationVars;
-    use crate::render::assets::{Feature, LoadStrategy, PageAssets, ScriptTag};
-    use crate::template::vars::{
-        ArchivePageVars, BucketSummary, ErrorPageVars, HomePageVars, LinkedTerm, OverviewPageVars,
-        PageGroup, PageMetadata, PageSummary, PostTemplateVars,
+    use crate::render::assets::{Feature, LoadStrategy, ScriptTag};
+    use crate::template::vars::{BucketSummary, LinkedTerm, PageGroup, PageSummary};
+    use crate::test_utils::{
+        test_engine, test_engine_with, test_i18n, test_resources, test_site_engine,
     };
-    use crate::test_utils::{test_engine, test_i18n};
 
     // ── new ──
 
@@ -257,7 +235,7 @@ mod tests {
     fn new_with_site_dir_only() {
         let dir = tempfile::tempdir().unwrap();
         test_fs::write(dir.path().join("test.html"), "hello").unwrap();
-        let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
+        let engine = test_site_engine(dir.path());
         let tmpl = engine.env.get_template("test.html").unwrap();
         assert_eq!(tmpl.render(()).unwrap(), "hello");
     }
@@ -276,7 +254,7 @@ mod tests {
         // Template only in theme, so it should fall through.
         test_fs::write(theme_dir.join("base.html"), "theme base").unwrap();
 
-        let engine = TemplateEngine::new(Some(&site_dir), Some(&theme_dir), &test_i18n()).unwrap();
+        let engine = test_engine_with(Some(&site_dir), Some(&theme_dir), &Config::default());
         let page = engine.env.get_template("page.html").unwrap();
         assert_eq!(page.render(()).unwrap(), "from site");
         let base = engine.env.get_template("base.html").unwrap();
@@ -288,19 +266,17 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let theme_dir = dir.path().join("theme");
         test_fs::create_dir(&theme_dir).unwrap();
-        let result = TemplateEngine::new(
+        let engine = test_engine_with(
             Some(Path::new("/nonexistent")),
             Some(&theme_dir),
-            &test_i18n(),
+            &Config::default(),
         );
-        assert!(result.is_ok());
+        assert!(!engine.has_template("post.html"));
     }
 
     #[test]
     fn new_without_directories_returns_error() {
-        let err = TemplateEngine::new(None, None, &test_i18n())
-            .unwrap_err()
-            .to_string();
+        let err = new_engine(None, None).unwrap_err().to_string();
         assert!(
             err.contains("no valid template directory found"),
             "should reject when no dirs provided, got: {err}"
@@ -309,7 +285,7 @@ mod tests {
 
     #[test]
     fn new_nonexistent_theme_directory_returns_error() {
-        let err = TemplateEngine::new(None, Some(Path::new("/nonexistent/path")), &test_i18n())
+        let err = new_engine(None, Some(Path::new("/nonexistent/path")))
             .unwrap_err()
             .to_string();
         assert!(
@@ -326,8 +302,7 @@ mod tests {
             "post.html",
             "{{ title }}|{{ description }}|{{ url }}|{{ date }}|{{ updated }}|{{ featured_image.src }}|{{ page_css }}|{{ config.title }}|{{ t('all_posts') }}|{{ 'math' in assets.features }}|{{ assets.scripts[0].url }}|{{ license }}|{{ tags[0].name }}|{{ section.name }}",
         );
-        let config = Config::default();
-        let mut vars = post_vars(&config);
+        let mut vars = post_vars();
         let featured_image = FeaturedImage {
             src: "/image.webp".into(),
             ..Default::default()
@@ -347,8 +322,9 @@ mod tests {
         vars.page_css = Some("/page.css".into());
         vars.date = Some("2026-01-01T12:34:56Z");
         vars.updated = Some("2026-02-01T12:34:56Z".into());
-        vars.assets.add_feature(Feature::Math);
-        vars.assets
+        let mut assets = PageAssets::default();
+        assets.add_feature(Feature::Math);
+        assets
             .register_script(ScriptTag {
                 url: "/script.js".into(),
                 load: LoadStrategy::Defer,
@@ -357,7 +333,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            engine.render_post(&vars).unwrap(),
+            engine.render_post(&vars, &assets).unwrap(),
             "Post A|Description|https:&#x2f;&#x2f;example.com&#x2f;post-a&#x2f;|2026-01-01T12:34:56Z|2026-02-01T12:34:56Z|&#x2f;image.webp|&#x2f;page.css|My Site|All Posts|True|&#x2f;script.js|CC0-1.0|Tag A|Section A"
         );
     }
@@ -368,30 +344,14 @@ mod tests {
             "post.html",
             "{{ title }}|{{ content }}|{{ content | safe }}|{{ toc | safe }}",
         );
-        let config = Config::default();
-        let mut vars = post_vars(&config);
+        let mut vars = post_vars();
         vars.metadata.title = "<title>";
         vars.content = "<strong>Body</strong>";
         vars.toc = "<nav>Contents</nav>";
 
         assert_eq!(
-            engine.render_post(&vars).unwrap(),
+            engine.render_post(&vars, &PageAssets::default()).unwrap(),
             "&lt;title&gt;|&lt;strong&gt;Body&lt;&#x2f;strong&gt;|<strong>Body</strong>|<nav>Contents</nav>"
-        );
-    }
-
-    // ── render_page ──
-
-    #[test]
-    fn render_page_exposes_post_context() {
-        let engine = engine_with_template("page.html", "page:{{ title }}|{{ content | safe }}");
-        let config = Config::default();
-        let mut vars = post_vars(&config);
-        vars.content = "<p>Body</p>";
-
-        assert_eq!(
-            engine.render_page(&vars).unwrap(),
-            "page:Post A|<p>Body</p>"
         );
     }
 
@@ -401,24 +361,22 @@ mod tests {
     fn render_home_exposes_pages_and_pagination() {
         let engine = engine_with_template(
             "home.html",
-            "{{ title }}|{{ description }}|{{ url }}|{% for page in pages %}{{ page.title }}:{{ page.url }}{% endfor %}|{{ pagination.current_page }}/{{ pagination.total_pages }}|{{ assets is defined }}",
+            "{{ title }}|{{ description }}|{{ url }}|{% for page in pages %}{{ page.title }}:{{ page.url }}{% endfor %}|{{ pagination.current_page }}/{{ pagination.total_pages }}|{{ assets.features | length }}",
         );
-        let config = Config::default();
         let page = page_summary();
         let vars = HomePageVars {
             metadata: PageMetadata {
                 title: "Home",
                 description: "Latest pages",
-                url: "https://example.com/page/2/".into(),
+                url: "https://example.com/page/2/",
             },
             pages: vec![&page],
             pagination: PaginationVars::new("/", 2, 3),
-            config: &config,
         };
 
         assert_eq!(
             engine.render_home(&vars).unwrap(),
-            "Home|Latest pages|https:&#x2f;&#x2f;example.com&#x2f;page&#x2f;2&#x2f;|Post A:&#x2f;post-a&#x2f;|2/3|False"
+            "Home|Latest pages|https:&#x2f;&#x2f;example.com&#x2f;page&#x2f;2&#x2f;|Post A:&#x2f;post-a&#x2f;|2/3|0"
         );
     }
 
@@ -428,31 +386,26 @@ mod tests {
     fn render_archive_exposes_groups_and_pagination() {
         let engine = engine_with_template(
             "archive.html",
-            "{{ title }}|{{ description }}|{{ url }}|{{ kind }}|{{ singular }}|{{ name }}|{{ slug }}|{% for group in page_groups %}{{ group.key }}:{% for page in group.pages %}{{ page.title }}:{{ page.url }}{% endfor %}{% endfor %}|{{ pagination.current_page }}/{{ pagination.total_pages }}|{{ assets is defined }}",
+            "{{ title }}|{{ description }}|{{ url }}|{{ kind }}|{% for group in page_groups %}{{ group.key }}:{% for page in group.pages %}{{ page.title }}:{{ page.url }}{% endfor %}{% endfor %}|{{ pagination.current_page }}/{{ pagination.total_pages }}|{{ assets.features | length }}",
         );
-        let config = Config::default();
         let page = page_summary();
         let vars = ArchivePageVars {
             metadata: PageMetadata {
-                title: "Tagged Rust",
+                title: "Rust",
                 description: "Description",
-                url: "https://example.com/tags/rust/page/2/".into(),
+                url: "https://example.com/tags/rust/page/2/",
             },
-            kind: "tags",
-            singular: "tag",
-            name: "Rust",
-            slug: "rust",
+            kind: "tag",
             page_groups: vec![PageGroup {
                 key: "2026".into(),
                 pages: vec![&page],
             }],
             pagination: PaginationVars::new("/tags/rust/", 2, 3),
-            config: &config,
         };
 
         assert_eq!(
             engine.render_archive(&vars).unwrap(),
-            "Tagged Rust|Description|https:&#x2f;&#x2f;example.com&#x2f;tags&#x2f;rust&#x2f;page&#x2f;2&#x2f;|tags|tag|Rust|rust|2026:Post A:&#x2f;post-a&#x2f;|2/3|False"
+            "Rust|Description|https:&#x2f;&#x2f;example.com&#x2f;tags&#x2f;rust&#x2f;page&#x2f;2&#x2f;|tag|2026:Post A:&#x2f;post-a&#x2f;|2/3|0"
         );
     }
 
@@ -462,113 +415,91 @@ mod tests {
     fn render_overview_exposes_buckets() {
         let engine = engine_with_template(
             "overview.html",
-            "{{ title }}|{{ description }}|{{ url }}|{{ kind }}|{{ singular }}|{% for bucket in buckets %}{{ bucket.name }}:{{ bucket.slug }}:{{ bucket.url }}:{% for page in bucket.pages %}{{ page.title }}:{{ page.url }}{% endfor %}|{% endfor %}{{ assets is defined }}",
+            "{{ title }}|{{ description }}|{{ url }}|{{ kind }}|{% for bucket in buckets %}{{ bucket.name }}:{{ bucket.url }}:{% for page in bucket.pages %}{{ page.title }}:{{ page.url }}{% endfor %}|{% endfor %}{{ assets.features | length }}",
         );
-        let config = Config::default();
         let page = page_summary();
         let vars = OverviewPageVars {
             metadata: PageMetadata {
                 title: "All Tags",
                 description: "Description",
-                url: "https://example.com/tags/".into(),
+                url: "https://example.com/tags/",
             },
-            kind: "tags",
-            singular: "tag",
+            kind: "tag",
             buckets: vec![
                 BucketSummary {
                     name: "Rust".into(),
-                    slug: "rust".into(),
                     url: "/tags/rust/".into(),
                     pages: vec![&page],
                 },
                 BucketSummary {
                     name: "Empty".into(),
-                    slug: "empty".into(),
                     url: "/tags/empty/".into(),
                     pages: Vec::new(),
                 },
             ],
-            config: &config,
         };
 
         assert_eq!(
             engine.render_overview(&vars).unwrap(),
-            "All Tags|Description|https:&#x2f;&#x2f;example.com&#x2f;tags&#x2f;|tags|tag|Rust:rust:&#x2f;tags&#x2f;rust&#x2f;:Post A:&#x2f;post-a&#x2f;|Empty:empty:&#x2f;tags&#x2f;empty&#x2f;:|False"
+            "All Tags|Description|https:&#x2f;&#x2f;example.com&#x2f;tags&#x2f;|tag|Rust:&#x2f;tags&#x2f;rust&#x2f;:Post A:&#x2f;post-a&#x2f;|Empty:&#x2f;tags&#x2f;empty&#x2f;:|0"
         );
     }
 
     // ── render_404 ──
 
     #[test]
-    fn render_404_basic() {
-        let engine = test_engine();
-        let config = Config::default();
-        let vars = ErrorPageVars {
-            title: "404 Not Found",
-            config: &config,
-        };
-        let result = engine.render_404(&vars);
-        assert!(result.is_some(), "should find 404 template");
-        let html = result.unwrap().unwrap();
-        assert!(
-            html.contains("<title>404 Not Found - My Site</title>"),
-            "should have title, html:\n{html}"
-        );
-        assert!(
-            html.contains("<h1>404 Not Found</h1>"),
-            "should have heading, html:\n{html}"
-        );
-    }
-
-    #[test]
-    fn render_404_missing_template_returns_none() {
+    fn render_404_exposes_metadata_and_resolves_relative_assets() {
         let dir = tempfile::tempdir().unwrap();
-        let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
-        let config = Config::default();
-        let vars = ErrorPageVars {
-            title: "404 Not Found",
-            config: &config,
+        let static_dir = dir.path().join("public");
+        let templates = dir.path().join("templates");
+        test_fs::create_dir_all(&static_dir).unwrap();
+        test_fs::write(static_dir.join("bg.png"), "png").unwrap();
+        test_fs::create_dir_all(&templates).unwrap();
+        test_fs::write(
+            templates.join("404.html"),
+            "{{ title }}|{{ description }}|{{ url }}|{{ asset_url('bg.png') }}|{{ assets.features | length }}",
+        )
+        .unwrap();
+        let engine = TemplateEngine::new(
+            Some(&templates),
+            None,
+            &Config::default(),
+            &test_i18n(),
+            &StaticAssetManifest::build(&static_dir).unwrap(),
+        )
+        .unwrap();
+
+        let vars = PageMetadata {
+            title: "Not Found",
+            description: "Description",
+            url: "https://example.com/404.html",
         };
-        assert!(
-            engine.render_404(&vars).is_none(),
-            "should return None when 404.html is missing"
+        assert_eq!(
+            engine.render_404(&vars).unwrap(),
+            "Not Found|Description|https:&#x2f;&#x2f;example.com&#x2f;404.html|/_assets/bg.8f8cbb7dcf46.png|0"
         );
-    }
-
-    #[test]
-    fn render_404_template_failure_returns_error() {
-        for (source, kind) in [
-            ("{% invalid %}", minijinja::ErrorKind::SyntaxError),
-            (
-                "{% for x in 42 %}{{ x }}{% endfor %}",
-                minijinja::ErrorKind::InvalidOperation,
-            ),
-        ] {
-            let dir = tempfile::tempdir().unwrap();
-            test_fs::write(dir.path().join("404.html"), source).unwrap();
-            let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
-            let config = Config::default();
-            let vars = ErrorPageVars {
-                title: "404 Not Found",
-                config: &config,
-            };
-
-            let error = engine.render_404(&vars).unwrap().unwrap_err();
-            assert_eq!(
-                error.downcast_ref::<minijinja::Error>().unwrap().kind(),
-                kind
-            );
-        }
     }
 
     // ── render_directive ──
 
     #[test]
     fn render_directive_renders_template_with_context() {
-        let (_dir, engine) = engine_with_directive(
-            "test",
-            "<div{% if id %} id={{ id }}{% endif %}>{{ name }}: {{ body_html | safe }} {{ config.title }}</div>",
-        );
+        let dir = tempfile::tempdir().unwrap();
+        let directives = dir.path().join("directives");
+        test_fs::create_dir_all(&directives).unwrap();
+        test_fs::write(
+            directives.join("test.html"),
+            "<div{% if id %} id={{ id }}{% endif %}>{{ name }}: {{ body_html | safe }} {{ config.title }} {{ read_file('data.txt') }}</div>",
+        )
+        .unwrap();
+        let source = tempfile::tempdir().unwrap();
+        test_fs::write(source.path().join("data.txt"), "data").unwrap();
+        let config: Config = toml::from_str(indoc! {r#"
+            base_url = "https://example.com"
+            title = "Probe"
+        "#})
+        .unwrap();
+        let engine = test_engine_with(Some(dir.path()), None, &config);
         let args = DirectiveArgs {
             identity: Identity {
                 id: Some("anchor".into()),
@@ -576,21 +507,19 @@ mod tests {
             },
             ..DirectiveArgs::default()
         };
-        let config: Config = toml::from_str(indoc! {r#"
-            base_url = "https://example.com"
-            title = "Probe"
-        "#})
-        .unwrap();
 
         let html = engine
             .render_directive(
                 &directive_ctx("test", &args, "<p>hello</p>"),
+                &PageResources {
+                    source_dir: Some(source.path()),
+                    ..test_resources()
+                },
                 &AssetsHandle::default(),
-                &config,
             )
             .unwrap()
             .unwrap();
-        assert_eq!(html, "<div id=anchor>test: <p>hello</p> Probe</div>");
+        assert_eq!(html, "<div id=anchor>test: <p>hello</p> Probe data</div>");
     }
 
     #[test]
@@ -599,15 +528,15 @@ mod tests {
         test_fs::create_dir_all(dir.path().join("directives")).unwrap();
         // A traversal would reach this file through "directives/../secret.html".
         test_fs::write(dir.path().join("secret.html"), "LEAKED").unwrap();
-        let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
+        let engine = test_site_engine(dir.path());
         let args = DirectiveArgs::default();
         for name in ["nonexistent", "../secret"] {
             assert!(
                 engine
                     .render_directive(
                         &directive_ctx(name, &args, ""),
+                        &test_resources(),
                         &AssetsHandle::default(),
-                        &Config::default()
                     )
                     .is_none(),
                 "{name}"
@@ -628,8 +557,8 @@ mod tests {
             let error = engine
                 .render_directive(
                     &directive_ctx("bad", &DirectiveArgs::default(), ""),
+                    &test_resources(),
                     &AssetsHandle::default(),
-                    &Config::default(),
                 )
                 .unwrap()
                 .unwrap_err();
@@ -650,7 +579,6 @@ mod tests {
     fn has_template_existing() {
         let engine = test_engine();
         assert!(engine.has_template("post.html"));
-        assert!(engine.has_template("page.html"));
         assert!(engine.has_template("home.html"));
         assert!(engine.has_template("archive.html"));
         assert!(engine.has_template("overview.html"));
@@ -661,7 +589,7 @@ mod tests {
     fn has_template_broken_returns_true() {
         let dir = tempfile::tempdir().unwrap();
         test_fs::write(dir.path().join("broken.html"), "{% invalid %}").unwrap();
-        let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
+        let engine = test_site_engine(dir.path());
         assert!(
             engine.has_template("broken.html"),
             "broken templates exist. Rendering should surface the parse error",
@@ -674,10 +602,27 @@ mod tests {
         assert!(!engine.has_template("nonexistent.html"));
     }
 
-    // ── render_required_template ──
+    // ── render_page_template ──
 
     #[test]
-    fn render_required_template_failure_returns_error() {
+    fn render_page_template_keeps_internal_values_over_vars() {
+        let engine = engine_with_template(
+            "post.html",
+            "{{ __page_url }}|{{ assets.features | length }}",
+        );
+        let html = engine
+            .render_page_template(
+                "post.html",
+                minijinja::context! { __page_url => "/vars/", assets => "vars" },
+                "/page/",
+                &PageAssets::default(),
+            )
+            .unwrap();
+        assert_eq!(html, "&#x2f;page&#x2f;|0");
+    }
+
+    #[test]
+    fn render_page_template_failure_returns_error() {
         let name = "post.html";
         for (source, kind, phase) in [
             (None, minijinja::ErrorKind::TemplateNotFound, "load"),
@@ -696,8 +641,10 @@ mod tests {
             if let Some(source) = source {
                 test_fs::write(dir.path().join(name), source).unwrap();
             }
-            let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
-            let error = engine.render_required_template(name, (), "/").unwrap_err();
+            let engine = test_site_engine(dir.path());
+            let error = engine
+                .render_page_template(name, (), "/", &PageAssets::default())
+                .unwrap_err();
             assert_eq!(
                 error.to_string(),
                 format!("failed to {phase} {name} template")
@@ -709,18 +656,28 @@ mod tests {
         }
     }
 
+    fn new_engine(site_dir: Option<&Path>, theme_dir: Option<&Path>) -> Result<TemplateEngine> {
+        TemplateEngine::new(
+            site_dir,
+            theme_dir,
+            &Config::default(),
+            &test_i18n(),
+            &StaticAssetManifest::default(),
+        )
+    }
+
     fn engine_with_template(name: &'static str, source: &'static str) -> TemplateEngine {
         let mut engine = test_engine();
         engine.env.add_template(name, source).unwrap();
         engine
     }
 
-    fn post_vars(config: &Config) -> PostTemplateVars<'_> {
+    fn post_vars() -> PostTemplateVars<'static> {
         PostTemplateVars {
             metadata: PageMetadata {
                 title: "Post A",
                 description: "Description",
-                url: "https://example.com/post-a/".into(),
+                url: "https://example.com/post-a/",
             },
             featured_image: None,
             license: None,
@@ -729,10 +686,8 @@ mod tests {
             updated: None,
             tags: &[],
             section: None,
-            assets: PageAssets::default(),
             content: "",
             toc: "",
-            config,
         }
     }
 
@@ -754,7 +709,7 @@ mod tests {
         let directives_dir = dir.path().join("directives");
         test_fs::create_dir_all(&directives_dir).unwrap();
         test_fs::write(directives_dir.join(format!("{name}.html")), body).unwrap();
-        let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
+        let engine = test_site_engine(dir.path());
         (dir, engine)
     }
 
@@ -770,8 +725,6 @@ mod tests {
             identity: &args.identity,
             body_html,
             callout: None,
-            source_dir: None,
-            page_url: "/",
         }
     }
 }
