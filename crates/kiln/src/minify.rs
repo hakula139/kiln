@@ -28,7 +28,7 @@ use swc_ecma_minifier::option::{CompressOptions, ExtraOptions, MinifyOptions as 
 use swc_ecma_parser::{Syntax, parse_file_as_module, parse_file_as_program};
 use swc_ecma_transforms_base::fixer::{fixer, paren_remover};
 use swc_ecma_transforms_base::resolver;
-use swc_html_ast::{Child, Document};
+use swc_html_ast::{Child, Document, Element, Namespace};
 use swc_html_codegen::writer::basic::{BasicHtmlWriter, BasicHtmlWriterConfig};
 use swc_html_codegen::{CodeGenerator, CodegenConfig, Emit};
 use swc_html_minifier::option::{
@@ -313,7 +313,7 @@ fn escape_raw_text_end_tags(document: &mut Document) {
                 continue;
             };
             let tag_name = &*element.tag_name;
-            if matches!(tag_name, "script" | "style") {
+            if has_minified_raw_text(element) {
                 for child in &mut element.children {
                     if let Child::Text(text) = child
                         && let Cow::Owned(escaped) =
@@ -335,6 +335,64 @@ fn escape_raw_text_end_tags(document: &mut Document) {
             }
         }
     }
+}
+
+/// Mirrors `swc_html_minifier`'s choice of `<script>` and `<style>` elements whose text it rewrites.
+///
+/// Text left untouched is exactly what the author wrote, which already parsed as one element.
+fn has_minified_raw_text(element: &Element) -> bool {
+    if !matches!(element.namespace, Namespace::HTML | Namespace::SVG) {
+        return false;
+    }
+    let type_value = element
+        .attributes
+        .iter()
+        .find(|attribute| attribute.name == "type")
+        .and_then(|attribute| attribute.value.as_deref())
+        .map(|value| value.trim().to_ascii_lowercase());
+
+    match &*element.tag_name {
+        "script" => {
+            !element
+                .attributes
+                .iter()
+                .any(|attribute| attribute.name == "src")
+                && type_value.as_deref().is_none_or(|value| {
+                    matches!(
+                        value,
+                        "module"
+                            | "application/json"
+                            | "application/ld+json"
+                            | "importmap"
+                            | "speculationrules"
+                    ) || is_javascript_mime_type(value)
+                })
+        }
+        "style" => type_value.is_none_or(|value| value == "text/css"),
+        _ => false,
+    }
+}
+
+fn is_javascript_mime_type(value: &str) -> bool {
+    matches!(
+        value.split(';').next().unwrap_or(value),
+        "application/javascript"
+            | "application/ecmascript"
+            | "application/x-ecmascript"
+            | "application/x-javascript"
+            | "text/ecmascript"
+            | "text/javascript"
+            | "text/javascript1.0"
+            | "text/javascript1.1"
+            | "text/javascript1.2"
+            | "text/javascript1.3"
+            | "text/javascript1.4"
+            | "text/javascript1.5"
+            | "text/jscript"
+            | "text/livescript"
+            | "text/x-ecmascript"
+            | "text/x-javascript"
+    )
 }
 
 fn minify_css_bytes(input: &[u8], path: &Path) -> Option<Vec<u8>> {
@@ -820,6 +878,9 @@ mod tests {
             </template>
             <script type="text/template"><style>.a{}</style><p>x</p></script>
             <script type="text/plain">a</scripts>b</script>
+            <script type="text/javascript; charset=utf-8">var legacy = "<\/script>";</script>
+            <style type="TEXT/CSS">.d::after { content: "\3c /style>"; }</style>
+            <script type="text/x"><!--<script></script>--></script>
         "#};
         let output = minify_html_bytes(input.as_bytes(), Path::new("page.html")).unwrap();
         assert_eq!(
@@ -831,6 +892,9 @@ mod tests {
                 "longer=String.raw`</scripts>`</script></template>",
                 "<script type=text/template><style>.a{}</style><p>x</p></script>",
                 "<script type=text/plain>a</scripts>b</script>",
+                r#"<script>var legacy="<\/script>"</script>"#,
+                r#"<style>.d:after{content:"<\/style>"}</style>"#,
+                "<script type=text/x><!--<script></script>--></script>",
             )
         );
     }
@@ -841,6 +905,45 @@ mod tests {
             minify_html_bytes(&[0xff, 0xfe, 0xfd], Path::new("broken.html")),
             None
         );
+    }
+
+    // ── has_minified_raw_text ──
+
+    #[test]
+    fn has_minified_raw_text_mirrors_swc_selection() {
+        let cases = [
+            ("<!doctype html><script></script>", true),
+            (r#"<script type=" Module "></script>"#, true),
+            (
+                r#"<script type="text/javascript; charset=utf-8"></script>"#,
+                true,
+            ),
+            (r#"<script type="application/ld+json"></script>"#, true),
+            (r#"<script type="text/template"></script>"#, false),
+            (r#"<script src="/app.js"></script>"#, false),
+            ("<svg><style></style></svg>", true),
+            (r#"<style type="TEXT/CSS"></style>"#, true),
+            (r#"<style type="text/less"></style>"#, false),
+            ("<math><style></style></math>", false),
+        ];
+        for (html, expected) in cases {
+            let file =
+                SourceMap::default().new_source_file(Lrc::new(FileName::Anon), html.to_owned());
+            let document =
+                parse_file_as_document(&file, ParserConfig::default(), &mut Vec::new()).unwrap();
+            let element = find_raw_text_element(&document.children).unwrap();
+            assert_eq!(has_minified_raw_text(element), expected, "{html}");
+        }
+    }
+
+    fn find_raw_text_element(children: &[Child]) -> Option<&Element> {
+        children.iter().find_map(|child| match child {
+            Child::Element(element) if matches!(&*element.tag_name, "script" | "style") => {
+                Some(element)
+            }
+            Child::Element(element) => find_raw_text_element(&element.children),
+            _ => None,
+        })
     }
 
     // ── minify_css_bytes ──

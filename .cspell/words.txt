@@ -20,6 +20,7 @@ infty
 interp
 itertools
 jiff
+jscript
 katex
 kwarg
 kwargs
