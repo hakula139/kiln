@@ -204,7 +204,7 @@ impl MarkdownRenderer<'_> {
             self.assets.add_feature(Feature::Mermaid);
             render_mermaid(&code)
         } else {
-            highlight_code(&code, &spec, self.options.code_max_lines)
+            highlight_code(&code, &spec, self.options)
         }
     }
 
@@ -851,7 +851,7 @@ mod tests {
                 out.content_html.contains(indoc! {r#"
                     <details class="code-block" open>
                       <summary class="code-header">
-                        <span class="code-lang">Plain Text</span>
+                        <span class="code-lang" data-pagefind-ignore>Plain Text</span>
                 "#}),
                 "{}",
                 out.content_html

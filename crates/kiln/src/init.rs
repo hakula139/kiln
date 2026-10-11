@@ -75,6 +75,8 @@ pub fn init_theme(root: &Path, name: &str) -> Result<()> {
         indoc! {r#"
             all_posts = "All Posts"
             back_to_top = "Back to Top"
+            copy = "Copy"
+            copy_code = "Copy Code"
             table_of_contents = "Table of Contents"
         "#},
     )
@@ -84,6 +86,8 @@ pub fn init_theme(root: &Path, name: &str) -> Result<()> {
         indoc! {r#"
             all_posts = "所有文章"
             back_to_top = "回到顶部"
+            copy = "复制"
+            copy_code = "复制代码"
             table_of_contents = "目录"
         "#},
     )

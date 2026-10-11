@@ -127,6 +127,38 @@ fn build_numbers_headings_per_page() {
 }
 
 #[test]
+fn build_localizes_and_escapes_code_copy_labels() {
+    let site = TestSite::new(indoc! {r#"
+        base_url = "https://example.com"
+        language = "zh-Hans"
+    "#});
+    site.write(
+        "i18n/zh-Hans.toml",
+        indoc! {r#"
+            copy = "复制"
+            copy_code = '复制 "代码" <&>'
+        "#},
+    )
+    .page(
+        "posts/hello",
+        indoc! {r#"
+            +++
+            title = "Hello"
+            +++
+            ```rust
+            fn main() {}
+            ```
+        "#},
+    );
+
+    site.build().unwrap();
+
+    let html = site.read("posts/hello/index.html");
+    let button = r#"<button class="copy-btn" data-pagefind-ignore aria-label="复制 &quot;代码&quot; &lt;&amp;&gt;">复制</button>"#;
+    assert!(html.contains(button), "{html}");
+}
+
+#[test]
 fn build_rejects_invalid_render_options() {
     let site = TestSite::new(indoc! {r#"
         [params]
