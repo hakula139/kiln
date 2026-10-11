@@ -42,14 +42,10 @@
       "groupName": "GitHub Actions"
     },
     {
-      "matchPackageNames": ["minify-html", "oxc_*"],
-      "groupName": "minify-html and Oxc",
+      "matchPackageNames": ["/^swc_/"],
+      "groupName": "swc",
+      "separateMajorMinor": false,
       "automerge": false
-    },
-    {
-      "matchPackageNames": ["oxc_*"],
-      "matchIsBreaking": true,
-      "enabled": false
     }
   ]
 }

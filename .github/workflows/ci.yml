@@ -129,7 +129,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Check
-        run: cargo hack check --rust-version --workspace --all-features --locked
+        run: cargo hack check --rust-version --workspace --all-targets --all-features --locked
 
   coverage:
     name: Coverage
