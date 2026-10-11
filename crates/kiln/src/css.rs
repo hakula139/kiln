@@ -1,8 +1,10 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::fmt::Write;
 use std::fs;
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::thread;
 
 use anyhow::{Context, Result, bail};
 use lightningcss::bundler::{Bundler, FileProvider, ResolveResult, SourceProvider};
@@ -89,17 +91,15 @@ impl Stylesheets {
                 .iter()
                 .map(|style| compile_plain(assets, manifest, prefix, style))
                 .collect(),
-            CssProcessor::Tailwind => {
-                // Spawn every compiler before waiting, and reap all before reporting any error.
-                let runs: Vec<_> = styles
-                    .iter()
-                    .map(|style| TailwindRun::spawn(root, config, self.shared.as_ref(), style))
-                    .collect();
-                runs.into_iter()
-                    .zip(&styles)
-                    .map(|(run, style)| run?.finish(assets, manifest, prefix, style))
-                    .collect()
-            }
+            CssProcessor::Tailwind => run_in_order(
+                &styles,
+                thread::available_parallelism().unwrap_or(NonZeroUsize::MIN),
+                |style| {
+                    let run = TailwindRun::spawn(root, config, self.shared.as_ref(), style);
+                    (*style, run)
+                },
+                |(style, run)| run?.finish(assets, manifest, prefix, style),
+            ),
         };
         for (style, css) in styles.into_iter().zip(compiled) {
             let css =
@@ -230,6 +230,26 @@ impl TailwindRun {
     }
 }
 
+/// Starts items in order with at most `limit` running, and finishes every started item in the
+/// same order.
+fn run_in_order<T, R, O>(
+    items: impl IntoIterator<Item = T>,
+    limit: NonZeroUsize,
+    mut start: impl FnMut(T) -> R,
+    mut finish: impl FnMut(R) -> O,
+) -> Vec<O> {
+    let mut running = VecDeque::with_capacity(limit.get());
+    let mut finished = Vec::new();
+    for item in items {
+        if running.len() == limit.get() {
+            finished.extend(running.pop_front().map(&mut finish));
+        }
+        running.push_back(start(item));
+    }
+    finished.extend(running.into_iter().map(finish));
+    finished
+}
+
 fn tailwind_path(path: &Path) -> Result<String> {
     let path = dunce::canonicalize(path)?;
     let path = path.to_string_lossy();
@@ -346,6 +366,8 @@ fn css_string(value: &str) -> Result<String> {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::RefCell;
+
     use indoc::indoc;
 
     use super::*;
@@ -491,6 +513,34 @@ mod tests {
         assert!(css.contains("../../shared/image.svg"), "{css}");
         assert!(!css.contains("shared/../"), "{css}");
         assert!(!css.contains("original.svg"), "{css}");
+    }
+
+    // ── run_in_order ──
+
+    #[test]
+    fn run_in_order_limits_running_items_and_preserves_order() {
+        let events = RefCell::new(Vec::new());
+        let finished = run_in_order(
+            0..4,
+            NonZeroUsize::new(2).unwrap(),
+            |item| {
+                events.borrow_mut().push(format!("start {item}"));
+                item
+            },
+            |item| {
+                events.borrow_mut().push(format!("finish {item}"));
+                item * 10
+            },
+        );
+
+        assert_eq!(finished, [0, 10, 20, 30]);
+        assert_eq!(
+            events.into_inner(),
+            [
+                "start 0", "start 1", "finish 0", "start 2", "finish 1", "start 3", "finish 2",
+                "finish 3",
+            ]
+        );
     }
 
     // ── published_url ──
