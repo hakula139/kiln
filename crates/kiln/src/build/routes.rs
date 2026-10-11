@@ -7,10 +7,10 @@ use jiff::Timestamp;
 use strum::IntoEnumIterator;
 
 use super::BuildContext;
-use super::listing::{BucketKind, ListingArtifacts, ListingBucket, newest};
+use super::bucket::{BucketKind, Listing};
+use super::listing::{PreparedPage, newest};
 use super::paginate::paginated_path;
 use super::sitemap::SitemapEntry;
-use crate::content::page::Page;
 use crate::pagination::Paginator;
 use crate::static_assets::MEDIA_DIRECTORY;
 use crate::url::page_url;
@@ -29,29 +29,29 @@ pub(super) struct RoutePlan {
 impl RoutePlan {
     pub(super) fn new(
         ctx: &BuildContext,
-        pages: &[Page],
-        artifacts: &ListingArtifacts,
-        buckets: &[ListingBucket<'_>],
+        pages: &[PreparedPage],
+        posts: &[&PreparedPage],
+        buckets: &[Listing<'_>],
         output_dir: &Path,
     ) -> Result<Self> {
         let mut plan = Self::default();
-        for (page, prepared) in pages.iter().zip(&artifacts.pages) {
+        for prepared in pages {
             plan.insert(
-                prepared.output_path.clone(),
-                page.source_path.display().to_string(),
+                prepared.page.output_path(),
+                prepared.page.source_path.display().to_string(),
                 Some(SitemapEntry {
                     loc: prepared.summary.url.clone(),
                     lastmod: prepared.modified(),
                 }),
             )?;
         }
-        plan.listings(ctx, artifacts, buckets)?;
+        plan.listings(ctx, posts, buckets)?;
         for path in ["index.xml", "sitemap.xml", "robots.txt"] {
             plan.insert(PathBuf::from(path), format!("generated {path}"), None)?;
         }
         for bucket in buckets {
             plan.insert(
-                bucket.base_path().join("index.xml"),
+                bucket.path().join("index.xml"),
                 format!("{} feed", bucket.name),
                 None,
             )?;
@@ -73,17 +73,16 @@ impl RoutePlan {
     fn listings(
         &mut self,
         ctx: &BuildContext,
-        artifacts: &ListingArtifacts,
-        buckets: &[ListingBucket<'_>],
+        posts: &[&PreparedPage],
+        buckets: &[Listing<'_>],
     ) -> Result<()> {
         if ctx.template_engine.has_template("home.html") {
-            let posts = artifacts.posts();
             self.paginated(
                 ctx,
                 Path::new(""),
-                Paginator::new(&posts, ctx.config.paginate.home.get()).total_pages(),
+                Paginator::new(posts, ctx.config.paginate.home.get()).total_pages(),
                 "home",
-                newest(&posts),
+                newest(posts),
             )?;
         }
         if ctx.template_engine.has_template("archive.html") {
@@ -91,7 +90,7 @@ impl RoutePlan {
                 let per_page = bucket.kind.page_size(&ctx.config.paginate).get();
                 self.paginated(
                     ctx,
-                    &bucket.base_path(),
+                    &bucket.path(),
                     Paginator::new(&bucket.pages, per_page).total_pages(),
                     &bucket.name,
                     newest(&bucket.pages),
@@ -100,7 +99,7 @@ impl RoutePlan {
         }
         if ctx.template_engine.has_template("overview.html") {
             for kind in BucketKind::iter().filter(|kind| kind.has_overview()) {
-                let path = Path::new(&kind.plural()).join("index.html");
+                let path = Path::new(kind.plural()).join("index.html");
                 self.insert(
                     path.clone(),
                     format!("{} overview", kind.plural()),

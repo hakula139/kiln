@@ -41,11 +41,12 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 ├── build.rs             # BuildContext, build orchestration, per-page rendering, static / asset copying
 ├── build/               # Listing pipeline and output generator submodules
 │   ├── archive.rs       # Paginated year-grouped archive pages (/posts/, /posts/<section>/, /tags/<slug>/)
+│   ├── bucket.rs        # Listing buckets (all posts, sections, tags): membership, _index.md names, URL layout
 │   ├── error.rs         # 404 error page generation
 │   ├── feed.rs          # RSS 2.0 feeds (site, all-posts, section and tag feeds)
 │   ├── git.rs           # Optional content-file commit timestamps for post templates
 │   ├── home.rs          # Paginated home page generation
-│   ├── listing.rs       # Prepared page metadata and borrowed listing collections
+│   ├── listing.rs       # Prepared page metadata, date ordering and year grouping
 │   ├── overview.rs      # Bucket overview index pages (/sections/, /tags/)
 │   ├── paginate.rs      # Generic write_paginated and paginated output paths
 │   ├── routes.rs        # Enabled route planning, collision validation and sitemap entries
@@ -97,12 +98,10 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 │   ├── table.rs         # `nowrap` class on cells of short table columns
 │   └── toc.rs           # TocEntry struct, nested <nav> table of contents generation
 ├── search.rs            # Pagefind search indexing (external binary invocation)
-├── section.rs           # Section struct, collect_sections() from page kinds, _index.md title loading
 ├── serve.rs             # Dev server with file watching, WebSocket live reload, script injection
 ├── static_assets.rs     # Published asset manifest + content-hashed asset URLs
 ├── static_assets/
 │   └── publication.rs   # Static / bundle asset publication and source → output paths
-├── taxonomy.rs          # TaxonomyKind, Taxonomy, Term, TaxonomySet, build_taxonomies()
 ├── template.rs          # MiniJinja layered template engine, directive / archive / overview / error rendering
 ├── template/            # Template submodules
 │   ├── functions.rs     # MiniJinja template functions (now, read_file, parse_csv, t, register_script)

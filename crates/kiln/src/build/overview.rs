@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use strum::IntoEnumIterator;
 
 use super::BuildContext;
-use super::listing::{BucketKind, ListingBucket};
+use super::bucket::{BucketKind, Listing};
 use crate::output::write_output;
 use crate::template::vars::{BucketSummary, OverviewPageVars, PageMetadata};
 use crate::url::page_url;
@@ -14,7 +14,7 @@ use crate::url::page_url;
 /// Skipped when `overview.html` is not present in the template set.
 pub(super) fn build_overview_pages(
     ctx: &BuildContext,
-    buckets: &[ListingBucket<'_>],
+    buckets: &[Listing<'_>],
     output_dir: &Path,
 ) -> Result<usize> {
     if !ctx.template_engine.has_template("overview.html") {
@@ -50,11 +50,11 @@ fn write_overview(
             description: &ctx.config.description,
             url: page_url(
                 &ctx.config.base_url,
-                &Path::new(&kind.plural()).join("index.html"),
+                &Path::new(kind.plural()).join("index.html"),
             )
             .into(),
         },
-        kind: &kind.plural(),
+        kind: kind.plural(),
         singular: kind.singular(),
         buckets,
         config: &ctx.config,

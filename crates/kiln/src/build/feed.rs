@@ -6,7 +6,8 @@ use jiff::Timestamp;
 use jiff::tz::TimeZone;
 
 use super::BuildContext;
-use super::listing::{ListingBucket, PreparedPage, newest};
+use super::bucket::Listing;
+use super::listing::{PreparedPage, newest};
 use crate::html::{self, writeln_indented};
 use crate::output::write_output;
 use crate::url::directory_url;
@@ -30,7 +31,7 @@ struct Channel<'a> {
 pub(super) fn build_feeds(
     ctx: &BuildContext,
     listed_posts: &[&PreparedPage],
-    buckets: &[ListingBucket<'_>],
+    buckets: &[Listing<'_>],
     output_dir: &Path,
 ) -> Result<()> {
     write_feed(
@@ -42,7 +43,7 @@ pub(super) fn build_feeds(
     )?;
     for bucket in buckets {
         let title = format!("{} - {}", bucket.name, ctx.config.title);
-        write_feed(ctx, &title, &bucket.base_path(), &bucket.pages, output_dir)?;
+        write_feed(ctx, &title, &bucket.path(), &bucket.pages, output_dir)?;
     }
     Ok(())
 }

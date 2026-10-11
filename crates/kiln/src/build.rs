@@ -1,4 +1,5 @@
 mod archive;
+mod bucket;
 mod error;
 mod feed;
 mod git;
@@ -15,15 +16,13 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 
+use self::bucket::Taxonomy;
 use self::git::GitInfo;
-use self::listing::{
-    PreparedPage, build_listing_artifacts, build_listing_buckets, format_page_date,
-};
+use self::listing::{PreparedPage, format_page_date, prepare_pages};
 use self::routes::RoutePlan;
 use crate::config::Config;
-use crate::content::discovery::{ContentSet, discover_content};
-use crate::content::index::load_index_title;
-use crate::content::page::{Page, PageKind};
+use crate::content::discovery::discover_content;
+use crate::content::page::PageKind;
 use crate::css::Stylesheets;
 use crate::i18n::I18n;
 use crate::minify::{self, MinifyStats};
@@ -33,10 +32,8 @@ use crate::render::lqip::ImageResolver;
 use crate::render::pipeline::render_page;
 use crate::render::{PageResources, RenderOptions};
 use crate::search;
-use crate::section::collect_sections;
 use crate::static_assets::StaticAssetManifest;
 use crate::static_assets::publication::PublishedAssets;
-use crate::taxonomy::build_taxonomies;
 use crate::template::TemplateEngine;
 use crate::template::vars::{PageMetadata, PostTemplateVars};
 
@@ -136,24 +133,25 @@ pub fn build(root: &Path, options: &BuildOptions<'_>) -> Result<()> {
         git_info,
     };
 
-    let sections = collect_sections(&content.pages, &content.content_dir)?;
-    let taxonomy_set = build_taxonomies(&content.pages, Some(&content.content_dir))?;
+    let taxonomy = Taxonomy::collect(&content.pages, &content.content_dir, || {
+        ctx.i18n.t("all_posts").into_owned()
+    })?;
+    let prepared = prepare_pages(&ctx, &content.pages, &taxonomy)?;
+    let buckets: Vec<_> = taxonomy
+        .buckets
+        .into_iter()
+        .map(|bucket| bucket.resolve(&prepared))
+        .collect();
+    let posts = &buckets[0].pages;
 
-    let artifacts = build_listing_artifacts(&ctx, &content.pages, &sections, &taxonomy_set)?;
-
-    let posts_title = load_index_title(&content.content_dir.join("posts"))?
-        .unwrap_or_else(|| ctx.i18n.t("all_posts").into_owned());
-    let buckets = build_listing_buckets(&artifacts, &sections, &taxonomy_set, posts_title);
-
-    let plan = RoutePlan::new(&ctx, &content.pages, &artifacts, &buckets, &output_dir)?;
-    build_content_pages(&ctx, &content, &output_dir, &artifacts.pages)?;
-    let posts = artifacts.posts();
+    let plan = RoutePlan::new(&ctx, &prepared, posts, &buckets, &output_dir)?;
+    build_content_pages(&ctx, &prepared, &output_dir)?;
     let mut page_count = content.pages.len();
-    page_count += home::build_home_pages(&ctx, &posts, &output_dir)?;
+    page_count += home::build_home_pages(&ctx, posts, &output_dir)?;
     page_count += archive::build_archive_pages(&ctx, &buckets, &output_dir)?;
     page_count += overview::build_overview_pages(&ctx, &buckets, &output_dir)?;
 
-    feed::build_feeds(&ctx, &posts, &buckets, &output_dir)?;
+    feed::build_feeds(&ctx, posts, &buckets, &output_dir)?;
     sitemap::build_sitemap_and_robots(&ctx, &plan, &output_dir)?;
     page_count += error::build_404(&ctx, &output_dir)?;
 
@@ -235,23 +233,18 @@ fn format_build_summary(
 
 fn build_content_pages(
     ctx: &BuildContext,
-    content: &ContentSet,
-    output_dir: &Path,
     prepared: &[PreparedPage],
+    output_dir: &Path,
 ) -> Result<()> {
-    for (page, prepared) in content.pages.iter().zip(prepared) {
-        build_page(ctx, page, output_dir, prepared)?;
+    for prepared in prepared {
+        build_page(ctx, prepared, output_dir)?;
     }
 
     Ok(())
 }
 
-fn build_page(
-    ctx: &BuildContext,
-    page: &Page,
-    output_dir: &Path,
-    prepared: &PreparedPage,
-) -> Result<()> {
+fn build_page(ctx: &BuildContext, prepared: &PreparedPage, output_dir: &Path) -> Result<()> {
+    let page = prepared.page;
     let rendered = render_page(
         &page.body,
         &ctx.template_engine,
@@ -300,5 +293,5 @@ fn build_page(
     }
     .with_context(|| format!("failed to render {}", page.source_path.display()))?;
 
-    write_output(&output_dir.join(&prepared.output_path), &html)
+    write_output(&output_dir.join(page.output_path()), &html)
 }
