@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 
-{% block title %}<title>{{ kind | capitalize }} - {{ config.title }}</title>{% endblock %}
+{% block title %}<title>{{ title }} - {{ config.title }}</title>{% endblock %}
 
 {% block body %}
-  <h1>All {{ kind }}</h1>
+  <h1>{{ title }}</h1>
 
   <ul>
   {%- for bucket in buckets %}

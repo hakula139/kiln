@@ -272,7 +272,7 @@ impl<'a> RoutePlan<'a> {
             }
             Route::Sitemap => sitemap::render_sitemap(&self.sitemap_entries(base_url)),
             Route::Robots => sitemap::render_robots(base_url),
-            Route::NotFound => return error::render(ctx),
+            Route::NotFound => error::render(ctx, &page_url(base_url, path))?,
             Route::SearchIndex => return Ok(None),
         };
         Ok(Some(content))

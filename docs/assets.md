@@ -69,10 +69,10 @@ kiln supplies content and site / theme template scanning. Tailwind page entries 
 
 ### Template Links and Page Scope
 
-Link the shared stylesheet in the base template and page CSS in post / page templates:
+Link the shared stylesheet in the base template and page CSS in the post template:
 
 ```jinja
-<link rel="stylesheet" href="{{ asset_url('/assets/css/site.css') | safe }}">
+<link rel="stylesheet" href="{{ asset_url('/assets/css/site.css') }}">
 {% if page_css %}<link rel="stylesheet" href="{{ page_css | safe }}">{% endif %}
 ```
 

@@ -421,7 +421,7 @@ mod tests {
 
     use indoc::indoc;
 
-    use crate::config::{Config, ImageConfig};
+    use crate::config::ImageConfig;
     use crate::render::lqip::ImageResolver;
     use crate::render::pipeline::{RenderedPage, render_page};
     use crate::render::{PageResources, RenderOptions};
@@ -440,7 +440,6 @@ mod tests {
         render_page(
             content,
             &test_engine(),
-            &Config::default(),
             &RenderOptions::default(),
             &PageResources {
                 images: resolver,

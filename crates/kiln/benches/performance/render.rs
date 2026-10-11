@@ -19,10 +19,17 @@ pub(super) fn benchmarks(criterion: &mut Criterion) {
     let site = Site::new(0, PROSE, 0);
     let config = Config::load(site.root()).unwrap();
     let i18n = I18n::load(site.root(), None, &Language::default()).unwrap();
-    let engine = TemplateEngine::new(Some(&site.root().join("templates")), None, &i18n).unwrap();
+    let manifest = StaticAssetManifest::default();
+    let engine = TemplateEngine::new(
+        Some(&site.root().join("templates")),
+        None,
+        &config,
+        &i18n,
+        &manifest,
+    )
+    .unwrap();
     let options = RenderOptions::default();
     let resolver = ImageResolver::new(&site.root().join("static"), config.image.clone());
-    let manifest = StaticAssetManifest::default();
     let resources = PageResources {
         source_dir: None,
         images: &resolver,
@@ -40,7 +47,7 @@ pub(super) fn benchmarks(criterion: &mut Criterion) {
     .repeat(20);
     let mut group = criterion.benchmark_group("render");
     for (name, input) in [("prose", PROSE.repeat(20)), ("highlighted_code", code)] {
-        let expected = render_page(&input, &engine, &config, &options, &resources, false).unwrap();
+        let expected = render_page(&input, &engine, &options, &resources, false).unwrap();
         verify_render(name, &expected.content_html);
         group.throughput(Throughput::Bytes(input.len().try_into().unwrap()));
         group.bench_with_input(
@@ -48,15 +55,7 @@ pub(super) fn benchmarks(criterion: &mut Criterion) {
             &input,
             |bencher, input| {
                 bencher.iter(|| {
-                    render_page(
-                        black_box(input),
-                        &engine,
-                        &config,
-                        &options,
-                        &resources,
-                        false,
-                    )
-                    .unwrap()
+                    render_page(black_box(input), &engine, &options, &resources, false).unwrap()
                 });
             },
         );

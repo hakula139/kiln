@@ -21,7 +21,28 @@ pub(crate) use fixtures::{copy_templates, git, git_commit, template_dir, write_t
 
 /// Creates a `TemplateEngine` using embedded test templates.
 pub(crate) fn test_engine() -> TemplateEngine {
-    TemplateEngine::new(None, Some(&template_dir()), &test_i18n()).unwrap()
+    test_engine_with(None, Some(&template_dir()), &Config::default())
+}
+
+/// Creates a `TemplateEngine` over `site_dir` alone, with default configuration.
+pub(crate) fn test_site_engine(site_dir: &Path) -> TemplateEngine {
+    test_engine_with(Some(site_dir), None, &Config::default())
+}
+
+/// Creates a `TemplateEngine` with test translations and an empty asset manifest.
+pub(crate) fn test_engine_with(
+    site_dir: Option<&Path>,
+    theme_dir: Option<&Path>,
+    config: &Config,
+) -> TemplateEngine {
+    TemplateEngine::new(
+        site_dir,
+        theme_dir,
+        config,
+        &test_i18n(),
+        &StaticAssetManifest::default(),
+    )
+    .unwrap()
 }
 
 /// Creates a minimal `I18n` seeded with English strings so build-level tests render
@@ -74,13 +95,5 @@ pub(crate) fn test_resources() -> PageResources<'static> {
 
 /// Renders Markdown through the page pipeline with test templates and resources.
 pub(crate) fn render_test_page(input: &str, options: &RenderOptions) -> RenderedPage {
-    render_page(
-        input,
-        &test_engine(),
-        &Config::default(),
-        options,
-        &test_resources(),
-        false,
-    )
-    .unwrap()
+    render_page(input, &test_engine(), options, &test_resources(), false).unwrap()
 }

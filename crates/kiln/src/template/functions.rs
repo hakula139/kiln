@@ -5,6 +5,7 @@ use std::path::{Component, Path};
 use minijinja::value::{Kwargs, Value};
 use minijinja::{Error, ErrorKind, State};
 
+use crate::html;
 use crate::i18n::I18n;
 use crate::render::assets::{AssetsHandle, LoadStrategy, ScriptTag};
 use crate::static_assets::{StaticAssetManifest, is_external};
@@ -19,17 +20,16 @@ pub(super) fn tpl_now() -> String {
 
 // ── File IO ──
 
-/// Reads a file relative to the directive's `source_dir`. Rejects `..`, absolute, and rooted
-/// path components. Symlinks may refer to files outside the source directory.
+/// Reads a file relative to the directive page's source directory. Rejects `..`, absolute, and
+/// rooted path components. Symlinks may refer to files outside the source directory.
 pub(super) fn tpl_read_file(state: &State, filename: &str) -> Result<String, Error> {
     let source_dir = state
-        .lookup("source_dir")
+        .lookup("__source_dir")
         .filter(|v| !v.is_none() && !v.is_undefined())
-        .ok_or_else(|| invalid("read_file requires source_dir in directive context"))?;
-
-    // `DirectiveContext.source_dir` is the only producer of this value, so when present it is
-    // always a string.
-    let source_dir = source_dir.as_str().unwrap_or_default();
+        .ok_or_else(|| invalid("read_file requires a page source directory"))?;
+    let source_dir = source_dir
+        .as_str()
+        .ok_or_else(|| invalid("__source_dir must be a string"))?;
 
     let rel = Path::new(filename);
     if rel.components().any(|component| {
@@ -90,39 +90,46 @@ pub(super) fn tpl_t(i18n: &I18n, key: &str, kwargs: &Kwargs) -> Result<String, E
 
 // ── Static Assets ──
 
-/// Resolves a site-root-relative or page-relative path to its published asset URL.
-pub(super) fn tpl_asset_url(
-    state: &State,
-    manifest: &StaticAssetManifest,
-    deployment_prefix: &str,
-    url: &str,
-) -> Result<String, Error> {
-    let page_url = state.lookup("__page_url");
-    let page_url = page_url.as_ref().and_then(Value::as_str);
-    let base = if url.starts_with('/') || is_external(url) {
-        "/"
-    } else {
-        page_url.ok_or_else(|| invalid("asset_url requires a page URL for relative paths"))?
-    };
-    manifest
-        .resolve(
-            &site_asset_url(url, deployment_prefix),
-            base,
-            deployment_prefix,
-        )
-        .ok_or_else(|| invalid(format!("asset_url: static asset not found: {url}")))
+/// Published asset URLs and the deployment prefix they are served under.
+#[derive(Debug)]
+pub(super) struct AssetUrls {
+    pub(super) manifest: StaticAssetManifest,
+    pub(super) prefix: String,
+}
+
+impl AssetUrls {
+    /// Resolves a site-root-relative or page-relative path to its published asset URL.
+    fn resolve(&self, state: &State, url: &str) -> Result<String, Error> {
+        let page_url = state.lookup("__page_url");
+        let page_url = page_url.as_ref().and_then(Value::as_str);
+        let base = if url.starts_with('/') || is_external(url) {
+            "/"
+        } else {
+            page_url.ok_or_else(|| invalid("relative asset paths require a page URL"))?
+        };
+        self.manifest
+            .resolve(&site_asset_url(url, &self.prefix), base, &self.prefix)
+            .ok_or_else(|| invalid(format!("static asset not found: {url}")))
+    }
+}
+
+/// Returns the published URL of an asset path, HTML-escaped and marked safe for attributes.
+pub(super) fn tpl_asset_url(state: &State, assets: &AssetUrls, url: &str) -> Result<Value, Error> {
+    let url = assets.resolve(state, url)?;
+    Ok(Value::from_safe_string(html::escape(&url)))
 }
 
 // ── Asset Registration ──
 
-/// Registers a `<script>` for the current page on the per-render [`AssetsHandle`]. Returns the
-/// empty string so the call can be used as a statement.
+/// Registers a `<script>` for the asset path `url`, resolved like `asset_url`, on the per-render
+/// [`AssetsHandle`]. Returns the empty string so the call can be used as a statement.
 ///
 /// Accepts `load="defer"` (default), `"async"`, or `"sync"`, and `module=true` for
 /// `type="module"`. Modules reject `load="sync"`. Re-registering the same tag is a no-op, while
 /// re-registering the same URL with different attributes is an error.
 pub(super) fn tpl_register_script(
     state: &State,
+    assets: &AssetUrls,
     url: &str,
     kwargs: &Kwargs,
 ) -> Result<&'static str, Error> {
@@ -153,13 +160,10 @@ pub(super) fn tpl_register_script(
         })?,
     };
 
+    let url = assets.resolve(state, url)?;
     handle
         .lock()
-        .register_script(ScriptTag {
-            url: url.to_owned(),
-            load,
-            module,
-        })
+        .register_script(ScriptTag { url, load, module })
         .map_err(|e| invalid(e.to_string()))?;
 
     Ok("")
@@ -177,8 +181,10 @@ mod tests {
 
     use indoc::indoc;
     use minijinja::context;
+    use tempfile::TempDir;
 
     use super::*;
+    use crate::config::Config;
     use crate::i18n::Language;
     use crate::template::TemplateEngine;
     use crate::test_utils::{test_engine, test_i18n};
@@ -231,13 +237,21 @@ mod tests {
     }
 
     #[test]
-    fn tpl_read_file_missing_source_dir_or_file_returns_error() {
+    fn tpl_read_file_missing_or_invalid_source_dir_or_file_returns_error() {
         let source = tempfile::tempdir().unwrap();
-        for (source_dir, expected) in [
-            (None, "read_file requires source_dir"),
-            (Some(source.path()), "failed to read"),
+        let source_dir = source.path().to_string_lossy();
+        for (ctx, expected) in [
+            (
+                context! { source_dir },
+                "read_file requires a page source directory",
+            ),
+            (
+                context! { __source_dir => 1 },
+                "__source_dir must be a string",
+            ),
+            (context! { __source_dir => source_dir }, "failed to read"),
         ] {
-            let error = read_file("missing.csv", source_dir).unwrap_err();
+            let error = render("{{ read_file('missing.csv') }}", context! { ..ctx }).unwrap_err();
             assert!(error.to_string().contains(expected), "{error}");
         }
     }
@@ -336,7 +350,14 @@ mod tests {
         .unwrap();
 
         let templates = tempfile::tempdir().unwrap();
-        let engine = TemplateEngine::new(Some(templates.path()), None, &i18n).unwrap();
+        let engine = TemplateEngine::new(
+            Some(templates.path()),
+            None,
+            &Config::default(),
+            &i18n,
+            &StaticAssetManifest::default(),
+        )
+        .unwrap();
         for (template, expected) in [
             (
                 r#"{{ t("greeting", name="Alex", count=2) }}"#,
@@ -353,38 +374,19 @@ mod tests {
     // ── tpl_asset_url ──
 
     #[test]
-    fn tpl_asset_url_renders_prefixed_and_encoded_manifest_urls() {
-        let static_dir = tempfile::tempdir().unwrap();
-        fs::create_dir(static_dir.path().join("blog")).unwrap();
-        for (path, content) in [
-            ("shared.css", "abc"),
-            ("blog/shared.css", "different"),
-            ("shared.js", "abc"),
-            ("page script.js", "abc"),
-        ] {
-            fs::write(static_dir.path().join(path), content).unwrap();
-        }
-
-        let manifest = StaticAssetManifest::build(static_dir.path()).unwrap();
-        let templates = tempfile::tempdir().unwrap();
-        let engine = TemplateEngine::new_with_assets(
-            Some(templates.path()),
-            None,
-            &test_i18n(),
-            "/blog/",
-            &manifest,
-        )
-        .unwrap();
+    fn tpl_asset_url_renders_prefixed_encoded_and_escaped_urls() {
+        let (_dir, engine) = asset_engine();
 
         assert_eq!(
             engine
                 .env
                 .render_str(
                     indoc! {r#"
-                        <link rel="stylesheet" href="{{ asset_url('/shared.css') | safe }}">
-                        <link rel="stylesheet" href="{{ asset_url('/blog/shared.css') | safe }}">
+                        <link rel="stylesheet" href="{{ asset_url('/shared.css') }}">
+                        <link rel="stylesheet" href="{{ asset_url('/blog/shared.css') }}">
                         <script src="{{ asset_url('/shared.js') | safe }}"></script>
-                        <script src="{{ asset_url('/page%20script.js') | safe }}"></script>
+                        <script src="{{ asset_url('/page%20script.js') }}"></script>
+                        <img src="{{ asset_url('https://example.org/a.png?w=1&h=2') }}">
                     "#},
                     (),
                 )
@@ -394,6 +396,7 @@ mod tests {
                 <link rel="stylesheet" href="/blog/blog/shared.9d6f965ac832.css">
                 <script src="/blog/shared.ba7816bf8f01.js"></script>
                 <script src="/blog/page%20script.ba7816bf8f01.js"></script>
+                <img src="https://example.org/a.png?w=1&amp;h=2">
             "#}
             .trim_end(),
         );
@@ -408,7 +411,7 @@ mod tests {
             ),
             (
                 r"{{ asset_url('image.png') }}",
-                "requires a page URL for relative paths",
+                "relative asset paths require a page URL",
             ),
         ] {
             let error = render(template, ()).unwrap_err();
@@ -424,7 +427,7 @@ mod tests {
         let assets = AssetsHandle::default();
         for _ in 0..2 {
             assert_eq!(
-                register(r#"{{ register_script("/js/widget.js") }}<widget>"#, &assets).unwrap(),
+                register(r#"{{ register_script("/shared.js") }}<widget>"#, &assets).unwrap(),
                 "<widget>",
                 "register_script must return an empty string"
             );
@@ -432,7 +435,7 @@ mod tests {
         assert_eq!(
             assets.snapshot().scripts(),
             [ScriptTag {
-                url: "/js/widget.js".into(),
+                url: "/blog/shared.ba7816bf8f01.js".into(),
                 load: LoadStrategy::Defer,
                 module: false,
             }]
@@ -443,7 +446,7 @@ mod tests {
     fn tpl_register_script_honors_load_async_kwarg() {
         let assets = AssetsHandle::default();
         register(
-            r#"{{ register_script("/js/widget.js", load="async") }}"#,
+            r#"{{ register_script("https://example.org/widget.js", load="async") }}"#,
             &assets,
         )
         .unwrap();
@@ -451,7 +454,7 @@ mod tests {
         assert_eq!(
             assets.snapshot().scripts(),
             [ScriptTag {
-                url: "/js/widget.js".into(),
+                url: "https://example.org/widget.js".into(),
                 load: LoadStrategy::Async,
                 module: false,
             }]
@@ -461,6 +464,10 @@ mod tests {
     #[test]
     fn tpl_register_script_invalid_declaration_returns_error() {
         for (template, message) in [
+            (
+                r#"{{ register_script("/missing.js") }}"#,
+                "static asset not found: /missing.js",
+            ),
             (
                 r#"{{ register_script("/x.js", load="sync", module=true) }}"#,
                 "cannot use synchronous loading",
@@ -508,15 +515,42 @@ mod tests {
             "{{ read_file(filename) }}",
             context! {
                 filename,
-                source_dir => source_dir.map(|dir| dir.to_string_lossy()),
+                __source_dir => source_dir.map(|dir| dir.to_string_lossy()),
             },
         )
     }
 
     fn register(template: &str, assets: &AssetsHandle) -> Result<String, Error> {
-        render(
+        let (_dir, engine) = asset_engine();
+        engine.env.render_str(
             template,
             context! { __assets => Value::from_object(assets.clone()) },
         )
+    }
+
+    /// Creates an engine deployed under `/blog/` whose manifest holds a few code assets.
+    fn asset_engine() -> (TempDir, TemplateEngine) {
+        let static_dir = tempfile::tempdir().unwrap();
+        fs::create_dir(static_dir.path().join("blog")).unwrap();
+        for (path, content) in [
+            ("shared.css", "abc"),
+            ("blog/shared.css", "different"),
+            ("shared.js", "abc"),
+            ("page script.js", "abc"),
+            ("x.js", "abc"),
+        ] {
+            fs::write(static_dir.path().join(path), content).unwrap();
+        }
+        let config: Config = toml::from_str(r#"base_url = "https://example.com/blog/""#).unwrap();
+        let templates = tempfile::tempdir().unwrap();
+        let engine = TemplateEngine::new(
+            Some(templates.path()),
+            None,
+            &config,
+            &test_i18n(),
+            &StaticAssetManifest::build(static_dir.path()).unwrap(),
+        )
+        .unwrap();
+        (static_dir, engine)
     }
 }

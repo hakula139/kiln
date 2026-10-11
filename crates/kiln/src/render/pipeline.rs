@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use anyhow::Result;
 use pulldown_cmark::{CodeBlockKind, Event, Tag};
 
@@ -10,7 +8,6 @@ use super::heading::{HeadingNumbers, NUMBERING_START};
 use super::page_ids::PageIds;
 use super::toc::render_toc_html;
 use super::{PageResources, RenderOptions};
-use crate::config::Config;
 use crate::directive::callout::Callout;
 use crate::directive::div::render_div;
 use crate::directive::parser::{DirectiveNode, parse_directives};
@@ -37,7 +34,6 @@ pub struct RenderedPage {
 pub fn render_page(
     raw_content: &str,
     engine: &TemplateEngine,
-    config: &Config,
     options: &RenderOptions,
     resources: &PageResources<'_>,
     heading_numbering: bool,
@@ -48,7 +44,6 @@ pub fn render_page(
     }
     let renderer = PageRenderer {
         engine,
-        config,
         options,
         resources,
         assets: AssetsHandle::default(),
@@ -77,7 +72,6 @@ pub fn render_page(
 /// Inputs shared by the page body and every directive body rendered for one page.
 struct PageRenderer<'a> {
     engine: &'a TemplateEngine,
-    config: &'a Config,
     options: &'a RenderOptions,
     resources: &'a PageResources<'a>,
     assets: AssetsHandle,
@@ -277,12 +271,10 @@ impl PageRenderer<'_> {
                 identity: &args.identity,
                 body_html,
                 callout,
-                source_dir: self.resources.source_dir.map(Path::to_string_lossy),
-                page_url: self.resources.page_url,
             };
             if let Some(result) = self
                 .engine
-                .render_directive(&ctx, &self.assets, self.config)
+                .render_directive(&ctx, self.resources, &self.assets)
             {
                 return result;
             }
@@ -341,7 +333,7 @@ mod tests {
 
     use super::*;
     use crate::render::assets::Feature;
-    use crate::test_utils::{render_test_page, test_engine, test_i18n, test_resources};
+    use crate::test_utils::{render_test_page, test_engine, test_resources, test_site_engine};
 
     fn render(input: &str) -> RenderedPage {
         render_test_page(input, &RenderOptions::default())
@@ -351,7 +343,6 @@ mod tests {
         render_page(
             input,
             engine,
-            &Config::default(),
             &RenderOptions::default(),
             &test_resources(),
             false,
@@ -363,7 +354,6 @@ mod tests {
         render_page(
             input,
             &test_engine(),
-            &Config::default(),
             &RenderOptions::default(),
             &test_resources(),
             true,
@@ -376,7 +366,7 @@ mod tests {
         let directives = dir.path().join("directives");
         fs::create_dir_all(&directives).unwrap();
         fs::write(directives.join(format!("{name}.html")), template).unwrap();
-        let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
+        let engine = test_site_engine(dir.path());
         (dir, engine)
     }
 
@@ -1188,7 +1178,7 @@ mod tests {
         )
         .unwrap();
 
-        let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
+        let engine = test_site_engine(dir.path());
         let page = render_with(
             indoc! {"
                 ::: callout {#my-note .wide type=Tip open=false}
@@ -1213,7 +1203,6 @@ mod tests {
                     :::
                 "},
                 &test_engine(),
-                &Config::default(),
                 &RenderOptions::default(),
                 &test_resources(),
                 false,
@@ -1295,7 +1284,6 @@ mod tests {
                 :::
             "#},
             &engine,
-            &Config::default(),
             &RenderOptions::default(),
             &PageResources {
                 source_dir: Some(source.path()),

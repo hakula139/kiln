@@ -18,14 +18,12 @@ pub(super) fn render(
             description: &ctx.config.description,
             url: url.into(),
         },
-        kind: kind.plural(),
-        singular: kind.singular(),
+        kind: kind.as_ref(),
         buckets: buckets
             .iter()
             .filter(|bucket| bucket.kind == kind)
             .map(|bucket| bucket.summary(&ctx.config.base_url))
             .collect(),
-        config: &ctx.config,
     };
     ctx.template_engine
         .render_overview(&vars)

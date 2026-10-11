@@ -14,7 +14,6 @@ pub(super) fn render(ctx: &BuildContext, page: &ListingPage<'_>, url: &str) -> R
         },
         pages: page.pages.iter().map(|page| &page.summary).collect(),
         pagination: page.pagination(ctx.config.base_url.prefix()),
-        config: &ctx.config,
     };
     ctx.template_engine
         .render_home(&vars)

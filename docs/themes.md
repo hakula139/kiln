@@ -133,6 +133,8 @@ Use `{{ t("all_posts") }}` to look up a key and `{{ t("page_counter", current=1,
 
 A missing key renders as the key itself. This lets menu labels and similar values contain either a translation key or literal text.
 
+kiln titles generated pages with the keys `all_posts` (the posts archive without an `_index.md` title), `all_sections`, `all_tags` and `error_404_title`. Themes with archive, overview or error templates should define them.
+
 ## Creating a Theme
 
 ```bash
@@ -173,7 +175,7 @@ emojis = true
 
 ### Template Variables
 
-Post, standalone, home, archive and overview templates share `title`, `description`, canonical `url` and `config`.
+Every page template receives `title`, `description`, canonical `url` and [`assets`](#page-assets). Every template, including partials and directives, can read the site configuration as `config`.
 
 MiniJinja auto-escapes strings. Apply `| safe` to generated HTML such as `content`, `toc` and `body_html`. Dates are ISO 8601 timestamps with an offset in the configured time zone. Templates may use `date[:10]` when only the date is wanted.
 
@@ -188,11 +190,8 @@ MiniJinja auto-escapes strings. Apply `| safe` to generated HTML such as `conten
 | `tags`            | Linked terms with `name` and `url`                  |
 | `section`         | Linked section, or `none`                           |
 | `content`, `toc`  | Rendered page HTML and table of contents            |
-| `assets`          | Detected features and registered scripts            |
 
-#### Standalone Page Templates (`page.html`)
-
-Standalone pages use the post variables. When `page.html` is absent, kiln uses `post.html`.
+Posts and standalone pages both render with `post.html`.
 
 #### Home Page Templates (`home.html`)
 
@@ -200,22 +199,21 @@ Receives the common metadata, the current slice of `pages`, and `pagination`. On
 
 #### Archive Page Templates (`archive.html`)
 
-| Variable           | Contract                                             |
-| ------------------ | ---------------------------------------------------- |
-| `kind`, `singular` | Archive scope, such as `"tags"` and `"tag"`          |
-| `name`, `slug`     | Display title and URL slug                           |
-| `page_groups`      | Current page's entries grouped by year, newest first |
-| `pagination`       | Navigation for this archive                          |
+| Variable      | Contract                                             |
+| ------------- | ---------------------------------------------------- |
+| `kind`        | Archive scope: `"posts"`, `"section"` or `"tag"`     |
+| `page_groups` | Current page's entries grouped by year, newest first |
+| `pagination`  | Navigation for this archive                          |
 
-Archives cover `/posts/`, `/posts/<section>/` and `/tags/<slug>/`. Tagged standalone pages appear in tag archives. Pinning does not change archive or feed order. No archives are generated when this template is absent.
+Archives cover `/posts/`, `/posts/<section>/` and `/tags/<slug>/`. The `title` comes from the archive's `_index.md`, falling back to `t("all_posts")`, the titlecased section slug or the tag's first spelling. Tagged standalone pages appear in tag archives. Pinning does not change archive or feed order. No archives are generated when this template is absent.
 
 #### Overview Page Templates (`overview.html`)
 
-Receives the common metadata, `kind`, `singular` and `buckets` for `/sections/` or `/tags/`. Each bucket has `name`, `slug`, `url` and its date-sorted `pages`. Use `bucket.pages | length` for the count. No overviews are generated when this template is absent.
+Receives the common metadata, `kind` (`"section"` or `"tag"`) and `buckets` for `/sections/` or `/tags/`. The `title` is `t("all_sections")` or `t("all_tags")`. Each bucket has `name`, `url` and its date-sorted `pages`. Use `bucket.pages | length` for the count. No overviews are generated when this template is absent.
 
 #### Error Page Templates (`404.html`)
 
-Receives `title` and `config`. The output is `404.html`. Generation is skipped when this template is absent.
+Receives the common metadata, with `title` from `t("error_404_title")`. The output is `404.html`. Generation is skipped when this template is absent.
 
 #### Directive Templates (`directives/<name>.html`)
 
@@ -227,8 +225,6 @@ Receives `title` and `config`. The output is `404.html`. Generation is skipped w
 | `id`, `classes`         | Authored `#id` (or `none`) and `.class` tokens |
 | `body_html`             | Rendered body HTML                             |
 | `type`, `title`, `open` | Validated options, for `callout.html` only     |
-| `source_dir`            | Page source directory, or `none`               |
-| `config`                | Site configuration                             |
 
 Apply `id` and `classes` to the root element, so authored anchors and styling hooks work on every directive. kiln reserves the `id` in the page's heading namespace. Arguments remain nested in `named_args`, so `named_args.id` and the outer `id` are separate values. Use `body_html | safe` for rendered content.
 
@@ -271,12 +267,12 @@ Gate rendering on optional fields.
 
 #### Page Assets
 
-`assets.features` contains `"math"` and / or `"mermaid"` when required. `assets.scripts` contains registered script declarations with `url`, `load` and `module`. Only post and standalone page templates receive `assets`.
+`assets.features` contains `"math"` and / or `"mermaid"` when required. `assets.scripts` contains registered script declarations with `url`, `load` and `module`. Only post templates receive declarations, and other pages receive empty lists.
 
-A shared partial can check presence before loading a runtime:
+A shared partial can load a runtime only where a page needs it:
 
 ```jinja
-{% if assets is defined and "math" in assets.features %}
+{% if "math" in assets.features %}
   <link rel="stylesheet" href="https://cdn.example.com/katex.css">
 {% endif %}
 ```
@@ -314,14 +310,14 @@ Looks up and interpolates a translation. See [Internationalization](#internation
 
 #### `asset_url(path)`
 
-Resolves a published site-root-relative or page-relative path to its public URL, including supported asset fingerprints and the deployment prefix. See [Referencing Assets](assets.md#referencing-assets).
+Resolves a published site-root-relative or page-relative path to its public URL, including supported asset fingerprints and the deployment prefix. The result is HTML-escaped and needs no `| safe`. See [Referencing Assets](assets.md#referencing-assets).
 
 #### `register_script(url, load="defer", module=false)`
 
-Registers a script for the current page and returns an empty string:
+Registers a script for the current page and returns an empty string. `url` resolves like [`asset_url(path)`](#asset_urlpath):
 
 ```jinja
-{{ register_script(asset_url('/assets/js/widget.js')) }}
+{{ register_script('/assets/js/widget.js') }}
 ```
 
 Repeated identical declarations produce one script in registration order. Conflicting attributes for the same URL fail the build.

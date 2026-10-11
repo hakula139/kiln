@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 
-{% block title %}<title>{{ name }} - {{ config.title }}</title>{% endblock %}
+{% block title %}<title>{{ title }} - {{ config.title }}</title>{% endblock %}
 
 {% block body %}
   <div class="archive">
-    <h1>{{ name }}</h1>
+    <h1>{{ title }}</h1>
     {%- for group in page_groups %}
       {%- if group.key %}
       <h3>{{ group.key }}</h3>

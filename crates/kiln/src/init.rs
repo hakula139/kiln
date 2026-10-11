@@ -38,7 +38,7 @@ pub fn init_theme(root: &Path, name: &str) -> Result<()> {
               <head>
                 <meta charset="utf-8">
                 {% block title %}<title>{{ config.title }}</title>{% endblock %}
-                <link rel="stylesheet" href="{{ asset_url('/assets/css/site.css') | safe }}">
+                <link rel="stylesheet" href="{{ asset_url('/assets/css/site.css') }}">
                 {% block head %}{% endblock %}
               </head>
               <body>
