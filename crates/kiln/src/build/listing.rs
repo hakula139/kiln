@@ -9,7 +9,7 @@ use crate::content::frontmatter::FeaturedImage;
 use crate::content::page::Page;
 use crate::render::PageResources;
 use crate::template::vars::{LinkedTerm, PageGroup, PageSummary};
-use crate::url::{page_url, site_asset_url};
+use crate::url::page_url;
 
 // ── Prepared pages ──
 
@@ -84,7 +84,6 @@ fn prepare_page<'a>(
             images: &ctx.image_resolver,
             assets: &ctx.static_assets,
             page_url: &url,
-            deployment_prefix: ctx.config.base_url.prefix(),
         },
     )?;
     Ok(PreparedPage {
@@ -146,8 +145,7 @@ fn resolve_featured_image(
     let Some(fi) = featured_image else {
         return Ok(None);
     };
-    let source = site_asset_url(&fi.src, resources.deployment_prefix);
-    let (published, meta) = resources.resolve_image(&source);
+    let (published, meta) = resources.resolve_site_image(&fi.src)?;
     let resolved_src = url::Url::parse(resources.page_url)?
         .join(&published)
         .with_context(|| format!("invalid featured image URL: {}", fi.src))?
@@ -206,7 +204,8 @@ pub(super) fn prepared_page(
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
+    use std::collections::BTreeMap;
+    use std::path::{Path, PathBuf};
     use std::sync::LazyLock;
 
     use super::*;
@@ -214,6 +213,7 @@ mod tests {
     use crate::content::frontmatter::ImageCredit;
     use crate::render::lqip::ImageResolver;
     use crate::static_assets::StaticAssetManifest;
+    use crate::test_utils::fingerprinted_manifest;
 
     static EMPTY_RESOLVER: LazyLock<ImageResolver> =
         LazyLock::new(|| ImageResolver::new(Path::new(""), ImageConfig::default()));
@@ -283,20 +283,37 @@ mod tests {
 
     #[test]
     fn resolve_featured_image_resolves_site_and_page_urls() {
+        let outputs: BTreeMap<_, _> = [
+            "images/cover.webp",
+            "blog/cover.webp",
+            "posts/foo/assets/cover.webp",
+            "posts/cover.webp",
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, path)| {
+            let published = path.replace(".webp", &format!(".{index:012}.webp"));
+            (PathBuf::from(path), PathBuf::from(published))
+        })
+        .collect();
+        let assets = StaticAssetManifest::new(&outputs).with_prefixes("/blog/", "/blog/");
         for (source, expected) in [
             (
                 "/images/cover.webp",
-                "https://example.com/blog/images/cover.webp",
+                "https://example.com/blog/images/cover.000000000000.webp",
             ),
             (
                 "/blog/cover.webp",
-                "https://example.com/blog/blog/cover.webp",
+                "https://example.com/blog/blog/cover.000000000001.webp",
             ),
             (
                 "assets/cover.webp?q=1#view",
-                "https://example.com/blog/posts/foo/assets/cover.webp?q=1#view",
+                "https://example.com/blog/posts/foo/assets/cover.000000000002.webp?q=1#view",
             ),
-            ("../cover.webp", "https://example.com/blog/posts/cover.webp"),
+            (
+                "../cover.webp",
+                "https://example.com/blog/posts/cover.000000000003.webp",
+            ),
             (
                 "https://cdn.example.com/img.jpg",
                 "https://cdn.example.com/img.jpg",
@@ -316,9 +333,8 @@ mod tests {
                 &PageResources {
                     source_dir: None,
                     images: &EMPTY_RESOLVER,
-                    assets: &StaticAssetManifest::default(),
+                    assets: &assets,
                     page_url: "https://example.com/blog/posts/foo/",
-                    deployment_prefix: "/blog/",
                 },
             )
             .unwrap()
@@ -330,7 +346,7 @@ mod tests {
     #[test]
     fn resolve_featured_image_preserves_metadata() {
         let fi = FeaturedImage {
-            src: "/images/cover.webp".into(),
+            src: "https://cdn.example.com/cover.webp".into(),
             position: Some("top".into()),
             credit: Some(ImageCredit {
                 title: Some("Work".into()),
@@ -346,12 +362,11 @@ mod tests {
                 images: &EMPTY_RESOLVER,
                 assets: &StaticAssetManifest::default(),
                 page_url: "https://example.com/posts/foo/",
-                deployment_prefix: "/",
             },
         )
         .unwrap()
         .unwrap();
-        assert_eq!(resolved.src, "https://example.com/images/cover.webp");
+        assert_eq!(resolved.src, "https://cdn.example.com/cover.webp");
         assert_eq!(resolved.position.as_deref(), Some("top"));
         let credit = resolved.credit.as_ref().unwrap();
         assert_eq!(credit.title.as_deref(), Some("Work"));
@@ -378,9 +393,8 @@ mod tests {
             &PageResources {
                 source_dir: Some(&bundle),
                 images: &img_resolver,
-                assets: &StaticAssetManifest::build(dir.path()).unwrap(),
+                assets: &fingerprinted_manifest(dir.path(), |_| true),
                 page_url: "https://example.com/posts/foo/",
-                deployment_prefix: "/",
             },
         )
         .unwrap()
@@ -406,11 +420,30 @@ mod tests {
                     images: &EMPTY_RESOLVER,
                     assets: &StaticAssetManifest::default(),
                     page_url: "https://example.com/posts/foo/",
-                    deployment_prefix: "/",
                 }
             )
             .unwrap()
             .is_none()
+        );
+    }
+
+    #[test]
+    fn resolve_featured_image_missing_site_image_returns_error() {
+        let err = resolve_featured_image(
+            Some(&make_featured_image("assets/missing.webp")),
+            &PageResources {
+                source_dir: None,
+                images: &EMPTY_RESOLVER,
+                assets: &StaticAssetManifest::default(),
+                page_url: "https://example.com/posts/foo/",
+            },
+        )
+        .unwrap_err();
+
+        assert!(
+            err.to_string()
+                .contains("static asset not found: assets/missing.webp"),
+            "{err}"
         );
     }
 

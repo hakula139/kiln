@@ -1,4 +1,5 @@
 use std::hint::black_box;
+use std::path::Path;
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
@@ -20,7 +21,9 @@ pub(super) fn benchmarks(criterion: &mut Criterion) {
     });
     image.save(directory.path().join("example.png")).unwrap();
     let resolver = ImageResolver::new(directory.path(), ImageConfig::default());
-    let expected = resolver.resolve("/example.png", None).unwrap();
+    let expected = resolver
+        .resolve_published(Path::new("example.png"))
+        .unwrap();
     assert_eq!((expected.width, expected.height), (1024, 768));
     let placeholder = expected
         .lqip_uri
@@ -30,18 +33,31 @@ pub(super) fn benchmarks(criterion: &mut Criterion) {
         .unwrap();
     let placeholder = image::load_from_memory(&STANDARD.decode(placeholder).unwrap()).unwrap();
     assert_eq!((placeholder.width(), placeholder.height()), (16, 12));
-    assert_eq!(resolver.resolve("/example.png", None).unwrap(), expected);
+    assert_eq!(
+        resolver
+            .resolve_published(Path::new("example.png"))
+            .unwrap(),
+        expected
+    );
 
     let mut group = criterion.benchmark_group("images");
     group.bench_function("cold", |bencher| {
         bencher.iter_batched(
             || ImageResolver::new(directory.path(), ImageConfig::default()),
-            |resolver| resolver.resolve(black_box("/example.png"), None).unwrap(),
+            |resolver| {
+                resolver
+                    .resolve_published(black_box(Path::new("example.png")))
+                    .unwrap()
+            },
             BatchSize::SmallInput,
         );
     });
     group.bench_function("cached", |bencher| {
-        bencher.iter(|| resolver.resolve(black_box("/example.png"), None).unwrap());
+        bencher.iter(|| {
+            resolver
+                .resolve_published(black_box(Path::new("example.png")))
+                .unwrap()
+        });
     });
     group.finish();
 }

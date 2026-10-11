@@ -22,6 +22,7 @@ use self::listing::{prepare_pages, sort_pinned_first};
 use self::routes::RoutePlan;
 use crate::config::Config;
 use crate::content::discovery::discover_content;
+use crate::content::page::Page;
 use crate::css::Stylesheets;
 use crate::i18n::I18n;
 use crate::minify::{self, MinifyStats};
@@ -32,6 +33,7 @@ use crate::render::{CopyButton, RenderOptions};
 use crate::search;
 use crate::static_assets::StaticAssetManifest;
 use crate::static_assets::publication::PublishedAssets;
+use crate::static_assets::script::fingerprint_scripts;
 use crate::template::TemplateEngine;
 
 /// Shared build state, created once per build invocation.
@@ -73,6 +75,7 @@ pub fn build(root: &Path, options: &BuildOptions<'_>) -> Result<()> {
     } = options;
 
     let mut config = Config::load(root).context("failed to load config")?;
+    let authored_prefix = config.base_url.prefix().to_owned();
     if let Some(base_url) = base_url_override {
         config.base_url = base_url.parse()?;
     }
@@ -94,21 +97,15 @@ pub fn build(root: &Path, options: &BuildOptions<'_>) -> Result<()> {
     let transaction = OutputTransaction::new(output_dir)?;
     let output_dir = transaction.path().to_owned();
 
-    let assets = PublishedAssets::publish(root, theme_dir.as_deref(), &content.pages, &output_dir)?;
-    let stylesheets = Stylesheets::discover(root, &config, &content.pages);
-    let mut static_assets = StaticAssetManifest::build_media(&output_dir)?;
-    stylesheets.compile(root, &config, &assets, &static_assets, &output_dir)?;
-
-    let minify_stats = if minify {
-        eprintln!("Minifying...");
-        Some(minify::minify_static_assets(&output_dir).context("minification failed")?)
-    } else {
-        None
-    };
-
-    static_assets
-        .fingerprint_code(&output_dir)
-        .context("failed to fingerprint static assets")?;
+    let (stylesheets, static_assets, minify_stats) = publish_assets(
+        root,
+        &config,
+        theme_dir.as_deref(),
+        &content.pages,
+        &output_dir,
+        &authored_prefix,
+        minify,
+    )?;
     let template_engine = TemplateEngine::new(
         Some(&site_templates),
         theme_templates.as_deref(),
@@ -154,6 +151,39 @@ pub fn build(root: &Path, options: &BuildOptions<'_>) -> Result<()> {
     )
 }
 
+/// Publishes shared, static and page assets and compiles stylesheets, minifying CSS / JS before
+/// content-addressed names are derived from their final bytes.
+fn publish_assets(
+    root: &Path,
+    config: &Config,
+    theme_dir: Option<&Path>,
+    pages: &[Page],
+    output_dir: &Path,
+    authored_prefix: &str,
+    minify: bool,
+) -> Result<(Stylesheets, StaticAssetManifest, Option<MinifyStats>)> {
+    let assets = PublishedAssets::publish(root, theme_dir, pages, output_dir)?;
+    let stylesheets = Stylesheets::discover(root, config, pages);
+    let mut static_assets = StaticAssetManifest::new(assets.outputs())
+        .with_prefixes(authored_prefix, config.base_url.prefix());
+    stylesheets.compile(root, config, &assets, &static_assets, output_dir)?;
+
+    let minify_stats = if minify {
+        eprintln!("Minifying...");
+        Some(minify::minify_static_assets(output_dir).context("minification failed")?)
+    } else {
+        None
+    };
+
+    fingerprint_scripts(&mut static_assets, assets.scripts(), output_dir)
+        .context("failed to fingerprint scripts")?;
+    stylesheets
+        .fingerprint(&mut static_assets, output_dir)
+        .context("failed to fingerprint stylesheets")?;
+    assets.ensure_unaddressed_names(&static_assets)?;
+    Ok((stylesheets, static_assets, minify_stats))
+}
+
 fn finish_build(
     ctx: &BuildContext,
     transaction: OutputTransaction,
@@ -164,11 +194,7 @@ fn finish_build(
 ) -> Result<()> {
     let output_dir = transaction.path();
     if let Some(stats) = &mut minify_stats {
-        *stats += minify::minify_output_dir_excluding(
-            output_dir,
-            ctx.static_assets.fingerprinted_paths(),
-        )
-        .context("minification failed")?;
+        *stats += minify::minify_html(output_dir).context("minification failed")?;
     }
 
     let search_duration = if ctx.config.search.enabled {

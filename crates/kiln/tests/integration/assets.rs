@@ -1,6 +1,8 @@
+#[cfg(unix)]
 use std::fs;
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
+use std::path::Path;
 
 use indoc::{formatdoc, indoc};
 use scraper::{Html, Selector};
@@ -76,20 +78,12 @@ fn build_fingerprints_bundle_assets_after_static_collisions() {
     })
     .unwrap();
 
-    assert_eq!(site.read("example/assets/image.avif"), "bundle-image");
     assert_eq!(
-        site.read(&format!(
-            "_assets/example/assets/image.{}.avif",
-            fingerprint("bundle-image")
-        )),
+        site.read_hashed("example/assets/image.avif"),
         "bundle-image"
     );
-    let js = site.read("example/assets/app.js");
+    let js = site.read_hashed("example/assets/app.js");
     assert!(js.contains("bundle") && !js.contains("static"), "{js}");
-    assert_eq!(
-        site.read(&format!("example/assets/app.{}.js", fingerprint(&js))),
-        js
-    );
 }
 
 #[test]
@@ -109,9 +103,9 @@ fn build_image_urls_and_metadata_share_published_paths() {
     .write_png("content/a/photo.png", 8, 4)
     .write_png("static/a/photo.png", 12, 6);
 
-    for (featured, alias) in [
-        ("/shared.png?q=1#view", "/shared.png"),
-        ("../a/photo.png?q=1#view", "/a/photo.png"),
+    for (featured, source) in [
+        ("/shared.png?q=1#view", "shared.png"),
+        ("photo.png?q=1#view", "b/photo.png"),
     ] {
         site.page(
             "a",
@@ -136,36 +130,41 @@ fn build_image_urls_and_metadata_share_published_paths() {
         site.build().unwrap();
 
         let resolver = ImageResolver::new(&site.output(""), ImageConfig::default());
-        let expected: Vec<_> = [alias, "/shared.png", "/a/photo.png", "/a/photo.png"]
-            .iter()
-            .enumerate()
-            .map(|(index, alias)| {
-                let path = alias.trim_start_matches('/');
-                let origin = if index == 0 {
-                    "https://example.com"
-                } else {
-                    ""
-                };
-                let meta = resolver.resolve(alias, None).unwrap();
-                (
-                    format!(
-                        "{origin}/blog/_assets/{}.{}.png?q=1#view",
-                        path.strip_suffix(".png").unwrap(),
-                        fingerprint(fs::read(site.output(path)).unwrap())
-                    ),
-                    Some(meta.width.to_string()),
-                    Some(meta.height.to_string()),
-                    Some(format!(
-                        "--lqip-uri:url('{}')",
-                        meta.lqip_uri.as_ref().unwrap()
-                    )),
-                )
-            })
-            .chain([
-                ("/shared.png".into(), None, None, None),
-                ("/blogger/shared.png".into(), None, None, None),
-            ])
-            .collect();
+        let featured = if source == "b/photo.png" {
+            site.hashed_path(source)
+        } else {
+            source.to_owned()
+        };
+        let expected: Vec<_> = [
+            featured.as_str(),
+            "shared.png",
+            "a/photo.png",
+            "a/photo.png",
+        ]
+        .iter()
+        .enumerate()
+        .map(|(index, published)| {
+            let origin = if index == 0 {
+                "https://example.com"
+            } else {
+                ""
+            };
+            let meta = resolver.resolve_published(Path::new(published)).unwrap();
+            (
+                format!("{origin}/blog/{published}?q=1#view"),
+                Some(meta.width.to_string()),
+                Some(meta.height.to_string()),
+                Some(format!(
+                    "--lqip-uri:url('{}')",
+                    meta.lqip_uri.as_ref().unwrap()
+                )),
+            )
+        })
+        .chain([
+            ("/shared.png".into(), None, None, None),
+            ("/blogger/shared.png".into(), None, None, None),
+        ])
+        .collect();
         let html = site.read("b/index.html");
         let document = Html::parse_document(&html);
         let actual: Vec<_> = document
@@ -189,6 +188,45 @@ fn build_image_urls_and_metadata_share_published_paths() {
 }
 
 #[test]
+fn build_base_url_override_republishes_authored_root_paths() {
+    let site = TestSite::new(r#"base_url = "https://example.com/blog/""#);
+    site.page(
+        "posts/hello",
+        indoc! {r#"
+            +++
+            title = "Hello"
+            +++
+            ![Photo](/blog/assets/images/photo.png?v=1)
+        "#},
+    )
+    .write("assets/images/photo.png", "image")
+    .write("static/vendor.css", ".vendor { color: red; }")
+    .write(
+        "assets/css/_src/style.css",
+        indoc! {r#"
+            @import "/blog/vendor.css";
+            .photo { background: url(/blog/assets/images/photo.png); }
+        "#},
+    );
+
+    site.build_with(&BuildOptions {
+        base_url_override: Some("https://preview.example.com/preview/"),
+        ..Default::default()
+    })
+    .unwrap();
+
+    let photo = site.hashed_path("assets/images/photo.png");
+    assert!(
+        site.read("posts/hello/index.html")
+            .contains(&format!(r#"src="/preview/{photo}?v=1""#))
+    );
+    let name = photo.rsplit('/').next().unwrap();
+    let css = site.read_hashed("assets/css/site.css");
+    assert!(css.contains(r#"@import "../../vendor.css""#), "{css}");
+    assert!(css.contains(&format!("../images/{name}")), "{css}");
+}
+
+#[test]
 fn build_updates_managed_image_urls_and_retires_previous_fingerprints() {
     let site = TestSite::new(r#"base_url = "https://example.com/blog""#);
     write_image_lifecycle_templates(&site);
@@ -208,8 +246,8 @@ fn build_updates_managed_image_urls_and_retires_previous_fingerprints() {
         .unwrap();
 
         let hash = fingerprint(bytes);
-        let path = format!("_assets/example/photo %.{hash}.avif");
-        let url = format!("/blog/_assets/example/photo%20%25.{hash}.avif?quality=1#view");
+        let path = format!("example/photo %.{hash}.avif");
+        let url = format!("/blog/example/photo%20%25.{hash}.avif?quality=1#view");
         let html = site.read("example/index.html");
         let document = Html::parse_document(&html);
         let images: Vec<_> = document
@@ -224,13 +262,12 @@ fn build_updates_managed_image_urls_and_retires_previous_fingerprints() {
                 "//example.org/logo.svg",
                 url.as_str(),
                 url.as_str(),
-                "missing.avif",
                 "https://example.org/image.avif",
                 url.as_str(),
             ]
         );
         assert_eq!(site.read(&path), bytes);
-        assert_eq!(site.read("example/photo %.avif"), bytes);
+        assert!(!site.output("example/photo %.avif").exists());
         let stylesheet = stylesheet_url(&html);
         let css = site.read(stylesheet.strip_prefix("/blog/").unwrap());
         assert!(css.contains(&format!("../..{}", url.strip_prefix("/blog").unwrap())));
@@ -283,8 +320,6 @@ fn write_image_lifecycle_page(site: &TestSite, featured: &str) {
             ![Block](./photo%20%25.avif?quality=1#view)
 
             Inline ![Inline](../example/photo%20%25.avif?quality=1#view) image.
-
-            ![Missing](missing.avif)
 
             ![External](https://example.org/image.avif)
 
@@ -397,7 +432,7 @@ fn build_materializes_external_bundle_symlinks() {
         assert!(!output.join("shared/notes.md").exists());
         assert!(!output.join("_cache").exists());
         assert!(!output.join("_private").exists());
-        let css = fs::read_to_string(output.join("assets/css/page.css")).unwrap();
+        let css = site.read_hashed("posts/example/assets/css/page.css");
         assert!(css.contains("../../shared/nested/image.svg"), "{css}");
         assert!(css.contains("../../caption.txt"), "{css}");
         assert!(css.contains(".imported"), "{css}");

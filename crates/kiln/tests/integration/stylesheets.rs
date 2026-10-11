@@ -32,8 +32,8 @@ fn build_keeps_root_page_css_separate_from_shared_css() {
 
     site.build().unwrap();
 
-    let shared = site.read("assets/css/site.css");
-    let page = site.read("assets/css/page.css");
+    let shared = site.read_hashed("assets/css/site.css");
+    let page = site.read_hashed("assets/css/page.css");
     assert!(
         shared.contains(".shared") && !shared.contains(".page"),
         "{shared}"
@@ -70,19 +70,20 @@ fn build_compiles_shared_css_with_site_override_and_theme_asset_urls() {
 
     site.build().unwrap();
 
-    let css = site.read("assets/css/site.css");
+    let css = site.read_hashed("assets/css/site.css");
     assert!(
         css.contains(&format!(
-            "../../_assets/assets/fonts/example.{}.woff2?v=1#font",
+            "../fonts/example.{}.woff2?v=1#font",
             fingerprint("theme-font")
         )),
         "{css}"
     );
     assert!(css.contains(".theme"), "{css}");
+    assert_eq!(site.read_hashed("assets/fonts/example.woff2"), "theme-font");
 
     site.write("assets/css/_src/style.css", ".site { color: blue; }");
     site.build().unwrap();
-    let css = site.read("assets/css/site.css");
+    let css = site.read_hashed("assets/css/site.css");
     assert!(css.contains(".site") && !css.contains(".theme"), "{css}");
     assert!(!site.output("assets/css/_src").exists());
 }
@@ -126,7 +127,7 @@ fn build_compiles_page_styles_with_private_sources_and_final_hashes() {
         "{css}"
     );
     assert!(css.contains("span"), "{css}");
-    assert_eq!(css, site.read("example/child/assets/css/page.css"));
+    assert_eq!(css, site.read_hashed("example/child/assets/css/page.css"));
     assert!(!site.output("example/child/assets/css/_src").exists());
     for page in ["example", "other"] {
         let html = site.read(&format!("{page}/index.html"));
@@ -149,7 +150,7 @@ fn build_compiles_page_styles_with_private_sources_and_final_hashes() {
     .unwrap();
     assert!(!published.exists());
     assert!(
-        site.read("example/child/assets/css/page.css")
+        site.read_hashed("example/child/assets/css/page.css")
             .contains("#00f")
     );
 }
@@ -207,19 +208,19 @@ fn build_compiles_tailwind_with_shared_context_and_fresh_candidates() {
 
     site.build().unwrap();
 
-    let shared = site.read("assets/css/site.css");
+    let shared = site.read_hashed("assets/css/site.css");
     assert!(
         shared.contains(".bg-brand") && shared.contains(".underline"),
         "{shared}"
     );
     assert!(
         shared.contains(&format!(
-            "../../_assets/assets/fonts/example.{}.woff2?version=1#font",
+            "../fonts/example.{}.woff2?version=1#font",
             fingerprint("font")
         )),
         "{shared}"
     );
-    let page = site.read("example/assets/css/page.css");
+    let page = site.read_hashed("example/assets/css/page.css");
     assert!(
         page.contains("color: var(--color-brand, #123456)") && page.contains("font-weight"),
         "{page}"
@@ -239,7 +240,7 @@ fn build_compiles_tailwind_with_shared_context_and_fresh_candidates() {
         &BuildOptions::default(),
     )
     .unwrap();
-    let rebuilt = site.read("assets/css/site.css");
+    let rebuilt = site.read_hashed("assets/css/site.css");
     assert!(rebuilt.contains(".text-brand"), "{rebuilt}");
     assert!(!rebuilt.contains(".bg-brand"), "{rebuilt}");
 }
@@ -290,7 +291,7 @@ fn build_compiles_tailwind_imports_from_static_symlinks() {
 
     site.build().unwrap();
 
-    let css = site.read("assets/css/site.css");
+    let css = site.read_hashed("assets/css/site.css");
     assert!(css.contains("../../shared/image.svg"), "{css}");
     assert_eq!(site.read("shared/image.svg"), "external image");
 }
@@ -320,7 +321,7 @@ fn build_compiles_tailwind_imports_through_public_bundle_aliases() {
 
     site.build().unwrap();
 
-    let css = site.read("example/assets/css/page.css");
+    let css = site.read_hashed("example/assets/css/page.css");
     assert!(css.contains("../../public/image.svg"), "{css}");
     assert_eq!(site.read("example/public/image.svg"), "image");
     assert!(!site.output("example/_assets").exists());

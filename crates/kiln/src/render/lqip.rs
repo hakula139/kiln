@@ -6,7 +6,6 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use image::imageops::FilterType;
 use image::{DynamicImage, ImageReader};
-use percent_encoding::percent_decode_str;
 use serde::Serialize;
 
 use crate::config::ImageConfig;
@@ -20,8 +19,8 @@ pub struct ImageMeta {
     pub lqip_uri: Option<String>,
 }
 
-/// Resolves `<img src>` strings to on-disk paths, reads dimensions, and (per [`ImageConfig`])
-/// encodes a small WebP LQIP. Memoised per canonical path for the build's lifetime.
+/// Reads dimensions of published images and (per [`ImageConfig`]) encodes a small WebP LQIP.
+/// Memoised per canonical path for the build's lifetime.
 pub struct ImageResolver {
     output_root: PathBuf,
     config: ImageConfig,
@@ -29,9 +28,7 @@ pub struct ImageResolver {
 }
 
 impl ImageResolver {
-    /// Constructs a resolver. `output_root` anchors `src` strings that begin with `/` (i.e.,
-    /// site-absolute references). Page-bundle-relative paths resolve through the `base_dir`
-    /// argument to [`Self::resolve`].
+    /// Constructs a resolver for images published under `output_root`.
     #[must_use]
     pub fn new(output_root: &Path, config: ImageConfig) -> Self {
         Self {
@@ -41,19 +38,15 @@ impl ImageResolver {
         }
     }
 
-    /// Resolves a `src` string to image metadata, or returns `None` when the path can't be located
-    /// or the format isn't recognised.
-    ///
-    /// `base_dir` is the page-bundle anchor for relative paths. Pass `None` for contexts without a
-    /// bundle (e.g., feed generation).
+    /// Returns metadata for a file published at an output-relative path, or `None` when it is
+    /// missing or its format isn't recognised.
     ///
     /// # Panics
     ///
     /// Panics if the cache mutex is poisoned.
     #[must_use]
-    pub fn resolve(&self, src: &str, base_dir: Option<&Path>) -> Option<Arc<ImageMeta>> {
-        let path = self.resolve_path(src, base_dir)?;
-        let canonical = path.canonicalize().ok()?;
+    pub fn resolve_published(&self, path: &Path) -> Option<Arc<ImageMeta>> {
+        let canonical = self.output_root.join(path).canonicalize().ok()?;
 
         // Single-lock entry pattern so concurrent callers don't double-decode.
         self.cache
@@ -62,21 +55,6 @@ impl ImageResolver {
             .entry(canonical.clone())
             .or_insert_with(|| self.compute(&canonical).map(Arc::new))
             .clone()
-    }
-
-    /// Maps a `src` reference to a filesystem path under one of the known roots. Returns `None`
-    /// for remote URLs and `data:` schemes.
-    fn resolve_path(&self, src: &str, base_dir: Option<&Path>) -> Option<PathBuf> {
-        let path = src.split(['?', '#']).next()?;
-        if path.is_empty() || path.starts_with("//") || path.split('/').next()?.contains(':') {
-            return None;
-        }
-        let path = percent_decode_str(path).decode_utf8().ok()?;
-        if let Some(rest) = path.strip_prefix('/') {
-            Some(self.output_root.join(rest))
-        } else {
-            base_dir.map(|dir| dir.join(path.as_ref()))
-        }
     }
 
     /// Reads dimensions and optionally encodes the LQIP.
@@ -143,7 +121,7 @@ mod tests {
 
     use super::*;
 
-    // ── ImageResolver::resolve ──
+    // ── ImageResolver::resolve_published ──
 
     #[test]
     fn reads_dimensions_and_caches_placeholder() {
@@ -152,9 +130,9 @@ mod tests {
         write_tiny_png(&bundle.join("img.png"));
 
         let r = ImageResolver::new(dir.path(), ImageConfig::default());
-        let meta = r.resolve("img.png", Some(&bundle)).unwrap();
+        let meta = r.resolve_published(Path::new("bundle/img.png")).unwrap();
         assert_eq!((meta.width, meta.height), (2, 2));
-        let cached = r.resolve("img.png", Some(&bundle)).unwrap();
+        let cached = r.resolve_published(Path::new("bundle/img.png")).unwrap();
         assert!(Arc::ptr_eq(&meta, &cached));
         assert_eq!(decode_placeholder(&meta).dimensions(), (16, 16));
     }
@@ -172,7 +150,9 @@ mod tests {
                 .unwrap();
 
             let resolver = ImageResolver::new(dir.path(), ImageConfig::default());
-            let meta = resolver.resolve("/checker.png", None).unwrap();
+            let meta = resolver
+                .resolve_published(Path::new("checker.png"))
+                .unwrap();
             let placeholder = decode_placeholder(&meta);
 
             assert_eq!(placeholder.dimensions(), expected);
@@ -203,7 +183,7 @@ mod tests {
                 ..ImageConfig::default()
             },
         );
-        let meta = resolver.resolve("/bright.png", None).unwrap();
+        let meta = resolver.resolve_published(Path::new("bright.png")).unwrap();
         let placeholder = decode_placeholder(&meta);
 
         assert_eq!(placeholder.dimensions(), (1, 1));
@@ -220,7 +200,9 @@ mod tests {
                 ..ImageConfig::default()
             },
         );
-        let meta = resolver.resolve("/example.avif", None).unwrap();
+        let meta = resolver
+            .resolve_published(Path::new("example.avif"))
+            .unwrap();
         assert_eq!((meta.width, meta.height), (8, 6));
         let placeholder = meta
             .lqip_uri
@@ -230,7 +212,7 @@ mod tests {
     }
 
     #[test]
-    fn decodes_local_urls_and_retains_metadata_on_encoding_failure() {
+    fn retains_dimensions_on_encoding_failure() {
         let dir = tempdir().unwrap();
         write_tiny_png(&dir.path().join("photo one.png"));
         let resolver = ImageResolver::new(
@@ -240,11 +222,11 @@ mod tests {
                 ..ImageConfig::default()
             },
         );
-        for src in ["photo%20one.png?v=1#image", "/photo%20one.png#image"] {
-            let meta = resolver.resolve(src, Some(dir.path())).unwrap();
-            assert_eq!((meta.width, meta.height), (2, 2));
-            assert!(meta.lqip_uri.is_none());
-        }
+        let meta = resolver
+            .resolve_published(Path::new("photo one.png"))
+            .unwrap();
+        assert_eq!((meta.width, meta.height), (2, 2));
+        assert!(meta.lqip_uri.is_none());
     }
 
     #[test]
@@ -266,57 +248,24 @@ mod tests {
         fs::write(bundle.join("partial.png"), &bytes).unwrap();
 
         let r = ImageResolver::new(dir.path(), ImageConfig::default());
-        let meta = r.resolve("partial.png", Some(&bundle)).unwrap();
+        let meta = r
+            .resolve_published(Path::new("bundle/partial.png"))
+            .unwrap();
         assert_eq!(meta.width, 4);
         assert_eq!(meta.height, 2);
         assert!(meta.lqip_uri.is_none());
     }
 
     #[test]
-    fn none_for_missing_remote_or_unrecognized_images() {
+    fn none_for_missing_or_unrecognized_images() {
         let dir = tempdir().unwrap();
         let bundle = dir.path().join("bundle");
         fs::create_dir_all(&bundle).unwrap();
         fs::write(bundle.join("garbage.png"), b"not actually an image").unwrap();
 
         let r = ImageResolver::new(dir.path(), ImageConfig::default());
-        for src in ["missing.png", "https://example.com/x.png", "garbage.png"] {
-            assert!(r.resolve(src, Some(&bundle)).is_none(), "{src}");
-        }
-    }
-
-    // ── ImageResolver::resolve_path ──
-
-    #[test]
-    fn anchors_absolute_paths_at_output_root() {
-        let dir = tempdir().unwrap();
-        let output_root = dir.path().join("public");
-        let r = ImageResolver::new(&output_root, ImageConfig::default());
-        let resolved = r.resolve_path("/images/cover.webp", None).unwrap();
-        assert_eq!(resolved, output_root.join("images/cover.webp"));
-    }
-
-    #[test]
-    fn anchors_relative_paths_at_base_dir() {
-        let dir = tempdir().unwrap();
-        let bundle = dir.path().join("bundle");
-        let r = ImageResolver::new(dir.path(), ImageConfig::default());
-        let resolved = r.resolve_path("assets/foo.png", Some(&bundle)).unwrap();
-        assert_eq!(resolved, bundle.join("assets/foo.png"));
-    }
-
-    #[test]
-    fn none_for_remote_empty_or_unanchored_paths() {
-        let dir = tempdir().unwrap();
-        let r = ImageResolver::new(dir.path(), ImageConfig::default());
-        for src in [
-            "https://example.com/x.png",
-            "//example.com/x.png",
-            "data:image/png;base64,xx",
-            "",
-            "foo.png",
-        ] {
-            assert!(r.resolve_path(src, None).is_none(), "{src}");
+        for path in ["bundle/missing.png", "bundle/garbage.png"] {
+            assert!(r.resolve_published(Path::new(path)).is_none(), "{path}");
         }
     }
 

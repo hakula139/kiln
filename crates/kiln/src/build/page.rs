@@ -18,15 +18,12 @@ pub(super) fn render(ctx: &BuildContext, prepared: &PreparedPage) -> Result<Stri
             images: &ctx.image_resolver,
             assets: &ctx.static_assets,
             page_url: &prepared.summary.url,
-            deployment_prefix: ctx.config.base_url.prefix(),
         },
         page.frontmatter.heading_numbering,
     )
     .with_context(|| format!("failed to render {}", page.source_path.display()))?;
 
-    let page_css =
-        ctx.stylesheets
-            .page_url(ctx.config.base_url.prefix(), &ctx.static_assets, page)?;
+    let page_css = ctx.stylesheets.page_url(&ctx.static_assets, page)?;
     let vars = PostTemplateVars {
         metadata: PageMetadata {
             title: &prepared.summary.title,

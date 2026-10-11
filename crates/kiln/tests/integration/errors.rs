@@ -76,9 +76,24 @@ fn build_failure_preserves_previous_output_returns_error() {
                 "#},
             );
         }),
-        ("reserved asset directory", None, |site| {
-            site.write("static/_assets/occupied.png", "occupied");
+        ("static asset not found: missing.png", None, |site| {
+            site.page(
+                "posts/hello",
+                indoc! {r#"
+                    +++
+                    title = "Hello"
+                    +++
+                    ![Missing](missing.png)
+                "#},
+            );
         }),
+        (
+            "publishes /logo.dark.png under its source name",
+            None,
+            |site| {
+                site.write("static/logo.dark.png", "image");
+            },
+        ),
         ("base_url", Some("/blog"), |_| {}),
         ("base_url", Some("mailto:example@example.com"), |_| {}),
         ("base_url", Some("https://example.com/?q=1"), |_| {}),

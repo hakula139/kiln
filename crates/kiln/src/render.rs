@@ -26,7 +26,7 @@ use serde::{Deserialize, Deserializer};
 
 use self::lqip::{ImageMeta, ImageResolver};
 use crate::i18n::I18n;
-use crate::static_assets::StaticAssetManifest;
+use crate::static_assets::{ResolvedAsset, StaticAssetManifest};
 
 type Spanned = (Event<'static>, Range<usize>);
 
@@ -36,16 +36,39 @@ pub struct PageResources<'a> {
     pub images: &'a ImageResolver,
     pub assets: &'a StaticAssetManifest,
     pub page_url: &'a str,
-    pub deployment_prefix: &'a str,
 }
 
 impl PageResources<'_> {
-    pub(crate) fn resolve_image(&self, src: &str) -> (String, Option<Arc<ImageMeta>>) {
-        match self
-            .assets
-            .resolve_local(src, self.page_url, self.deployment_prefix)
-        {
-            Some(asset) => (asset.url, self.images.resolve(asset.original_url, None)),
+    /// Resolves an authored image to its public URL and the published file's metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for a site image without a published file.
+    pub(crate) fn resolve_image(&self, src: &str) -> Result<(String, Option<Arc<ImageMeta>>)> {
+        let asset = self.assets.resolve_local(src, self.page_url)?;
+        Ok(self.image(src, asset))
+    }
+
+    /// Resolves an image whose root-relative paths omit the base URL path.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for a site image without a published file.
+    pub(crate) fn resolve_site_image(&self, src: &str) -> Result<(String, Option<Arc<ImageMeta>>)> {
+        let asset = self.assets.resolve_template_url(src, self.page_url)?;
+        Ok(self.image(src, asset))
+    }
+
+    fn image(
+        &self,
+        src: &str,
+        asset: Option<ResolvedAsset<'_>>,
+    ) -> (String, Option<Arc<ImageMeta>>) {
+        match asset {
+            Some(asset) => {
+                let meta = self.images.resolve_published(asset.path);
+                (asset.url, meta)
+            }
             None => (src.to_owned(), None),
         }
     }

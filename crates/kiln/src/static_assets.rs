@@ -1,192 +1,230 @@
 pub(crate) mod publication;
+pub(crate) mod script;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::str::Utf8Error;
 
 use anyhow::{Context, Result, bail};
 use percent_encoding::percent_decode_str;
 use sha2::{Digest, Sha256};
-use walkdir::WalkDir;
 
-use crate::output::copy_file;
 use crate::url::{join_site_url, path_url};
 
 const FINGERPRINT_LENGTH: usize = 12;
-pub(crate) const MEDIA_DIRECTORY: &str = "_assets";
 
-/// Content-addressed URLs for static assets and canonical page stylesheets.
-#[derive(Clone, Debug, Default)]
+/// Published files keyed by the source-named site paths that reference them.
+#[derive(Clone, Debug)]
 pub struct StaticAssetManifest {
-    urls: BTreeMap<String, String>,
-    fingerprinted_paths: BTreeSet<PathBuf>,
+    /// Output-relative published paths keyed by encoded source-named site paths.
+    paths: BTreeMap<String, PathBuf>,
+    /// Path of the configured `base_url`, which authored root-relative URLs start with.
+    authored_prefix: String,
+    /// Path of the effective base URL, which published URLs start with.
+    deployment_prefix: String,
 }
 
+/// A site URL resolved to its published file.
 pub(crate) struct ResolvedAsset<'a> {
-    pub(crate) original_url: &'a str,
+    /// Output-relative path of the published file.
+    pub(crate) path: &'a Path,
+    /// Public URL, including the deployment prefix and the authored query and fragment.
     pub(crate) url: String,
 }
 
+impl Default for StaticAssetManifest {
+    fn default() -> Self {
+        Self {
+            paths: BTreeMap::new(),
+            authored_prefix: "/".to_owned(),
+            deployment_prefix: "/".to_owned(),
+        }
+    }
+}
+
 impl StaticAssetManifest {
-    /// Publishes content-hashed copies of supported assets.
+    /// Records source-named output paths and the relative paths their files were published at.
+    pub(crate) fn new<'a>(outputs: impl IntoIterator<Item = (&'a PathBuf, &'a PathBuf)>) -> Self {
+        let paths = outputs
+            .into_iter()
+            .map(|(source, published)| (site_path(source), published.clone()))
+            .collect();
+        Self {
+            paths,
+            ..Self::default()
+        }
+    }
+
+    /// Sets the base URL paths that authored and published root-relative URLs start with.
+    pub(crate) fn with_prefixes(mut self, authored: &str, deployment: &str) -> Self {
+        authored.clone_into(&mut self.authored_prefix);
+        deployment.clone_into(&mut self.deployment_prefix);
+        self
+    }
+
+    /// Renames a generated file to its content-addressed name and records its URL.
     ///
     /// # Errors
     ///
-    /// Returns an error for unreadable files or conflicting generated paths.
-    pub fn build(output_dir: &Path) -> Result<Self> {
-        let mut manifest = Self::build_media(output_dir)?;
-        manifest.fingerprint_code(output_dir)?;
-        Ok(manifest)
-    }
-
-    pub(crate) fn build_media(output_dir: &Path) -> Result<Self> {
-        for entry in fs::read_dir(output_dir)? {
-            if entry?
-                .file_name()
-                .to_string_lossy()
-                .eq_ignore_ascii_case(MEDIA_DIRECTORY)
-            {
-                bail!("reserved asset directory conflicts with published files: {MEDIA_DIRECTORY}");
-            }
-        }
-        let mut manifest = Self::default();
-        manifest.collect(output_dir, false)?;
-        Ok(manifest)
-    }
-
-    pub(crate) fn fingerprint_code(&mut self, output_dir: &Path) -> Result<()> {
-        self.collect(output_dir, true)
-    }
-
-    fn collect(&mut self, output_dir: &Path, code: bool) -> Result<()> {
-        let paths = WalkDir::new(output_dir)
-            .follow_links(false)
-            .sort_by_file_name()
-            .into_iter()
-            .filter_entry(|entry| entry.path() != output_dir.join(MEDIA_DIRECTORY))
-            .filter_map(|entry| match entry {
-                Ok(entry) if entry.file_type().is_file() => Some(Ok(entry.into_path())),
-                Ok(_) => None,
-                Err(error) => Some(Err(error)),
-            })
-            .collect::<std::result::Result<Vec<_>, _>>()
-            .context("failed to collect published assets")?;
-        for path in paths {
-            let relative = path.strip_prefix(output_dir)?;
-            if code && !is_code(relative) {
-                continue;
-            }
-            let url = format!("/{}", path_url(relative));
-            if !code && !is_media(relative) {
-                self.urls.insert(url.clone(), url);
-                continue;
-            }
-            let bytes = fs::read(&path)
-                .with_context(|| format!("failed to read static asset {}", path.display()))?;
-            let mut fingerprinted = fingerprinted_path(relative, &bytes)?;
-            if !code {
-                fingerprinted = Path::new(MEDIA_DIRECTORY).join(fingerprinted);
-            }
-            let target = output_dir.join(&fingerprinted);
-            if target.exists() {
-                bail!(
-                    "fingerprinted static asset conflicts with existing file {}",
-                    target.display()
-                );
-            }
-            copy_file(&path, &target)?;
-            self.urls
-                .insert(url, format!("/{}", path_url(&fingerprinted)));
-            self.fingerprinted_paths.insert(relative.to_owned());
-            self.fingerprinted_paths.insert(fingerprinted);
-        }
+    /// Returns an error if the file cannot be read or renamed.
+    pub(crate) fn fingerprint(&mut self, output_dir: &Path, path: &Path) -> Result<()> {
+        let published = rename_fingerprinted(output_dir, path)?;
+        self.paths.insert(site_path(path), published);
         Ok(())
     }
 
-    pub(crate) fn asset_url(&self, url: &str) -> Result<&str> {
-        self.urls
-            .get(url)
-            .map(String::as_str)
-            .with_context(|| format!("asset_url: static asset not found: {url}"))
+    /// Returns the public URL of the file published for an encoded source-named site path.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no file was published for `path`.
+    pub(crate) fn asset_url(&self, path: &str) -> Result<String> {
+        self.paths
+            .get(path)
+            .map(|published| join_site_url(&self.deployment_prefix, &site_path(published)))
+            .with_context(|| format!("static asset not found: {path}"))
     }
 
-    /// Resolves a published URL against a page's output URL, retaining its query and fragment.
-    pub(crate) fn resolve(&self, url: &str, page_url: &str, prefix: &str) -> Option<String> {
-        if is_external(url) || url.starts_with('#') {
-            return Some(url.to_owned());
-        }
-        self.resolve_local(url, page_url, prefix)
-            .map(|asset| asset.url)
-    }
-
+    /// Resolves an authored URL against a page's output URL, retaining its query and fragment, or
+    /// returns `None` for URLs outside the site or without a path.
+    ///
+    /// Root-relative URLs start with the configured `base_url` path, whichever base URL the build
+    /// publishes under.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for a site URL without a published file.
     pub(crate) fn resolve_local(
         &self,
         url: &str,
         page_url: &str,
-        prefix: &str,
-    ) -> Option<ResolvedAsset<'_>> {
-        if is_external(url) || url.starts_with('#') {
-            return None;
+    ) -> Result<Option<ResolvedAsset<'_>>> {
+        self.resolve(url, page_url, &self.authored_prefix)
+    }
+
+    /// Resolves a template asset URL, where root-relative paths omit the base URL path.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for a site URL without a published file.
+    pub(crate) fn resolve_template_url(
+        &self,
+        url: &str,
+        page_url: &str,
+    ) -> Result<Option<ResolvedAsset<'_>>> {
+        self.resolve(url, page_url, "/")
+    }
+
+    /// Returns the published path of an authored root-relative URL path, or `None` when it is
+    /// outside the configured `base_url` path.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for a site path without a published file.
+    pub(crate) fn published_path(&self, path: &str) -> Result<Option<&Path>> {
+        self.lookup(path, "/", &self.authored_prefix)
+    }
+
+    fn resolve(
+        &self,
+        url: &str,
+        page_url: &str,
+        root_prefix: &str,
+    ) -> Result<Option<ResolvedAsset<'_>>> {
+        if is_passthrough(url) {
+            return Ok(None);
         }
         let end = url.find(['?', '#']).unwrap_or(url.len());
         let (path, suffix) = url.split_at(end);
-        let base = url::Url::parse(page_url)
-            .or_else(|_| url::Url::parse("https://kiln.invalid/")?.join(page_url))
-            .ok()?;
-        let resolved = base.join(path).ok()?;
-        let path = resolved
-            .path()
-            .strip_prefix(prefix.trim_end_matches('/'))
-            .filter(|path| path.starts_with('/'))?;
-        let decoded = percent_decode_str(path).decode_utf8().ok()?;
-        let key = format!("/{}", path_url(Path::new(decoded.trim_start_matches('/'))));
-        let (original_url, published) = self.urls.get_key_value(&key)?;
-        Some(ResolvedAsset {
-            original_url,
-            url: format!("{}{suffix}", join_site_url(prefix, published)),
-        })
+        if path.is_empty() {
+            return Ok(None);
+        }
+        let prefix = if path.starts_with('/') {
+            root_prefix
+        } else {
+            &self.deployment_prefix
+        };
+        let Some(published) = self.lookup(path, page_url, prefix)? else {
+            return Ok(None);
+        };
+        Ok(Some(ResolvedAsset {
+            path: published,
+            url: format!(
+                "{}{suffix}",
+                join_site_url(&self.deployment_prefix, &site_path(published))
+            ),
+        }))
     }
 
-    /// Returns relative paths of original fingerprinted assets and their generated copies.
-    pub(crate) fn fingerprinted_paths(&self) -> &BTreeSet<PathBuf> {
-        &self.fingerprinted_paths
+    fn lookup(&self, path: &str, page_url: &str, prefix: &str) -> Result<Option<&Path>> {
+        let published = match site_key(path, page_url, prefix) {
+            Ok(None) => return Ok(None),
+            Ok(Some(key)) => self.paths.get(&key),
+            Err(_) => None,
+        };
+        published
+            .map(|published| Some(published.as_path()))
+            .with_context(|| format!("static asset not found: {path}"))
     }
 }
 
-pub(crate) fn is_external(url: &str) -> bool {
-    url.starts_with("//") || url::Url::parse(url).is_ok()
+/// Returns the manifest key of a URL path resolved against `page_url`, `None` when it falls
+/// outside the deployment prefix, or an error when it does not decode to a UTF-8 file path.
+fn site_key(path: &str, page_url: &str, prefix: &str) -> Result<Option<String>, Utf8Error> {
+    let Some(resolved) = url::Url::parse(page_url)
+        .or_else(|_| url::Url::parse("https://kiln.invalid/")?.join(page_url))
+        .and_then(|base| base.join(path))
+        .ok()
+    else {
+        return Ok(None);
+    };
+    let Some(path) = resolved
+        .path()
+        .strip_prefix(prefix.trim_end_matches('/'))
+        .filter(|path| path.starts_with('/'))
+    else {
+        return Ok(None);
+    };
+    let decoded = percent_decode_str(path).decode_utf8()?;
+    Ok(Some(site_path(Path::new(decoded.trim_start_matches('/')))))
 }
 
-fn is_code(path: &Path) -> bool {
-    matches!(extension(path).as_str(), "css" | "js" | "mjs")
+fn site_path(path: &Path) -> String {
+    format!("/{}", path_url(path))
 }
 
+/// Whether a reference leaves the site or stays within the current document.
+pub(crate) fn is_passthrough(url: &str) -> bool {
+    url.starts_with("//") || url.starts_with('#') || url::Url::parse(url).is_ok()
+}
+
+/// Whether a file is a raster image or font, which references no other files.
 fn is_media(path: &Path) -> bool {
-    matches!(
-        extension(path).as_str(),
-        "avif"
-            | "bmp"
-            | "gif"
-            | "ico"
-            | "jpeg"
-            | "jpg"
-            | "png"
-            | "webp"
-            | "otf"
-            | "ttf"
-            | "woff"
-            | "woff2"
+    has_extension(
+        path,
+        &[
+            "avif", "bmp", "gif", "ico", "jpeg", "jpg", "png", "webp", "otf", "ttf", "woff",
+            "woff2",
+        ],
     )
 }
 
-fn extension(path: &Path) -> String {
+fn has_extension(path: &Path, extensions: &[&str]) -> bool {
     path.extension()
         .and_then(|extension| extension.to_str())
-        .unwrap_or_default()
-        .to_ascii_lowercase()
+        .is_some_and(|extension| {
+            extensions
+                .iter()
+                .any(|candidate| extension.eq_ignore_ascii_case(candidate))
+        })
 }
 
-fn fingerprinted_path(path: &Path, bytes: &[u8]) -> Result<PathBuf> {
+/// Renames a published file to `<stem>.<hash>.<ext>` in place and returns its new relative path.
+fn rename_fingerprinted(output_dir: &Path, path: &Path) -> Result<PathBuf> {
+    let source = output_dir.join(path);
+    let bytes = fs::read(&source)
+        .with_context(|| format!("failed to read static asset {}", source.display()))?;
     let file_stem = path
         .file_stem()
         .and_then(|stem| stem.to_str())
@@ -195,8 +233,25 @@ fn fingerprinted_path(path: &Path, bytes: &[u8]) -> Result<PathBuf> {
         .extension()
         .and_then(|extension| extension.to_str())
         .with_context(|| format!("static asset has no UTF-8 extension: {}", path.display()))?;
-    let file_name = format!("{file_stem}.{}.{extension}", content_fingerprint(bytes));
-    Ok(path.with_file_name(file_name))
+    let published = path.with_file_name(format!(
+        "{file_stem}.{}.{extension}",
+        content_fingerprint(&bytes)
+    ));
+    let target = output_dir.join(&published);
+    if target.exists() {
+        bail!(
+            "fingerprinted static asset conflicts with existing file {}",
+            target.display()
+        );
+    }
+    fs::rename(&source, &target).with_context(|| {
+        format!(
+            "failed to rename {} to {}",
+            source.display(),
+            target.display()
+        )
+    })?;
+    Ok(published)
 }
 
 fn content_fingerprint(bytes: &[u8]) -> String {
@@ -206,127 +261,53 @@ fn content_fingerprint(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
+
     use super::*;
 
-    // ── StaticAssetManifest::build ──
+    // ── StaticAssetManifest::fingerprint ──
 
     #[test]
-    fn build_fingerprints_css_and_js() {
+    fn fingerprint_renames_in_place_and_records_encoded_urls() {
         let dir = tempfile::tempdir().unwrap();
-        fs::create_dir_all(dir.path().join("css")).unwrap();
-        fs::create_dir_all(dir.path().join("js")).unwrap();
-        fs::write(dir.path().join("css/style.css"), "abc").unwrap();
-        fs::write(dir.path().join("js/app.js"), "console.log('ok')").unwrap();
-        fs::write(dir.path().join("js/module.mjs"), "export const value = 1;").unwrap();
-
-        let manifest = StaticAssetManifest::build(dir.path()).unwrap();
-
-        assert_eq!(
-            manifest.asset_url("/css/style.css").unwrap(),
-            "/css/style.ba7816bf8f01.css"
-        );
-        assert_eq!(
-            manifest.asset_url("/js/app.js").unwrap(),
-            "/js/app.cf8e73474dc9.js"
-        );
-        assert_eq!(
-            manifest.asset_url("/js/module.mjs").unwrap(),
-            "/js/module.fcbcb7aece71.mjs"
-        );
-        assert_eq!(
-            fs::read(dir.path().join("css/style.ba7816bf8f01.css")).unwrap(),
-            b"abc"
-        );
-        assert!(dir.path().join("js/app.cf8e73474dc9.js").is_file());
-        assert!(dir.path().join("js/module.fcbcb7aece71.mjs").is_file());
-    }
-
-    #[test]
-    fn build_fingerprints_images_and_fonts() {
-        let dir = tempfile::tempdir().unwrap();
-        for name in ["photo.avif", "font.woff2"] {
-            fs::write(dir.path().join(name), "abc").unwrap();
-        }
-
-        let manifest = StaticAssetManifest::build(dir.path()).unwrap();
-
-        for (source, published) in [
-            ("/photo.avif", "/_assets/photo.ba7816bf8f01.avif"),
-            ("/font.woff2", "/_assets/font.ba7816bf8f01.woff2"),
-        ] {
-            assert_eq!(manifest.asset_url(source).unwrap(), published);
-            assert_eq!(
-                fs::read(dir.path().join(published.trim_start_matches('/'))).unwrap(),
-                b"abc"
-            );
-        }
-    }
-
-    #[test]
-    fn build_keeps_control_file_urls_unchanged() {
-        let dir = tempfile::tempdir().unwrap();
-        fs::write(dir.path().join("_headers"), "image").unwrap();
-
-        let manifest = StaticAssetManifest::build(dir.path()).unwrap();
-
-        assert_eq!(manifest.asset_url("/_headers").unwrap(), "/_headers");
-    }
-
-    #[test]
-    fn build_encodes_filename_components() {
+        let mut manifest = StaticAssetManifest::default();
         for (name, encoded) in [
+            ("css/site.css", "css/site"),
             (
-                "space % # 世界.js",
+                "space % # 世界.css",
                 "space%20%25%20%23%20%E4%B8%96%E7%95%8C",
             ),
-            ("literal%20name.js", "literal%2520name"),
+            ("literal%20name.css", "literal%2520name"),
             #[cfg(unix)]
-            ("question?.js", "question%3F"),
+            ("question?.css", "question%3F"),
         ] {
-            let dir = tempfile::tempdir().unwrap();
-            let output = dir.path();
-            fs::write(output.join(name), "abc").unwrap();
-            let manifest = StaticAssetManifest::build(output).unwrap();
+            let path = Path::new(name);
+            fs::create_dir_all(dir.path().join(path.parent().unwrap())).unwrap();
+            fs::write(dir.path().join(path), "abc").unwrap();
+
+            manifest.fingerprint(dir.path(), path).unwrap();
+
             assert_eq!(
-                manifest.asset_url(&format!("/{encoded}.js")).unwrap(),
-                format!("/{encoded}.ba7816bf8f01.js"),
+                manifest.asset_url(&format!("/{encoded}.css")).unwrap(),
+                format!("/{encoded}.ba7816bf8f01.css"),
             );
+            assert!(!dir.path().join(path).exists());
             assert_eq!(
-                fs::read(output.join(fingerprinted_path(Path::new(name), b"abc").unwrap()))
-                    .unwrap(),
+                fs::read(dir.path().join(name.replace(".css", ".ba7816bf8f01.css"))).unwrap(),
                 b"abc",
             );
         }
     }
 
     #[test]
-    fn build_changes_url_when_content_changes() {
-        let dir = tempfile::tempdir().unwrap();
-        fs::write(dir.path().join("app.js"), "first").unwrap();
-        let first = StaticAssetManifest::build(dir.path())
-            .unwrap()
-            .asset_url("/app.js")
-            .unwrap()
-            .to_owned();
-
-        fs::remove_file(dir.path().join(first.trim_start_matches('/'))).unwrap();
-        fs::write(dir.path().join("app.js"), "second").unwrap();
-        let second = StaticAssetManifest::build(dir.path())
-            .unwrap()
-            .asset_url("/app.js")
-            .unwrap()
-            .to_owned();
-
-        assert_ne!(first, second);
-    }
-
-    #[test]
-    fn build_fingerprinted_path_collision_returns_error() {
+    fn fingerprint_existing_target_returns_error() {
         let dir = tempfile::tempdir().unwrap();
         fs::write(dir.path().join("style.css"), "abc").unwrap();
         fs::write(dir.path().join("style.ba7816bf8f01.css"), "occupied").unwrap();
 
-        let err = StaticAssetManifest::build(dir.path())
+        let err = StaticAssetManifest::default()
+            .fingerprint(dir.path(), Path::new("style.css"))
             .unwrap_err()
             .to_string();
 
@@ -338,59 +319,170 @@ mod tests {
             fs::read_to_string(dir.path().join("style.ba7816bf8f01.css")).unwrap(),
             "occupied"
         );
+        assert_eq!(
+            fs::read_to_string(dir.path().join("style.css")).unwrap(),
+            "abc"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn fingerprint_read_only_parent_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let css = dir.path().join("css");
+        fs::create_dir(&css).unwrap();
+        fs::write(css.join("site.css"), "abc").unwrap();
+        fs::set_permissions(&css, fs::Permissions::from_mode(0o555)).unwrap();
+
+        let result =
+            StaticAssetManifest::default().fingerprint(dir.path(), Path::new("css/site.css"));
+        fs::set_permissions(&css, fs::Permissions::from_mode(0o755)).unwrap();
+
+        let err = format!("{:#}", result.unwrap_err());
+        assert!(
+            err.contains(&format!(
+                "failed to rename {} to {}",
+                css.join("site.css").display(),
+                css.join("site.ba7816bf8f01.css").display()
+            )),
+            "got: {err}"
+        );
+        assert_eq!(fs::read_to_string(css.join("site.css")).unwrap(), "abc");
     }
 
     // ── StaticAssetManifest::asset_url ──
 
     #[test]
     fn asset_url_missing_asset_returns_error() {
-        let manifest = StaticAssetManifest::default();
-        let err = manifest
+        let err = StaticAssetManifest::default()
             .asset_url("/js/missing.js")
             .unwrap_err()
             .to_string();
 
         assert!(
-            err.contains("asset_url: static asset not found: /js/missing.js"),
+            err.contains("static asset not found: /js/missing.js"),
             "got: {err}"
         );
     }
 
-    // ── StaticAssetManifest::resolve ──
+    // ── StaticAssetManifest::resolve_local ──
+
+    fn photo_manifest(authored: &str, deployment: &str) -> StaticAssetManifest {
+        let outputs = BTreeMap::from([
+            (
+                PathBuf::from("blog/posts/a/photo %.avif"),
+                PathBuf::from("blog/posts/a/photo %.ba7816bf8f01.avif"),
+            ),
+            (
+                PathBuf::from("posts/a/photo %.avif"),
+                PathBuf::from("posts/a/photo %.d9298a10d1b0.avif"),
+            ),
+        ]);
+        StaticAssetManifest::new(&outputs).with_prefixes(authored, deployment)
+    }
 
     #[test]
-    fn resolve_published_resources_with_page_paths_and_suffixes() {
-        let dir = tempfile::tempdir().unwrap();
-        fs::create_dir_all(dir.path().join("posts/a")).unwrap();
-        fs::write(dir.path().join("posts/a/photo %.avif"), "abc").unwrap();
-        fs::create_dir_all(dir.path().join("blog/posts/a")).unwrap();
-        fs::write(dir.path().join("blog/posts/a/photo %.avif"), "different").unwrap();
-
-        let manifest = StaticAssetManifest::build(dir.path()).unwrap();
-
-        let expected = "/blog/_assets/posts/a/photo%20%25.ba7816bf8f01.avif?x=1#view";
-        for src in [
-            "photo%20%25.avif?x=1#view",
-            "../a/photo%20%25.avif?x=1#view",
-            "/blog/posts/a/photo%20%25.avif?x=1#view",
+    fn resolve_local_publishes_authored_urls_under_the_deployment_prefix() {
+        for (deployment, page_url) in [
+            ("/blog/", "https://example.com/blog/posts/a/"),
+            ("/", "http://localhost:5456/posts/a/"),
+            ("/preview/", "/preview/posts/a/"),
         ] {
-            assert_eq!(
-                manifest.resolve(src, "https://example.com/blog/posts/a/", "/blog/"),
-                Some(expected.into())
-            );
+            let manifest = photo_manifest("/blog/", deployment);
+            for src in [
+                "photo%20%25.avif?x=1#view",
+                "../a/photo%20%25.avif?x=1#view",
+                "/blog/posts/a/photo%20%25.avif?x=1#view",
+            ] {
+                let asset = manifest.resolve_local(src, page_url).unwrap().unwrap();
+                assert_eq!(asset.path, Path::new("posts/a/photo %.d9298a10d1b0.avif"));
+                assert_eq!(
+                    asset.url,
+                    format!("{deployment}posts/a/photo%20%25.d9298a10d1b0.avif?x=1#view"),
+                    "{deployment} {src}"
+                );
+            }
         }
+    }
 
+    #[test]
+    fn resolve_local_external_empty_and_outside_prefix_urls_return_none() {
+        let manifest = photo_manifest("/blog/", "/");
         for src in [
             "https://cdn.example.com/a.avif",
             "//cdn.example.com/a.avif",
             "data:image/png;base64,abc",
+            "#figure",
+            "",
+            "?v=1",
+            "/posts/a/photo%20%25.avif",
         ] {
-            assert_eq!(manifest.resolve(src, "/", "").as_deref(), Some(src));
+            assert!(
+                manifest.resolve_local(src, "/posts/a/").unwrap().is_none(),
+                "{src}"
+            );
         }
+    }
 
-        assert_eq!(manifest.resolve("missing.png", "/posts/a/", ""), None);
+    #[test]
+    fn resolve_local_missing_site_asset_returns_error() {
+        let err = StaticAssetManifest::default()
+            .with_prefixes("/blog/", "/blog/")
+            .resolve_local("missing.png?q=1", "/blog/posts/a/")
+            .err()
+            .unwrap()
+            .to_string();
+
+        assert!(
+            err.contains("static asset not found: missing.png"),
+            "got: {err}"
+        );
+    }
+
+    // ── StaticAssetManifest::resolve_template_url ──
+
+    #[test]
+    fn resolve_template_url_treats_root_paths_as_site_paths() {
+        let manifest = photo_manifest("/blog/", "/preview/");
+
+        for (src, expected) in [
+            (
+                "/posts/a/photo%20%25.avif",
+                "/preview/posts/a/photo%20%25.d9298a10d1b0.avif",
+            ),
+            (
+                "/blog/posts/a/photo%20%25.avif",
+                "/preview/blog/posts/a/photo%20%25.ba7816bf8f01.avif",
+            ),
+            (
+                "photo%20%25.avif",
+                "/preview/posts/a/photo%20%25.d9298a10d1b0.avif",
+            ),
+        ] {
+            let asset = manifest
+                .resolve_template_url(src, "/preview/posts/a/")
+                .unwrap()
+                .unwrap();
+            assert_eq!(asset.url, expected, "{src}");
+        }
+    }
+
+    // ── StaticAssetManifest::published_path ──
+
+    #[test]
+    fn published_path_strips_the_authored_prefix() {
+        let manifest = photo_manifest("/blog/", "/");
+
         assert_eq!(
-            manifest.resolve("/posts/a/photo%20%25.avif", "/blog/posts/a/", "/blog"),
+            manifest
+                .published_path("/blog/posts/a/photo%20%25.avif")
+                .unwrap(),
+            Some(Path::new("posts/a/photo %.d9298a10d1b0.avif"))
+        );
+        assert_eq!(
+            manifest
+                .published_path("/posts/a/photo%20%25.avif")
+                .unwrap(),
             None
         );
     }

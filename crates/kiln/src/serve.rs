@@ -734,17 +734,80 @@ mod tests {
         fs::create_dir_all(&css_dir).unwrap();
         fs::write(css_dir.join("style.css"), ".before { color: red; }").unwrap();
         let output_dir = root.path().join("public");
+        let site_css = || {
+            let [path]: [_; 1] = fs::read_dir(output_dir.join("assets/css"))
+                .unwrap()
+                .map(|entry| entry.unwrap().path())
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap();
+            fs::read_to_string(path).unwrap()
+        };
         rebuild(root.path(), "http://localhost:0", &output_dir).unwrap();
-        let output = output_dir.join("assets/css/site.css");
-        let original = fs::read_to_string(&output).unwrap();
+        let original = site_css();
 
         fs::write(css_dir.join("style.css"), r#"@import "missing.css";"#).unwrap();
         assert!(rebuild(root.path(), "http://localhost:0", &output_dir).is_err());
-        assert_eq!(fs::read_to_string(&output).unwrap(), original);
+        assert_eq!(site_css(), original);
 
         fs::write(css_dir.join("missing.css"), ".recovered { color: blue; }").unwrap();
         rebuild(root.path(), "http://localhost:0", &output_dir).unwrap();
-        assert!(fs::read_to_string(&output).unwrap().contains(".recovered"));
+        assert!(site_css().contains(".recovered"));
+    }
+
+    #[test]
+    fn rebuild_resolves_subpath_references_under_localhost() {
+        let root = tempfile::tempdir().unwrap();
+        setup_site(root.path());
+        fs::write(
+            root.path().join("config.toml"),
+            r#"base_url = "https://example.com/blog/""#,
+        )
+        .unwrap();
+        fs::write(
+            root.path().join("content/posts/hello/index.md"),
+            indoc! {r#"
+                +++
+                title = "Hello"
+                +++
+                ![Photo](/blog/assets/images/photo.png)
+            "#},
+        )
+        .unwrap();
+        for (path, content) in [
+            ("assets/images/photo.png", "image"),
+            (
+                "assets/css/_src/style.css",
+                ".photo { background: url(/blog/assets/images/photo.png); }",
+            ),
+        ] {
+            let path = root.path().join(path);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, content).unwrap();
+        }
+        let output_dir = root.path().join("public");
+
+        rebuild(root.path(), "http://localhost:0", &output_dir).unwrap();
+
+        let names = |dir: &str| -> Vec<String> {
+            fs::read_dir(output_dir.join(dir))
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+                .collect()
+        };
+        let [photo] = names("assets/images").try_into().unwrap();
+        let [css] = names("assets/css").try_into().unwrap();
+        assert!(
+            photo.starts_with("photo.") && photo != "photo.png",
+            "{photo}"
+        );
+        let html = fs::read_to_string(output_dir.join("posts/hello/index.html")).unwrap();
+        assert!(
+            html.contains(&format!(r#"src="/assets/images/{photo}""#)),
+            "{html}"
+        );
+        let css = fs::read_to_string(output_dir.join("assets/css").join(css)).unwrap();
+        assert!(css.contains(&format!("../images/{photo}")), "{css}");
     }
 
     // ── build_router ──

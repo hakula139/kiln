@@ -248,7 +248,7 @@ impl PageRenderer<'_> {
             self.resources,
             self.options,
             &mut self.assets.lock(),
-        );
+        )?;
         Ok(restore_directives(
             &html,
             self.placeholder_prefix,
@@ -426,12 +426,12 @@ mod tests {
     #[test]
     fn render_page_enriches_images_in_inline_containers() {
         for input in [
-            "- ![Alt](photo.png){width=80 #photo}",
-            "## ![Alt](photo.png){width=80 #photo}",
+            "- ![Alt](https://example.com/photo.png){width=80 #photo}",
+            "## ![Alt](https://example.com/photo.png){width=80 #photo}",
             indoc! {"
                 | Image |
                 | --- |
-                | ![Alt](photo.png){width=80 #photo} |
+                | ![Alt](https://example.com/photo.png){width=80 #photo} |
             "},
         ] {
             let html = render(input).content_html;
@@ -481,7 +481,7 @@ mod tests {
             indoc! {"
                 | Top |
                 | --- |
-                | a ![long alt text](a.png) |
+                | a ![long alt text](https://example.com/a.png) |
 
                 ::: {.compact-table}
                 | Nested |
@@ -691,7 +691,7 @@ mod tests {
     #[test]
     fn render_page_reserves_visible_authored_ids() {
         let page = render(indoc! {r#"
-            ![<script>](script.png)
+            ![<script>](https://example.com/script.png)
 
             <div id=shared></div>
 
@@ -702,13 +702,13 @@ mod tests {
             [^a]: Note.
 
             [^unused]:
-                ![Hidden](hidden.png){#visible}
+                ![Hidden](https://example.com/hidden.png){#visible}
 
                 <span id="unused"></span>
 
             ## Visible
 
-            ![<span id="visible">Alt</span>](image.png){#image}
+            ![<span id="visible">Alt</span>](https://example.com/image.png){#image}
 
             ## Image
 
@@ -992,7 +992,7 @@ mod tests {
     fn render_page_directives_with_image_attrs() {
         let page = render(indoc! {"
             ::: callout
-            ![A photo](img.png){width=240}
+            ![A photo](https://example.com/img.png){width=240}
             :::
         "});
         assert!(

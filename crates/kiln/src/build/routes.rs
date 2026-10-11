@@ -13,7 +13,6 @@ use super::sitemap::SitemapEntry;
 use super::{BuildContext, archive, error, feed, home, overview, page, sitemap};
 use crate::output::write_output;
 use crate::pagination::{PaginationVars, page_dir, paginate};
-use crate::static_assets::MEDIA_DIRECTORY;
 use crate::url::{BaseUrl, directory_url, join_site_url, page_url};
 
 pub(super) enum Route<'a> {
@@ -164,18 +163,6 @@ impl<'a> RoutePlan<'a> {
     }
 
     fn insert(&mut self, path: PathBuf, route: Route<'a>) -> Result<()> {
-        if path.components().next().is_some_and(|component| {
-            component
-                .as_os_str()
-                .to_string_lossy()
-                .eq_ignore_ascii_case(MEDIA_DIRECTORY)
-        }) {
-            bail!(
-                "generated route {} uses reserved asset directory: {}",
-                route.owner(),
-                path.display()
-            );
-        }
         if let Some(existing) = self.routes.get(&path) {
             bail!(
                 "output route collision at {} between {} and {}",
@@ -323,19 +310,6 @@ mod tests {
             error.to_string(),
             "output route collision at index.xml between generated index.xml and All Posts feed"
         );
-    }
-
-    #[test]
-    fn insert_reserved_asset_directory_returns_error() {
-        let mut plan = RoutePlan::default();
-        for path in [
-            "_assets/index.html",
-            "_ASSETS/index.html",
-            "_Assets/index.html",
-        ] {
-            let error = plan.insert(path.into(), Route::NotFound).unwrap_err();
-            assert!(error.to_string().contains("reserved asset directory"));
-        }
     }
 
     // ── RoutePlan::reserve_on_disk ──
