@@ -34,6 +34,7 @@ open = { workspace = true }
 pathdiff = { workspace = true }
 percent-encoding = { workspace = true }
 pulldown-cmark = { workspace = true }
+rayon = { workspace = true }
 regex = { workspace = true }
 scraper = { workspace = true }
 semver = { workspace = true }

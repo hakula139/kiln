@@ -13,6 +13,7 @@ use anyhow::{Context, Result, bail};
 use lightningcss::stylesheet::{
     MinifyOptions, ParserOptions, PrinterOptions, StyleAttribute, StyleSheet,
 };
+use rayon::prelude::*;
 use swc_common::sync::Lrc;
 use swc_common::{FileName, GLOBALS, Globals, Mark, SourceMap};
 use swc_ecma_ast::{EsVersion, Program};
@@ -104,8 +105,7 @@ fn minify_output_dir_filtered(
     excluded: &BTreeSet<PathBuf>,
     include_html: bool,
 ) -> Result<MinifyStats> {
-    let mut stats = MinifyStats::default();
-
+    let mut files = Vec::new();
     for entry in WalkDir::new(output_dir).follow_links(false) {
         let entry = entry.with_context(|| format!("failed to walk {}", output_dir.display()))?;
         if !entry.file_type().is_file() {
@@ -128,12 +128,19 @@ fn minify_output_dir_filtered(
         if kind == AssetKind::Html && !include_html {
             continue;
         }
-
-        stats += minify_file(path, kind)
-            .with_context(|| format!("failed to process {}", path.display()))?;
+        files.push((entry.into_path(), kind));
     }
 
-    Ok(stats)
+    files
+        .par_iter()
+        .map(|(path, kind)| {
+            minify_file(path, *kind)
+                .with_context(|| format!("failed to process {}", path.display()))
+        })
+        .try_reduce(MinifyStats::default, |mut total, stats| {
+            total += stats;
+            Ok(total)
+        })
 }
 
 /// Returns the minifier to use for `path`, or `None` if the file should be skipped.
