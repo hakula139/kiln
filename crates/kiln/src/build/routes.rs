@@ -10,7 +10,7 @@ use strum::IntoEnumIterator;
 use super::bucket::{BucketKind, Listing, Listings};
 use super::listing::{PreparedPage, newest};
 use super::sitemap::SitemapEntry;
-use super::{BuildContext, archive, error, feed, home, overview, render_content_page, sitemap};
+use super::{BuildContext, archive, error, feed, home, overview, page, sitemap};
 use crate::output::write_output;
 use crate::pagination::{PaginationVars, page_dir, paginate};
 use crate::static_assets::MEDIA_DIRECTORY;
@@ -89,12 +89,10 @@ pub(super) struct RoutePlan<'a> {
 }
 
 impl<'a> RoutePlan<'a> {
-    /// Plans the outputs of every enabled template, with home pages listing `home` in order and
-    /// the site feed listing `posts`.
+    /// Plans the outputs of every enabled template, with home pages listing `home` in order.
     pub(super) fn new(
         ctx: &BuildContext,
         pages: &'a [PreparedPage<'a>],
-        posts: &'a Listing<'a>,
         home: &'a [&'a PreparedPage<'a>],
         listings: &'a Listings<'a>,
         output_dir: &Path,
@@ -125,7 +123,7 @@ impl<'a> RoutePlan<'a> {
             }
         }
 
-        plan.insert(PathBuf::from("index.xml"), Route::SiteFeed(posts))?;
+        plan.insert(PathBuf::from("index.xml"), Route::SiteFeed(&listings.posts))?;
         for bucket in listings.iter() {
             plan.insert(bucket.path().join("index.xml"), Route::Feed(bucket))?;
         }
@@ -257,7 +255,7 @@ impl<'a> RoutePlan<'a> {
     ) -> Result<Option<String>> {
         let base_url = &ctx.config.base_url;
         let content = match route {
-            Route::Content(page) => render_content_page(ctx, page)?,
+            Route::Content(prepared) => page::render(ctx, prepared)?,
             Route::Home(page) => home::render(ctx, page, &page_url(base_url, path))?,
             Route::Archive(bucket, page) => {
                 archive::render(ctx, bucket, page, &page_url(base_url, path))?

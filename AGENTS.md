@@ -38,7 +38,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 ````text
 .
 ├── attrs.rs             # Pandoc-style `{#id .class key=value}` attribute parser and shared id / class identity
-├── build.rs             # BuildContext, build orchestration, per-page rendering, static / asset copying
+├── build.rs             # BuildContext, build orchestration, static / asset copying
 ├── build/               # Listing pipeline and output generator submodules
 │   ├── archive.rs       # Year-grouped archive page rendering (/posts/, /posts/<section>/, /tags/<slug>/)
 │   ├── bucket.rs        # Listing buckets (all posts, sections, tags): membership, _index.md names, URL layout
@@ -48,6 +48,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 │   ├── home.rs          # Home page rendering
 │   ├── listing.rs       # Prepared page metadata, date ordering and year grouping
 │   ├── overview.rs      # Bucket overview page rendering (/sections/, /tags/)
+│   ├── page.rs          # Post and standalone page rendering
 │   ├── routes.rs        # Route plan: every output path, collision validation, sitemap entries and render dispatch
 │   └── sitemap.rs       # sitemap.xml + robots.txt generation
 ├── config.rs            # Strict TOML site configuration (validated base URL, time zone, image options, page sizes), theme resolution, param merging

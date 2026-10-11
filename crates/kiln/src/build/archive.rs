@@ -6,6 +6,7 @@ use super::listing::group_by_year;
 use super::routes::ListingPage;
 use crate::template::vars::{ArchivePageVars, PageMetadata};
 
+/// Renders one page of the archive of `bucket`.
 pub(super) fn render(
     ctx: &BuildContext,
     bucket: &Listing<'_>,

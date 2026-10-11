@@ -4,6 +4,7 @@ use super::BuildContext;
 use super::routes::ListingPage;
 use crate::template::vars::{HomePageVars, PageMetadata};
 
+/// Renders one page of the home listing.
 pub(super) fn render(ctx: &BuildContext, page: &ListingPage<'_>, url: &str) -> Result<String> {
     let vars = HomePageVars {
         metadata: PageMetadata {

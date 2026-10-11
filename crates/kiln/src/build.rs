@@ -6,6 +6,7 @@ mod git;
 mod home;
 mod listing;
 mod overview;
+mod page;
 mod routes;
 mod sitemap;
 
@@ -17,24 +18,21 @@ use anyhow::{Context, Result};
 
 use self::bucket::Taxonomy;
 use self::git::GitInfo;
-use self::listing::{PreparedPage, format_page_date, prepare_pages, sort_pinned_first};
+use self::listing::{prepare_pages, sort_pinned_first};
 use self::routes::RoutePlan;
 use crate::config::Config;
 use crate::content::discovery::discover_content;
-use crate::content::page::PageKind;
 use crate::css::Stylesheets;
 use crate::i18n::I18n;
 use crate::minify::{self, MinifyStats};
 use crate::output::OutputTransaction;
 use crate::output::guard::resolve_output_dir;
+use crate::render::RenderOptions;
 use crate::render::lqip::ImageResolver;
-use crate::render::pipeline::render_page;
-use crate::render::{PageResources, RenderOptions};
 use crate::search;
 use crate::static_assets::StaticAssetManifest;
 use crate::static_assets::publication::PublishedAssets;
 use crate::template::TemplateEngine;
-use crate::template::vars::{PageMetadata, PostTemplateVars};
 
 /// Shared build state, created once per build invocation.
 struct BuildContext {
@@ -140,14 +138,7 @@ pub fn build(root: &Path, options: &BuildOptions<'_>) -> Result<()> {
     let mut home = listings.posts.pages.clone();
     sort_pinned_first(&mut home);
 
-    let plan = RoutePlan::new(
-        &ctx,
-        &prepared,
-        &listings.posts,
-        &home,
-        &listings,
-        &output_dir,
-    )?;
+    let plan = RoutePlan::new(&ctx, &prepared, &home, &listings, &output_dir)?;
     let page_count = plan.render(&ctx, &output_dir)?;
 
     finish_build(
@@ -222,57 +213,4 @@ fn format_build_summary(
         );
     }
     summary
-}
-
-// ── Content rendering ──
-
-fn render_content_page(ctx: &BuildContext, prepared: &PreparedPage) -> Result<String> {
-    let page = prepared.page;
-    let rendered = render_page(
-        &page.body,
-        &ctx.template_engine,
-        &ctx.config,
-        &ctx.render_options,
-        &PageResources {
-            source_dir: page.source_path.parent(),
-            images: &ctx.image_resolver,
-            assets: &ctx.static_assets,
-            page_url: &prepared.summary.url,
-            deployment_prefix: ctx.config.base_url.prefix(),
-        },
-        page.frontmatter.heading_numbering,
-    )
-    .with_context(|| format!("failed to render {}", page.source_path.display()))?;
-
-    let page_css =
-        ctx.stylesheets
-            .page_url(ctx.config.base_url.prefix(), &ctx.static_assets, page)?;
-    let vars = PostTemplateVars {
-        metadata: PageMetadata {
-            title: &prepared.summary.title,
-            description: &prepared.summary.description,
-            url: prepared.summary.url.as_str().into(),
-        },
-        featured_image: prepared.summary.featured_image.as_ref(),
-        license: page.frontmatter.license.as_deref(),
-        page_css,
-        date: prepared.summary.date.as_deref(),
-        updated: prepared
-            .updated
-            .map(|date| format_page_date(date, &ctx.config.timezone)),
-        tags: &prepared.summary.tags,
-        section: prepared.summary.section.as_ref(),
-        assets: rendered.assets,
-        content: &rendered.content_html,
-        toc: &rendered.toc_html,
-        config: &ctx.config,
-    };
-
-    match page.kind {
-        PageKind::Page if ctx.template_engine.has_template("page.html") => {
-            ctx.template_engine.render_page(&vars)
-        }
-        _ => ctx.template_engine.render_post(&vars),
-    }
-    .with_context(|| format!("failed to render {}", page.source_path.display()))
 }
