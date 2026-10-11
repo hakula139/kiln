@@ -28,7 +28,7 @@ Each revision has a separate Criterion report with raw samples, logs, revision S
 | `build`          | CLI startup, prior-output cleanup, and complete builds with default, large-params, Git-timestamp, or minified output |
 | `stylesheets`    | Shared and page Tailwind stylesheets built through the CLI, which needs `kiln-tailwindcss`                           |
 
-Cold-image samples exclude image creation and resolver construction, but include processing and cache release. Build fixtures use minimal templates and warm filesystem caches, with search disabled. Only the Git-timestamp variant commits its site and enables `enable_git_info`. Measure representative sites separately when evaluating theme or Pagefind costs.
+Cold-image samples exclude image creation and resolver construction, but include processing and cache release. Build fixtures use minimal templates and warm filesystem caches, with search disabled. Only the Git-timestamp variant commits its site and enables `enable_git_info`. The `stylesheets` group is separate because it needs page bundles that own stylesheets. Measure representative sites separately when evaluating theme or Pagefind costs.
 
 ## Comparing revisions
 
