@@ -4,6 +4,7 @@ cachix
 choco
 clippy
 cmark
+deque
 deserialises
 direnv
 dtolnay

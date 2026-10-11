@@ -137,7 +137,7 @@ fn verify_listings(output: &Path, pages: usize) {
     );
 }
 
-fn run_build(site: &Site, minify: bool) {
+pub(super) fn run_build(site: &Site, minify: bool) {
     let status = build_command(site, minify)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -146,7 +146,7 @@ fn run_build(site: &Site, minify: bool) {
     assert!(status.success(), "benchmark site build failed: {status}");
 }
 
-fn build_command(site: &Site, minify: bool) -> Command {
+pub(super) fn build_command(site: &Site, minify: bool) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_kiln"));
     command
         .env_remove("KILN_BASE_URL")

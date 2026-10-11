@@ -217,6 +217,65 @@ fn build_search_failure_preserves_output_returns_error() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn build_tailwind_failure_waits_for_all_compilers_returns_error() {
+    let site = TestSite::new(indoc! {r#"
+        [css]
+        processor = "tailwind"
+    "#});
+    site.write("assets/css/_src/style.css", ".shared {}")
+        .titled_page("first", "First")
+        .write("content/first/assets/css/_src/style.css", ".first {}")
+        .titled_page("second", "Second")
+        .write("content/second/assets/css/_src/style.css", ".second {}");
+    let finished = site.path("finished.txt");
+    site.write_executable(
+        "bin/kiln-tailwindcss",
+        &formatdoc! {r#"
+            #!/bin/sh
+            if grep -q content/second/ "$1"; then
+              sleep 2
+              echo second > '{}'
+            elif grep -q content/first/ "$1"; then
+              echo 'First failure' >&2
+              exit 4
+            else
+              sleep 1
+              echo 'Shared failure' >&2
+              exit 3
+            fi
+        "#, finished.display()},
+    );
+    let mut path = vec![site.path("bin")];
+    path.extend(std::env::split_paths(&std::env::var_os("PATH").unwrap()));
+
+    let output = kiln()
+        .arg("build")
+        .current_dir(site.root())
+        .env("PATH", std::env::join_paths(path).unwrap())
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    let shared = site
+        .root()
+        .canonicalize()
+        .unwrap()
+        .join("assets/css/_src/style.css");
+    assert!(
+        stderr.contains(&format!("failed to compile {}", shared.display())),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("Tailwind CSS exited with exit status: 3: Shared failure"),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("First failure"), "{stderr}");
+    assert_eq!(fs::read_to_string(finished).unwrap(), "second\n");
+}
+
 /// Creates a site with three tagged posts and a draft, paginated by two, whose only template
 /// renders posts.
 fn summary_site() -> TestSite {
