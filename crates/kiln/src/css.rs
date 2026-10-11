@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::fmt::Write;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Child, Command, Stdio};
 
 use anyhow::{Context, Result, bail};
 use lightningcss::bundler::{Bundler, FileProvider, ResolveResult, SourceProvider};
@@ -11,6 +11,7 @@ use lightningcss::stylesheet::{ParserOptions, PrinterOptions, StyleSheet};
 use lightningcss::traits::ToCss;
 use lightningcss::values::string::CSSString;
 use percent_encoding::percent_decode_str;
+use tempfile::TempDir;
 
 use crate::config::{Config, CssProcessor};
 use crate::content::page::Page;
@@ -82,20 +83,27 @@ impl Stylesheets {
         output_dir: &Path,
     ) -> Result<()> {
         let prefix = config.base_url.prefix();
-        for style in self.shared.iter().chain(self.pages.values()) {
-            let css = match config.css.processor.unwrap_or_default() {
-                CssProcessor::Plain => compile_plain(assets, manifest, prefix, style),
-                CssProcessor::Tailwind => compile_tailwind(
-                    root,
-                    config,
-                    assets,
-                    manifest,
-                    prefix,
-                    self.shared.as_ref(),
-                    style,
-                ),
+        let styles: Vec<_> = self.shared.iter().chain(self.pages.values()).collect();
+        let compiled: Vec<_> = match config.css.processor.unwrap_or_default() {
+            CssProcessor::Plain => styles
+                .iter()
+                .map(|style| compile_plain(assets, manifest, prefix, style))
+                .collect(),
+            CssProcessor::Tailwind => {
+                // Spawn every compiler before waiting, and reap all before reporting any error.
+                let runs: Vec<_> = styles
+                    .iter()
+                    .map(|style| TailwindRun::spawn(root, config, self.shared.as_ref(), style))
+                    .collect();
+                runs.into_iter()
+                    .zip(&styles)
+                    .map(|(run, style)| run?.finish(assets, manifest, prefix, style))
+                    .collect()
             }
-            .with_context(|| format!("failed to compile {}", style.source.display()))?;
+        };
+        for (style, css) in styles.into_iter().zip(compiled) {
+            let css =
+                css.with_context(|| format!("failed to compile {}", style.source.display()))?;
             write_output(&output_dir.join(&style.output), &css)?;
         }
         Ok(())
@@ -139,60 +147,87 @@ fn compile_plain(
     publish_urls(assets, manifest, prefix, style, &stylesheet)
 }
 
-fn compile_tailwind(
-    root: &Path,
-    config: &Config,
-    assets: &PublishedAssets,
-    manifest: &StaticAssetManifest,
-    prefix: &str,
-    shared: Option<&Stylesheet>,
-    style: &Stylesheet,
-) -> Result<String> {
-    let temp = tempfile::tempdir().context("failed to create CSS compiler workspace")?;
-    let workspace = dunce::canonicalize(temp.path())?;
-    let input = workspace.join("input.css");
-    let mut source = String::new();
-    if style.page.is_some()
-        && let Some(shared) = shared
-    {
-        _ = writeln!(source, "@reference {};", tailwind_path(&shared.source)?);
+/// A running `kiln-tailwindcss` compilation and the workspace holding its input.
+struct TailwindRun {
+    _workspace: TempDir,
+    input: PathBuf,
+    child: Child,
+}
+
+impl TailwindRun {
+    fn spawn(
+        root: &Path,
+        config: &Config,
+        shared: Option<&Stylesheet>,
+        style: &Stylesheet,
+    ) -> Result<Self> {
+        let workspace = tempfile::tempdir().context("failed to create CSS compiler workspace")?;
+        let input = dunce::canonicalize(workspace.path())?.join("input.css");
+        let mut source = String::new();
+        if style.page.is_some()
+            && let Some(shared) = shared
+        {
+            _ = writeln!(source, "@reference {};", tailwind_path(&shared.source)?);
+        }
+        _ = writeln!(source, "@import {};", tailwind_path(&style.source)?);
+        for dir in std::iter::once(root.join("content"))
+            .chain(std::iter::once(root.join("templates")))
+            .chain(config.theme_dir(root).map(|dir| dir.join("templates")))
+            .filter(|dir| dir.is_dir())
+        {
+            _ = writeln!(source, "@source {};", tailwind_path(&dir)?);
+        }
+        fs::write(&input, source)?;
+        let binary = if cfg!(windows) {
+            "kiln-tailwindcss.cmd"
+        } else {
+            "kiln-tailwindcss"
+        };
+        let child = Command::new(binary)
+            .arg(&input)
+            .current_dir(root)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .context("failed to run `kiln-tailwindcss`. Install kiln's CSS processor package or use kiln's Nix package")?;
+        Ok(Self {
+            _workspace: workspace,
+            input,
+            child,
+        })
     }
-    _ = writeln!(source, "@import {};", tailwind_path(&style.source)?);
-    for dir in std::iter::once(root.join("content"))
-        .chain(std::iter::once(root.join("templates")))
-        .chain(config.theme_dir(root).map(|dir| dir.join("templates")))
-        .filter(|dir| dir.is_dir())
-    {
-        _ = writeln!(source, "@source {};", tailwind_path(&dir)?);
+
+    fn finish(
+        self,
+        assets: &PublishedAssets,
+        manifest: &StaticAssetManifest,
+        prefix: &str,
+        style: &Stylesheet,
+    ) -> Result<String> {
+        let result = self
+            .child
+            .wait_with_output()
+            .context("failed to wait for `kiln-tailwindcss`")?;
+        if !result.status.success() {
+            bail!(
+                "Tailwind CSS exited with {}: {}",
+                result.status,
+                String::from_utf8_lossy(&result.stderr)
+            );
+        }
+        let compiled =
+            String::from_utf8(result.stdout).context("Tailwind CSS output is not UTF-8")?;
+        let stylesheet = StyleSheet::parse(
+            &compiled,
+            ParserOptions {
+                filename: self.input.to_string_lossy().into_owned(),
+                ..ParserOptions::default()
+            },
+        )
+        .map_err(|error| anyhow::anyhow!("{error}"))?;
+        publish_urls(assets, manifest, prefix, style, &stylesheet)
     }
-    fs::write(&input, source)?;
-    let binary = if cfg!(windows) {
-        "kiln-tailwindcss.cmd"
-    } else {
-        "kiln-tailwindcss"
-    };
-    let result = Command::new(binary)
-        .arg(&input)
-        .current_dir(root)
-        .output()
-        .context("failed to run `kiln-tailwindcss`. Install kiln's CSS processor package or use kiln's Nix package")?;
-    if !result.status.success() {
-        bail!(
-            "Tailwind CSS exited with {}: {}",
-            result.status,
-            String::from_utf8_lossy(&result.stderr)
-        );
-    }
-    let compiled = String::from_utf8(result.stdout).context("Tailwind CSS output is not UTF-8")?;
-    let stylesheet = StyleSheet::parse(
-        &compiled,
-        ParserOptions {
-            filename: input.to_string_lossy().into_owned(),
-            ..ParserOptions::default()
-        },
-    )
-    .map_err(|error| anyhow::anyhow!("{error}"))?;
-    publish_urls(assets, manifest, prefix, style, &stylesheet)
 }
 
 fn tailwind_path(path: &Path) -> Result<String> {

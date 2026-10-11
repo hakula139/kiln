@@ -4,6 +4,7 @@ mod images;
 mod options;
 mod render;
 mod shortcodes;
+mod stylesheets;
 
 use criterion::{criterion_group, criterion_main};
 
@@ -14,5 +15,6 @@ criterion_group!(
     render::benchmarks,
     images::benchmarks,
     build::benchmarks,
+    stylesheets::benchmarks,
 );
 criterion_main!(benches);
