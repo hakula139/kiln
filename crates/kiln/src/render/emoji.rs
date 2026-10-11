@@ -12,8 +12,8 @@ static EMOJI_RE: LazyLock<Regex> =
 /// Returns the emoji for a shortcode in GitHub's set at the start of `text`, with the shortcode's
 /// byte length.
 pub(super) fn match_emoji(text: &str) -> Option<(&str, usize)> {
-    let caps = EMOJI_RE.captures(text)?;
-    Some((gh_emoji::get(caps.get(1)?.as_str())?, caps[0].len()))
+    let (shortcode, [name]) = EMOJI_RE.captures(text)?.extract();
+    Some((gh_emoji::get(name)?, shortcode.len()))
 }
 
 #[cfg(test)]

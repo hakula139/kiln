@@ -17,7 +17,6 @@ pub(super) struct TocEntry {
 ///
 /// Heading levels are normalized so the smallest level becomes depth 1, avoiding empty outer
 /// wrappers when content starts at H2 or deeper. Returns an empty string if `entries` is empty.
-#[must_use]
 pub(super) fn render_toc_html(entries: &[TocEntry]) -> String {
     let Some(min_level) = entries.iter().map(|entry| entry.level as u8).min() else {
         return String::new();
@@ -76,7 +75,6 @@ pub(super) fn render_toc_html(entries: &[TocEntry]) -> String {
 #[cfg(test)]
 mod tests {
     use indoc::indoc;
-    use pulldown_cmark::HeadingLevel;
 
     use super::*;
 

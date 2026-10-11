@@ -55,6 +55,11 @@ impl PageAssets {
         Ok(())
     }
 
+    /// Marks a feature as needed by the current page.
+    pub fn add_feature(&mut self, feature: Feature) {
+        self.features.insert(feature);
+    }
+
     /// Scripts in registration order.
     #[must_use]
     pub fn scripts(&self) -> &[ScriptTag] {
@@ -65,11 +70,6 @@ impl PageAssets {
     #[must_use]
     pub fn features(&self) -> &BTreeSet<Feature> {
         &self.features
-    }
-
-    /// Marks a feature as needed by the current page.
-    pub fn add_feature(&mut self, feature: Feature) {
-        self.features.insert(feature);
     }
 }
 

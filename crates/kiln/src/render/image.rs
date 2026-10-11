@@ -1,10 +1,10 @@
+use std::borrow::Cow;
 use std::fmt::Write;
 
 use super::image_attrs::ImageAttrs;
 use crate::html::escape;
 
 /// Applies identity to the figure and dimensions to its image.
-#[must_use]
 pub(super) fn render_block_image(
     src: &str,
     alt: &str,
@@ -35,7 +35,6 @@ pub(super) fn render_block_image(
 }
 
 /// Applies all authored attributes to the inline image.
-#[must_use]
 pub(super) fn render_inline_image(
     src: &str,
     alt: &str,
@@ -52,8 +51,32 @@ fn render_img(
     attrs: Option<&ImageAttrs>,
     include_identity: bool,
 ) -> String {
-    let mut img = String::new();
-    push_img_tag(&mut img, src, alt, title, attrs, include_identity);
+    let mut img = format!(r#"<img src="{}" alt="{}""#, escape(src), escape(alt));
+
+    if !title.is_empty() {
+        _ = write!(img, r#" title="{}""#, escape(title));
+    }
+
+    if let Some(a) = attrs {
+        if include_identity {
+            if let Some(id) = &a.id {
+                _ = write!(img, r#" id="{}""#, escape(id));
+            }
+            if !a.classes.is_empty() {
+                let classes: Vec<_> = a.classes.iter().map(|c| escape(c)).collect();
+                _ = write!(img, r#" class="{}""#, classes.join(" "));
+            }
+        }
+        let (final_w, final_h) = final_dimensions(a);
+        if let Some(w) = &final_w {
+            _ = write!(img, r#" width="{}""#, escape(w));
+        }
+        if let Some(h) = &final_h {
+            _ = write!(img, r#" height="{}""#, escape(h));
+        }
+    }
+
+    img.push_str(r#" loading="lazy" decoding="async" />"#);
 
     match attrs.and_then(|attrs| attrs.lqip_uri.as_deref()) {
         // Base64 uses safe chars (`A-Za-z0-9+/=`), so `"..."` and `url('...')` need no escape.
@@ -62,70 +85,36 @@ fn render_img(
     }
 }
 
-fn push_img_tag(
-    html: &mut String,
-    src: &str,
-    alt: &str,
-    title: &str,
-    attrs: Option<&ImageAttrs>,
-    include_identity: bool,
-) {
-    _ = write!(html, r#"<img src="{}" alt="{}""#, escape(src), escape(alt));
-
-    if !title.is_empty() {
-        _ = write!(html, r#" title="{}""#, escape(title));
-    }
-
-    if let Some(a) = attrs {
-        if include_identity {
-            if let Some(id) = &a.id {
-                _ = write!(html, r#" id="{}""#, escape(id));
-            }
-            if !a.classes.is_empty() {
-                let classes: Vec<_> = a.classes.iter().map(|c| escape(c)).collect();
-                _ = write!(html, r#" class="{}""#, classes.join(" "));
-            }
-        }
-        let (final_w, final_h) = final_dimensions(a);
-        if let Some(w) = &final_w {
-            _ = write!(html, r#" width="{}""#, escape(w));
-        }
-        if let Some(h) = &final_h {
-            _ = write!(html, r#" height="{}""#, escape(h));
-        }
-    }
-
-    html.push_str(r#" loading="lazy" decoding="async" />"#);
-}
-
 /// Picks the `width` / `height` to emit. Manual `{width=...}` / `{height=...}`
 /// always win. When only one is set, the other is scaled from the resolver's
 /// auto aspect so the rendered box matches the source shape.
-fn final_dimensions(attrs: &ImageAttrs) -> (Option<String>, Option<String>) {
-    match (
-        attrs.width.as_deref(),
-        attrs.height.as_deref(),
-        attrs.auto_width,
-        attrs.auto_height,
-    ) {
-        (Some(w), Some(h), _, _) => (Some(w.into()), Some(h.into())),
-        (Some(w), None, Some(aw), Some(ah)) => {
-            let scaled = w
-                .parse::<u32>()
-                .ok()
-                .map(|wp| (u64::from(ah) * u64::from(wp) / u64::from(aw)).to_string());
-            (Some(w.into()), scaled)
+fn final_dimensions(attrs: &ImageAttrs) -> (Option<Cow<'_, str>>, Option<Cow<'_, str>>) {
+    let width = attrs.width.as_deref().map(Cow::Borrowed);
+    let height = attrs.height.as_deref().map(Cow::Borrowed);
+    let (Some(auto_width), Some(auto_height)) = (attrs.auto_width, attrs.auto_height) else {
+        return (width, height);
+    };
+
+    match (width, height) {
+        (Some(w), None) => {
+            let h = scale(&w, auto_height, auto_width);
+            (Some(w), h)
         }
-        (None, Some(h), Some(aw), Some(ah)) => {
-            let scaled = h
-                .parse::<u32>()
-                .ok()
-                .map(|hp| (u64::from(aw) * u64::from(hp) / u64::from(ah)).to_string());
-            (scaled, Some(h.into()))
-        }
-        (None, None, Some(aw), Some(ah)) => (Some(aw.to_string()), Some(ah.to_string())),
-        (m_w, m_h, _, _) => (m_w.map(Into::into), m_h.map(Into::into)),
+        (None, Some(h)) => (scale(&h, auto_width, auto_height), Some(h)),
+        (None, None) => (
+            Some(auto_width.to_string().into()),
+            Some(auto_height.to_string().into()),
+        ),
+        authored => authored,
     }
+}
+
+/// Scales an authored pixel length by `numerator / denominator`, or returns `None` when the length
+/// is not a plain integer.
+fn scale(value: &str, numerator: u32, denominator: u32) -> Option<Cow<'static, str>> {
+    let value: u32 = value.parse().ok()?;
+    let scaled = u64::from(numerator) * u64::from(value) / u64::from(denominator);
+    Some(scaled.to_string().into())
 }
 
 #[cfg(test)]
@@ -293,6 +282,7 @@ mod tests {
             (Some("600"), None, r#"width="600" height="400""#),
             (None, Some("400"), r#"width="600" height="400""#),
             (Some("250"), Some("100"), r#"width="250" height="100""#),
+            (Some("50%"), None, r#"width="50%""#),
         ] {
             let attrs = ImageAttrs {
                 width: width.map(str::to_string),
