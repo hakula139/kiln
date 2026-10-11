@@ -7,7 +7,7 @@ use pulldown_cmark::{Event, Parser, Tag, TagEnd};
 
 use super::frontmatter::{self, Frontmatter};
 use super::{is_markdown, is_public, is_single_component};
-use crate::markdown::markdown_options;
+use crate::markdown::{code_ranges, markdown_options};
 use crate::output::walk_directory;
 
 /// Distinguishes blog posts (under `content/posts/`) from standalone pages.
@@ -138,7 +138,7 @@ fn page_kind(relative: &Path) -> Result<PageKind> {
 }
 
 /// Returns `true` if the file is a page bundle entry point (`index.md`).
-pub(crate) fn is_page_bundle(path: &Path) -> bool {
+fn is_page_bundle(path: &Path) -> bool {
     path.file_stem().and_then(|s| s.to_str()) == Some("index")
 }
 
@@ -168,11 +168,18 @@ fn contains_bundle(dir: &Path) -> bool {
         })
 }
 
-/// Extracts summary text before `<!--more-->`, stripped to plain text.
+/// Extracts summary text before the first `<!--more-->` outside code, stripped to plain text.
 ///
 /// Parses the full body so reference link definitions after the separator still resolve.
 fn extract_summary(body: &str) -> Option<String> {
-    let separator_offset = body.find(SUMMARY_SEPARATOR)?;
+    let mut candidates = body
+        .match_indices(SUMMARY_SEPARATOR)
+        .map(|(offset, _)| offset)
+        .peekable();
+    candidates.peek()?;
+    let code = code_ranges(body);
+    let separator_offset =
+        candidates.find(|offset| !code.iter().any(|range| range.contains(offset)))?;
     let plain = strip_markdown(body, separator_offset);
     (!plain.is_empty()).then_some(plain)
 }
@@ -341,6 +348,26 @@ mod tests {
         let page = load_at(root.path(), "example/index.md", MINIMAL).unwrap();
 
         assert_eq!(page.assets, [bundle.join("visible.txt")]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn reports_non_utf8_section() {
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt;
+
+        let root = tempfile::tempdir().unwrap();
+        let content_dir = root.path().join("content");
+        let path = content_dir
+            .join("posts")
+            .join(OsStr::from_bytes(b"section\xff"))
+            .join("post.md");
+
+        let error = Page::load(MINIMAL, &path, &content_dir).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            format!("invalid section in {}", path.display())
+        );
     }
 
     #[cfg(unix)]
@@ -524,6 +551,10 @@ mod tests {
                 "Use strip_markdown to clean text.",
             ),
             (
+                "Inline $x^2$ and display $$y$$ math.",
+                "Inline x^2 and display y math.",
+            ),
+            (
                 r#""Quoted" text -- with 'marks'..."#,
                 r#""Quoted" text -- with 'marks'..."#,
             ),
@@ -568,9 +599,29 @@ mod tests {
     }
 
     #[test]
+    fn skips_separator_inside_code() {
+        let body = indoc! {r"
+            Write `<!--more-->` to split.
+
+            <!--more-->
+        "};
+        assert_eq!(
+            extract_summary(body).unwrap(),
+            "Write <!--more--> to split."
+        );
+    }
+
+    #[test]
     fn none_without_separator_or_summary_text() {
         for body in [
             "No summary separator in this content.",
+            indoc! {r"
+                Intro.
+
+                ```html
+                <!--more-->
+                ```
+            "},
             indoc! {r"
                 <!--more-->
 

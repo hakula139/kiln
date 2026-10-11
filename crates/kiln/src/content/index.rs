@@ -59,20 +59,22 @@ mod tests {
     fn reports_malformed_or_unreadable_index() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("_index.md");
-        fs::write(
-            &path,
+        for content in [
+            "# Notes\n",
             indoc! {r"
                 +++
                 title = [
                 +++
             "},
-        )
-        .unwrap();
-        let error = load_index_title(directory.path()).unwrap_err();
-        assert_eq!(
-            error.to_string(),
-            format!("invalid frontmatter in {}", path.display())
-        );
+        ] {
+            fs::write(&path, content).unwrap();
+            let error = load_index_title(directory.path()).unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                format!("invalid frontmatter in {}", path.display()),
+                "{content}"
+            );
+        }
 
         fs::remove_file(&path).unwrap();
         fs::create_dir(&path).unwrap();
