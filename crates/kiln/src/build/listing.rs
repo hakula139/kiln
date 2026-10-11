@@ -6,7 +6,6 @@ use jiff::{Timestamp, tz::TimeZone};
 use strum::{EnumIter, IntoStaticStr};
 
 use super::BuildContext;
-use super::git::updated_timestamp;
 use crate::content::frontmatter::FeaturedImage;
 use crate::content::page::{Page, PageKind};
 use crate::render::PageResources;
@@ -98,11 +97,10 @@ fn prepare_page(
     let output_path = page.output_path();
     let url = page_url(&ctx.config.base_url, &output_path);
     let published = page.frontmatter.date;
-    let updated = updated_timestamp(
-        page.frontmatter.updated,
-        &page.source_path,
-        ctx.git_info.as_ref(),
-    );
+    let updated = page
+        .frontmatter
+        .updated
+        .or_else(|| ctx.git_info.as_ref()?.last_modified(&page.source_path));
     let featured_image = resolve_featured_image(
         page.frontmatter.featured_image.as_ref(),
         &PageResources {

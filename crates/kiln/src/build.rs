@@ -132,7 +132,10 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
     )
     .context("failed to initialize template engine")?;
     let image_resolver = ImageResolver::new(&output_dir, config.image.clone());
-    let git_info = GitInfo::new(root, &content.content_dir, config.enable_git_info);
+    let git_info = config
+        .enable_git_info
+        .then(|| GitInfo::new(root, &content.content_dir))
+        .flatten();
     let ctx = BuildContext {
         config,
         i18n,

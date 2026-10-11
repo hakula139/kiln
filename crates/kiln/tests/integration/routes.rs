@@ -1,3 +1,5 @@
+use std::process::Command;
+
 use indoc::{formatdoc, indoc};
 
 use super::support::{TestSite, xml_texts};
@@ -53,6 +55,61 @@ fn build_routes_share_prefix_metadata_and_sitemap() {
     assert!(robots.contains("Sitemap: https://example.com/blog/sitemap.xml"));
     let feed = site.read("index.xml");
     assert!(feed.contains("<pubDate>Mon, 01 Jan 2024 00:00:00 +0000</pubDate>"));
+}
+
+#[test]
+fn build_updated_prefers_frontmatter_over_git_commit() {
+    let site = route_site();
+    site.write(
+        "config.toml",
+        indoc! {r#"
+            base_url = "https://example.com/blog/"
+            enable_git_info = true
+        "#},
+    )
+    .write(
+        "content/posts/committed.md",
+        indoc! {r#"
+            +++
+            title = "Committed"
+            date = "2024-01-01T00:00:00Z"
+            +++
+            Summary.
+        "#},
+    );
+    write_post(&site, "content/posts/explicit.md", "Explicit");
+    for args in [
+        &["init", "-q"][..],
+        &["add", "."],
+        &["commit", "-qm", "Add posts"],
+    ] {
+        let status = Command::new("git")
+            .args([
+                "-c",
+                "user.name=Example",
+                "-c",
+                "user.email=example@example.com",
+            ])
+            .args(args)
+            .current_dir(site.root())
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_COMMITTER_DATE", "2025-06-01T00:00:00Z")
+            .status()
+            .unwrap();
+        assert!(status.success(), "git {args:?}: {status}");
+    }
+
+    site.build().unwrap();
+
+    assert!(
+        site.read("posts/committed/index.html")
+            .contains("2025-06-01T00:00:00+00:00")
+    );
+    assert!(
+        site.read("posts/explicit/index.html")
+            .contains("2025-01-02T00:00:00+00:00")
+    );
 }
 
 #[test]
