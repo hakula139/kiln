@@ -98,6 +98,12 @@ mod tests {
     use super::*;
     use crate::test_utils::{git, git_commit};
 
+    fn repo() -> TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        git(dir.path(), &["init", "-q"]);
+        dir
+    }
+
     // ── GitInfo::new ──
 
     #[test]
@@ -117,30 +123,6 @@ mod tests {
         let expected = Some("2023-12-31T16:00:00Z".parse().unwrap());
         assert_eq!(info.last_modified(&source), expected);
         assert_eq!(info.last_modified(&decomposed), expected);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn git_info_new_reads_site_with_leading_colon() {
-        let dir = repo();
-        let content = dir.path().join(":my site/content");
-        fs::create_dir_all(&content).unwrap();
-        let source = content.join("post.md");
-        fs::write(&source, "post").unwrap();
-        git(dir.path(), &["add", "."]);
-        git_commit(dir.path(), "2024-01-01T00:00:00+00:00");
-
-        let info = GitInfo::new(&dir.path().join(":my site"), &content).unwrap();
-        assert_eq!(
-            info.last_modified(&source),
-            Some("2024-01-01T00:00:00Z".parse().unwrap())
-        );
-    }
-
-    fn repo() -> TempDir {
-        let dir = tempfile::tempdir().unwrap();
-        git(dir.path(), &["init", "-q"]);
-        dir
     }
 
     #[test]
@@ -165,6 +147,24 @@ mod tests {
         git(shallow.path(), &["clone", "-q", "--depth=1", &url, "copy"]);
         let copy = shallow.path().join("copy");
         assert!(GitInfo::new(&copy, &copy.join("content")).is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn git_info_new_reads_site_with_leading_colon() {
+        let dir = repo();
+        let content = dir.path().join(":my site/content");
+        fs::create_dir_all(&content).unwrap();
+        let source = content.join("post.md");
+        fs::write(&source, "post").unwrap();
+        git(dir.path(), &["add", "."]);
+        git_commit(dir.path(), "2024-01-01T00:00:00+00:00");
+
+        let info = GitInfo::new(&dir.path().join(":my site"), &content).unwrap();
+        assert_eq!(
+            info.last_modified(&source),
+            Some("2024-01-01T00:00:00Z".parse().unwrap())
+        );
     }
 
     // ── GitInfo::last_modified ──
