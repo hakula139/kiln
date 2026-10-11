@@ -84,10 +84,9 @@ fn convert_build_preserves_callout_and_bundle_ownership() {
     site.write(
         "destination/templates/post.html",
         "<article>{{ content | safe }}</article>",
-    );
-    write_test_file(
-        &destination,
-        "templates/directives/callout.html",
+    )
+    .write(
+        "destination/templates/directives/callout.html",
         r#"<details class="callout {{ type }}"{% if open %} open{% endif %}><summary>{{ title }}</summary>{{ body_html | safe }}</details>"#,
     );
     build(&destination, BuildOptions::default()).unwrap();
