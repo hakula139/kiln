@@ -26,7 +26,7 @@ pub(super) fn tpl_read_file(state: &State, filename: &str) -> Result<String, Err
     let source_dir = state
         .lookup("__source_dir")
         .filter(|v| !v.is_none() && !v.is_undefined())
-        .ok_or_else(|| invalid("read_file requires a page source directory"))?;
+        .ok_or_else(|| invalid("read_file is only callable from directive templates"))?;
     let source_dir = source_dir
         .as_str()
         .ok_or_else(|| invalid("__source_dir must be a string"))?;
@@ -114,8 +114,8 @@ impl AssetUrls {
 }
 
 /// Returns the published URL of an asset path, HTML-escaped and marked safe for attributes.
-pub(super) fn tpl_asset_url(state: &State, assets: &AssetUrls, url: &str) -> Result<Value, Error> {
-    let url = assets.resolve(state, url)?;
+pub(super) fn tpl_asset_url(state: &State, urls: &AssetUrls, url: &str) -> Result<Value, Error> {
+    let url = urls.resolve(state, url)?;
     Ok(Value::from_safe_string(html::escape(&url)))
 }
 
@@ -129,7 +129,7 @@ pub(super) fn tpl_asset_url(state: &State, assets: &AssetUrls, url: &str) -> Res
 /// re-registering the same URL with different attributes is an error.
 pub(super) fn tpl_register_script(
     state: &State,
-    assets: &AssetUrls,
+    urls: &AssetUrls,
     url: &str,
     kwargs: &Kwargs,
 ) -> Result<&'static str, Error> {
@@ -160,7 +160,7 @@ pub(super) fn tpl_register_script(
         })?,
     };
 
-    let url = assets.resolve(state, url)?;
+    let url = urls.resolve(state, url)?;
     handle
         .lock()
         .register_script(ScriptTag { url, load, module })
@@ -243,7 +243,7 @@ mod tests {
         for (ctx, expected) in [
             (
                 context! { source_dir },
-                "read_file requires a page source directory",
+                "read_file is only callable from directive templates",
             ),
             (
                 context! { __source_dir => 1 },
@@ -251,7 +251,7 @@ mod tests {
             ),
             (context! { __source_dir => source_dir }, "failed to read"),
         ] {
-            let error = render("{{ read_file('missing.csv') }}", context! { ..ctx }).unwrap_err();
+            let error = render("{{ read_file('missing.csv') }}", ctx).unwrap_err();
             assert!(error.to_string().contains(expected), "{error}");
         }
     }
@@ -530,8 +530,11 @@ mod tests {
 
     /// Creates an engine deployed under `/blog/` whose manifest holds a few code assets.
     fn asset_engine() -> (TempDir, TemplateEngine) {
-        let static_dir = tempfile::tempdir().unwrap();
-        fs::create_dir(static_dir.path().join("blog")).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let static_dir = dir.path().join("static");
+        let templates = dir.path().join("templates");
+        fs::create_dir_all(static_dir.join("blog")).unwrap();
+        fs::create_dir(&templates).unwrap();
         for (path, content) in [
             ("shared.css", "abc"),
             ("blog/shared.css", "different"),
@@ -539,18 +542,17 @@ mod tests {
             ("page script.js", "abc"),
             ("x.js", "abc"),
         ] {
-            fs::write(static_dir.path().join(path), content).unwrap();
+            fs::write(static_dir.join(path), content).unwrap();
         }
         let config: Config = toml::from_str(r#"base_url = "https://example.com/blog/""#).unwrap();
-        let templates = tempfile::tempdir().unwrap();
         let engine = TemplateEngine::new(
-            Some(templates.path()),
+            Some(&templates),
             None,
             &config,
             &test_i18n(),
-            &StaticAssetManifest::build(static_dir.path()).unwrap(),
+            &StaticAssetManifest::build(&static_dir).unwrap(),
         )
         .unwrap();
-        (static_dir, engine)
+        (dir, engine)
     }
 }

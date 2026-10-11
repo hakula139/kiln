@@ -310,7 +310,7 @@ Looks up and interpolates a translation. See [Internationalization](#internation
 
 #### `asset_url(path)`
 
-Resolves a published site-root-relative or page-relative path to its public URL, including supported asset fingerprints and the deployment prefix. The result is HTML-escaped and needs no `| safe`. See [Referencing Assets](assets.md#referencing-assets).
+Resolves a published site-root-relative or page-relative path to its public URL, including supported asset fingerprints and the deployment prefix. The result is escaped for HTML text and attribute values, so it needs no `| safe` there. That escaping leaves it unsuitable raw inside `<script>` or `<style>` or under `tojson`, where a URL containing `&` would come out as `&amp;`. See [Referencing Assets](assets.md#referencing-assets).
 
 #### `register_script(url, load="defer", module=false)`
 

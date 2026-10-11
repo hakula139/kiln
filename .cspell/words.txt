@@ -66,6 +66,7 @@ syntect
 taplo
 tera
 tmpl
+tojson
 tracing
 tungstenite
 tzdata

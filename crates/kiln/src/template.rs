@@ -82,9 +82,9 @@ impl TemplateEngine {
             manifest: static_assets.clone(),
             prefix: config.base_url.prefix().to_owned(),
         });
-        let assets = Arc::clone(&asset_urls);
+        let urls = Arc::clone(&asset_urls);
         env.add_function("asset_url", move |state: &minijinja::State, url: &str| {
-            tpl_asset_url(state, &assets, url)
+            tpl_asset_url(state, &urls, url)
         });
         env.add_function(
             "register_script",
@@ -116,12 +116,7 @@ impl TemplateEngine {
     ///
     /// Returns an error if the template is missing or rendering fails.
     pub fn render_home(&self, vars: &HomePageVars<'_>) -> Result<String> {
-        self.render_page_template(
-            "home.html",
-            vars,
-            &vars.metadata.url,
-            &PageAssets::default(),
-        )
+        self.render_generated("home.html", vars, &vars.metadata.url)
     }
 
     /// Renders an archive page using the `archive.html` template.
@@ -130,12 +125,7 @@ impl TemplateEngine {
     ///
     /// Returns an error if the template is missing or rendering fails.
     pub fn render_archive(&self, vars: &ArchivePageVars<'_>) -> Result<String> {
-        self.render_page_template(
-            "archive.html",
-            vars,
-            &vars.metadata.url,
-            &PageAssets::default(),
-        )
+        self.render_generated("archive.html", vars, &vars.metadata.url)
     }
 
     /// Renders a bucket overview page (e.g., `/tags/`, `/sections/`).
@@ -144,12 +134,7 @@ impl TemplateEngine {
     ///
     /// Returns an error if the template is missing or rendering fails.
     pub fn render_overview(&self, vars: &OverviewPageVars<'_>) -> Result<String> {
-        self.render_page_template(
-            "overview.html",
-            vars,
-            &vars.metadata.url,
-            &PageAssets::default(),
-        )
+        self.render_generated("overview.html", vars, &vars.metadata.url)
     }
 
     /// Renders the 404 error page using the `404.html` template.
@@ -158,7 +143,7 @@ impl TemplateEngine {
     ///
     /// Returns an error if the template is missing or rendering fails.
     pub fn render_404(&self, vars: &PageMetadata<'_>) -> Result<String> {
-        self.render_page_template("404.html", vars, &vars.url, &PageAssets::default())
+        self.render_generated("404.html", vars, &vars.url)
     }
 
     /// Tries to render a directive using `directives/<name>.html`.
@@ -201,6 +186,11 @@ impl TemplateEngine {
         }
     }
 
+    /// Renders a generated page, whose lack of Markdown content leaves no assets to register.
+    fn render_generated(&self, name: &str, vars: impl Serialize, page_url: &str) -> Result<String> {
+        self.render_page_template(name, vars, page_url, &PageAssets::default())
+    }
+
     /// Renders a whole page, exposing `assets` and the page URL that `asset_url()` resolves
     /// relative paths against.
     fn render_page_template(
@@ -236,7 +226,7 @@ mod tests {
     use crate::render::assets::{Feature, LoadStrategy, ScriptTag};
     use crate::template::vars::{BucketSummary, LinkedTerm, PageGroup, PageSummary};
     use crate::test_utils::{
-        copy_templates, test_engine, test_engine_with, test_i18n, test_resources, test_site_engine,
+        test_engine, test_engine_with, test_i18n, test_resources, test_site_engine,
     };
 
     // ── new ──
@@ -464,7 +454,7 @@ mod tests {
         let templates = dir.path().join("templates");
         test_fs::create_dir_all(&static_dir).unwrap();
         test_fs::write(static_dir.join("bg.png"), "png").unwrap();
-        copy_templates(&templates);
+        test_fs::create_dir_all(&templates).unwrap();
         test_fs::write(
             templates.join("404.html"),
             "{{ title }}|{{ description }}|{{ url }}|{{ asset_url('bg.png') }}|{{ assets.features | length }}",

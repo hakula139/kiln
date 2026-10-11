@@ -5,7 +5,7 @@ use serde::Serialize;
 use crate::content::frontmatter::FeaturedImage;
 use crate::pagination::PaginationVars;
 
-/// Common metadata for content and listing templates.
+/// Common metadata for every page template.
 #[derive(Debug, Serialize)]
 pub struct PageMetadata<'a> {
     pub title: &'a str,
