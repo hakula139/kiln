@@ -237,6 +237,17 @@ mod tests {
         );
         commit(dir.path(), "2024-05-01T00:00:00+00:00");
 
+        git(dir.path(), &["switch", "-qc", "discarded"]);
+        fs::write(content.join("kept.md"), "discarded").unwrap();
+        git(dir.path(), &["add", "."]);
+        commit(dir.path(), "2024-06-01T00:00:00+00:00");
+        git(dir.path(), &["switch", "-q", "-"]);
+        git(
+            dir.path(),
+            &["merge", "-q", "-s", "ours", "--no-commit", "discarded"],
+        );
+        commit(dir.path(), "2024-07-01T00:00:00+00:00");
+
         let info = GitInfo::new(dir.path(), &content, true).unwrap();
         let updated = |name: &str| updated_timestamp(None, &content.join(name), Some(&info));
         assert_eq!(
@@ -260,7 +271,7 @@ mod tests {
             None
         );
 
-        let explicit = "2024-06-01T00:00:00Z".parse().unwrap();
+        let explicit = "2024-08-01T00:00:00Z".parse().unwrap();
         assert_eq!(
             updated_timestamp(Some(explicit), &content.join("kept.md"), Some(&info)),
             Some(explicit)
