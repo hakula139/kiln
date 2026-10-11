@@ -16,7 +16,7 @@ use super::fixtures::{PROSE, Site};
 
 /// Measures rendering with preloaded dependencies and separately times fresh syntax loading.
 pub(super) fn benchmarks(criterion: &mut Criterion) {
-    let site = Site::new(0, PROSE);
+    let site = Site::new(0, PROSE, 0);
     let config = Config::load(site.root()).unwrap();
     let i18n = I18n::load(site.root(), None, "en").unwrap();
     let engine = TemplateEngine::new(Some(&site.root().join("templates")), None, &i18n).unwrap();

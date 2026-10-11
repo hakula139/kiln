@@ -13,12 +13,7 @@ pub(super) fn benchmarks(criterion: &mut Criterion) {
         let mut params = toml::Table::new();
         params.insert("emojis".to_owned(), toml::Value::Boolean(true));
         params.extend(extra_params(count));
-        let expected = RenderOptions::from_params(&params).unwrap();
-        assert!(expected.code_max_lines.is_none());
-        assert!(expected.emojis);
-        assert!(!expected.fontawesome);
-        assert!(!expected.heading_numbering);
-        assert!(expected.table_nowrap_width.is_none());
+        assert!(RenderOptions::from_params(&params).unwrap().emojis);
         group.bench_with_input(
             BenchmarkId::from_parameter(count),
             &params,

@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block title %}<title>{{ title }} - {{ config.title }}</title>{% endblock %}
+
+{% block head %}
+  {%- if description %}
+  <meta name="description" content="{{ description }}">
+  {%- endif %}
+  <link rel="canonical" href="{{ url | safe }}">
+{% endblock %}
+
+{% block body %}
+  <article class="page">
+    <h1>{{ title }}</h1>
+    <div class="content">{{ content | safe }}</div>
+  </article>
+{% endblock %}

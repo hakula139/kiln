@@ -1,4 +1,3 @@
-use std::fmt::Write;
 use std::fs;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -10,7 +9,7 @@ use walkdir::WalkDir;
 
 use kiln::feed::DEFAULT_FEED_LIMIT;
 
-use super::fixtures::{PROSE, Site, extra_params};
+use super::fixtures::{INDEX_TAGS, PAGINATE, PROSE, Site};
 
 /// Includes CLI startup and prior-output cleanup, with fixture validation outside sampling.
 pub(super) fn benchmarks(criterion: &mut Criterion) {
@@ -25,10 +24,7 @@ pub(super) fn benchmarks(criterion: &mut Criterion) {
         (200, false, 1_000),
         (200, true, 0),
     ] {
-        let site = Site::new(pages, PROSE);
-        if extra_params > 0 {
-            add_params(&site, extra_params);
-        }
+        let site = Site::new(pages, PROSE, extra_params);
         verify_build(&site, pages, minify);
         let mode = if minify {
             "minified"
@@ -43,15 +39,6 @@ pub(super) fn benchmarks(criterion: &mut Criterion) {
         });
     }
     group.finish();
-}
-
-fn add_params(site: &Site, count: usize) {
-    let path = site.root().join("config.toml");
-    let mut config = fs::read_to_string(&path).unwrap();
-    for (name, value) in extra_params(count) {
-        _ = writeln!(config, "{name} = {value}");
-    }
-    fs::write(path, config).unwrap();
 }
 
 fn verify_build(site: &Site, pages: usize, minify: bool) {
@@ -78,8 +65,14 @@ fn verify_build(site: &Site, pages: usize, minify: bool) {
                 .is_some_and(|extension| extension == "html")
         })
         .count();
-    let expected_pages = pages + 4 * pages.div_ceil(10) + 4 * (pages / 4).div_ceil(10) + 3;
-    assert_eq!(actual_pages, expected_pages);
+    // Home, the posts index, the notes section, and the common tag each list every post.
+    let full_listings = 4 * pages.div_ceil(PAGINATE);
+    let index_tag_listings = INDEX_TAGS * (pages / INDEX_TAGS).div_ceil(PAGINATE);
+    let overviews_and_404 = 3;
+    assert_eq!(
+        actual_pages,
+        pages + full_listings + index_tag_listings + overviews_and_404
+    );
     verify_listings(&output, pages);
     let feed = fs::read_to_string(output.join("index.xml")).unwrap();
     assert_eq!(
@@ -108,7 +101,7 @@ fn verify_listings(output: &Path, pages: usize) {
         })
         .collect();
     expected_posts.sort_by(|a, b| a.1.cmp(&b.1));
-    expected_posts.truncate(10);
+    expected_posts.truncate(PAGINATE);
 
     let selector = Selector::parse("a").unwrap();
     for path in [
@@ -151,7 +144,12 @@ fn run_build(site: &Site, minify: bool) {
 
 fn build_command(site: &Site, minify: bool) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_kiln"));
-    command.arg("build").arg("--root").arg(site.root());
+    command
+        .env_remove("KILN_BASE_URL")
+        .env_remove("RUST_LOG")
+        .arg("build")
+        .arg("--root")
+        .arg(site.root());
     if minify {
         command.arg("--minify");
     }

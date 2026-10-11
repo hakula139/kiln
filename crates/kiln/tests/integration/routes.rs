@@ -1,21 +1,15 @@
-use std::fs;
-use std::path::Path;
-
 use indoc::{formatdoc, indoc};
 
-use kiln::build::{BuildOptions, build};
+use super::support::{TestSite, xml_texts};
 
-use super::support::write_test_file;
-
-// ── build ──
+// ── build: routes ──
 
 #[test]
 fn build_routes_share_prefix_metadata_and_sitemap() {
-    let root = setup_site();
-    write_post(root.path(), "content/posts/one.md", "One");
-    write_post(root.path(), "content/posts/two.md", "Two");
-    write_test_file(
-        root.path(),
+    let site = route_site();
+    write_post(&site, "content/posts/one.md", "One");
+    write_post(&site, "content/posts/two.md", "Two");
+    site.write(
         "content/tags/rust/_index.md",
         indoc! {r#"
             +++
@@ -23,28 +17,24 @@ fn build_routes_share_prefix_metadata_and_sitemap() {
             +++
         "#},
     );
-    build(root.path(), BuildOptions::default()).unwrap();
-    let output = root.path().join("public");
-    let page = fs::read_to_string(output.join("posts/one/index.html")).unwrap();
+
+    site.build().unwrap();
+
+    let page = site.read("posts/one/index.html");
     assert!(page.contains("2025-01-02T00:00:00Z"));
     assert_eq!(page.matches("Rust language").count(), 1);
     assert!(page.contains("https://example.com/blog/tags/rust/"));
-    let home = fs::read_to_string(output.join("page/2/index.html")).unwrap();
+    let home = site.read("page/2/index.html");
     assert!(home.contains("https://example.com/blog/page/2/"));
     assert!(home.contains(r#"href="/blog/""#));
-    let archive = fs::read_to_string(output.join("posts/page/2/index.html")).unwrap();
+    let archive = site.read("posts/page/2/index.html");
     assert!(archive.contains("https://example.com/blog/posts/page/2/"));
     assert!(archive.contains(r#"href="/blog/posts/""#));
-    let overview = fs::read_to_string(output.join("tags/index.html")).unwrap();
+    let overview = site.read("tags/index.html");
     assert!(overview.contains("https://example.com/blog/tags/rust/"));
-    let sitemap = fs::read_to_string(output.join("sitemap.xml")).unwrap();
-    let locations: Vec<_> = sitemap
-        .split("<loc>")
-        .skip(1)
-        .map(|entry| entry.split("</loc>").next().unwrap())
-        .collect();
+    let sitemap = site.read("sitemap.xml");
     assert_eq!(
-        locations,
+        xml_texts(&sitemap, "loc"),
         [
             "https://example.com/blog/",
             "https://example.com/blog/page/2/",
@@ -59,24 +49,30 @@ fn build_routes_share_prefix_metadata_and_sitemap() {
         ]
     );
     assert!(sitemap.contains("<lastmod>2025-01-02T00:00:00Z</lastmod>"));
-    let robots = fs::read_to_string(output.join("robots.txt")).unwrap();
+    let robots = site.read("robots.txt");
     assert!(robots.contains("Sitemap: https://example.com/blog/sitemap.xml"));
-    let feed = fs::read_to_string(output.join("index.xml")).unwrap();
+    let feed = site.read("index.xml");
     assert!(feed.contains("<pubDate>Mon, 01 Jan 2024 00:00:00 +0000</pubDate>"));
 }
 
 #[test]
 fn build_sitemap_only_contains_emitted_html() {
-    let root = setup_site();
+    let site = route_site();
     for template in ["home", "archive", "overview"] {
-        fs::remove_file(root.path().join(format!("templates/{template}.html"))).unwrap();
+        site.remove(&format!("templates/{template}.html"));
     }
-    write_post(root.path(), "content/index.md", "Root page");
-    write_post(root.path(), "content/posts/note/item.md", "Section post");
-    build(root.path(), BuildOptions::default()).unwrap();
-    let xml = fs::read_to_string(root.path().join("public/sitemap.xml")).unwrap();
-    assert_eq!(xml.matches("<loc>").count(), 2);
-    assert!(xml.contains("<loc>https://example.com/blog/posts/note/item/</loc>"));
+    write_post(&site, "content/index.md", "Root page");
+    write_post(&site, "content/posts/note/item.md", "Section post");
+
+    site.build().unwrap();
+
+    assert_eq!(
+        xml_texts(&site.read("sitemap.xml"), "loc"),
+        [
+            "https://example.com/blog/",
+            "https://example.com/blog/posts/note/item/",
+        ]
+    );
     for path in [
         "posts/index.html",
         "posts/note/index.html",
@@ -84,15 +80,18 @@ fn build_sitemap_only_contains_emitted_html() {
         "sections/index.html",
         "tags/index.html",
     ] {
-        assert!(!root.path().join("public").join(path).exists(), "{path}");
+        assert!(!site.output(path).exists(), "{path}");
     }
-    assert!(xml.contains("<loc>https://example.com/blog/</loc>"));
-    fs::remove_file(root.path().join("content/index.md")).unwrap();
-    fs::remove_file(root.path().join("content/posts/note/item.md")).unwrap();
-    build(root.path(), BuildOptions::default()).unwrap();
-    let xml = fs::read_to_string(root.path().join("public/sitemap.xml")).unwrap();
-    assert!(!xml.contains("<loc>"));
-    assert!(!root.path().join("public/index.html").exists());
+
+    site.remove("content/index.md")
+        .remove("content/posts/note/item.md");
+    site.build().unwrap();
+
+    assert_eq!(
+        xml_texts(&site.read("sitemap.xml"), "loc"),
+        Vec::<&str>::new()
+    );
+    assert!(!site.output("index.html").exists());
 }
 
 #[test]
@@ -106,11 +105,13 @@ fn build_conflicting_content_generated_and_static_routes_returns_error() {
         "static/sitemap.xml",
         "content/posts/one/index.md",
     ] {
-        let root = setup_site();
-        write_post(root.path(), "content/posts/one.md", "One");
-        write_post(root.path(), "content/posts/two.md", "Two");
-        write_post(root.path(), destination, "Conflicting");
-        let error = build(root.path(), BuildOptions::default()).unwrap_err();
+        let site = route_site();
+        write_post(&site, "content/posts/one.md", "One");
+        write_post(&site, "content/posts/two.md", "Two");
+        write_post(&site, destination, "Conflicting");
+
+        let error = site.build().unwrap_err();
+
         assert!(
             format!("{error:#}").contains("collision"),
             "{destination}: {error:#}"
@@ -118,10 +119,11 @@ fn build_conflicting_content_generated_and_static_routes_returns_error() {
     }
 }
 
-fn setup_site() -> tempfile::TempDir {
-    let root = tempfile::tempdir().unwrap();
-    write_test_file(
-        root.path(),
+/// Creates a site under a base URL path with one post per page and templates that print every
+/// route-dependent variable.
+fn route_site() -> TestSite {
+    let site = TestSite::empty();
+    site.write(
         "config.toml",
         indoc! {r#"
             base_url = "https://example.com/blog/"
@@ -131,8 +133,7 @@ fn setup_site() -> tempfile::TempDir {
         "#},
     );
     for template in ["post", "home", "archive", "overview"] {
-        write_test_file(
-            root.path(),
+        site.write(
             &format!("templates/{template}.html"),
             indoc! {r#"
                 <title>{{ title }}</title><link href="{{ url | safe }}">
@@ -145,12 +146,11 @@ fn setup_site() -> tempfile::TempDir {
             "#},
         );
     }
-    root
+    site
 }
 
-fn write_post(root: &Path, path: &str, title: &str) {
-    write_test_file(
-        root,
+fn write_post(site: &TestSite, path: &str, title: &str) {
+    site.write(
         path,
         &formatdoc! {r#"
             +++

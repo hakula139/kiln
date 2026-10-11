@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+
+{% block body %}
+  <div class="home">
+    <ul>
+    {%- for page in pages %}
+      <li><a href="{{ page.url | safe }}">{{ page.title }}</a></li>
+    {%- endfor %}
+    </ul>
+    {%- if pagination.total_pages > 1 %}
+    <nav>Page {{ pagination.current_page }} / {{ pagination.total_pages }}</nav>
+    {%- endif %}
+  </div>
+{% endblock %}

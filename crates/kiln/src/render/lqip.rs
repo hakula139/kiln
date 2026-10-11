@@ -266,12 +266,7 @@ mod tests {
         assert_eq!((meta.width, meta.height), (2, 2));
         let cached = r.resolve("img.png", Some(&bundle)).unwrap();
         assert!(Arc::ptr_eq(&meta, &cached));
-        let uri = meta.lqip_uri.as_deref().expect("lqip should be encoded");
-        assert!(uri.starts_with("data:image/webp;base64,"), "uri: {uri}");
-        assert!(
-            uri.len() > "data:image/webp;base64,".len(),
-            "expected non-empty payload, got: {uri}"
-        );
+        assert_eq!(decode_placeholder(&meta).dimensions(), (16, 16));
     }
 
     #[test]
@@ -288,16 +283,7 @@ mod tests {
 
             let resolver = ImageResolver::new(dir.path(), ImageConfig::default());
             let meta = resolver.resolve("/checker.png", None).unwrap();
-            let encoded = meta
-                .lqip_uri
-                .as_deref()
-                .unwrap()
-                .strip_prefix("data:image/webp;base64,")
-                .unwrap();
-            let bytes = BASE64_STANDARD.decode(encoded).unwrap();
-            let placeholder = image::load_from_memory_with_format(&bytes, image::ImageFormat::WebP)
-                .unwrap()
-                .to_rgb8();
+            let placeholder = decode_placeholder(&meta);
 
             assert_eq!(placeholder.dimensions(), expected);
             let value = placeholder.get_pixel(expected.0 / 2, expected.1 / 2)[0];
@@ -328,19 +314,29 @@ mod tests {
             },
         );
         let meta = resolver.resolve("/bright.png", None).unwrap();
-        let encoded = meta
-            .lqip_uri
-            .as_deref()
-            .unwrap()
-            .strip_prefix("data:image/webp;base64,")
-            .unwrap();
-        let bytes = BASE64_STANDARD.decode(encoded).unwrap();
-        let placeholder = image::load_from_memory_with_format(&bytes, image::ImageFormat::WebP)
-            .unwrap()
-            .to_rgb8();
+        let placeholder = decode_placeholder(&meta);
 
         assert_eq!(placeholder.dimensions(), (1, 1));
         assert!(placeholder.get_pixel(0, 0)[0] > 240);
+    }
+
+    #[test]
+    fn resolve_avif_feature_controls_placeholder() {
+        let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+        let resolver = ImageResolver::new(
+            &fixtures,
+            ImageConfig {
+                lqip_size: 4,
+                ..ImageConfig::default()
+            },
+        );
+        let meta = resolver.resolve("/example.avif", None).unwrap();
+        assert_eq!((meta.width, meta.height), (8, 6));
+        let placeholder = meta
+            .lqip_uri
+            .is_some()
+            .then(|| decode_placeholder(&meta).dimensions());
+        assert_eq!(placeholder, cfg!(feature = "avif").then_some((4, 3)));
     }
 
     #[test]
@@ -412,6 +408,19 @@ mod tests {
 
         let r = ImageResolver::new(dir.path(), ImageConfig::default());
         assert!(r.resolve("garbage.png", Some(&bundle)).is_none());
+    }
+
+    fn decode_placeholder(meta: &ImageMeta) -> image::RgbImage {
+        let encoded = meta
+            .lqip_uri
+            .as_deref()
+            .unwrap()
+            .strip_prefix("data:image/webp;base64,")
+            .unwrap();
+        let bytes = BASE64_STANDARD.decode(encoded).unwrap();
+        image::load_from_memory_with_format(&bytes, image::ImageFormat::WebP)
+            .unwrap()
+            .to_rgb8()
     }
 
     fn write_tiny_png(path: &Path) {
