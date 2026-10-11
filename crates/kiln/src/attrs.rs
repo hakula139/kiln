@@ -221,11 +221,6 @@ pub(crate) fn scan_quoted_value(s: &str) -> (usize, bool) {
     (s.len(), has_escapes)
 }
 
-/// Quotes a value so that it parses back unchanged.
-pub(crate) fn quote(value: &str) -> String {
-    format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
-}
-
 /// Unescapes `\"` → `"` and `\\` → `\` in a quoted attribute value.
 fn unescape_quoted(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
@@ -245,6 +240,11 @@ fn unescape_quoted(s: &str) -> String {
         }
     }
     result
+}
+
+/// Quotes a value so that it parses back unchanged.
+pub(crate) fn quote(value: &str) -> String {
+    format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
 #[cfg(test)]

@@ -11,11 +11,6 @@ pub fn write_test_file(dir: &Path, rel_path: &str, content: &str) {
     fs::write(path, content).unwrap();
 }
 
-/// Returns the checked-in directory of minimal templates for every page kind.
-pub fn template_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/templates")
-}
-
 /// Copies the test templates into `dest` as real files on disk.
 pub fn copy_templates(dest: &Path) {
     fs::create_dir_all(dest).unwrap();
@@ -23,6 +18,11 @@ pub fn copy_templates(dest: &Path) {
         let entry = entry.unwrap();
         fs::copy(entry.path(), dest.join(entry.file_name())).unwrap();
     }
+}
+
+/// Returns the checked-in directory of minimal templates for every page kind.
+pub fn template_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/templates")
 }
 
 /// Runs `git` with `args` in `root`, isolated from user and system configuration.

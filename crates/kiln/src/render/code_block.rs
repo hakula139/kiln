@@ -13,6 +13,12 @@ pub(crate) struct CodeBlockSpec {
     pub disclosure: Disclosure,
 }
 
+impl CodeBlockSpec {
+    pub(crate) fn is_mermaid(&self) -> bool {
+        self.lang.as_deref() == Some("mermaid")
+    }
+}
+
 /// Authored disclosure state of a code block.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Disclosure {
@@ -23,12 +29,6 @@ pub(crate) enum Disclosure {
     Collapse,
     /// Open without a line limit.
     Expand,
-}
-
-impl CodeBlockSpec {
-    pub(crate) fn is_mermaid(&self) -> bool {
-        self.lang.as_deref() == Some("mermaid")
-    }
 }
 
 /// Parses a fence info string of the form `lang {#id .class key=value ...}`.
