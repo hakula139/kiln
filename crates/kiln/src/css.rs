@@ -230,8 +230,7 @@ impl TailwindRun {
     }
 }
 
-/// Starts items in order with at most `limit` running, and finishes every started item in the
-/// same order.
+/// Starts items in order with at most `limit` running and finishes each in start order.
 fn run_in_order<T, R, O>(
     items: impl IntoIterator<Item = T>,
     limit: NonZeroUsize,
@@ -241,8 +240,10 @@ fn run_in_order<T, R, O>(
     let mut running = VecDeque::with_capacity(limit.get());
     let mut finished = Vec::new();
     for item in items {
-        if running.len() == limit.get() {
-            finished.extend(running.pop_front().map(&mut finish));
+        if running.len() == limit.get()
+            && let Some(run) = running.pop_front()
+        {
+            finished.push(finish(run));
         }
         running.push_back(start(item));
     }
