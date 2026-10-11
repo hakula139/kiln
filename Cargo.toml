@@ -5,6 +5,7 @@ resolver = "3"
 [workspace.package]
 version = "0.5.0-alpha.1"
 edition = "2024"
+rust-version = "1.89"
 authors = ["Hakula <i@hakula.xyz>"]
 license = "MIT"
 
@@ -17,7 +18,7 @@ pedantic = { level = "warn", priority = -1 }
 [workspace.dependencies]
 anyhow = "1"
 axum = { version = "0.8", features = ["ws"] }
-base64 = "0.23"
+base64 = "0.22"
 clap = { version = "4", features = ["derive", "env"] }
 criterion = { version = "0.8", default-features = false, features = [
   "cargo_bench_support",
@@ -35,7 +36,6 @@ image = { version = "0.25", default-features = false, features = [
   "gif",
   "jpeg",
   "png",
-  "tiff",
   "webp",
 ] }
 imagesize = "0.15"
@@ -43,18 +43,13 @@ indoc = "2"
 itertools = "0.15"
 jiff = { version = "0.2", features = ["serde"] }
 lightningcss = "1.0.0-alpha.72"
-minify-html = "0.18"
 minijinja = { version = "2", features = ["loader"] }
 notify = "8"
 open = "5"
-oxc_allocator = "0.153"
-oxc_codegen = "0.153"
-oxc_minifier = "0.153"
-oxc_parser = "0.153"
-oxc_span = "0.153"
 pathdiff = "0.2"
 percent-encoding = "2"
 pulldown-cmark = "0.13"
+rayon = "1"
 regex = "1"
 reqwest = { version = "0.13", default-features = false }
 scraper = { version = "0.27", default-features = false }
@@ -63,6 +58,18 @@ serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
 sha2 = "0.11"
 strum = { version = "0.28", features = ["derive"] }
+swc_common = "26"
+swc_ecma_ast = "29"
+swc_ecma_codegen = "32"
+swc_ecma_minifier = "63"
+swc_ecma_parser = "46"
+swc_ecma_transforms_base = "50"
+swc_html_ast = "26"
+swc_html_codegen = "27"
+swc_html_minifier = { version = "63", default-features = false, features = [
+  "custom-css-minifier",
+] }
+swc_html_parser = "26"
 syntect = { version = "5", default-features = false, features = [
   "html",
   "regex-onig",

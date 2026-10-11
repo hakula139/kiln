@@ -6,7 +6,7 @@ use kiln::BuildOptions;
 use tracing_subscriber::EnvFilter;
 
 #[derive(Parser)]
-#[command(name = "kiln", version, about = "A custom static site generator")]
+#[command(version, about)]
 struct Cli {
     #[command(subcommand)]
     command: Command,

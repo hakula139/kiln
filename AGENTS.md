@@ -74,7 +74,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 ├── lib.rs               # Library module declarations
 ├── main.rs              # CLI argument parsing and command dispatch
 ├── markdown.rs          # Shared parser options and protected code ranges
-├── minify.rs            # Post-build HTML / CSS / JS minification (lightningcss, oxc_minifier, minify-html)
+├── minify.rs            # Post-build HTML / CSS / JS minification (lightningcss, swc)
 ├── output.rs            # Owned build transactions, file output and static file copying
 ├── output/              # Output safety submodules
 │   └── guard.rs         # Output directory resolution and source / Git / output overlap guards
