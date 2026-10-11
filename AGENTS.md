@@ -38,18 +38,18 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 ````text
 .
 ├── attrs.rs             # Pandoc-style `{#id .class key=value}` attribute parser and shared id / class identity
-├── build.rs             # BuildContext, build orchestration, per-page rendering, static / asset copying
+├── build.rs             # BuildContext, build orchestration, static / asset copying
 ├── build/               # Listing pipeline and output generator submodules
-│   ├── archive.rs       # Paginated year-grouped archive pages (/posts/, /posts/<section>/, /tags/<slug>/)
+│   ├── archive.rs       # Year-grouped archive page rendering (/posts/, /posts/<section>/, /tags/<slug>/)
 │   ├── bucket.rs        # Listing buckets (all posts, sections, tags): membership, _index.md names, URL layout
-│   ├── error.rs         # 404 error page generation
+│   ├── error.rs         # 404 error page rendering
 │   ├── feed.rs          # RSS 2.0 feeds (site, all-posts, section and tag feeds)
 │   ├── git.rs           # Optional content-file commit timestamps for post templates
-│   ├── home.rs          # Paginated home page generation
+│   ├── home.rs          # Home page rendering
 │   ├── listing.rs       # Prepared page metadata, date ordering and year grouping
-│   ├── overview.rs      # Bucket overview index pages (/sections/, /tags/)
-│   ├── paginate.rs      # Generic write_paginated and paginated output paths
-│   ├── routes.rs        # Enabled route planning, collision validation and sitemap entries
+│   ├── overview.rs      # Bucket overview page rendering (/sections/, /tags/)
+│   ├── page.rs          # Post and standalone page rendering
+│   ├── routes.rs        # Route plan: every output path, collision validation, sitemap entries and render dispatch
 │   └── sitemap.rs       # sitemap.xml + robots.txt generation
 ├── config.rs            # Strict TOML site configuration (validated base URL, time zone, image options, page sizes), theme resolution, param merging
 ├── content.rs           # Content submodule declarations and shared source name / file helpers
@@ -78,7 +78,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 ├── output.rs            # Owned build transactions, file output and static file copying
 ├── output/              # Output safety submodules
 │   └── guard.rs         # Output directory resolution and source / Git / output overlap guards
-├── pagination.rs        # Paginator for windowed views over slices, page URL computation
+├── pagination.rs        # Listing page splitting, page directories and template pagination metadata
 ├── render.rs            # RenderOptions struct + render submodule declarations
 ├── render/              # Markdown rendering pipeline submodules
 │   ├── assets.rs        # PageAssets registry: scripts + auto-detected Feature flags (Math, Mermaid)

@@ -1,13 +1,8 @@
-use std::path::Path;
-
-use anyhow::Result;
 use indoc::{formatdoc, indoc};
 use jiff::Timestamp;
 
-use super::BuildContext;
-use super::routes::RoutePlan;
 use crate::html::{self, writeln_indented};
-use crate::output::write_output;
+use crate::url::BaseUrl;
 
 /// A single URL entry in the sitemap.
 #[derive(Debug)]
@@ -16,23 +11,8 @@ pub(super) struct SitemapEntry {
     pub(super) lastmod: Option<Timestamp>,
 }
 
-pub(super) fn build_sitemap_and_robots(
-    ctx: &BuildContext,
-    plan: &RoutePlan,
-    output_dir: &Path,
-) -> Result<()> {
-    write_output(
-        &output_dir.join("sitemap.xml"),
-        &generate_sitemap(plan.sitemap_entries()),
-    )?;
-    write_output(
-        &output_dir.join("robots.txt"),
-        &generate_robots_txt(&ctx.config.base_url.site_url("sitemap.xml")),
-    )
-}
-
-/// Generates an XML sitemap from a list of URL entries.
-fn generate_sitemap<'a>(entries: impl IntoIterator<Item = &'a SitemapEntry>) -> String {
+/// Renders a `sitemap.xml` with one `<url>` per entry.
+pub(super) fn render_sitemap(entries: &[SitemapEntry]) -> String {
     let mut xml = String::from(indoc! {r#"
         <?xml version="1.0" encoding="utf-8" standalone="yes"?>
         <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
@@ -53,24 +33,24 @@ fn generate_sitemap<'a>(entries: impl IntoIterator<Item = &'a SitemapEntry>) -> 
     xml
 }
 
-/// Generates a `robots.txt` file pointing to the sitemap at `sitemap_url`.
-fn generate_robots_txt(sitemap_url: &str) -> String {
+/// Renders a `robots.txt` that allows every path and points to the sitemap.
+pub(super) fn render_robots(base_url: &BaseUrl) -> String {
     formatdoc! {"
         User-agent: *
         Allow: /
 
-        Sitemap: {sitemap_url}
-    "}
+        Sitemap: {}
+    ", base_url.site_url("sitemap.xml")}
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    // ── generate_sitemap ──
+    // ── render_sitemap ──
 
     #[test]
-    fn generate_sitemap_renders_entries_and_optional_dates() {
+    fn render_sitemap_renders_entries_and_optional_dates() {
         let entries = [
             SitemapEntry {
                 loc: "https://example.com/tags/c&c++/".into(),
@@ -83,7 +63,7 @@ mod tests {
         ];
 
         assert_eq!(
-            generate_sitemap(&entries),
+            render_sitemap(&entries),
             indoc! {r#"
                 <?xml version="1.0" encoding="utf-8" standalone="yes"?>
                 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
@@ -100,9 +80,9 @@ mod tests {
     }
 
     #[test]
-    fn generate_sitemap_empty() {
+    fn render_sitemap_empty() {
         assert_eq!(
-            generate_sitemap(&[]),
+            render_sitemap(&[]),
             indoc! {r#"
                 <?xml version="1.0" encoding="utf-8" standalone="yes"?>
                 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
@@ -111,12 +91,12 @@ mod tests {
         );
     }
 
-    // ── generate_robots_txt ──
+    // ── render_robots ──
 
     #[test]
-    fn generate_robots_txt_points_to_sitemap() {
+    fn render_robots_points_to_sitemap() {
         assert_eq!(
-            generate_robots_txt("https://example.com/blog/sitemap.xml"),
+            render_robots(&"https://example.com/blog".parse().unwrap()),
             indoc! {"
                 User-agent: *
                 Allow: /

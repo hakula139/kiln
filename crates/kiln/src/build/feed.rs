@@ -1,15 +1,12 @@
 use std::path::Path;
 
-use anyhow::Result;
 use indoc::indoc;
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
 
 use super::BuildContext;
-use super::bucket::Listings;
 use super::listing::{PreparedPage, newest};
 use crate::html::{self, writeln_indented};
-use crate::output::write_output;
 use crate::url::directory_url;
 
 /// Maximum number of items in each feed.
@@ -26,36 +23,13 @@ struct Channel<'a> {
     last_build_date: Option<Timestamp>,
 }
 
-/// Generates the site-wide RSS feed at `index.xml` plus one per listing bucket
-/// (all-posts, per-section, per-tag).
-pub(super) fn build_feeds(
-    ctx: &BuildContext,
-    listed_posts: &[&PreparedPage],
-    listings: &Listings<'_>,
-    output_dir: &Path,
-) -> Result<()> {
-    write_feed(
-        ctx,
-        &ctx.config.title,
-        Path::new(""),
-        listed_posts,
-        output_dir,
-    )?;
-    for bucket in listings.iter() {
-        let title = format!("{} - {}", bucket.name, ctx.config.title);
-        write_feed(ctx, &title, &bucket.path(), &bucket.pages, output_dir)?;
-    }
-    Ok(())
-}
-
-/// Writes the feed for the listing at `directory` into its `index.xml`.
-fn write_feed(
+/// Renders the feed of the listing at `directory`, whose first [`FEED_LIMIT`] pages become items.
+pub(super) fn render(
     ctx: &BuildContext,
     title: &str,
     directory: &Path,
     pages: &[&PreparedPage],
-    output_dir: &Path,
-) -> Result<()> {
+) -> String {
     let link = ctx.config.base_url.site_url(&directory_url(directory));
     let channel = Channel {
         title,
@@ -65,10 +39,7 @@ fn write_feed(
         language: ctx.config.language.as_str(),
         last_build_date: newest(pages),
     };
-    write_output(
-        &output_dir.join(directory).join("index.xml"),
-        &generate_rss(&channel, pages),
-    )
+    generate_rss(&channel, pages)
 }
 
 /// Generates an RSS 2.0 document listing the first [`FEED_LIMIT`] pages in the given order.
