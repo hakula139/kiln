@@ -11,7 +11,7 @@ kiln powers [hakula.xyz](https://hakula.xyz). This is the developer overview of 
 - Footnotes with reference-order numbering and return links for repeated references. The page body and each directive body have separate definition scopes.
 - Syntax highlighting for 200+ languages, line numbers, code titles, selected-line highlighting and native collapse / expand controls. Themes can honor a configured visible-line limit.
 - Inline and display math markup for KaTeX, plus Mermaid code fences. The page records which runtimes it needs, and the theme supplies client-side rendering.
-- Block image figures with captions, inline images, and authored IDs, classes and dimensions. Images receive lazy loading and asynchronous decoding.
+- Block figures with captions and inline images, both accepting authored IDs, classes and dimensions. Images receive lazy loading and asynchronous decoding.
 - Nested `:::` directives, validated callouts, generic div wrappers and theme template renderers with positional / named arguments. Code retains literal shortcode and directive text, and math, raw HTML and link destinations retain literal shortcode text.
 - Optional emoji and Font Awesome shortcodes. Short table columns can receive a no-wrap class using CJK-aware text widths.
 
@@ -19,7 +19,7 @@ The main table of contents includes page-body headings. Headings inside directiv
 
 ### Content, Listings and Discovery
 
-- Sectioned posts, posts without a section, and standalone pages, with pretty URLs and frontmatter slug overrides.
+- Sectioned posts, posts without a section and standalone pages, with pretty URLs and frontmatter slug overrides.
 - Page bundles that keep Markdown, images, data and stylesheets together. Private underscore-prefixed inputs remain unpublished, and nested bundles own their own assets.
 - Draft exclusion and listing metadata through `_index.md`. Content files without TOML frontmatter are skipped.
 - Paginated home, all-posts, section and tag archives, with year-grouped archive entries and section / tag overview pages. Tag archives include tagged standalone pages.
@@ -59,7 +59,7 @@ See [Assets and Stylesheets](assets.md) and [Image Rendering](themes.md#image-re
 ### Themes, Templates and Localization
 
 - MiniJinja page, listing and directive templates, with site files overriding theme files at the same path.
-- Theme defaults merged recursively with site parameters, named navigation menus sorted by weight, and minimum kiln version checks for themes.
+- Theme defaults merged recursively with site parameters, named navigation menus sorted by weight and minimum kiln version checks for themes.
 - Shared metadata across page and listing contexts, including canonical URLs, linked tags / sections and resolved featured images.
 - Template helpers for translations, asset URLs, timestamps and CSV data. Directive templates can read page-local files and register scripts for the current page.
 - Page-scoped math / Mermaid feature detection and script registration. Identical script declarations are deduplicated, and conflicting declarations fail the build.
@@ -82,7 +82,7 @@ Constraints:
 
 - Search requires the external Pagefind executable when enabled.
 - Builds regenerate the whole site.
-- Live reload watches source directories present at startup. New top-level source directories, theme or output-directory changes, and imports outside watched trees require a restart.
+- Live reload watches source directories present at startup. New top-level source directories, theme or output-directory changes and imports outside watched trees require a restart.
 
 See [Usage](../README.md#usage) and [Live Reload](assets.md#live-reload).
 

@@ -71,15 +71,13 @@ unzip kiln-x86_64-pc-windows-msvc.zip
 kiln --version
 ```
 
-For 0.5.0 releases, choose the default `kiln-<target>` archive or `kiln-extended-<target>` for AVIF loading placeholders. Only extended binaries need dav1d:
+Choose the default `kiln-<target>` archive or `kiln-extended-<target>` for AVIF loading placeholders. Only extended binaries need dav1d:
 
 | Platform | Extended runtime requirement |
 | -------- | ---------------------------- |
 | Linux    | System `libdav1d` package    |
 | macOS    | `brew install dav1d`         |
 | Windows  | Included in the binary       |
-
-The v0.4.0 Linux and macOS binaries require dav1d at runtime.
 
 ### From source
 
@@ -158,7 +156,7 @@ See [Hugo migration](docs/content.md#hugo-content-migration) for the converter's
 
 ### Search
 
-Search is disabled by default. To enable it, install [Pagefind](https://pagefind.app) (`cargo install pagefind` or `npm install -g pagefind`) and set `[search] enabled = true` in `config.toml`:
+Search is disabled by default. To enable it, install [Pagefind](#installation) and set `[search] enabled = true` in `config.toml`:
 
 ```toml
 [search]
@@ -191,7 +189,7 @@ Then enable the feature:
 cargo build --release --features avif
 ```
 
-On macOS and Linux, dav1d is also a runtime dependency.
+On macOS and Linux, the resulting binary needs dav1d at runtime, like the [extended archives](#prebuilt-binary).
 
 ### Reproducible dev shell (Nix)
 

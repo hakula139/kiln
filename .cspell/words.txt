@@ -1,6 +1,4 @@
 apfs
-apos
-bfcache
 btrfs
 cachix
 choco
@@ -8,9 +6,7 @@ clippy
 cmark
 deserialises
 direnv
-dontNpmBuild
 dtolnay
-ellipsed
 envrc
 feff
 fnref
@@ -26,7 +22,6 @@ jiff
 katex
 kwarg
 kwargs
-lanczos
 libc
 libdav
 libiconv
@@ -35,7 +30,6 @@ lqip
 luma
 msvc
 msys
-nasm
 nixfmt
 nixos
 nixpkgs
@@ -72,12 +66,8 @@ tera
 tmpl
 tracing
 tungstenite
-twikoo
 tzdata
 TZDIR
-unparseable
-VCPKGRS
 walkdir
 webp
 writeln
-xcrun

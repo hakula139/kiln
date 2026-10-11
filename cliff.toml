@@ -27,29 +27,11 @@ body = """
 {%- endfor -%}
 """
 
-footer = """
-
-{% for release in releases -%}
-    {%- if release.version -%}
-        {%- if release.previous.version -%}
-[{{ release.version | trim_start_matches(pat="v") }}]: https://github.com/hakula139/kiln/compare/{{ release.previous.version }}..{{ release.version }}
-        {%- else -%}
-[{{ release.version | trim_start_matches(pat="v") }}]: https://github.com/hakula139/kiln/releases/tag/{{ release.version }}
-        {%- endif -%}
-    {%- else -%}
-[unreleased]: https://github.com/hakula139/kiln/compare/{{ release.previous.version }}...HEAD
-    {%- endif %}
-{%- if not loop.last %}
-{% endif -%}
-{% endfor -%}
-"""
-
 # Strip per-line indentation from templates so layout above doesn't leak into output.
 trim = true
 
-# Postprocessors run per-template, so anchor-based newline trimming would eat
-# the body / footer separator. Collapse runs of `\n{3,}` instead.
 postprocessors = [
+  # Collapse the blank-line runs that template control tags leave behind.
   { pattern = '\n{3,}', replace = "\n\n" },
   # Trim Dependabot / Renovate verbose phrasing for `chore(deps)` commits.
   { pattern = ' in the [a-z]+ group(?: across \d+ director(?:y|ies))?', replace = "" },
@@ -92,7 +74,3 @@ commit_parsers = [
   { message = "^style", skip = true },
   { message = "^test", skip = true },
 ]
-
-[remote.github]
-owner = "hakula139"
-repo = "kiln"
