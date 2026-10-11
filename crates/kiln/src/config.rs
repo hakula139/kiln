@@ -152,7 +152,7 @@ pub struct ImageConfig {
 }
 
 /// Posts per listing page.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug)]
 pub struct Paginate {
     pub home: NonZeroUsize,
     /// Applies to the all-posts archive and section archives.
