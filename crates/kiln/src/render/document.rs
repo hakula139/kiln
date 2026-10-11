@@ -851,7 +851,7 @@ mod tests {
                 out.content_html.contains(indoc! {r#"
                     <details class="code-block" open>
                       <summary class="code-header">
-                        <span class="code-lang">Plain Text</span>
+                        <span class="code-lang" data-pagefind-ignore>Plain Text</span>
                 "#}),
                 "{}",
                 out.content_html

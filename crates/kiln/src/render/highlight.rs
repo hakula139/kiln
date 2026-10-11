@@ -79,14 +79,14 @@ fn highlight_with(
         writeln_indented!(
             &mut html,
             2,
-            r#"<span class="code-lang">{}</span>"#,
+            r#"<span class="code-lang" data-pagefind-ignore>{}</span>"#,
             escape(&display_label(lang))
         );
     }
     writeln_indented!(
         &mut html,
         2,
-        r#"<button class="copy-btn" aria-label="{}">{}</button>"#,
+        r#"<button class="copy-btn" data-pagefind-ignore aria-label="{}">{}</button>"#,
         escape(&options.copy_button.aria_label),
         escape(&options.copy_button.text)
     );
@@ -270,8 +270,8 @@ mod tests {
             indoc! {r#"
                 <details class="code-block wide" id="my-code" data-lang="text" open>
                   <summary class="code-header">
-                    <span class="code-lang">Plain Text</span>
-                    <button class="copy-btn" aria-label="复制 &quot;代码&quot;">复制 &lt;&amp;&gt;</button>
+                    <span class="code-lang" data-pagefind-ignore>Plain Text</span>
+                    <button class="copy-btn" data-pagefind-ignore aria-label="复制 &quot;代码&quot;">复制 &lt;&amp;&gt;</button>
                   </summary>
                   <div class="code-body">
                     <div class="highlight">
@@ -318,7 +318,7 @@ mod tests {
                 <details class="code-block" data-lang="html" open>
                   <summary class="code-header">
                     <span class="code-title">&lt;script&gt;.js</span>
-                    <button"#}),
+                    <button class="copy-btn" data-pagefind-ignore"#}),
             "{html}"
         );
         assert!(!html.contains("code-lang"), "{html}");

@@ -154,7 +154,7 @@ fn build_localizes_and_escapes_code_copy_labels() {
     site.build().unwrap();
 
     let html = site.read("posts/hello/index.html");
-    let button = r#"<button class="copy-btn" aria-label="复制 &quot;代码&quot; &lt;&amp;&gt;">复制</button>"#;
+    let button = r#"<button class="copy-btn" data-pagefind-ignore aria-label="复制 &quot;代码&quot; &lt;&amp;&gt;">复制</button>"#;
     assert!(html.contains(button), "{html}");
 }
 
