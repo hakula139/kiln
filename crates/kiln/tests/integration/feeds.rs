@@ -3,7 +3,7 @@ use super::support::{listing_site, xml_texts};
 // ── build: RSS feeds ──
 
 #[test]
-fn build_generates_rss_feeds() {
+fn build_generates_site_section_and_tag_feeds() {
     let site = listing_site();
 
     site.build().unwrap();
