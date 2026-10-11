@@ -197,7 +197,6 @@
         packages = {
           default = kiln;
           inherit kiln;
-          inherit (pkgs) pagefind;
         };
 
         # ----------------------------------------------------------------------
