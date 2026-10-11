@@ -18,27 +18,18 @@ pub(super) fn benchmarks(criterion: &mut Criterion) {
     group.sampling_mode(SamplingMode::Flat);
     group.warm_up_time(Duration::from_secs(1));
     group.measurement_time(Duration::from_secs(5));
-    for (pages, minify, extra_params, git) in [
-        (20_usize, false, 0, false),
-        (200, false, 0, false),
-        (200, false, 1_000, false),
-        (200, false, 0, true),
-        (200, true, 0, false),
+    for (mode, pages, minify, extra_params, git) in [
+        ("default", 20_usize, false, 0, false),
+        ("default", 200, false, 0, false),
+        ("large_params", 200, false, 1_000, false),
+        ("git_info", 200, false, 0, true),
+        ("minified", 200, true, 0, false),
     ] {
         let site = Site::new(pages, PROSE, extra_params);
         if git {
             site.commit_to_git();
         }
         verify_build(&site, pages, minify, git);
-        let mode = if minify {
-            "minified"
-        } else if extra_params > 0 {
-            "large_params"
-        } else if git {
-            "git_info"
-        } else {
-            "default"
-        };
         group.throughput(Throughput::Elements(pages.try_into().unwrap()));
         group.bench_with_input(BenchmarkId::new(mode, pages), &site, |bencher, site| {
             bencher.iter(|| run_build(site, minify));

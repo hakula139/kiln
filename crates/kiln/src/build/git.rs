@@ -3,6 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use icu_normalizer::ComposingNormalizerBorrowed;
 use jiff::Timestamp;
 
 pub(super) struct GitInfo {
@@ -11,8 +12,6 @@ pub(super) struct GitInfo {
 }
 
 impl GitInfo {
-    /// Reads every content file's newest commit timestamp in one `git log` pass.
-    ///
     /// Returns `None` when disabled or Git history is unavailable or shallow.
     pub(super) fn new(root: &Path, content_dir: &Path, enabled: bool) -> Option<Self> {
         if !enabled {
@@ -55,16 +54,17 @@ impl GitInfo {
             return None;
         }
 
+        let timestamps = newest_timestamps(&output.stdout)?;
         Some(Self {
-            timestamps: newest_timestamps(&output.stdout)?,
             root: git_root,
+            timestamps,
         })
     }
 
     fn last_modified(&self, source: &Path) -> Option<Timestamp> {
         let source = fs::canonicalize(source).ok()?;
-        let relative = source.strip_prefix(&self.root).ok()?;
-        self.timestamps.get(relative).copied()
+        let relative = source.strip_prefix(&self.root).ok()?.to_str()?;
+        self.timestamps.get(&normalized_path(relative)).copied()
     }
 }
 
@@ -78,10 +78,21 @@ fn newest_timestamps(log: &[u8]) -> Option<HashMap<PathBuf, Timestamp>> {
             let Some(date) = fields.next() else { break };
             committed = Some(std::str::from_utf8(date).ok()?.parse().ok()?);
         } else if let Ok(path) = std::str::from_utf8(field.strip_prefix(b"\n").unwrap_or(field)) {
-            timestamps.entry(PathBuf::from(path)).or_insert(committed?);
+            timestamps
+                .entry(normalized_path(path))
+                .or_insert(committed?);
         }
     }
     Some(timestamps)
+}
+
+/// Composes a path to NFC, which Git reports on macOS even for decomposed on-disk names.
+fn normalized_path(path: &str) -> PathBuf {
+    PathBuf::from(
+        ComposingNormalizerBorrowed::new_nfc()
+            .normalize(path)
+            .as_ref(),
+    )
 }
 
 pub(super) fn updated_timestamp(
@@ -105,19 +116,20 @@ mod tests {
     #[test]
     fn git_info_new_resolves_nested_site_files() {
         let dir = repo();
-        let content = dir.path().join("site [1]/content");
+        let content = dir.path().join("my site/content");
         fs::create_dir_all(&content).unwrap();
         let source = content.join("文章 one.md");
+        let decomposed = content.join("cafe\u{301}.md");
         fs::write(&source, "post").unwrap();
+        fs::write(&decomposed, "post").unwrap();
         git(dir.path(), &["add", "."]);
         commit(dir.path(), "2024-01-01T00:00:00+08:00");
 
-        let site = dir.path().join("site [1]");
+        let site = dir.path().join("my site");
         let info = GitInfo::new(&site, &content, true).unwrap();
-        assert_eq!(
-            info.last_modified(&source),
-            Some("2023-12-31T16:00:00Z".parse().unwrap())
-        );
+        let expected = Some("2023-12-31T16:00:00Z".parse().unwrap());
+        assert_eq!(info.last_modified(&source), expected);
+        assert_eq!(info.last_modified(&decomposed), expected);
         assert!(GitInfo::new(&site, &content, false).is_none());
     }
 

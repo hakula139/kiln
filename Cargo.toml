@@ -27,6 +27,9 @@ dunce = "1"
 futures-util = { version = "0.3", default-features = false }
 gh-emoji = "1"
 hex = "0.4"
+icu_normalizer = { version = "2", default-features = false, features = [
+  "compiled_data",
+] }
 image = { version = "0.25", default-features = false, features = [
   "bmp",
   "gif",

@@ -21,6 +21,7 @@ csv = { workspace = true }
 dunce = { workspace = true }
 gh-emoji = { workspace = true }
 hex = { workspace = true }
+icu_normalizer = { workspace = true }
 image = { workspace = true }
 imagesize = { workspace = true }
 indoc = { workspace = true }
