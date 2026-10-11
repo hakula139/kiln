@@ -22,7 +22,7 @@ mod tests {
     // ── render_div ──
 
     #[test]
-    fn render_div_with_name_id_and_classes() {
+    fn puts_name_before_authored_classes() {
         let identity = Identity {
             id: Some("main".into()),
             classes: vec!["extra".into(), "wide".into()],
@@ -38,7 +38,7 @@ mod tests {
     }
 
     #[test]
-    fn render_div_anonymous_with_classes() {
+    fn anonymous_block_keeps_authored_classes() {
         let identity = Identity {
             id: None,
             classes: vec!["compact".into()],
@@ -53,7 +53,7 @@ mod tests {
     }
 
     #[test]
-    fn render_div_without_attrs_passes_body_through() {
+    fn passes_bare_body_through() {
         let html = render_div("", &Identity::default(), "<p>Content</p>\n");
         assert_eq!(html, "<p>Content</p>\n");
     }
