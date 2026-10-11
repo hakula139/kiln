@@ -17,7 +17,7 @@ pub(crate) mod search;
 pub mod serve;
 pub mod static_assets;
 pub mod template;
-pub mod text;
+pub(crate) mod text;
 pub(crate) mod url;
 
 pub use build::{BuildOptions, build};

@@ -88,22 +88,22 @@ fn convert_body(mut input: &str, out: &mut String, stack: &mut Vec<String>) -> R
             out.push_str(if name == "mermaid" { "```" } else { ":::" });
         } else {
             let args = parse_shortcode_args(arguments)?;
-            match name {
-                "admonition" => {
-                    emit_callout(&args, out)?;
-                    stack.push(name.to_owned());
-                }
+            let (head, paired) = match name {
+                "admonition" => (emit_callout(&args)?, true),
                 "mermaid" => {
                     ensure!(
                         arguments.is_empty(),
                         "mermaid shortcode arguments are unsupported"
                     );
-                    out.push_str("```mermaid");
-                    stack.push(name.to_owned());
+                    ("```mermaid".to_owned(), true)
                 }
                 "style" => bail!("style shortcode requires manual conversion to page CSS"),
-                "image" => out.push_str(&emit_image(&args)?),
-                _ => out.push_str(&emit_directive(name, &args)),
+                "image" => (emit_image(&args)?, false),
+                _ => (emit_directive(name, &args), false),
+            };
+            out.push_str(&head);
+            if paired {
+                stack.push(name.to_owned());
             }
         }
         if block {
@@ -165,7 +165,7 @@ fn parse_shortcode_args(input: &str) -> Result<ShortcodeArgs<'_>> {
     Ok(args)
 }
 
-fn emit_callout(args: &ShortcodeArgs, out: &mut String) -> Result<()> {
+fn emit_callout(args: &ShortcodeArgs) -> Result<String> {
     ensure!(
         args.positional.len() <= 3,
         "admonition accepts type, title and open arguments"
@@ -188,15 +188,15 @@ fn emit_callout(args: &ShortcodeArgs, out: &mut String) -> Result<()> {
         None => true,
     };
 
-    _ = write!(out, "::: callout {{type={kind}");
+    let mut output = format!("::: callout {{type={kind}");
     if let Some(title) = title {
-        _ = write!(out, " title={}", quote(title));
+        _ = write!(output, " title={}", quote(title));
     }
     if !open {
-        out.push_str(" open=false");
+        output.push_str(" open=false");
     }
-    out.push('}');
-    Ok(())
+    output.push('}');
+    Ok(output)
 }
 
 fn emit_image(args: &ShortcodeArgs) -> Result<String> {
@@ -242,6 +242,7 @@ fn emit_image(args: &ShortcodeArgs) -> Result<String> {
         }
         escaped_alt.push(ch);
     }
+    // CommonMark decodes entities in link destinations, so a raw `&copy;` would alter the URL.
     let src = utf8_percent_encode(src, DESTINATION_ESCAPE)
         .to_string()
         .replace('&', "&amp;");
@@ -307,9 +308,9 @@ mod tests {
         let input = indoc! {r#"
             {{< admonition >}}
             Outer
-            {{< admonition info "A \"quoted\" title" false >}}
+            {{% admonition info "A \"quoted\" title" false %}}
             Inner
-            {{< /admonition >}}
+            {{% /admonition %}}
             {{< /admonition >}}
         "#};
         assert_eq!(
@@ -366,6 +367,7 @@ mod tests {
                 {{< /mermaid >}}
                 {{< widget #anchor .class >}}
                 {{< widget title="A \"quote\" >}} B" >}}
+                {{< side-note_box >}}
             "#})
             .unwrap(),
             indoc! {r##"
@@ -376,6 +378,8 @@ mod tests {
                 ::: widget {"#anchor" ".class"}
                 :::
                 ::: widget {title="A \"quote\" >}} B"}
+                :::
+                ::: side-note_box
                 :::
             "##}
         );
@@ -437,14 +441,23 @@ mod tests {
                 "unsupported image argument `linked`",
             ),
             (
+                "{{< admonition bogus >}}",
+                "unsupported admonition type `bogus`",
+            ),
+            (
                 "{{< admonition open=maybe >}}",
                 "admonition open must be true or false",
             ),
+            ("{{< image alt=x >}}", "image shortcode requires src"),
             (
                 "{{< image src=x src=y >}}",
                 "duplicate shortcode argument `src`",
             ),
             ("{{< >}}", "invalid Hugo shortcode name ``"),
+            (
+                "{{< my.widget >}}",
+                "invalid Hugo shortcode name `my.widget`",
+            ),
             (
                 indoc! {r#"
                     {{< admonition title="multiple

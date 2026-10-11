@@ -211,7 +211,7 @@ The converter preserves existing destination files. Source and destination roots
 
 It migrates:
 
-- `content/`, translating supported YAML frontmatter to TOML. Hugo's `featuredImage` key and bare image paths become a `[featured_image]` table.
+- `content/`, translating supported YAML frontmatter to TOML. Hugo's `lastmod` becomes `updated`, and its `featuredImage` key and bare image paths become a `[featured_image]` table.
 - `static/`, copied into the destination.
 - Admonition, image and Mermaid shortcodes into native equivalents. Other standalone shortcodes become directives requiring matching theme templates.
 - `categories/<slug>/_index.md` into `posts/<slug>/_index.md`. `posts/_index.md`, `posts/<slug>/_index.md` and `tags/<slug>/_index.md` keep their location, and other `_index.md` files are skipped. Two indexes that convert to the same path fail conversion before anything is written.

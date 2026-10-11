@@ -67,8 +67,7 @@ impl Frontmatter {
     ];
 }
 
-/// Featured image metadata. `width` / `height` / `lqip_uri` are stamped by
-/// the build pipeline from the on-disk source, not authored.
+/// Featured image metadata. The build stamps `width` / `height` / `lqip_uri` from the source image.
 #[derive(Debug, Default, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(
     deny_unknown_fields,
@@ -128,30 +127,22 @@ mod timestamp_serde {
     use std::fmt;
 
     use jiff::Timestamp;
+    use serde::Deserialize;
     use serde::de::{self, Deserializer, MapAccess, Visitor};
 
     pub fn deserialize_option<'de, D>(deserializer: D) -> Result<Option<Timestamp>, D::Error>
     where
         D: Deserializer<'de>,
     {
-        deserializer.deserialize_option(OptionVisitor)
+        Option::<AnyTimestamp>::deserialize(deserializer)
+            .map(|timestamp| timestamp.map(|AnyTimestamp(timestamp)| timestamp))
     }
 
-    struct OptionVisitor;
+    struct AnyTimestamp(Timestamp);
 
-    impl<'de> Visitor<'de> for OptionVisitor {
-        type Value = Option<Timestamp>;
-
-        fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-            f.write_str("a datetime string with UTC offset, or null")
-        }
-
-        fn visit_none<E: de::Error>(self) -> Result<Self::Value, E> {
-            Ok(None)
-        }
-
-        fn visit_some<D: Deserializer<'de>>(self, d: D) -> Result<Self::Value, D::Error> {
-            d.deserialize_any(TimestampVisitor).map(Some)
+    impl<'de> Deserialize<'de> for AnyTimestamp {
+        fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+            deserializer.deserialize_any(TimestampVisitor).map(Self)
         }
     }
 
@@ -523,8 +514,7 @@ mod tests {
 
     #[test]
     fn strips_bom() {
-        // BOM (\u{feff}) can't appear in raw strings, so use concat! here.
-        let input = concat!("\u{feff}", "+++\ntitle = \"BOM\"\n+++\nBody\n");
+        let input = "\u{feff}+++\ntitle = \"BOM\"\n+++\nBody\n";
         let (fm, body) = split_delimited_frontmatter(input, TOML_DELIMITER).unwrap();
         assert_eq!(fm, "title = \"BOM\"\n");
         assert_eq!(body, "Body\n");

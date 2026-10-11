@@ -1,7 +1,9 @@
 use std::fs;
+use std::io::ErrorKind;
 use std::path::{Component, Path, PathBuf};
 
 use anyhow::{Context, Result, ensure};
+use walkdir::WalkDir;
 
 use super::paths_overlap;
 use crate::config::{Config, SITE_INPUTS, THEME_INPUTS};
@@ -57,13 +59,13 @@ fn validate_input_tree(path: &Path, output: &Path) -> Result<()> {
     if !path.exists() {
         return Ok(());
     }
-    for entry in walkdir::WalkDir::new(path).follow_links(true) {
+    for entry in WalkDir::new(path).follow_links(true) {
         let entry = match entry {
             Err(error)
                 if error.loop_ancestor().is_some()
                     || error
                         .io_error()
-                        .is_some_and(|error| error.kind() == std::io::ErrorKind::NotFound) =>
+                        .is_some_and(|error| error.kind() == ErrorKind::NotFound) =>
             {
                 continue;
             }
@@ -84,14 +86,15 @@ fn validate_git_metadata(root: &Path, output: &Path, reserve_name: bool) -> Resu
         validate_output_overlap(&git_file, output)?;
     }
     if git_file.is_file() {
-        let contents = fs::read_to_string(&git_file).context("failed to read .git file")?;
+        let contents = fs::read_to_string(&git_file)
+            .with_context(|| format!("failed to read {}", git_file.display()))?;
         if let Some(git_dir) = contents.trim().strip_prefix("gitdir: ") {
             let git_dir = root.join(git_dir);
             validate_output_overlap(&git_dir, output)?;
             let common_dir = git_dir.join("commondir");
             if common_dir.is_file() {
-                let common = fs::read_to_string(common_dir)
-                    .context("failed to read Git common directory")?;
+                let common = fs::read_to_string(&common_dir)
+                    .with_context(|| format!("failed to read {}", common_dir.display()))?;
                 validate_output_overlap(&git_dir.join(common.trim()), output)?;
             }
         }
@@ -111,7 +114,7 @@ fn validate_output_overlap(input: &Path, output: &Path) -> Result<()> {
 }
 
 /// Resolves symlinks before parent components, including paths with nonexistent components.
-fn canonicalize_via_parent(path: &Path) -> Result<PathBuf> {
+pub(crate) fn canonicalize_via_parent(path: &Path) -> Result<PathBuf> {
     let absolute = std::path::absolute(path)?;
     let mut resolved = PathBuf::new();
     for component in absolute.components() {
@@ -232,29 +235,39 @@ mod tests {
     }
 
     #[test]
-    fn rejects_linked_worktree_git_metadata() {
+    fn rejects_git_file_metadata() {
         let root = tempfile::tempdir().unwrap();
         let repository = tempfile::tempdir().unwrap();
         let git_dir = repository.path().join("worktrees/example");
         fs::create_dir_all(&git_dir).unwrap();
-        fs::write(
-            root.path().join(".git"),
-            format!("gitdir: {}", git_dir.display()),
-        )
-        .unwrap();
-        fs::write(git_dir.join("commondir"), "../..").unwrap();
+        let git_file = root.path().join(".git");
+        let git_objects = git_dir.canonicalize().unwrap().join("objects");
+        let common_objects = repository.path().canonicalize().unwrap().join("objects");
 
+        fs::write(&git_file, "not a gitdir reference").unwrap();
+        assert_eq!(
+            output_dir_for(root.path(), &git_objects).unwrap(),
+            git_objects
+        );
+
+        fs::write(&git_file, format!("gitdir: {}", git_dir.display())).unwrap();
+        assert_eq!(
+            output_dir_for(root.path(), &common_objects).unwrap(),
+            common_objects
+        );
+
+        fs::write(git_dir.join("commondir"), "../..").unwrap();
         assert_eq!(
             output_dir_for(root.path(), "public").unwrap(),
             root.path().canonicalize().unwrap().join("public")
         );
-
-        for output in [git_dir.join("objects"), repository.path().join("objects")] {
+        for output in [&git_objects, &common_objects] {
             assert!(
-                output_dir_for(root.path(), &output)
+                output_dir_for(root.path(), output)
                     .unwrap_err()
                     .to_string()
-                    .contains("overlaps project input")
+                    .contains("overlaps project input"),
+                "{output:?}"
             );
         }
     }

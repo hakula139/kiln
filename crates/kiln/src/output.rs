@@ -123,7 +123,7 @@ pub(crate) fn walk_directory<'a>(
 }
 
 /// Rejects source links whose resolved targets overlap the canonical destination.
-fn validate_source_link(path: &Path, destination: &Path) -> Result<()> {
+pub(crate) fn validate_source_link(path: &Path, destination: &Path) -> Result<()> {
     let source = path
         .canonicalize()
         .with_context(|| format!("failed to resolve source link {}", path.display()))?;
@@ -137,7 +137,7 @@ fn validate_source_link(path: &Path, destination: &Path) -> Result<()> {
 }
 
 /// Whether either path contains the other.
-fn paths_overlap(left: &Path, right: &Path) -> bool {
+pub(crate) fn paths_overlap(left: &Path, right: &Path) -> bool {
     left.starts_with(right) || right.starts_with(left)
 }
 

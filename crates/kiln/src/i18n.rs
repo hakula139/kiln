@@ -92,9 +92,8 @@ impl I18n {
         if let Some(theme_dir) = theme_dir {
             let theme_i18n_dir = theme_dir.join("i18n");
             if theme_i18n_dir.is_dir() {
-                if theme_has_english_fallback(&theme_i18n_dir)? {
-                    merge_file(&mut strings, &theme_i18n_dir.join("en.toml"))?;
-                }
+                ensure_english_fallback(&theme_i18n_dir)?;
+                merge_file(&mut strings, &theme_i18n_dir.join("en.toml"))?;
                 if language.as_str() != "en" {
                     merge_file(&mut strings, &theme_i18n_dir.join(&file_name))?;
                 }
@@ -117,7 +116,6 @@ impl I18n {
         if let Some(value) = self.inner.strings.get(key) {
             return Cow::Borrowed(value);
         }
-        // Owning a missing key keeps the result independent of the key's lifetime.
         Cow::Owned(key.to_owned())
     }
 
@@ -152,7 +150,7 @@ impl I18n {
 
 // ── Loading helpers ──
 
-fn theme_has_english_fallback(dir: &Path) -> Result<bool> {
+fn ensure_english_fallback(dir: &Path) -> Result<()> {
     let mut has_locales = false;
     let mut has_english = false;
     for entry in fs::read_dir(dir)
@@ -173,7 +171,7 @@ fn theme_has_english_fallback(dir: &Path) -> Result<bool> {
         "theme i18n directory {} is missing required en.toml fallback",
         dir.display(),
     );
-    Ok(has_english)
+    Ok(())
 }
 
 /// Merges the strings of a locale file, if it exists, over those already loaded.
@@ -215,10 +213,7 @@ impl<S> Warning<S> {
     }
 }
 
-/// Interpolates `{name}` placeholders from `args` into `template`.
-///
-/// `{{` / `}}` escape to literal braces. Missing placeholders substitute empty string and report
-/// via `warn`. Unclosed `{` reports via `warn` and renders the remaining text as-is.
+/// Interpolates `template` by the rules of [`I18n::t_interp`], reporting its warnings via `warn`.
 fn interpolate(
     template: &str,
     args: &BTreeMap<&str, impl AsRef<str>>,

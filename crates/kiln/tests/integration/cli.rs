@@ -349,16 +349,19 @@ fn enable_search(site: &TestSite, script: &str) {
 // ── convert: CLI ──
 
 #[test]
-fn convert_relative_source_and_new_destination() {
+fn convert_relative_paths_and_warns_with_file_path() {
     let site = TestSite::empty();
     site.write(
         "source/content/post.md",
         indoc! {r#"
             ---
             title: "Converted Post"
+            aliases: [/old/]
             ---
 
             Converted body.
+
+            {{< image src="a.webp" alt="Alt" caption="Caption" >}}
         "#},
     )
     .write("source/static/asset.txt", "Static asset");
@@ -366,6 +369,7 @@ fn convert_relative_source_and_new_destination() {
     let output = kiln()
         .args(["convert", "--source", "source", "--dest", "destination"])
         .current_dir(site.root())
+        .env("NO_COLOR", "1")
         .output()
         .unwrap();
 
@@ -382,12 +386,27 @@ fn convert_relative_source_and_new_destination() {
             +++
 
             Converted body.
+
+            ![Alt](a.webp)
         "#}
     );
     assert_eq!(
         fs::read_to_string(site.path("destination/static/asset.txt")).unwrap(),
         "Static asset"
     );
+    let converted = fs::canonicalize(site.path("destination/content/post.md")).unwrap();
+    let span = format!("convert{{path={}}}", converted.display());
+    let logs = String::from_utf8_lossy(&output.stdout);
+    for warning in [
+        "frontmatter field requires manual migration",
+        "image caption differs from alt",
+    ] {
+        assert!(
+            logs.lines()
+                .any(|line| line.contains(&span) && line.contains(warning)),
+            "{warning}: {logs}"
+        );
+    }
 }
 
 // ── init_theme ──

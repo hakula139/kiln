@@ -8,9 +8,13 @@ use std::path::{Component, Path, PathBuf};
 use anyhow::{Context, Result, bail, ensure};
 use walkdir::WalkDir;
 
-use crate::content::frontmatter::{has_delimited_frontmatter, split_delimited_frontmatter};
+use self::frontmatter::YAML_DELIMITER;
+use crate::content::frontmatter::{
+    TOML_DELIMITER, has_delimited_frontmatter, split_delimited_frontmatter,
+};
 use crate::content::is_markdown;
-use crate::convert::frontmatter::YAML_DELIMITER;
+use crate::output::guard::canonicalize_via_parent;
+use crate::output::{copy_file, paths_overlap, validate_source_link, write_output};
 
 /// Converts a Hugo site root to kiln format.
 ///
@@ -24,8 +28,9 @@ use crate::convert::frontmatter::YAML_DELIMITER;
 ///
 /// # Errors
 ///
-/// Returns an error if `source/content` is missing, any file fails to read, convert, or write, or
-/// two indexes map to the same destination. The index check runs before anything is written.
+/// Returns an error if `source/content` is missing, any file fails to read, convert, or write, a
+/// source link resolves into the destination, or two indexes map to the same destination. The
+/// link and index checks run before anything in their tree is written.
 pub fn convert(source: &Path, dest: &Path) -> Result<()> {
     ensure!(
         source.join("content").is_dir(),
@@ -34,9 +39,9 @@ pub fn convert(source: &Path, dest: &Path) -> Result<()> {
     );
 
     let source = fs::canonicalize(source).context("failed to resolve conversion source")?;
-    let dest = resolve_destination(dest)?;
+    let dest = canonicalize_via_parent(dest)?;
     ensure!(
-        !source.starts_with(&dest) && !dest.starts_with(&source),
+        !paths_overlap(&source, &dest),
         "conversion source and destination must not overlap: {} and {}",
         source.display(),
         dest.display()
@@ -44,7 +49,7 @@ pub fn convert(source: &Path, dest: &Path) -> Result<()> {
 
     for directory in ["content", "static"] {
         ensure!(
-            resolve_destination(&dest.join(directory))?.starts_with(&dest),
+            canonicalize_via_parent(&dest.join(directory))?.starts_with(&dest),
             "conversion destination escapes its root: {}",
             dest.join(directory).display()
         );
@@ -59,54 +64,48 @@ pub fn convert(source: &Path, dest: &Path) -> Result<()> {
     Ok(())
 }
 
-fn resolve_destination(path: &Path) -> Result<PathBuf> {
-    if fs::symlink_metadata(path).is_ok() {
-        return fs::canonicalize(path)
-            .with_context(|| format!("failed to resolve {}", path.display()));
-    }
-
-    let absolute = std::path::absolute(path)?;
-    let parent = absolute.parent().context("destination has no parent")?;
-    let name = absolute
-        .file_name()
-        .context("destination has no file name")?;
-    Ok(resolve_destination(parent)?.join(name))
-}
-
 fn convert_tree(source: &Path, dest: &Path, markdown: bool) -> Result<()> {
-    let resolved_dest = resolve_destination(dest)?;
-    for (source_file, destination) in plan_tree(source, dest, markdown)? {
+    let resolved_dest = canonicalize_via_parent(dest)?;
+    for (source_file, destination) in plan_tree(source, dest, &resolved_dest, markdown)? {
         if fs::symlink_metadata(&destination).is_ok() {
             continue;
         }
         ensure!(
-            resolve_destination(&destination)?.starts_with(&resolved_dest),
+            canonicalize_via_parent(&destination)?.starts_with(&resolved_dest),
             "conversion destination escapes its root: {}",
             destination.display()
         );
-        if let Some(parent) = destination.parent() {
-            fs::create_dir_all(parent)?;
-        }
 
         if markdown && is_markdown(&source_file) {
             convert_or_copy_markdown(&source_file, &destination)?;
         } else {
-            fs::copy(&source_file, &destination)?;
+            copy_file(&source_file, &destination)?;
         }
     }
     Ok(())
 }
 
-/// Pairs each file under `source` with its destination under `dest`, in file name order.
+/// Pairs each file under `source`, following symlinks, with its destination under `dest`, in
+/// file name order.
 ///
 /// # Errors
 ///
-/// Returns an error if the walk fails or two indexes convert to the same destination.
-fn plan_tree(source: &Path, dest: &Path, markdown: bool) -> Result<Vec<(PathBuf, PathBuf)>> {
+/// Returns an error if the walk fails, a source link overlaps `resolved_dest`, or two indexes
+/// convert to the same destination.
+fn plan_tree(
+    source: &Path,
+    dest: &Path,
+    resolved_dest: &Path,
+    markdown: bool,
+) -> Result<Vec<(PathBuf, PathBuf)>> {
     let mut files = Vec::new();
     let mut index_sources = HashMap::new();
-    for entry in WalkDir::new(source).follow_links(false).sort_by_file_name() {
-        let entry = entry?;
+    for entry in WalkDir::new(source).follow_links(true).sort_by_file_name() {
+        let entry =
+            entry.with_context(|| format!("failed to read entry in {}", source.display()))?;
+        if entry.path_is_symlink() {
+            validate_source_link(entry.path(), resolved_dest)?;
+        }
         if entry.file_type().is_dir() {
             continue;
         }
@@ -153,8 +152,7 @@ fn index_destination(relative: &Path) -> Option<PathBuf> {
     }
 }
 
-/// Converts a markdown file if it has YAML frontmatter, otherwise copies it as-is.
-/// Frontmatter-less `.md` files (e.g. page bundle resources) are not convertible.
+/// Converts a Markdown file with YAML frontmatter, or copies it unchanged.
 fn convert_or_copy_markdown(src: &Path, dest: &Path) -> Result<()> {
     let content =
         fs::read_to_string(src).with_context(|| format!("failed to read {}", src.display()))?;
@@ -164,25 +162,29 @@ fn convert_or_copy_markdown(src: &Path, dest: &Path) -> Result<()> {
             .with_context(|| format!("malformed YAML frontmatter in {}", src.display()))?;
         convert_markdown_file(yaml_fm, body, dest)
     } else {
-        fs::copy(src, dest)?;
-        Ok(())
+        copy_file(src, dest)
     }
 }
 
 fn convert_markdown_file(yaml_fm: &str, body: &str, dest: &Path) -> Result<()> {
+    let _span = tracing::warn_span!("convert", path = %dest.display()).entered();
     let (toml_fm, unsupported) = frontmatter::convert_frontmatter(yaml_fm)
         .with_context(|| format!("failed to convert frontmatter for {}", dest.display()))?;
 
     for field in unsupported {
-        tracing::warn!(path = %dest.display(), field, "frontmatter field requires manual migration and was omitted");
+        tracing::warn!(
+            field,
+            "frontmatter field requires manual migration and was omitted"
+        );
     }
 
     let converted_body = shortcode::convert_shortcodes(body)
         .with_context(|| format!("failed to convert shortcodes for {}", dest.display()))?;
 
-    let output = format!("+++\n{toml_fm}+++\n{converted_body}");
-    fs::write(dest, output).with_context(|| format!("failed to write {}", dest.display()))?;
-    Ok(())
+    write_output(
+        dest,
+        &format!("{TOML_DELIMITER}\n{toml_fm}{TOML_DELIMITER}\n{converted_body}"),
+    )
 }
 
 #[cfg(test)]
@@ -207,6 +209,7 @@ mod tests {
             indoc! {r"
                 ---
                 title: Post
+                aliases: [/old-post/]
                 ---
                 Content
             "},
@@ -261,6 +264,22 @@ mod tests {
                 About page
             "#}
         );
+    }
+
+    #[test]
+    fn resolves_parent_components_of_missing_destination() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source");
+        fs::create_dir_all(source.join("content")).unwrap();
+        fs::write(source.join("content/note.txt"), "note").unwrap();
+
+        convert(&source, &dir.path().join("missing/../out")).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(dir.path().join("out/content/note.txt")).unwrap(),
+            "note"
+        );
+        assert!(!dir.path().join("missing").exists());
     }
 
     #[test]

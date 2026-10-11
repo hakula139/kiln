@@ -9,10 +9,11 @@ struct StackEntry {
     children: Vec<DirectiveNode>,
 }
 
+/// A parsed directive block with the directives nested in its body.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct DirectiveNode {
-    pub(crate) block: DirectiveBlock,
-    pub(crate) children: Vec<Self>,
+    pub block: DirectiveBlock,
+    pub children: Vec<Self>,
 }
 
 /// Parses nested `:::` directives in source order, retaining children of unclosed fences.
@@ -124,6 +125,7 @@ mod tests {
 
     use super::*;
     use crate::attrs::Identity;
+    use crate::test_utils::named_args;
 
     // ── parse_directives ──
 
@@ -155,7 +157,7 @@ mod tests {
             blocks[0].block.args,
             DirectiveArgs {
                 positional: Vec::new(),
-                named: named(&[
+                named: named_args(&[
                     ("open", "false"),
                     ("title", "Hello #world .bold"),
                     ("type", "tip"),
@@ -184,7 +186,10 @@ mod tests {
         assert_eq!(blocks[0].block.args.identity.classes, ["note"]);
         assert_eq!(blocks[1].block.name, "");
         assert_eq!(blocks[1].block.args.positional, ["note"]);
-        assert_eq!(blocks[1].block.args.named, named(&[("title", "Custom")]));
+        assert_eq!(
+            blocks[1].block.args.named,
+            named_args(&[("title", "Custom")])
+        );
     }
 
     #[test]
@@ -294,6 +299,7 @@ mod tests {
         "};
         let blocks = parse_directives(input);
         assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].block.name, "inner-a");
         assert!(body(input, &blocks[0]).contains("::: inner-b"));
         assert_eq!(blocks[0].children.len(), 1);
         assert_eq!(blocks[0].children[0].block.name, "inner-b");
@@ -352,7 +358,7 @@ mod tests {
         assert_eq!(blocks.len(), 1);
         assert_eq!(
             blocks[0].block.args.named,
-            named(&[("title", "Use `code`")])
+            named_args(&[("title", "Use `code`")])
         );
         assert_eq!(body(input, &blocks[0]), "Body");
     }
@@ -371,7 +377,7 @@ mod tests {
 
     #[test]
     fn allows_trailing_whitespace_on_fences() {
-        let input = concat!("::: callout   \n", "Body\n", ":::   \n",);
+        let input = "::: callout   \nBody\n:::   \n";
         let blocks = parse_directives(input);
         assert_eq!(blocks.len(), 1);
         assert_eq!(body(input, &blocks[0]), "Body");
@@ -467,7 +473,7 @@ mod tests {
             let (name, args) = parse_directive_head(text);
             assert_eq!(name, "callout", "{text}");
             assert_eq!(args.identity.classes, ["wide"], "{text}");
-            assert_eq!(args.named, named(&[("type", "warning")]), "{text}");
+            assert_eq!(args.named, named_args(&[("type", "warning")]), "{text}");
         }
     }
 
@@ -477,7 +483,7 @@ mod tests {
         assert_eq!(name, "callout");
         assert_eq!(args.identity.id.as_deref(), Some("Tip-1"));
         assert_eq!(args.identity.classes, ["Wide"]);
-        assert_eq!(args.named, named(&[("type", "Tip")]));
+        assert_eq!(args.named, named_args(&[("type", "Tip")]));
     }
 
     #[test]
@@ -486,7 +492,7 @@ mod tests {
         assert_eq!(args.positional, ["a}b"]);
         assert_eq!(
             args.named,
-            named(&[("title", "a\"}b"), ("type", "warning")])
+            named_args(&[("title", "a\"}b"), ("type", "warning")])
         );
     }
 
@@ -495,7 +501,7 @@ mod tests {
         for (text, expected) in [
             (
                 r#"embed {src="example.com"} <!-- note } -->"#,
-                named(&[("src", "example.com")]),
+                named_args(&[("src", "example.com")]),
             ),
             ("embed extra text", BTreeMap::new()),
             (r#"embed {title="a}b"#, BTreeMap::new()),
@@ -524,12 +530,5 @@ mod tests {
 
     fn body<'a>(input: &'a str, node: &DirectiveNode) -> &'a str {
         &input[node.block.body.clone()]
-    }
-
-    fn named(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
-        pairs
-            .iter()
-            .map(|&(key, value)| (key.to_owned(), value.to_owned()))
-            .collect()
     }
 }

@@ -1,9 +1,11 @@
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
 use super::frontmatter::{TOML_DELIMITER, has_delimited_frontmatter};
 use super::page::Page;
+use super::{is_markdown, is_public};
 use crate::output::walk_directory;
 
 /// All content discovered from the content directory.
@@ -39,7 +41,7 @@ pub fn discover_content(root: &Path) -> Result<ContentSet> {
 
     let mut pages = Vec::new();
 
-    for entry in walk_directory(&content_dir, &super::is_public) {
+    for entry in walk_directory(&content_dir, &is_public) {
         let entry =
             entry.with_context(|| format!("failed to read entry in {}", content_dir.display()))?;
 
@@ -48,11 +50,11 @@ pub fn discover_content(root: &Path) -> Result<ContentSet> {
         }
 
         let path = entry.path();
-        if !super::is_markdown(path) {
+        if !is_markdown(path) {
             continue;
         }
 
-        let content = std::fs::read_to_string(path)
+        let content = fs::read_to_string(path)
             .with_context(|| format!("failed to read {}", path.display()))?;
         if !has_delimited_frontmatter(&content, TOML_DELIMITER) {
             continue;
@@ -80,9 +82,7 @@ mod tests {
     #[cfg(unix)]
     use std::os::unix::fs::symlink;
 
-    #[cfg(unix)]
-    use indoc::formatdoc;
-    use indoc::indoc;
+    use indoc::{formatdoc, indoc};
 
     use super::*;
     use crate::test_utils::write_test_file;
@@ -148,50 +148,23 @@ mod tests {
     #[test]
     fn sorts_newest_first_then_undated_by_path() {
         let root = tempfile::tempdir().unwrap();
-        write_test_file(
-            root.path(),
-            "content/posts/old/index.md",
-            indoc! {r#"
-                +++
-                title = "Old"
-                date = "2023-12-01T00:00:00Z"
-                +++
-                Body
-            "#},
-        );
-        write_test_file(
-            root.path(),
-            "content/posts/new/index.md",
-            indoc! {r#"
-                +++
-                title = "New"
-                date = "2024-06-01T00:00:00Z"
-                +++
-                Body
-            "#},
-        );
-
-        for (path, contents) in [
-            (
-                "content/posts/beta/index.md",
-                indoc! {r#"
-                    +++
-                    title = "Beta"
-                    +++
-                    Body
-                "#},
-            ),
-            (
-                "content/posts/alpha/index.md",
-                indoc! {r#"
-                    +++
-                    title = "Alpha"
-                    +++
-                    Body
-                "#},
-            ),
+        for (slug, title, date) in [
+            ("old", "Old", r#"date = "2023-12-01T00:00:00Z""#),
+            ("new", "New", r#"date = "2024-06-01T00:00:00Z""#),
+            ("beta", "Beta", ""),
+            ("alpha", "Alpha", ""),
         ] {
-            write_test_file(root.path(), path, contents);
+            write_test_file(
+                root.path(),
+                &format!("content/posts/{slug}/index.md"),
+                &formatdoc! {r#"
+                    +++
+                    title = "{title}"
+                    {date}
+                    +++
+                    Body
+                "#},
+            );
         }
 
         let set = discover_content(root.path()).unwrap();
@@ -215,9 +188,9 @@ mod tests {
     fn reports_invalid_utf8() {
         let root = tempfile::tempdir().unwrap();
         let content_dir = root.path().join("content");
-        std::fs::create_dir(&content_dir).unwrap();
+        fs::create_dir(&content_dir).unwrap();
         let path = content_dir.join("broken.md");
-        std::fs::write(&path, b"+++\n\xff").unwrap();
+        fs::write(&path, b"+++\n\xff").unwrap();
 
         let error = discover_content(root.path()).unwrap_err();
         assert_eq!(
@@ -227,6 +200,34 @@ mod tests {
         assert_eq!(
             error.downcast_ref::<std::io::Error>().unwrap().kind(),
             std::io::ErrorKind::InvalidData,
+        );
+    }
+
+    #[test]
+    fn reports_invalid_draft_page() {
+        let root = tempfile::tempdir().unwrap();
+        write_test_file(
+            root.path(),
+            "content/posts/draft.md",
+            indoc! {r"
+                +++
+                draft = true
+                unknown = 1
+                +++
+            "},
+        );
+
+        let error = discover_content(root.path()).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "invalid frontmatter in {}",
+                root.path()
+                    .join("content")
+                    .join("posts")
+                    .join("draft.md")
+                    .display()
+            )
         );
     }
 
@@ -251,7 +252,7 @@ mod tests {
         }
         write_test_file(external.path(), "bundle/image.png", "image");
         let posts = root.path().join("content/posts");
-        std::fs::create_dir_all(&posts).unwrap();
+        fs::create_dir_all(&posts).unwrap();
         symlink(external.path().join("bundle"), posts.join("bundle")).unwrap();
         symlink(
             external.path().join("standalone.md"),
@@ -280,7 +281,7 @@ mod tests {
     fn reports_broken_symlink() {
         let root = tempfile::tempdir().unwrap();
         let content_dir = root.path().join("content");
-        std::fs::create_dir(&content_dir).unwrap();
+        fs::create_dir(&content_dir).unwrap();
         let link = content_dir.join("broken.md");
         symlink(content_dir.join("missing.md"), &link).unwrap();
 
