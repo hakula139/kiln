@@ -1,7 +1,6 @@
-use std::process::Command;
-
 use indoc::{formatdoc, indoc};
 
+use super::fixtures::{git, git_commit};
 use super::support::{TestSite, xml_texts};
 
 // ── build: routes ──
@@ -78,27 +77,9 @@ fn build_updated_prefers_frontmatter_over_git_commit() {
         "#},
     );
     write_post(&site, "content/posts/explicit.md", "Explicit");
-    for args in [
-        &["init", "-q"][..],
-        &["add", "."],
-        &["commit", "-qm", "Add posts"],
-    ] {
-        let status = Command::new("git")
-            .args([
-                "-c",
-                "user.name=Example",
-                "-c",
-                "user.email=example@example.com",
-            ])
-            .args(args)
-            .current_dir(site.root())
-            .env("GIT_CONFIG_NOSYSTEM", "1")
-            .env("GIT_CONFIG_GLOBAL", "/dev/null")
-            .env("GIT_COMMITTER_DATE", "2025-06-01T00:00:00Z")
-            .status()
-            .unwrap();
-        assert!(status.success(), "git {args:?}: {status}");
-    }
+    git(site.root(), &["init", "-q"]);
+    git(site.root(), &["add", "."]);
+    git_commit(site.root(), "2025-06-01T00:00:00Z");
 
     site.build().unwrap();
 

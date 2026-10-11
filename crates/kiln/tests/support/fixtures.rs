@@ -2,6 +2,7 @@ use std::fs;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 /// Writes a file at `dir.join(rel_path)`, creating parent directories as needed.
 pub fn write_test_file(dir: &Path, rel_path: &str, content: &str) {
@@ -22,6 +23,43 @@ pub fn copy_templates(dest: &Path) {
         let entry = entry.unwrap();
         fs::copy(entry.path(), dest.join(entry.file_name())).unwrap();
     }
+}
+
+/// Runs `git` with `args` in `root`, isolated from user and system configuration.
+pub fn git(root: &Path, args: &[&str]) {
+    run_git(git_command(root).args(args));
+}
+
+/// Commits staged changes in `root` with `date` as both author and committer time.
+pub fn git_commit(root: &Path, date: &str) {
+    run_git(
+        git_command(root)
+            .args(["commit", "-qm", "Update content"])
+            .env("GIT_AUTHOR_DATE", date)
+            .env("GIT_COMMITTER_DATE", date),
+    );
+}
+
+fn git_command(root: &Path) -> Command {
+    let mut command = Command::new("git");
+    command
+        .current_dir(root)
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_AUTHOR_NAME", "Example")
+        .env("GIT_AUTHOR_EMAIL", "example@example.com")
+        .env("GIT_COMMITTER_NAME", "Example")
+        .env("GIT_COMMITTER_EMAIL", "example@example.com");
+    command
+}
+
+fn run_git(command: &mut Command) {
+    let output = command.output().unwrap();
+    assert!(
+        output.status.success(),
+        "{command:?}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 /// RAII guard that restores filesystem permissions on drop. Prevents `TempDir::drop` failures

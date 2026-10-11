@@ -93,16 +93,14 @@ impl Site {
             &["commit", "-qm", "Add benchmark site"],
         ] {
             let status = Command::new("git")
-                .args([
-                    "-c",
-                    "user.name=Example",
-                    "-c",
-                    "user.email=example@example.com",
-                ])
                 .args(args)
                 .current_dir(root)
-                .env("GIT_CONFIG_GLOBAL", "/dev/null")
                 .env("GIT_CONFIG_NOSYSTEM", "1")
+                .env("GIT_CONFIG_GLOBAL", "/dev/null")
+                .env("GIT_AUTHOR_NAME", "Example")
+                .env("GIT_AUTHOR_EMAIL", "example@example.com")
+                .env("GIT_COMMITTER_NAME", "Example")
+                .env("GIT_COMMITTER_EMAIL", "example@example.com")
                 .env("GIT_AUTHOR_DATE", COMMITTED)
                 .env("GIT_COMMITTER_DATE", COMMITTED)
                 .status()

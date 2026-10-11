@@ -93,11 +93,10 @@ fn normalized_path(path: &str) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use std::process::Command;
-
     use tempfile::TempDir;
 
     use super::*;
+    use crate::test_utils::{git, git_commit};
 
     // ── GitInfo::new ──
 
@@ -111,7 +110,7 @@ mod tests {
         fs::write(&source, "post").unwrap();
         fs::write(&decomposed, "post").unwrap();
         git(dir.path(), &["add", "."]);
-        commit(dir.path(), "2024-01-01T00:00:00+08:00");
+        git_commit(dir.path(), "2024-01-01T00:00:00+08:00");
 
         let site = dir.path().join("my site");
         let info = GitInfo::new(&site, &content).unwrap();
@@ -120,42 +119,28 @@ mod tests {
         assert_eq!(info.last_modified(&decomposed), expected);
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn git_info_new_reads_site_with_leading_colon() {
+        let dir = repo();
+        let content = dir.path().join(":my site/content");
+        fs::create_dir_all(&content).unwrap();
+        let source = content.join("post.md");
+        fs::write(&source, "post").unwrap();
+        git(dir.path(), &["add", "."]);
+        git_commit(dir.path(), "2024-01-01T00:00:00+00:00");
+
+        let info = GitInfo::new(&dir.path().join(":my site"), &content).unwrap();
+        assert_eq!(
+            info.last_modified(&source),
+            Some("2024-01-01T00:00:00Z".parse().unwrap())
+        );
+    }
+
     fn repo() -> TempDir {
         let dir = tempfile::tempdir().unwrap();
         git(dir.path(), &["init", "-q"]);
-        git(dir.path(), &["config", "user.name", "Example"]);
-        git(dir.path(), &["config", "user.email", "example@example.com"]);
         dir
-    }
-
-    fn git(root: &Path, args: &[&str]) {
-        run(git_command(root).args(args));
-    }
-
-    fn commit(root: &Path, date: &str) {
-        run(git_command(root)
-            .args(["commit", "-qm", "Update article"])
-            .env("GIT_AUTHOR_DATE", date)
-            .env("GIT_COMMITTER_DATE", date));
-    }
-
-    /// Returns a `git` command in `root`, isolated from user and system configuration.
-    fn git_command(root: &Path) -> Command {
-        let mut command = Command::new("git");
-        command
-            .current_dir(root)
-            .env("GIT_CONFIG_NOSYSTEM", "1")
-            .env("GIT_CONFIG_GLOBAL", "/dev/null");
-        command
-    }
-
-    fn run(command: &mut Command) {
-        let output = command.output().unwrap();
-        assert!(
-            output.status.success(),
-            "{command:?}: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
     }
 
     #[test]
@@ -165,7 +150,7 @@ mod tests {
         fs::create_dir(&content).unwrap();
         fs::write(content.join("post.md"), "post").unwrap();
         git(dir.path(), &["add", "."]);
-        commit(dir.path(), "2024-01-01T00:00:00+00:00");
+        git_commit(dir.path(), "2024-01-01T00:00:00+00:00");
 
         let missing = dir.path().join("missing");
         assert!(GitInfo::new(&missing, &missing.join("content")).is_none());
@@ -194,61 +179,82 @@ mod tests {
         }
         fs::write(dir.path().join("outside.md"), "outside").unwrap();
         git(dir.path(), &["add", "."]);
-        commit(dir.path(), "2024-01-01T00:00:00+00:00");
+        git_commit(dir.path(), "2024-01-01T00:00:00+00:00");
 
         git(
             dir.path(),
             &["mv", "content/moved.md", "content/renamed.md"],
         );
-        commit(dir.path(), "2024-02-01T00:00:00+00:00");
+        git_commit(dir.path(), "2024-02-01T00:00:00+00:00");
 
         git(dir.path(), &["switch", "-qc", "side"]);
         fs::write(content.join("merged.md"), "side").unwrap();
         git(dir.path(), &["add", "."]);
-        commit(dir.path(), "2024-03-01T00:00:00+00:00");
+        git_commit(dir.path(), "2024-03-01T00:00:00+00:00");
         git(dir.path(), &["switch", "-q", "-"]);
         fs::write(content.join("edited.md"), "edited").unwrap();
         fs::write(dir.path().join("outside.md"), "edited").unwrap();
         git(dir.path(), &["add", "."]);
-        commit(dir.path(), "2024-04-01T00:00:00+00:00");
+        git_commit(dir.path(), "2024-04-01T00:00:00+00:00");
         git(
             dir.path(),
             &["merge", "-q", "--no-ff", "--no-commit", "side"],
         );
-        commit(dir.path(), "2024-05-01T00:00:00+00:00");
+        git_commit(dir.path(), "2024-05-01T00:00:00+00:00");
 
         git(dir.path(), &["switch", "-qc", "discarded"]);
         fs::write(content.join("kept.md"), "discarded").unwrap();
         git(dir.path(), &["add", "."]);
-        commit(dir.path(), "2024-06-01T00:00:00+00:00");
+        git_commit(dir.path(), "2024-06-01T00:00:00+00:00");
         git(dir.path(), &["switch", "-q", "-"]);
         git(
             dir.path(),
             &["merge", "-q", "-s", "ours", "--no-commit", "discarded"],
         );
-        commit(dir.path(), "2024-07-01T00:00:00+00:00");
+        git_commit(dir.path(), "2024-07-01T00:00:00+00:00");
 
         let info = GitInfo::new(dir.path(), &content).unwrap();
-        let updated = |name: &str| info.last_modified(&content.join(name));
+        let last_modified = |name: &str| info.last_modified(&content.join(name));
         assert_eq!(
-            updated("edited.md"),
+            last_modified("edited.md"),
             Some("2024-04-01T00:00:00Z".parse().unwrap())
         );
         assert_eq!(
-            updated("renamed.md"),
+            last_modified("renamed.md"),
             Some("2024-02-01T00:00:00Z".parse().unwrap())
         );
         assert_eq!(
-            updated("kept.md"),
+            last_modified("kept.md"),
             Some("2024-01-01T00:00:00Z".parse().unwrap())
         );
         assert_eq!(
-            updated("merged.md"),
+            last_modified("merged.md"),
             Some("2024-03-01T00:00:00Z".parse().unwrap())
         );
         assert_eq!(info.last_modified(&dir.path().join("outside.md")), None);
 
         fs::write(content.join("draft.md"), "draft").unwrap();
-        assert_eq!(updated("draft.md"), None);
+        assert_eq!(last_modified("draft.md"), None);
+    }
+
+    // ── newest_timestamps ──
+
+    #[test]
+    fn newest_timestamps_keeps_first_commit_and_skips_non_utf8_paths() {
+        let log = b"\x002024-02-01T00:00:00Z\x00\nbad\xff.md\x00post.md\x00\x002024-01-01T00:00:00Z\x00\npost.md\x00old.md\x00";
+
+        assert_eq!(
+            newest_timestamps(log),
+            Some(HashMap::from([
+                (
+                    PathBuf::from("post.md"),
+                    "2024-02-01T00:00:00Z".parse().unwrap()
+                ),
+                (
+                    PathBuf::from("old.md"),
+                    "2024-01-01T00:00:00Z".parse().unwrap()
+                ),
+            ]))
+        );
     }
 }
