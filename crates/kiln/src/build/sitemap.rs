@@ -27,6 +27,6 @@ fn build_sitemap(plan: &RoutePlan, output_dir: &Path) -> Result<()> {
 // ── robots.txt ──
 
 fn build_robots_txt(ctx: &BuildContext, output_dir: &Path) -> Result<()> {
-    let txt = sitemap::generate_robots_txt(&ctx.config.base_url);
+    let txt = sitemap::generate_robots_txt(&ctx.config.base_url.site_url("sitemap.xml"));
     write_output(&output_dir.join("robots.txt"), &txt).context("failed to write robots.txt")
 }

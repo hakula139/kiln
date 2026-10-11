@@ -51,8 +51,8 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 │   ├── paginate.rs      # Generic write_paginated, paginate_config
 │   ├── routes.rs        # Enabled route planning, collision validation and sitemap entries
 │   └── sitemap.rs       # sitemap.xml + robots.txt generation
-├── config.rs            # TOML site configuration loading, theme resolution, param merging
-├── content.rs           # Content submodule declarations and shared private-name predicate
+├── config.rs            # Strict TOML site configuration (validated base URL, time zone, image options), theme resolution, param merging
+├── content.rs           # Content submodule declarations and shared source name / file helpers
 ├── content/             # Content model submodules
 │   ├── discovery.rs     # Recursive content walking with draft / _-prefix / no-frontmatter exclusion
 │   ├── frontmatter.rs   # TOML frontmatter parsing (+++), Frontmatter / FeaturedImage / ImageCredit
@@ -77,6 +77,8 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 ├── markdown.rs          # Shared parser options and protected code ranges
 ├── minify.rs            # Post-build HTML / CSS / JS minification (lightningcss, oxc_minifier, minify-html)
 ├── output.rs            # Owned build transactions, file output and static file copying
+├── output/              # Output safety submodules
+│   └── guard.rs         # Output directory resolution and source / Git / output overlap guards
 ├── pagination.rs        # Paginator for windowed views over slices, page URL computation
 ├── render.rs            # RenderOptions struct + render submodule declarations
 ├── render/              # Markdown rendering pipeline submodules
@@ -110,7 +112,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 │   └── vars.rs          # Template variables structs (PostTemplateVars, PageSummary, etc.)
 ├── test_utils.rs        # Shared test infrastructure (templates, helpers, Page factory)
 ├── text.rs              # Shared format-agnostic text utilities (slugify, titlecase)
-└── url.rs               # Encoded filesystem paths, canonical page URLs and deployment prefixes
+└── url.rs               # BaseUrl (deployment prefix + site URLs), encoded filesystem paths, canonical page URLs
 ````
 
 ## Coding Conventions

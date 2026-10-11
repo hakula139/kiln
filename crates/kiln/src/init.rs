@@ -5,6 +5,7 @@ use anyhow::{Context, Result, bail};
 use indoc::indoc;
 
 use crate::config::validate_theme_name;
+use crate::css::ENTRY;
 
 /// Scaffolds a new theme directory under `themes/<name>/`. Fails if the directory already exists.
 ///
@@ -18,16 +19,17 @@ pub fn init_theme(root: &Path, name: &str) -> Result<()> {
         bail!("theme directory already exists: {}", theme_dir.display());
     }
 
-    let css_dir = theme_dir.join("assets/css/_src");
+    let css_entry = theme_dir.join(ENTRY);
     let templates_dir = theme_dir.join("templates");
     let i18n_dir = theme_dir.join("i18n");
-    fs::create_dir_all(&css_dir).context("failed to create CSS source directory")?;
+    let css_dir = css_entry.parent().context("CSS entry has no parent")?;
+    fs::create_dir_all(css_dir).context("failed to create CSS source directory")?;
     fs::create_dir_all(&templates_dir).context("failed to create templates directory")?;
     fs::create_dir_all(theme_dir.join("static")).context("failed to create static directory")?;
     fs::create_dir_all(&i18n_dir).context("failed to create i18n directory")?;
 
     fs::write(theme_dir.join("theme.toml"), "").context("failed to write theme.toml")?;
-    fs::write(css_dir.join("style.css"), "").context("failed to write CSS entry")?;
+    fs::write(&css_entry, "").context("failed to write CSS entry")?;
     fs::write(
         templates_dir.join("base.html"),
         indoc! {r#"
@@ -68,32 +70,34 @@ pub fn init_theme(root: &Path, name: &str) -> Result<()> {
     )
     .context("failed to write post.html")?;
 
-    fs::write(i18n_dir.join("en.toml"), DEFAULT_I18N_EN).context("failed to write i18n/en.toml")?;
-    fs::write(i18n_dir.join("zh-Hans.toml"), DEFAULT_I18N_ZH_HANS)
-        .context("failed to write i18n/zh-Hans.toml")?;
+    fs::write(
+        i18n_dir.join("en.toml"),
+        indoc! {r#"
+            all_posts = "All Posts"
+            back_to_top = "Back to Top"
+            table_of_contents = "Table of Contents"
+        "#},
+    )
+    .context("failed to write i18n/en.toml")?;
+    fs::write(
+        i18n_dir.join("zh-Hans.toml"),
+        indoc! {r#"
+            all_posts = "全部文章"
+            back_to_top = "回到顶部"
+            table_of_contents = "目录"
+        "#},
+    )
+    .context("failed to write i18n/zh-Hans.toml")?;
 
     println!("Theme `{name}` created at {}", theme_dir.display());
     println!(r#"Set `theme = "{name}"` in your config.toml to use it."#);
     Ok(())
 }
 
-/// Default English i18n table written to new themes.
-const DEFAULT_I18N_EN: &str = indoc! {r#"
-    all_posts = "All Posts"
-    back_to_top = "Back to Top"
-    table_of_contents = "Table of Contents"
-"#};
-
-/// Default Simplified Chinese i18n table written to new themes.
-const DEFAULT_I18N_ZH_HANS: &str = indoc! {r#"
-    all_posts = "全部文章"
-    back_to_top = "回到顶部"
-    table_of_contents = "目录"
-"#};
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::i18n::{I18n, Language};
 
     // ── init_theme ──
 
@@ -120,9 +124,10 @@ mod tests {
         );
 
         let site = tempfile::tempdir().unwrap();
-        let en_i18n = crate::i18n::I18n::load(site.path(), Some(&theme_dir), "en").unwrap();
+        let en_i18n = I18n::load(site.path(), Some(&theme_dir), &Language::default()).unwrap();
         assert_eq!(en_i18n.t("all_posts").as_ref(), "All Posts");
-        let zh_i18n = crate::i18n::I18n::load(site.path(), Some(&theme_dir), "zh-Hans").unwrap();
+        let zh_i18n =
+            I18n::load(site.path(), Some(&theme_dir), &"zh-Hans".parse().unwrap()).unwrap();
         assert_eq!(zh_i18n.t("all_posts").as_ref(), "全部文章");
     }
 

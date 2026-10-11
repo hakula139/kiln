@@ -24,6 +24,7 @@ use tower_http::set_status::SetStatus;
 
 use crate::build::BuildOptions;
 use crate::config::{self, Config};
+use crate::output::guard::resolve_output_dir;
 
 /// The custom 404 page, served without the validators and ranges meant for the missing path.
 type NotFoundPage = MapRequest<ServeFile, fn(Request) -> Request>;
@@ -123,7 +124,7 @@ async fn serve_until(
     let base_url = config::localhost_url(port);
     let config = Config::load(root).context("failed to load config")?;
     // output_dir is captured once. If config.toml changes it, the server must be restarted.
-    let output_dir = config.resolved_output_dir(root)?;
+    let output_dir = resolve_output_dir(root, &config, None)?;
 
     eprintln!("Building site...");
     rebuild(root, &base_url, &output_dir).context("initial build failed")?;

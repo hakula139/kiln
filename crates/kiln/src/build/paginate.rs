@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 
 use crate::output::write_output;
 use crate::pagination::{PaginationVars, Paginator};
-use crate::url::{join_site_url, path_url};
+use crate::url::{directory_url, join_site_url};
 
 /// Writes paginated output and returns the number of pages written.
 ///
@@ -23,7 +23,7 @@ where
     let paginator = Paginator::new(items, per_page);
 
     let page_count = paginator.total_pages();
-    let url = join_site_url(deployment_prefix, &path_url(base_path));
+    let url = join_site_url(deployment_prefix, &directory_url(base_path));
     for page_num in 1..=page_count {
         let page_items = paginator.page_items(page_num);
         let pagination = PaginationVars::new(&url, page_num, page_count);

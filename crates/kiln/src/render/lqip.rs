@@ -2,58 +2,14 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use anyhow::{Result, ensure};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use image::imageops::FilterType;
 use image::{DynamicImage, ImageReader};
 use percent_encoding::percent_decode_str;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
-/// Image-pipeline configuration loaded from the `[image]` section of `config.toml`.
-/// Unknown keys are rejected so removed fields and typos surface as build errors.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct ImageConfig {
-    /// Maximum placeholder width and height, in pixels.
-    #[serde(default = "default_lqip_size")]
-    pub lqip_size: u32,
-
-    /// WebP encoder quality (1–100, lower = smaller / blurrier).
-    #[serde(default = "default_lqip_quality")]
-    pub lqip_quality: u8,
-}
-
-const fn default_lqip_size() -> u32 {
-    16
-}
-
-const fn default_lqip_quality() -> u8 {
-    25
-}
-
-impl ImageConfig {
-    pub(crate) fn validate(&self) -> Result<()> {
-        ensure!(
-            self.lqip_size > 0,
-            "image.lqip_size must be greater than zero"
-        );
-        ensure!(
-            (1..=100).contains(&self.lqip_quality),
-            "image.lqip_quality must be between 1 and 100"
-        );
-        Ok(())
-    }
-}
-
-impl Default for ImageConfig {
-    fn default() -> Self {
-        Self {
-            lqip_size: default_lqip_size(),
-            lqip_quality: default_lqip_quality(),
-        }
-    }
-}
+use crate::config::ImageConfig;
 
 /// Per-image metadata: dimensions and optional LQIP data URI.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -183,75 +139,9 @@ fn encode_lqip(path: &Path, size: u32, quality: u8) -> Option<String> {
 mod tests {
     use std::fs;
 
-    use indoc::indoc;
     use tempfile::tempdir;
 
     use super::*;
-
-    // ── ImageConfig ──
-
-    #[test]
-    fn config_defaults_match_constants() {
-        let config = ImageConfig::default();
-        assert_eq!(config.lqip_size, 16);
-        assert_eq!(config.lqip_quality, 25);
-    }
-
-    #[test]
-    fn config_deserialises_partial_toml() {
-        let parsed: ImageConfig = toml::from_str(indoc! {"
-            lqip_size = 24
-        "})
-        .unwrap();
-        assert_eq!(parsed.lqip_size, 24);
-        assert_eq!(parsed.lqip_quality, 25);
-    }
-
-    #[test]
-    fn config_rejects_unknown_fields() {
-        // Removed pre-0.2 toggle should error rather than silently no-op.
-        let err = toml::from_str::<ImageConfig>(indoc! {"
-            lqip = false
-            lqip_size = 16
-        "})
-        .unwrap_err();
-        assert!(
-            err.to_string().contains("unknown field"),
-            "expected an unknown-field error, got: {err}",
-        );
-    }
-
-    // ── ImageConfig::validate ──
-
-    #[test]
-    fn validate_rejects_invalid_encoder_settings() {
-        for quality in [0, 101, 255] {
-            assert!(
-                ImageConfig {
-                    lqip_quality: quality,
-                    ..ImageConfig::default()
-                }
-                .validate()
-                .is_err()
-            );
-        }
-        assert!(
-            ImageConfig {
-                lqip_size: 0,
-                ..ImageConfig::default()
-            }
-            .validate()
-            .is_err()
-        );
-        for quality in [1, 100] {
-            ImageConfig {
-                lqip_quality: quality,
-                ..ImageConfig::default()
-            }
-            .validate()
-            .unwrap();
-        }
-    }
 
     // ── ImageResolver::resolve ──
 

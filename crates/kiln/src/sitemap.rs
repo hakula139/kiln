@@ -32,15 +32,14 @@ pub fn generate_sitemap<'a>(entries: impl IntoIterator<Item = &'a SitemapEntry>)
     xml
 }
 
-/// Generates a `robots.txt` file pointing to the sitemap.
+/// Generates a `robots.txt` file pointing to the sitemap at `sitemap_url`.
 #[must_use]
-pub fn generate_robots_txt(base_url: &str) -> String {
-    let base = base_url.trim_end_matches('/');
+pub fn generate_robots_txt(sitemap_url: &str) -> String {
     formatdoc! {"
         User-agent: *
         Allow: /
 
-        Sitemap: {base}/sitemap.xml
+        Sitemap: {sitemap_url}
     "}
 }
 
@@ -97,17 +96,15 @@ mod tests {
     // ── generate_robots_txt ──
 
     #[test]
-    fn generate_robots_txt_normalizes_base_url() {
-        for base in ["https://example.com", "https://example.com/"] {
-            assert_eq!(
-                generate_robots_txt(base),
-                indoc! {"
-                    User-agent: *
-                    Allow: /
+    fn generate_robots_txt_points_to_sitemap() {
+        assert_eq!(
+            generate_robots_txt("https://example.com/blog/sitemap.xml"),
+            indoc! {"
+                User-agent: *
+                Allow: /
 
-                    Sitemap: https://example.com/sitemap.xml
-                "}
-            );
-        }
+                Sitemap: https://example.com/blog/sitemap.xml
+            "}
+        );
     }
 }

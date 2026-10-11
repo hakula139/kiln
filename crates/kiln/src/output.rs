@@ -1,3 +1,5 @@
+pub(crate) mod guard;
+
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::fs;
@@ -130,12 +132,17 @@ fn validate_source_link(path: &Path, destination: &Path) -> Result<()> {
         .canonicalize()
         .with_context(|| format!("failed to resolve source link {}", path.display()))?;
     ensure!(
-        !source.starts_with(destination) && !destination.starts_with(&source),
+        !paths_overlap(&source, destination),
         "source link {} overlaps destination {}",
         path.display(),
         destination.display()
     );
     Ok(())
+}
+
+/// Whether either path contains the other.
+fn paths_overlap(left: &Path, right: &Path) -> bool {
+    left.starts_with(right) || right.starts_with(left)
 }
 
 /// Copies a single file from `src` to `dest`, creating parent directories as needed.

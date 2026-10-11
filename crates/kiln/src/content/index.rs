@@ -1,20 +1,14 @@
-use std::fs;
-use std::io::ErrorKind;
 use std::path::Path;
 
 use anyhow::{Context, Result};
 
-use super::frontmatter;
+use super::{frontmatter, read_optional};
 
 /// Loads an optional archive title, propagating unreadable or malformed metadata.
 pub(crate) fn load_index_title(dir: &Path) -> Result<Option<String>> {
     let path = dir.join("_index.md");
-    let content = match fs::read_to_string(&path) {
-        Ok(content) => content,
-        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
-        Err(error) => {
-            return Err(error).with_context(|| format!("failed to read {}", path.display()));
-        }
+    let Some(content) = read_optional(&path)? else {
+        return Ok(None);
     };
     let (frontmatter, _) = frontmatter::parse(&content)
         .with_context(|| format!("invalid frontmatter in {}", path.display()))?;
@@ -23,6 +17,8 @@ pub(crate) fn load_index_title(dir: &Path) -> Result<Option<String>> {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use indoc::indoc;
 
     use super::*;

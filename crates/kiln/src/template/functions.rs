@@ -179,6 +179,7 @@ mod tests {
     use minijinja::context;
 
     use super::*;
+    use crate::i18n::Language;
     use crate::template::TemplateEngine;
     use crate::test_utils::{test_engine, test_i18n};
 
@@ -327,7 +328,12 @@ mod tests {
             r#"greeting = "Hi {name}, {count}!""#,
         )
         .unwrap();
-        let i18n = I18n::load(Path::new("/nonexistent"), Some(dir.path()), "en").unwrap();
+        let i18n = I18n::load(
+            Path::new("/nonexistent"),
+            Some(dir.path()),
+            &Language::default(),
+        )
+        .unwrap();
 
         let templates = tempfile::tempdir().unwrap();
         let engine = TemplateEngine::new(Some(templates.path()), None, &i18n).unwrap();
@@ -365,7 +371,7 @@ mod tests {
             Some(templates.path()),
             None,
             &test_i18n(),
-            "/blog",
+            "/blog/",
             &manifest,
         )
         .unwrap();

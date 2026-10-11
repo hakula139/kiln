@@ -4,9 +4,9 @@ use anyhow::{Context, Result};
 
 use super::BuildContext;
 use super::listing::{PreparedPage, sort_pinned_first};
-use super::paginate::{paginate_config, write_paginated};
-use crate::pagination::paginated_url;
+use super::paginate::{paginate_config, paginated_path, write_paginated};
 use crate::template::vars::{HomePageVars, PageMetadata};
+use crate::url::page_url;
 
 /// Generates paginated home pages listing recent posts and returns the number written.
 ///
@@ -29,14 +29,18 @@ pub(super) fn build_home_pages(
         &home_posts,
         per_page,
         Path::new(""),
-        &ctx.deployment_prefix,
+        ctx.config.base_url.prefix(),
         output_dir,
         |pages, pagination| {
             let vars = HomePageVars {
                 metadata: PageMetadata {
                     title: &ctx.config.title,
                     description: &ctx.config.description,
-                    url: paginated_url(&ctx.config.base_url, pagination.current_page).into(),
+                    url: page_url(
+                        &ctx.config.base_url,
+                        &paginated_path(Path::new(""), pagination.current_page),
+                    )
+                    .into(),
                 },
                 pages: pages.iter().map(|page| &page.summary).collect(),
                 pagination,

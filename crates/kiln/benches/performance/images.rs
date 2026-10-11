@@ -5,7 +5,8 @@ use base64::engine::general_purpose::STANDARD;
 use criterion::{BatchSize, Criterion};
 use image::{Rgb, RgbImage};
 
-use kiln::render::lqip::{ImageConfig, ImageResolver};
+use kiln::config::ImageConfig;
+use kiln::render::lqip::ImageResolver;
 
 /// Measures fresh and primed image caches, excluding image creation and resolver construction.
 pub(super) fn benchmarks(criterion: &mut Criterion) {

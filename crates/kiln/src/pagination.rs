@@ -40,16 +40,14 @@ impl<'a, T> Paginator<'a, T> {
     }
 }
 
-/// Computes the URL for a paginated page.
+/// Computes the URL for a paginated page of the listing at `base_path`, which ends in `/`.
 ///
 /// Page 1 is the canonical URL (just `base_path`). Page N>1 appends `page/{n}/`.
-#[must_use]
-pub fn paginated_url(base_path: &str, page_num: usize) -> String {
-    let base = base_path.trim_end_matches('/');
+fn paginated_url(base_path: &str, page_num: usize) -> String {
     if page_num <= 1 {
-        format!("{base}/")
+        base_path.to_owned()
     } else {
-        format!("{base}/page/{page_num}/")
+        format!("{base_path}page/{page_num}/")
     }
 }
 
@@ -85,18 +83,22 @@ pub struct PaginationItem {
 }
 
 impl PaginationVars {
-    /// Creates metadata for a page in `1..=total_pages`.
+    /// Creates metadata for a page in `1..=total_pages` of the listing at `base_path`, a URL path
+    /// ending in `/`.
     ///
     /// # Panics
     ///
-    /// Panics if the page is outside that range.
+    /// Panics if the page is outside that range or `base_path` lacks its trailing slash.
     #[must_use]
     pub fn new(base_path: &str, current_page: usize, total_pages: usize) -> Self {
         assert!(
             (1..=total_pages).contains(&current_page),
             "invalid page number"
         );
-        let base_url = base_path.trim_end_matches('/').to_owned();
+        let base_url = base_path
+            .strip_suffix('/')
+            .expect("listing URLs end with `/`")
+            .to_owned();
         let prev_url = (current_page > 1).then(|| paginated_url(base_path, current_page - 1));
         let next_url =
             (current_page < total_pages).then(|| paginated_url(base_path, current_page + 1));
@@ -193,13 +195,9 @@ mod tests {
 
     #[test]
     fn paginated_url_canonical_vs_subsequent() {
-        assert_eq!(paginated_url("/tags/rust", 1), "/tags/rust/");
-        assert_eq!(paginated_url("/tags/rust", 2), "/tags/rust/page/2/");
-    }
-
-    #[test]
-    fn paginated_url_strips_trailing_slash() {
+        assert_eq!(paginated_url("/tags/rust/", 1), "/tags/rust/");
         assert_eq!(paginated_url("/tags/rust/", 2), "/tags/rust/page/2/");
+        assert_eq!(paginated_url("/", 2), "/page/2/");
     }
 
     // ── PaginationVars ──
@@ -244,7 +242,7 @@ mod tests {
             ),
             (10, 10, vec![Some(1), None, Some(8), Some(9), Some(10)]),
         ] {
-            let vars = PaginationVars::new("/t", current, total);
+            let vars = PaginationVars::new("/t/", current, total);
             let expected: Vec<_> = numbers
                 .into_iter()
                 .map(|number| {

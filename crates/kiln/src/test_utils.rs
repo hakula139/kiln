@@ -2,11 +2,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
-use crate::config::Config;
+use crate::config::{Config, ImageConfig};
 use crate::content::frontmatter::Frontmatter;
 use crate::content::page::{Page, PageKind};
-use crate::i18n::I18n;
-use crate::render::lqip::{ImageConfig, ImageResolver};
+use crate::i18n::{I18n, Language};
+use crate::render::lqip::ImageResolver;
 use crate::render::pipeline::{RenderedPage, render_page};
 use crate::render::{PageResources, RenderOptions};
 use crate::static_assets::StaticAssetManifest;
@@ -34,7 +34,12 @@ pub(crate) fn test_i18n() -> I18n {
         r#"all_posts = "All Posts""#,
     )
     .unwrap();
-    I18n::load(Path::new("/nonexistent-site"), Some(dir.path()), "en").unwrap()
+    I18n::load(
+        Path::new("/nonexistent-site"),
+        Some(dir.path()),
+        &Language::default(),
+    )
+    .unwrap()
 }
 
 /// Creates a minimal standalone `Page` with the given title and an empty body.
@@ -63,7 +68,7 @@ pub(crate) fn test_resources() -> PageResources<'static> {
         images: &IMAGES,
         assets: &ASSETS,
         page_url: "/",
-        deployment_prefix: "",
+        deployment_prefix: "/",
     }
 }
 

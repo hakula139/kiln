@@ -10,9 +10,56 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::Path;
+use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result, bail, ensure};
+use serde::{Deserialize, Serialize};
+
+use crate::content::read_optional;
+
+/// BCP 47 language tag selecting translation files. Tags are limited to ASCII letters, digits
+/// and hyphens, starting with a letter, because they are interpolated into file names.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(try_from = "String")]
+pub struct Language(String);
+
+impl Language {
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Default for Language {
+    fn default() -> Self {
+        Self("en".to_owned())
+    }
+}
+
+impl TryFrom<String> for Language {
+    type Error = String;
+
+    fn try_from(tag: String) -> Result<Self, String> {
+        if tag.starts_with(|c: char| c.is_ascii_alphabetic())
+            && tag.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+        {
+            Ok(Self(tag))
+        } else {
+            Err(format!(
+                "invalid language tag `{tag}`: expected BCP 47 shape (ASCII letters / digits / hyphens)"
+            ))
+        }
+    }
+}
+
+impl FromStr for Language {
+    type Err = String;
+
+    fn from_str(tag: &str) -> Result<Self, String> {
+        tag.to_owned().try_into()
+    }
+}
 
 /// Merged i18n strings for a single active language.
 #[derive(Debug, Clone)]
@@ -23,20 +70,9 @@ pub struct I18n {
 #[derive(Debug)]
 struct Inner {
     strings: HashMap<String, String>,
-    /// Active BCP 47 language tag.
-    language: String,
-    /// Warnings already emitted, so each one is logged once.
-    warned: Mutex<HashSet<WarnKey>>,
-}
-
-/// Deduplication key for warnings emitted by [`I18n::t_interp`]. Each unique variant is logged
-/// once per `I18n` instance. `t()` misses are not warnings. See [`I18n::t`].
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-enum WarnKey {
-    /// Placeholder `{name}` missing from `t_interp` args for `key`.
-    MissingPlaceholder { key: String, name: String },
-    /// Unclosed `{` in the value for `key`.
-    UnclosedPlaceholder { key: String, partial: String },
+    /// Key and warning pairs already emitted by [`I18n::t_interp`], so each one is logged once.
+    /// `t()` misses are not warnings. See [`I18n::t`].
+    warned: Mutex<HashSet<(String, Warning<String>)>>,
 }
 
 impl I18n {
@@ -47,59 +83,32 @@ impl I18n {
     ///
     /// # Errors
     ///
-    /// Returns an error if the language tag is invalid, locale files cannot be read, a theme
-    /// with locale files lacks `en.toml`, or a loaded file is not a flat table of strings.
-    pub fn load(site_root: &Path, theme_dir: Option<&Path>, language: &str) -> Result<Self> {
-        // Paths below interpolate `language` into filenames, so guard against traversal or
-        // oddly-shaped tags before anything touches the FS.
-        if !language
-            .chars()
-            .next()
-            .is_some_and(|c| c.is_ascii_alphabetic())
-            || !language
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '-')
-        {
-            bail!(
-                "invalid language tag `{language}`: expected BCP 47 shape (ASCII letters / digits / hyphens)",
-            );
-        }
-
+    /// Returns an error if locale files cannot be read, a theme with locale files lacks
+    /// `en.toml`, or a loaded file is not a flat table of strings.
+    pub fn load(site_root: &Path, theme_dir: Option<&Path>, language: &Language) -> Result<Self> {
+        let file_name = format!("{}.toml", language.as_str());
         let mut strings: HashMap<String, String> = HashMap::new();
 
         if let Some(theme_dir) = theme_dir {
             let theme_i18n_dir = theme_dir.join("i18n");
             if theme_i18n_dir.is_dir() {
-                let en_path = theme_i18n_dir.join("en.toml");
                 if theme_has_english_fallback(&theme_i18n_dir)? {
-                    merge_from_file(&mut strings, &en_path)?;
+                    merge_file(&mut strings, &theme_i18n_dir.join("en.toml"))?;
                 }
-
-                let lang_path = theme_i18n_dir.join(format!("{language}.toml"));
-                if language != "en" && lang_path.exists() {
-                    merge_from_file(&mut strings, &lang_path)?;
+                if language.as_str() != "en" {
+                    merge_file(&mut strings, &theme_i18n_dir.join(&file_name))?;
                 }
             }
         }
 
-        let site_path = site_root.join("i18n").join(format!("{language}.toml"));
-        if site_path.exists() {
-            merge_from_file(&mut strings, &site_path)?;
-        }
+        merge_file(&mut strings, &site_root.join("i18n").join(&file_name))?;
 
         Ok(Self {
             inner: Arc::new(Inner {
                 strings,
-                language: language.to_owned(),
                 warned: Mutex::new(HashSet::new()),
             }),
         })
-    }
-
-    /// The active BCP 47 language tag (e.g., `"en"`, `"zh-Hans"`).
-    #[must_use]
-    pub fn language(&self) -> &str {
-        &self.inner.language
     }
 
     /// Looks up a string by key, or returns the key itself on miss.
@@ -119,36 +128,22 @@ impl I18n {
     #[must_use]
     pub fn t_interp(&self, key: &str, args: &BTreeMap<&str, impl AsRef<str>>) -> String {
         let template = self.t(key);
-        interpolate(&template, args, |warning| self.emit_warning(key, warning))
+        interpolate(&template, args, |warning| self.warn_once(key, warning))
     }
 
-    fn emit_warning(&self, key: &str, warning: InterpolateWarning<'_>) {
-        let warn_key = match warning {
-            InterpolateWarning::MissingPlaceholder(name) => WarnKey::MissingPlaceholder {
-                key: key.to_owned(),
-                name: name.to_owned(),
-            },
-            InterpolateWarning::UnclosedPlaceholder(partial) => WarnKey::UnclosedPlaceholder {
-                key: key.to_owned(),
-                partial: partial.to_owned(),
-            },
-        };
-        self.warn_once(warn_key);
-    }
-
-    fn warn_once(&self, warning: WarnKey) {
+    fn warn_once(&self, key: &str, warning: Warning<&str>) {
         let mut warned = self.inner.warned.lock().expect("i18n warned poisoned");
-        if !warned.insert(warning.clone()) {
+        if !warned.insert((key.to_owned(), warning.map(str::to_owned))) {
             return;
         }
         // Drop the guard before calling into `tracing`, since the subscriber may run arbitrary code
         // and holding the lock across it risks a re-entrant deadlock.
         drop(warned);
         match warning {
-            WarnKey::MissingPlaceholder { key, name } => {
+            Warning::MissingPlaceholder(name) => {
                 tracing::warn!(key, name, "missing placeholder for i18n key");
             }
-            WarnKey::UnclosedPlaceholder { key, partial } => {
+            Warning::UnclosedPlaceholder(partial) => {
                 tracing::warn!(key, partial, "unclosed placeholder in i18n key");
             }
         }
@@ -181,9 +176,11 @@ fn theme_has_english_fallback(dir: &Path) -> Result<bool> {
     Ok(has_english)
 }
 
-fn merge_from_file(strings: &mut HashMap<String, String>, path: &Path) -> Result<()> {
-    let contents = fs::read_to_string(path)
-        .with_context(|| format!("failed to read i18n file {}", path.display()))?;
+/// Merges the strings of a locale file, if it exists, over those already loaded.
+fn merge_file(strings: &mut HashMap<String, String>, path: &Path) -> Result<()> {
+    let Some(contents) = read_optional(path)? else {
+        return Ok(());
+    };
     let table: toml::Table = toml::from_str(&contents)
         .with_context(|| format!("failed to parse i18n file {}", path.display()))?;
 
@@ -202,12 +199,20 @@ fn merge_from_file(strings: &mut HashMap<String, String>, path: &Path) -> Result
 
 // ── Interpolation ──
 
-/// Non-fatal signal emitted by [`interpolate`] for the caller to dedup and
-/// log as it sees fit. Both variants borrow from the template / args.
-#[derive(Debug, Clone, Copy)]
-enum InterpolateWarning<'a> {
-    MissingPlaceholder(&'a str),
-    UnclosedPlaceholder(&'a str),
+/// Non-fatal interpolation problem, carrying the placeholder name or the unclosed partial text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum Warning<S> {
+    MissingPlaceholder(S),
+    UnclosedPlaceholder(S),
+}
+
+impl<S> Warning<S> {
+    fn map<T>(self, f: impl FnOnce(S) -> T) -> Warning<T> {
+        match self {
+            Self::MissingPlaceholder(name) => Warning::MissingPlaceholder(f(name)),
+            Self::UnclosedPlaceholder(partial) => Warning::UnclosedPlaceholder(f(partial)),
+        }
+    }
 }
 
 /// Interpolates `{name}` placeholders from `args` into `template`.
@@ -217,7 +222,7 @@ enum InterpolateWarning<'a> {
 fn interpolate(
     template: &str,
     args: &BTreeMap<&str, impl AsRef<str>>,
-    mut warn: impl FnMut(InterpolateWarning<'_>),
+    mut warn: impl FnMut(Warning<&str>),
 ) -> String {
     let mut out = String::with_capacity(template.len());
     let mut chars = template.char_indices().peekable();
@@ -240,7 +245,7 @@ fn interpolate(
                     name.push(c);
                 }
                 if !closed {
-                    warn(InterpolateWarning::UnclosedPlaceholder(&name));
+                    warn(Warning::UnclosedPlaceholder(&name));
                     out.push('{');
                     out.push_str(&name);
                     break;
@@ -248,7 +253,7 @@ fn interpolate(
                 if let Some(value) = args.get(name.as_str()) {
                     out.push_str(value.as_ref());
                 } else {
-                    warn(InterpolateWarning::MissingPlaceholder(&name));
+                    warn(Warning::MissingPlaceholder(&name));
                 }
             }
             '}' => {
@@ -271,6 +276,7 @@ mod tests {
     use indoc::indoc;
 
     use super::*;
+    use crate::test_utils::write_test_file;
 
     // ── load ──
 
@@ -278,14 +284,15 @@ mod tests {
     fn load_language_en_loads_en_toml_as_sole_source() {
         let site = tempfile::tempdir().unwrap();
         let theme = tempfile::tempdir().unwrap();
-        write_file(
-            &theme.path().join("i18n/en.toml"),
+        write_test_file(
+            theme.path(),
+            "i18n/en.toml",
             indoc! {r#"
                 all_posts = "All Posts"
             "#},
         );
 
-        let i18n = I18n::load(site.path(), Some(theme.path()), "en").unwrap();
+        let i18n = I18n::load(site.path(), Some(theme.path()), &lang("en")).unwrap();
         assert_eq!(i18n.t("all_posts").as_ref(), "All Posts");
     }
 
@@ -294,35 +301,37 @@ mod tests {
         let site = tempfile::tempdir().unwrap();
         let theme = tempfile::tempdir().unwrap();
 
-        write_file(
-            &theme.path().join("i18n/en.toml"),
+        write_test_file(
+            theme.path(),
+            "i18n/en.toml",
             indoc! {r#"
                 all_posts = "All Posts"
                 back_to_top = "Back to Top"
                 only_in_en = "from en"
             "#},
         );
-        write_file(
-            &theme.path().join("i18n/zh-Hans.toml"),
+        write_test_file(
+            theme.path(),
+            "i18n/zh-Hans.toml",
             indoc! {r#"
                 all_posts = "全部文章"
                 back_to_top = "回到顶部"
                 translated_only = "本地化"
             "#},
         );
-        write_file(
-            &site.path().join("i18n/zh-Hans.toml"),
+        write_test_file(
+            site.path(),
+            "i18n/zh-Hans.toml",
             indoc! {r#"
                 back_to_top = "回顶"
             "#},
         );
 
-        let i18n = I18n::load(site.path(), Some(theme.path()), "zh-Hans").unwrap();
+        let i18n = I18n::load(site.path(), Some(theme.path()), &lang("zh-Hans")).unwrap();
         assert_eq!(i18n.t("back_to_top").as_ref(), "回顶");
         assert_eq!(i18n.t("all_posts").as_ref(), "全部文章");
         assert_eq!(i18n.t("only_in_en").as_ref(), "from en");
         assert_eq!(i18n.t("translated_only").as_ref(), "本地化");
-        assert_eq!(i18n.language(), "zh-Hans");
     }
 
     #[test]
@@ -330,28 +339,30 @@ mod tests {
         let site = tempfile::tempdir().unwrap();
         let theme = tempfile::tempdir().unwrap();
 
-        write_file(
-            &site.path().join("i18n/en.toml"),
+        write_test_file(
+            site.path(),
+            "i18n/en.toml",
             indoc! {r#"
                 greeting = "Hello"
             "#},
         );
 
-        let i18n = I18n::load(site.path(), Some(theme.path()), "en").unwrap();
+        let i18n = I18n::load(site.path(), Some(theme.path()), &lang("en")).unwrap();
         assert_eq!(i18n.t("greeting").as_ref(), "Hello");
     }
 
     #[test]
     fn load_site_only_without_theme() {
         let site = tempfile::tempdir().unwrap();
-        write_file(
-            &site.path().join("i18n/zh-Hans.toml"),
+        write_test_file(
+            site.path(),
+            "i18n/zh-Hans.toml",
             indoc! {r#"
                 hello = "你好"
             "#},
         );
 
-        let i18n = I18n::load(site.path(), None, "zh-Hans").unwrap();
+        let i18n = I18n::load(site.path(), None, &lang("zh-Hans")).unwrap();
         assert_eq!(i18n.t("hello").as_ref(), "你好");
     }
 
@@ -359,10 +370,10 @@ mod tests {
     fn load_ignores_non_toml_entries_in_i18n_dir() {
         let site = tempfile::tempdir().unwrap();
         let theme = tempfile::tempdir().unwrap();
-        write_file(&theme.path().join("i18n/README.md"), "translator notes");
+        write_test_file(theme.path(), "i18n/README.md", "translator notes");
         fs::create_dir_all(theme.path().join("i18n/.backup")).unwrap();
 
-        let i18n = I18n::load(site.path(), Some(theme.path()), "en").unwrap();
+        let i18n = I18n::load(site.path(), Some(theme.path()), &lang("en")).unwrap();
         assert_eq!(i18n.t("greeting"), "greeting");
     }
 
@@ -373,7 +384,7 @@ mod tests {
         let site = tempfile::tempdir().unwrap();
         let theme = tempfile::tempdir().unwrap();
 
-        let i18n = I18n::load(site.path(), Some(theme.path()), "en").unwrap();
+        let i18n = I18n::load(site.path(), Some(theme.path()), &lang("en")).unwrap();
         assert_eq!(i18n.t("anything").as_ref(), "anything");
     }
 
@@ -381,9 +392,9 @@ mod tests {
     fn load_missing_language_uses_english_fallback() {
         let site = tempfile::tempdir().unwrap();
         let theme = tempfile::tempdir().unwrap();
-        write_file(&theme.path().join("i18n/en.toml"), r#"greeting = "Hello""#);
+        write_test_file(theme.path(), "i18n/en.toml", r#"greeting = "Hello""#);
 
-        let i18n = I18n::load(site.path(), Some(theme.path()), "fr").unwrap();
+        let i18n = I18n::load(site.path(), Some(theme.path()), &lang("fr")).unwrap();
         assert_eq!(i18n.t("greeting"), "Hello");
     }
 
@@ -391,9 +402,9 @@ mod tests {
     fn load_theme_english_filename_case_returns_error() {
         let site = tempfile::tempdir().unwrap();
         let theme = tempfile::tempdir().unwrap();
-        write_file(&theme.path().join("i18n/En.toml"), r#"greeting = "Hello""#);
+        write_test_file(theme.path(), "i18n/En.toml", r#"greeting = "Hello""#);
 
-        let error = I18n::load(site.path(), Some(theme.path()), "fr").unwrap_err();
+        let error = I18n::load(site.path(), Some(theme.path()), &lang("fr")).unwrap_err();
         assert!(
             error
                 .to_string()
@@ -405,14 +416,15 @@ mod tests {
     fn load_missing_en_fallback_returns_error() {
         let site = tempfile::tempdir().unwrap();
         let theme = tempfile::tempdir().unwrap();
-        write_file(
-            &theme.path().join("i18n/zh-Hans.toml"),
+        write_test_file(
+            theme.path(),
+            "i18n/zh-Hans.toml",
             indoc! {r#"
                 greeting = "你好"
             "#},
         );
 
-        let err = I18n::load(site.path(), Some(theme.path()), "zh-Hans")
+        let err = I18n::load(site.path(), Some(theme.path()), &lang("zh-Hans"))
             .unwrap_err()
             .to_string();
         assert!(
@@ -426,9 +438,9 @@ mod tests {
         for contents in [r#"nested = { key = "value" }"#, "count = 42"] {
             let site = tempfile::tempdir().unwrap();
             let theme = tempfile::tempdir().unwrap();
-            write_file(&theme.path().join("i18n/en.toml"), contents);
+            write_test_file(theme.path(), "i18n/en.toml", contents);
 
-            let error = I18n::load(site.path(), Some(theme.path()), "en").unwrap_err();
+            let error = I18n::load(site.path(), Some(theme.path()), &lang("en")).unwrap_err();
             assert!(
                 error.to_string().contains("must be a string"),
                 "{contents}: {error}"
@@ -440,9 +452,9 @@ mod tests {
     fn load_malformed_toml_returns_error() {
         let site = tempfile::tempdir().unwrap();
         let theme = tempfile::tempdir().unwrap();
-        write_file(&theme.path().join("i18n/en.toml"), "key = \n");
+        write_test_file(theme.path(), "i18n/en.toml", "key = \n");
 
-        let err = I18n::load(site.path(), Some(theme.path()), "en")
+        let err = I18n::load(site.path(), Some(theme.path()), &lang("en"))
             .unwrap_err()
             .to_string();
         assert!(
@@ -452,18 +464,19 @@ mod tests {
     }
 
     #[test]
-    fn load_invalid_language_returns_error() {
-        let site = tempfile::tempdir().unwrap();
-        let theme = tempfile::tempdir().unwrap();
+    fn load_unreadable_locale_returns_error() {
+        for in_theme in [true, false] {
+            let site = tempfile::tempdir().unwrap();
+            let theme = tempfile::tempdir().unwrap();
+            write_test_file(theme.path(), "i18n/en.toml", "");
+            let locale_dir = if in_theme { theme.path() } else { site.path() }.join("i18n");
+            let locale = locale_dir.join("fr.toml");
+            fs::create_dir_all(&locale).unwrap();
 
-        for bad in ["../etc/passwd", "", "-en", "1en", "en_US", "en/US"] {
-            let err = I18n::load(site.path(), Some(theme.path()), bad)
+            let err = I18n::load(site.path(), Some(theme.path()), &lang("fr"))
                 .unwrap_err()
                 .to_string();
-            assert!(
-                err.contains("invalid language tag"),
-                "should reject {bad:?}, got: {err}",
-            );
+            assert_eq!(err, format!("failed to read {}", locale.display()));
         }
     }
 
@@ -536,10 +549,10 @@ mod tests {
         }
         let warned = i18n.inner.warned.lock().unwrap();
         assert_eq!(warned.len(), 1);
-        assert!(warned.contains(&WarnKey::MissingPlaceholder {
-            key: "hello".to_owned(),
-            name: "who".to_owned(),
-        }));
+        assert!(warned.contains(&(
+            "hello".to_owned(),
+            Warning::MissingPlaceholder("who".to_owned())
+        )));
     }
 
     #[test]
@@ -551,17 +564,14 @@ mod tests {
         }
         let warned = i18n.inner.warned.lock().unwrap();
         assert_eq!(warned.len(), 1);
-        assert!(warned.contains(&WarnKey::UnclosedPlaceholder {
-            key: "bad".to_owned(),
-            partial: "unclosed tail".to_owned(),
-        }));
+        assert!(warned.contains(&(
+            "bad".to_owned(),
+            Warning::UnclosedPlaceholder("unclosed tail".to_owned())
+        )));
     }
 
-    fn write_file(path: &Path, contents: &str) {
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).unwrap();
-        }
-        fs::write(path, contents).unwrap();
+    fn lang(tag: &str) -> Language {
+        tag.parse().unwrap()
     }
 
     fn make_i18n(pairs: &[(&str, &str)]) -> I18n {
@@ -572,7 +582,6 @@ mod tests {
         I18n {
             inner: Arc::new(Inner {
                 strings,
-                language: "en".to_owned(),
                 warned: Mutex::new(HashSet::new()),
             }),
         }

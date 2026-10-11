@@ -6,7 +6,8 @@ use indoc::{formatdoc, indoc};
 use scraper::{Html, Selector};
 
 use kiln::build::BuildOptions;
-use kiln::render::lqip::{ImageConfig, ImageResolver};
+use kiln::config::ImageConfig;
+use kiln::render::lqip::ImageResolver;
 
 use super::support::{TestSite, fingerprint, stylesheet_url};
 

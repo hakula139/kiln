@@ -21,7 +21,7 @@ fn build_routes_share_prefix_metadata_and_sitemap() {
     site.build().unwrap();
 
     let page = site.read("posts/one/index.html");
-    assert!(page.contains("2025-01-02T00:00:00Z"));
+    assert!(page.contains("2025-01-02T00:00:00+00:00"));
     assert_eq!(page.matches("Rust language").count(), 1);
     assert!(page.contains("https://example.com/blog/tags/rust/"));
     let home = site.read("page/2/index.html");

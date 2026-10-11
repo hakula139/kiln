@@ -42,7 +42,7 @@ fn build_renders_post_with_and_without_minification() {
         r#"<meta name="description" content="A test post">"#,
         r#"<link rel="canonical" href="https://example.com/posts/hello/">"#,
         "<h1>Hello World</h1>",
-        r#"<time datetime="2026-02-24T12:34:56Z">"#,
+        r#"<time datetime="2026-02-24T12:34:56+00:00">"#,
         r##"<a href="#first">First</a>"##,
         "<p>This is a test <strong>post</strong>.</p>",
     ] {
