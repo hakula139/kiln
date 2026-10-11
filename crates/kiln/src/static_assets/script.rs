@@ -53,13 +53,14 @@ pub(crate) fn fingerprint_scripts<'a>(
             Some(ScriptImports::Computed) => return Ok(()),
             None => Vec::new(),
         };
-        let url = join_site_url(prefix, &site_path(path));
-        linked.insert(site_path(path));
+        let key = site_path(path);
+        let url = join_site_url(prefix, &key);
+        linked.insert(key);
         linked.extend(
             specifiers
                 .iter()
                 .filter(|specifier| !is_passthrough(specifier))
-                .filter_map(|specifier| site_key(specifier, &url, prefix)),
+                .filter_map(|specifier| site_key(specifier, &url, prefix).ok().flatten()),
         );
     }
 

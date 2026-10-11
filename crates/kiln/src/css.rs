@@ -304,15 +304,12 @@ fn publish_urls(
         .map_err(|error| anyhow::anyhow!("{error}"))?;
     let mut css = result.code;
     for dependency in result.dependencies.unwrap_or_default() {
-        let (placeholder, url) = match dependency {
-            Dependency::Import(import) => (import.placeholder, import.url),
-            Dependency::Url(url) => {
-                let source = PathBuf::from(&url.loc.file_path);
-                let published = published_url(assets, manifest, style, &source, &url.url)?;
-                (url.placeholder, published)
-            }
+        let (placeholder, url, source) = match dependency {
+            Dependency::Import(import) => (import.placeholder, import.url, import.loc.file_path),
+            Dependency::Url(url) => (url.placeholder, url.url, url.loc.file_path),
         };
-        css = css.replace(&css_string(&placeholder)?, &css_string(&url)?);
+        let published = published_url(assets, manifest, style, Path::new(&source), &url)?;
+        css = css.replace(&css_string(&placeholder)?, &css_string(&published)?);
     }
     Ok(css)
 }

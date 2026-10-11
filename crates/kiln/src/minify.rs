@@ -105,6 +105,13 @@ pub(crate) enum AssetKind {
     Module,
 }
 
+impl AssetKind {
+    /// Whether the kind is JavaScript, either a classic script or an ES module.
+    pub(crate) fn is_script(self) -> bool {
+        matches!(self, Self::Script | Self::Module)
+    }
+}
+
 /// Minifies CSS and JS files under `output_dir` in place.
 pub(crate) fn minify_static_assets(output_dir: &Path) -> Result<MinifyStats> {
     minify_matching(output_dir, |kind| kind != AssetKind::Html)

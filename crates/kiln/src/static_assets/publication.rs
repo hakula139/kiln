@@ -3,11 +3,10 @@ use std::path::{Component, Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 
-use super::{
-    StaticAssetManifest, has_extension, is_media, is_script, rename_fingerprinted, site_path,
-};
+use super::{StaticAssetManifest, has_extension, is_media, rename_fingerprinted, site_path};
 use crate::content::is_private;
 use crate::content::page::Page;
+use crate::minify::{AssetKind, asset_kind};
 use crate::output::{copy_directory, copy_file};
 
 #[derive(Default)]
@@ -143,7 +142,7 @@ impl PublishedAssets {
     pub(crate) fn scripts(&self) -> impl Iterator<Item = (&Path, Naming)> {
         self.files
             .iter()
-            .filter(|(path, _)| is_script(path))
+            .filter(|(path, _)| asset_kind(path).is_some_and(AssetKind::is_script))
             .map(|(path, file)| (path.as_path(), file.naming))
     }
 
@@ -184,26 +183,28 @@ impl PublishedAssets {
 fn reserved_name_hint(path: &Path, naming: Naming) -> Option<&'static str> {
     let stem = path.file_stem()?.to_str()?;
     let (name, _) = stem.split_once('.')?;
+    let is_script = asset_kind(path).is_some_and(AssetKind::is_script);
     if is_media(path) {
         Some(
             "Move it to assets/ to publish it under a content-addressed name, or remove the dots from its stem.",
         )
-    } else if is_script(path) && naming == Naming::Fixed {
+    } else if is_script && naming == Naming::Fixed {
         Some(
             "Remove the dots from its stem, or move it to assets/ to publish it under a content-addressed name.",
         )
-    } else if is_script(path) {
+    } else if is_script {
         Some(
             "Remove the dots from its stem, since scripts that import or are imported keep their source names.",
         )
     } else if has_extension(path, &["css"])
-        && matches!(name, "page" | "site")
-        && path
-            .parent()
-            .is_some_and(|parent| parent.ends_with("assets/css"))
+        && path.parent().is_some_and(|parent| match name {
+            "site" => parent == Path::new("assets/css"),
+            "page" => parent.ends_with("assets/css"),
+            _ => false,
+        })
     {
         Some(
-            "Rename it, since site.*.css and page.*.css under assets/css/ are reserved for compiled stylesheets.",
+            "Rename it, since assets/css/site.*.css and page.*.css under any assets/css/ are reserved for compiled stylesheets.",
         )
     } else {
         None
@@ -699,6 +700,7 @@ mod tests {
                 "static/favicon.ico",
                 "static/app.js",
                 "static/site.min.css",
+                "static/posts/a/assets/css/site.min.css",
                 "static/data.v1.json",
             ],
         );
@@ -729,6 +731,11 @@ mod tests {
             (
                 "assets/css/site.min.css",
                 "/assets/css/site.min.css",
+                "reserved for compiled stylesheets",
+            ),
+            (
+                "static/posts/a/assets/css/page.print.css",
+                "/posts/a/assets/css/page.print.css",
                 "reserved for compiled stylesheets",
             ),
         ] {

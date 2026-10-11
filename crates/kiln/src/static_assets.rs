@@ -4,6 +4,7 @@ pub(crate) mod script;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::str::Utf8Error;
 
 use anyhow::{Context, Result, bail};
 use percent_encoding::percent_decode_str;
@@ -86,7 +87,7 @@ impl StaticAssetManifest {
     }
 
     /// Resolves an authored URL against a page's output URL, retaining its query and fragment, or
-    /// returns `None` for URLs outside the site.
+    /// returns `None` for URLs outside the site or without a path.
     ///
     /// Root-relative URLs start with the configured `base_url` path, whichever base URL the build
     /// publishes under.
@@ -136,6 +137,9 @@ impl StaticAssetManifest {
         }
         let end = url.find(['?', '#']).unwrap_or(url.len());
         let (path, suffix) = url.split_at(end);
+        if path.is_empty() {
+            return Ok(None);
+        }
         let prefix = if path.starts_with('/') {
             root_prefix
         } else {
@@ -154,29 +158,36 @@ impl StaticAssetManifest {
     }
 
     fn lookup(&self, path: &str, page_url: &str, prefix: &str) -> Result<Option<&Path>> {
-        let Some(key) = site_key(path, page_url, prefix) else {
-            return Ok(None);
+        let published = match site_key(path, page_url, prefix) {
+            Ok(None) => return Ok(None),
+            Ok(Some(key)) => self.paths.get(&key),
+            Err(_) => None,
         };
-        self.paths
-            .get(&key)
+        published
             .map(|published| Some(published.as_path()))
             .with_context(|| format!("static asset not found: {path}"))
     }
 }
 
-/// Returns the manifest key of a URL path resolved against `page_url`, or `None` when it falls
-/// outside the deployment prefix.
-fn site_key(path: &str, page_url: &str, prefix: &str) -> Option<String> {
-    let base = url::Url::parse(page_url)
+/// Returns the manifest key of a URL path resolved against `page_url`, `None` when it falls
+/// outside the deployment prefix, or an error when it does not decode to a UTF-8 file path.
+fn site_key(path: &str, page_url: &str, prefix: &str) -> Result<Option<String>, Utf8Error> {
+    let Some(resolved) = url::Url::parse(page_url)
         .or_else(|_| url::Url::parse("https://kiln.invalid/")?.join(page_url))
-        .ok()?;
-    let resolved = base.join(path).ok()?;
-    let path = resolved
+        .and_then(|base| base.join(path))
+        .ok()
+    else {
+        return Ok(None);
+    };
+    let Some(path) = resolved
         .path()
         .strip_prefix(prefix.trim_end_matches('/'))
-        .filter(|path| path.starts_with('/'))?;
-    let decoded = percent_decode_str(path).decode_utf8().ok()?;
-    Some(site_path(Path::new(decoded.trim_start_matches('/'))))
+        .filter(|path| path.starts_with('/'))
+    else {
+        return Ok(None);
+    };
+    let decoded = percent_decode_str(path).decode_utf8()?;
+    Ok(Some(site_path(Path::new(decoded.trim_start_matches('/')))))
 }
 
 fn site_path(path: &Path) -> String {
@@ -197,11 +208,6 @@ fn is_media(path: &Path) -> bool {
             "woff2",
         ],
     )
-}
-
-/// Whether a file is JavaScript.
-fn is_script(path: &Path) -> bool {
-    has_extension(path, &["js", "mjs"])
 }
 
 fn has_extension(path: &Path, extensions: &[&str]) -> bool {
@@ -255,6 +261,9 @@ fn content_fingerprint(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
+
     use super::*;
 
     // ── StaticAssetManifest::fingerprint ──
@@ -316,6 +325,31 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn fingerprint_read_only_parent_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let css = dir.path().join("css");
+        fs::create_dir(&css).unwrap();
+        fs::write(css.join("site.css"), "abc").unwrap();
+        fs::set_permissions(&css, fs::Permissions::from_mode(0o555)).unwrap();
+
+        let result =
+            StaticAssetManifest::default().fingerprint(dir.path(), Path::new("css/site.css"));
+        fs::set_permissions(&css, fs::Permissions::from_mode(0o755)).unwrap();
+
+        let err = format!("{:#}", result.unwrap_err());
+        assert!(
+            err.contains(&format!(
+                "failed to rename {} to {}",
+                css.join("site.css").display(),
+                css.join("site.ba7816bf8f01.css").display()
+            )),
+            "got: {err}"
+        );
+        assert_eq!(fs::read_to_string(css.join("site.css")).unwrap(), "abc");
+    }
+
     // ── StaticAssetManifest::asset_url ──
 
     #[test]
@@ -372,13 +406,15 @@ mod tests {
     }
 
     #[test]
-    fn resolve_local_external_and_outside_prefix_urls_return_none() {
+    fn resolve_local_external_empty_and_outside_prefix_urls_return_none() {
         let manifest = photo_manifest("/blog/", "/");
         for src in [
             "https://cdn.example.com/a.avif",
             "//cdn.example.com/a.avif",
             "data:image/png;base64,abc",
             "#figure",
+            "",
+            "?v=1",
             "/posts/a/photo%20%25.avif",
         ] {
             assert!(

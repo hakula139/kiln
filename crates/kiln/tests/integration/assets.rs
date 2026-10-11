@@ -2,6 +2,7 @@
 use std::fs;
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
+use std::path::Path;
 
 use indoc::{formatdoc, indoc};
 use scraper::{Html, Selector};
@@ -148,7 +149,7 @@ fn build_image_urls_and_metadata_share_published_paths() {
             } else {
                 ""
             };
-            let meta = resolver.resolve(&format!("/{published}"), None).unwrap();
+            let meta = resolver.resolve_published(Path::new(published)).unwrap();
             (
                 format!("{origin}/blog/{published}?q=1#view"),
                 Some(meta.width.to_string()),
@@ -199,9 +200,13 @@ fn build_base_url_override_republishes_authored_root_paths() {
         "#},
     )
     .write("assets/images/photo.png", "image")
+    .write("static/vendor.css", ".vendor { color: red; }")
     .write(
         "assets/css/_src/style.css",
-        ".photo { background: url(/blog/assets/images/photo.png); }",
+        indoc! {r#"
+            @import "/blog/vendor.css";
+            .photo { background: url(/blog/assets/images/photo.png); }
+        "#},
     );
 
     site.build_with(&BuildOptions {
@@ -216,10 +221,9 @@ fn build_base_url_override_republishes_authored_root_paths() {
             .contains(&format!(r#"src="/preview/{photo}?v=1""#))
     );
     let name = photo.rsplit('/').next().unwrap();
-    assert!(
-        site.read_hashed("assets/css/site.css")
-            .contains(&format!("../images/{name}"))
-    );
+    let css = site.read_hashed("assets/css/site.css");
+    assert!(css.contains(r#"@import "../../vendor.css""#), "{css}");
+    assert!(css.contains(&format!("../images/{name}")), "{css}");
 }
 
 #[test]

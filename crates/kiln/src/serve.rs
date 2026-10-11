@@ -735,13 +735,12 @@ mod tests {
         fs::write(css_dir.join("style.css"), ".before { color: red; }").unwrap();
         let output_dir = root.path().join("public");
         let site_css = || {
-            let paths: Vec<_> = fs::read_dir(output_dir.join("assets/css"))
+            let [path]: [_; 1] = fs::read_dir(output_dir.join("assets/css"))
                 .unwrap()
                 .map(|entry| entry.unwrap().path())
-                .collect();
-            let [path] = paths.as_slice() else {
-                panic!("expected one compiled stylesheet: {paths:?}");
-            };
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap();
             fs::read_to_string(path).unwrap()
         };
         rebuild(root.path(), "http://localhost:0", &output_dir).unwrap();

@@ -295,7 +295,6 @@ fn enrich_image_attrs(base: Option<&ImageAttrs>, meta: Option<&ImageMeta>) -> Op
     Some(attrs)
 }
 
-/// Expands enabled emoji and icon shortcodes in text outside code blocks.
 /// Expands shortcodes in text outside code blocks and autolinks.
 fn expand_shortcodes(
     events: impl Iterator<Item = Spanned>,
@@ -1248,25 +1247,41 @@ mod tests {
     }
 
     #[test]
-    fn render_document_missing_site_image_in_footnote_returns_error() {
-        let err = render_page(
-            indoc! {"
-                Body[^a].
+    fn render_document_keeps_images_without_a_path() {
+        let html = render("![Empty]() ![Query](?v=1)").content_html;
 
-                [^a]: ![Missing](missing.png?q=1)
-            "},
-            &test_engine(),
-            &RenderOptions::default(),
-            &test_resources(),
-            false,
-        )
-        .err()
-        .unwrap();
+        assert!(html.contains(r#"src="""#), "{html}");
+        assert!(html.contains(r#"src="?v=1""#), "{html}");
+    }
 
-        assert!(
-            format!("{err:#}").contains("static asset not found: missing.png"),
-            "{err:#}"
-        );
+    #[test]
+    fn render_document_missing_or_undecodable_site_image_returns_error() {
+        for (input, expected) in [
+            (
+                indoc! {"
+                    Body[^a].
+
+                    [^a]: ![Missing](missing.png?q=1)
+                "},
+                "static asset not found: missing.png",
+            ),
+            (
+                "![Undecodable](/%FF.png)",
+                "static asset not found: /%FF.png",
+            ),
+        ] {
+            let err = render_page(
+                input,
+                &test_engine(),
+                &RenderOptions::default(),
+                &test_resources(),
+                false,
+            )
+            .err()
+            .unwrap();
+
+            assert!(format!("{err:#}").contains(expected), "{err:#}");
+        }
     }
 
     #[test]

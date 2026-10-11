@@ -108,7 +108,7 @@ pub(super) fn tpl_asset_url(
         .resolve_template_url(url, base)
         .map_err(|error| invalid(error.to_string()))?
         .map(|asset| asset.url)
-        .ok_or_else(|| invalid(format!("asset path is outside the site: {url}")))
+        .ok_or_else(|| invalid(format!("asset path does not name a site file: {url}")))
 }
 
 // ── Asset Registration ──
@@ -416,19 +416,21 @@ mod tests {
         }
 
         let (_dir, engine) = asset_engine();
-        let error = engine
-            .env
-            .render_str(
-                r"{{ asset_url('../../../image.png') }}",
-                context! { __page_url => "/blog/posts/a/" },
-            )
-            .unwrap_err();
-        assert!(
-            error
-                .to_string()
-                .contains("asset path is outside the site: ../../../image.png"),
-            "{error}"
-        );
+        for url in ["../../../image.png", "?v=1"] {
+            let error = engine
+                .env
+                .render_str(
+                    &format!("{{{{ asset_url('{url}') }}}}"),
+                    context! { __page_url => "/blog/posts/a/" },
+                )
+                .unwrap_err();
+            assert!(
+                error
+                    .to_string()
+                    .contains(&format!("asset path does not name a site file: {url}")),
+                "{error}"
+            );
+        }
     }
 
     // ── tpl_register_script ──

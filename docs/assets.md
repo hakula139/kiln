@@ -26,6 +26,7 @@ Use `asset_url(path)` in templates, including directives, to resolve published f
 | Featured image          | Relative to the owning page output URL         | Site path, with the deployment prefix added       |
 | Markdown image          | Relative to the page output URL                | Path starting with the configured `base_url` path |
 | Compiled CSS `url(...)` | Relative to the stylesheet source declaring it | Path starting with the configured `base_url` path |
+| Compiled CSS `@import`  | Bundled into the stylesheet                    | Path starting with the configured `base_url` path |
 
 For a site whose `base_url` ends in `/blog/`, `asset_url('/images/photo.png')` and Markdown `![Photo](/blog/images/photo.png)` select the same published file. Authored root-relative paths follow the configured `base_url` even when `kiln serve` or `kiln build --base-url` publishes under another path, and kiln rewrites them to that path. Bundle-relative references such as `assets/photo.png` resolve from the page's output location, including when its slug differs from its source directory. Image dimensions and placeholders use that same published file.
 
@@ -52,7 +53,7 @@ The site entry takes precedence over the theme entry. To extend theme styles, im
 @import '../../../themes/my-theme/assets/css/_src/style.css';
 ```
 
-Local `@import` rules are bundled, and CSS nesting is supported. Relative `url(...)` paths are resolved from the declaring source, including imported partials, and rewritten for the published stylesheet.
+Relative `@import` rules are bundled, while root-relative ones remain `@import` rules that load the published file. CSS nesting is supported. Relative `url(...)` paths are resolved from the declaring source, including imported partials, and rewritten for the published stylesheet.
 
 These references must select a published shared asset or an asset belonging to the owning page. Private bundle inputs cannot be exposed through CSS. External URLs and fragment-only references pass through unchanged.
 
@@ -101,7 +102,7 @@ Templates receive the same URLs. `asset_url()` returns the hashed URL of a conte
 
 ### Cache Rules
 
-Content-addressed files can be cached immutably, while every other file needs revalidation. Their names have at least two dots in the final path segment, which hosts without regular expressions can still match. kiln rejects source-named files that would match the patterns below, namely an image, font or script whose stem contains a dot and a `site.*.css` or `page.*.css` file under `assets/css/`:
+Content-addressed files can be cached immutably, while every other file needs revalidation. Their names have at least two dots in the final path segment, which hosts without regular expressions can still match. kiln rejects source-named files that would match the patterns below, namely an image, font or script whose stem contains a dot, a `site.*.css` file in the root `assets/css/`, and a `page.*.css` file in any `assets/css/` directory:
 
 | Files                     | Patterns                                                                                   |
 | ------------------------- | ------------------------------------------------------------------------------------------ |
@@ -110,7 +111,7 @@ Content-addressed files can be cached immutably, while every other file needs re
 
 A vendor file such as `static/vendor.min.js` therefore needs a stem without dots, such as `vendor-min.js`, or a place under `assets/` where it can take a content-addressed name. Pagefind's generated scripts have no dots in their stems, and its stylesheets live outside `assets/css/`, so these patterns do not match them.
 
-A Cloudflare `_headers` placeholder matches one path segment, and `!` removes a header inherited from the catch-all rule:
+A Cloudflare `_headers` placeholder matches characters within one path segment, and `!` removes a header inherited from the catch-all rule:
 
 ```text
 /*
