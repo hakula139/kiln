@@ -281,23 +281,7 @@ mod tests {
     // ── load ──
 
     #[test]
-    fn load_language_en_loads_en_toml_as_sole_source() {
-        let site = tempfile::tempdir().unwrap();
-        let theme = tempfile::tempdir().unwrap();
-        write_test_file(
-            theme.path(),
-            "i18n/en.toml",
-            indoc! {r#"
-                all_posts = "All Posts"
-            "#},
-        );
-
-        let i18n = I18n::load(site.path(), Some(theme.path()), &lang("en")).unwrap();
-        assert_eq!(i18n.t("all_posts").as_ref(), "All Posts");
-    }
-
-    #[test]
-    fn load_merges_precedence_site_over_theme_lang_over_theme_en() {
+    fn merges_site_over_theme_language_over_theme_english() {
         let site = tempfile::tempdir().unwrap();
         let theme = tempfile::tempdir().unwrap();
 
@@ -335,39 +319,51 @@ mod tests {
     }
 
     #[test]
-    fn load_site_only_without_theme_i18n_dir() {
+    fn english_uses_en_toml_as_sole_source() {
         let site = tempfile::tempdir().unwrap();
         let theme = tempfile::tempdir().unwrap();
-
         write_test_file(
-            site.path(),
+            theme.path(),
             "i18n/en.toml",
             indoc! {r#"
-                greeting = "Hello"
+                all_posts = "All Posts"
             "#},
         );
 
         let i18n = I18n::load(site.path(), Some(theme.path()), &lang("en")).unwrap();
-        assert_eq!(i18n.t("greeting").as_ref(), "Hello");
+        assert_eq!(i18n.t("all_posts").as_ref(), "All Posts");
     }
 
     #[test]
-    fn load_site_only_without_theme() {
+    fn missing_language_falls_back_to_english() {
         let site = tempfile::tempdir().unwrap();
-        write_test_file(
-            site.path(),
-            "i18n/zh-Hans.toml",
-            indoc! {r#"
-                hello = "你好"
-            "#},
-        );
+        let theme = tempfile::tempdir().unwrap();
+        write_test_file(theme.path(), "i18n/en.toml", r#"greeting = "Hello""#);
 
-        let i18n = I18n::load(site.path(), None, &lang("zh-Hans")).unwrap();
-        assert_eq!(i18n.t("hello").as_ref(), "你好");
+        let i18n = I18n::load(site.path(), Some(theme.path()), &lang("fr")).unwrap();
+        assert_eq!(i18n.t("greeting"), "Hello");
     }
 
     #[test]
-    fn load_ignores_non_toml_entries_in_i18n_dir() {
+    fn loads_site_strings_without_theme_i18n() {
+        let theme = tempfile::tempdir().unwrap();
+        for theme_dir in [Some(theme.path()), None] {
+            let site = tempfile::tempdir().unwrap();
+            write_test_file(
+                site.path(),
+                "i18n/zh-Hans.toml",
+                indoc! {r#"
+                    hello = "你好"
+                "#},
+            );
+
+            let i18n = I18n::load(site.path(), theme_dir, &lang("zh-Hans")).unwrap();
+            assert_eq!(i18n.t("hello").as_ref(), "你好", "{theme_dir:?}");
+        }
+    }
+
+    #[test]
+    fn ignores_non_toml_entries() {
         let site = tempfile::tempdir().unwrap();
         let theme = tempfile::tempdir().unwrap();
         write_test_file(theme.path(), "i18n/README.md", "translator notes");
@@ -378,63 +374,24 @@ mod tests {
     }
 
     #[test]
-    fn load_with_no_files_returns_empty_i18n() {
-        // With no theme or site i18n dir, the loader must succeed and
-        // every `t()` call must miss (and render the key literal).
-        let site = tempfile::tempdir().unwrap();
-        let theme = tempfile::tempdir().unwrap();
+    fn rejects_theme_locales_without_en_toml() {
+        for locale in ["i18n/En.toml", "i18n/zh-Hans.toml"] {
+            let site = tempfile::tempdir().unwrap();
+            let theme = tempfile::tempdir().unwrap();
+            write_test_file(theme.path(), locale, r#"greeting = "Hello""#);
 
-        let i18n = I18n::load(site.path(), Some(theme.path()), &lang("en")).unwrap();
-        assert_eq!(i18n.t("anything").as_ref(), "anything");
+            let error = I18n::load(site.path(), Some(theme.path()), &lang("zh-Hans")).unwrap_err();
+            assert!(
+                error
+                    .to_string()
+                    .contains("missing required en.toml fallback"),
+                "{locale}: {error}"
+            );
+        }
     }
 
     #[test]
-    fn load_missing_language_uses_english_fallback() {
-        let site = tempfile::tempdir().unwrap();
-        let theme = tempfile::tempdir().unwrap();
-        write_test_file(theme.path(), "i18n/en.toml", r#"greeting = "Hello""#);
-
-        let i18n = I18n::load(site.path(), Some(theme.path()), &lang("fr")).unwrap();
-        assert_eq!(i18n.t("greeting"), "Hello");
-    }
-
-    #[test]
-    fn load_theme_english_filename_case_returns_error() {
-        let site = tempfile::tempdir().unwrap();
-        let theme = tempfile::tempdir().unwrap();
-        write_test_file(theme.path(), "i18n/En.toml", r#"greeting = "Hello""#);
-
-        let error = I18n::load(site.path(), Some(theme.path()), &lang("fr")).unwrap_err();
-        assert!(
-            error
-                .to_string()
-                .contains("missing required en.toml fallback")
-        );
-    }
-
-    #[test]
-    fn load_missing_en_fallback_returns_error() {
-        let site = tempfile::tempdir().unwrap();
-        let theme = tempfile::tempdir().unwrap();
-        write_test_file(
-            theme.path(),
-            "i18n/zh-Hans.toml",
-            indoc! {r#"
-                greeting = "你好"
-            "#},
-        );
-
-        let err = I18n::load(site.path(), Some(theme.path()), &lang("zh-Hans"))
-            .unwrap_err()
-            .to_string();
-        assert!(
-            err.contains("missing required en.toml fallback"),
-            "should report missing en.toml, got: {err}"
-        );
-    }
-
-    #[test]
-    fn load_non_string_value_returns_error() {
+    fn rejects_non_string_values() {
         for contents in [r#"nested = { key = "value" }"#, "count = 42"] {
             let site = tempfile::tempdir().unwrap();
             let theme = tempfile::tempdir().unwrap();
@@ -449,7 +406,7 @@ mod tests {
     }
 
     #[test]
-    fn load_malformed_toml_returns_error() {
+    fn rejects_malformed_toml() {
         let site = tempfile::tempdir().unwrap();
         let theme = tempfile::tempdir().unwrap();
         write_test_file(theme.path(), "i18n/en.toml", "key = \n");
@@ -464,7 +421,7 @@ mod tests {
     }
 
     #[test]
-    fn load_unreadable_locale_returns_error() {
+    fn reports_unreadable_theme_and_site_locales() {
         for in_theme in [true, false] {
             let site = tempfile::tempdir().unwrap();
             let theme = tempfile::tempdir().unwrap();
@@ -483,65 +440,43 @@ mod tests {
     // ── t ──
 
     #[test]
-    fn t_hit_returns_value() {
+    fn returns_translation_for_known_key() {
         let i18n = make_i18n(&[("greeting", "Hello")]);
         assert_eq!(i18n.t("greeting").as_ref(), "Hello");
     }
 
     #[test]
-    fn t_miss_returns_key_silently() {
+    fn returns_missing_key_without_warning() {
         let i18n = make_i18n(&[]);
         assert_eq!(i18n.t("missing_key").as_ref(), "missing_key");
         assert!(
             i18n.inner.warned.lock().unwrap().is_empty(),
-            "miss path must not warn — literal fallback is intended"
+            "the literal key fallback must not warn"
         );
     }
 
     // ── t_interp ──
 
     #[test]
-    fn t_interp_simple_substitution() {
-        let i18n = make_i18n(&[("hello", "Hello, {name}!")]);
-        let mut args = BTreeMap::new();
-        args.insert("name", "Alex");
-        assert_eq!(i18n.t_interp("hello", &args), "Hello, Alex!");
-    }
-
-    #[test]
-    fn t_interp_multiple_placeholders() {
+    fn substitutes_placeholders_and_ignores_unused_args() {
         let i18n = make_i18n(&[("counter", "Page {current} of {total}")]);
         let mut args = BTreeMap::new();
         args.insert("current", "2");
         args.insert("total", "5");
+        args.insert("unused", "nope");
         assert_eq!(i18n.t_interp("counter", &args), "Page 2 of 5");
     }
 
     #[test]
-    fn t_interp_double_brace_escapes() {
-        let i18n = make_i18n(&[("set", "{{literal}} and {name}")]);
+    fn unescapes_doubled_braces_and_keeps_stray_close() {
+        let i18n = make_i18n(&[("set", "{{literal}} and {name} }")]);
         let mut args = BTreeMap::new();
         args.insert("name", "X");
-        assert_eq!(i18n.t_interp("set", &args), "{literal} and X");
+        assert_eq!(i18n.t_interp("set", &args), "{literal} and X }");
     }
 
     #[test]
-    fn t_interp_closing_brace_escape_and_stray() {
-        let i18n = make_i18n(&[("braces", "a}}b }")]);
-        let args = BTreeMap::<&str, &str>::new();
-        assert_eq!(i18n.t_interp("braces", &args), "a}b }");
-    }
-
-    #[test]
-    fn t_interp_ignores_args_when_no_placeholder() {
-        let i18n = make_i18n(&[("plain", "Just text.")]);
-        let mut args = BTreeMap::new();
-        args.insert("unused", "nope");
-        assert_eq!(i18n.t_interp("plain", &args), "Just text.");
-    }
-
-    #[test]
-    fn t_interp_missing_arg_substitutes_empty_and_records_warning() {
+    fn missing_arg_renders_empty_and_warns_once() {
         let i18n = make_i18n(&[("hello", "Hi {who}!")]);
         let args = BTreeMap::<&str, &str>::new();
         for _ in 0..2 {
@@ -556,7 +491,7 @@ mod tests {
     }
 
     #[test]
-    fn t_interp_unclosed_brace_renders_partial_and_records_warning() {
+    fn unclosed_brace_renders_partial_and_warns_once() {
         let i18n = make_i18n(&[("bad", "start {unclosed tail")]);
         let args = BTreeMap::<&str, &str>::new();
         for _ in 0..2 {

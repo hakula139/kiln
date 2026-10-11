@@ -127,14 +127,10 @@ pub(crate) fn site_asset_url(src: &str, prefix: &str) -> String {
 mod tests {
     use super::*;
 
-    fn base(input: &str) -> BaseUrl {
-        input.parse().unwrap()
-    }
-
     // ── BaseUrl ──
 
     #[test]
-    fn base_url_normalizes_prefix_and_serializes_without_trailing_slash() {
+    fn normalizes_prefix_and_serializes_without_trailing_slash() {
         for (input, prefix, serialized) in [
             ("https://example.com", "/", "https://example.com"),
             ("https://example.com/", "/", "https://example.com"),
@@ -160,22 +156,35 @@ mod tests {
     }
 
     #[test]
-    fn base_url_invalid_returns_error() {
-        for input in [
-            "example.com",
-            "mailto:user@example.com",
-            "file:///srv/site",
-            "https://example.com/?preview=1",
-            "https://example.com/#top",
+    fn rejects_relative_hostless_and_query_or_fragment_urls() {
+        for (input, expected) in [
+            ("example.com", "invalid base_url"),
+            (
+                "mailto:user@example.com",
+                "base_url must be an absolute URL with a host",
+            ),
+            (
+                "file:///srv/site",
+                "base_url must be an absolute URL with a host",
+            ),
+            (
+                "https://example.com/?preview=1",
+                "base_url must not contain a query or fragment",
+            ),
+            (
+                "https://example.com/#top",
+                "base_url must not contain a query or fragment",
+            ),
         ] {
-            assert!(input.parse::<BaseUrl>().is_err(), "{input}");
+            let error = input.parse::<BaseUrl>().unwrap_err();
+            assert_eq!(error.to_string(), expected, "{input}");
         }
     }
 
     // ── path_url ──
 
     #[test]
-    fn path_url_encodes_components_and_preserves_separators() {
+    fn encodes_components_and_preserves_separators() {
         let path = Path::new("中文").join("hash#query? 100%.html");
         assert_eq!(
             path_url(&path),
@@ -187,7 +196,7 @@ mod tests {
     // ── page_url ──
 
     #[test]
-    fn page_url_encodes_paths_and_preserves_base_url() {
+    fn encodes_paths_and_preserves_base_url() {
         for (base_url, path, expected) in [
             (
                 "https://example.com",
@@ -222,7 +231,7 @@ mod tests {
     // ── join_site_url ──
 
     #[test]
-    fn join_site_url_accepts_relative_and_root_relative_paths() {
+    fn accepts_relative_and_root_relative_paths() {
         for (base, path, expected) in [
             (
                 "https://example.com/blog/",
@@ -239,5 +248,9 @@ mod tests {
         ] {
             assert_eq!(join_site_url(base, path), expected, "{base}, {path}");
         }
+    }
+
+    fn base(input: &str) -> BaseUrl {
+        input.parse().unwrap()
     }
 }

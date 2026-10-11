@@ -44,46 +44,24 @@ mod tests {
     // ── escape ──
 
     #[test]
-    fn escape_special_chars() {
+    fn escapes_all_special_chars() {
         assert_eq!(escape("a&b<c>d\"e'f"), "a&amp;b&lt;c&gt;d&quot;e&#39;f");
     }
 
     // ── writeln_indented ──
 
     #[test]
-    fn writeln_indented_static() {
+    fn indents_two_spaces_per_level() {
         let mut html = String::from("<p>\n");
         writeln_indented!(&mut html, 2, "<div>");
-        assert_eq!(
-            html,
-            indoc! {"
-                <p>
-                    <div>
-            "}
-        );
-    }
-
-    #[test]
-    fn writeln_indented_formatted() {
-        let mut html = String::from("<p>\n");
         writeln_indented!(&mut html, 1, "<span>{}</span>", "hi");
-        assert_eq!(
-            html,
-            indoc! {"
-                <p>
-                  <span>hi</span>
-            "}
-        );
-    }
-
-    #[test]
-    fn writeln_indented_zero_level() {
-        let mut html = String::from("<p>\n");
         writeln_indented!(&mut html, 0, "<br />");
         assert_eq!(
             html,
             indoc! {"
                 <p>
+                    <div>
+                  <span>hi</span>
                 <br />
             "}
         );
