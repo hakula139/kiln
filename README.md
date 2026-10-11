@@ -168,7 +168,7 @@ enabled = true
 
 ## Building from Source
 
-Requires stable [Rust](https://www.rust-lang.org/tools/install) and a C toolchain.
+Requires [Rust](https://www.rust-lang.org/tools/install) 1.89 or newer and a C toolchain.
 
 ```bash
 cargo build --release  # Binary at target/release/kiln
