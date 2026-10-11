@@ -1,6 +1,7 @@
 use std::fmt::Write;
 use std::fs;
 use std::path::Path;
+use std::process::Command;
 
 use indoc::{formatdoc, indoc};
 use tempfile::TempDir;
@@ -19,6 +20,9 @@ pub(super) const PAGINATE: usize = 10;
 
 /// Number of `Tag {n}` tags that partition the posts round-robin.
 pub(super) const INDEX_TAGS: usize = 4;
+
+/// Commit time recorded by [`Site::commit_to_git`].
+pub(super) const COMMITTED: &str = "2025-06-01T00:00:00Z";
 
 /// Owns a temporary site whose files are removed when dropped.
 pub(super) struct Site {
@@ -72,6 +76,39 @@ impl Site {
             .unwrap();
         }
         Self { directory }
+    }
+
+    /// Enables Git commit timestamps and commits every site file at [`COMMITTED`].
+    pub(super) fn commit_to_git(&self) {
+        let root = self.root();
+        let config = fs::read_to_string(root.join("config.toml")).unwrap();
+        fs::write(
+            root.join("config.toml"),
+            format!("enable_git_info = true\n{config}"),
+        )
+        .unwrap();
+        for args in [
+            &["init", "-q"][..],
+            &["add", "."],
+            &["commit", "-qm", "Add benchmark site"],
+        ] {
+            let status = Command::new("git")
+                .args([
+                    "-c",
+                    "user.name=Example",
+                    "-c",
+                    "user.email=example@example.com",
+                ])
+                .args(args)
+                .current_dir(root)
+                .env("GIT_CONFIG_GLOBAL", "/dev/null")
+                .env("GIT_CONFIG_NOSYSTEM", "1")
+                .env("GIT_AUTHOR_DATE", COMMITTED)
+                .env("GIT_COMMITTER_DATE", COMMITTED)
+                .status()
+                .unwrap();
+            assert!(status.success(), "git {args:?} failed: {status}");
+        }
     }
 
     /// Returns the site root accepted by the build CLI and configuration loader.
