@@ -24,6 +24,12 @@ use crate::url::{join_site_url, path_url};
 
 pub(crate) const ENTRY: &str = "assets/css/_src/style.css";
 
+const TAILWIND_BINARY: &str = if cfg!(windows) {
+    "kiln-tailwindcss.cmd"
+} else {
+    "kiln-tailwindcss"
+};
+
 struct Stylesheet {
     source: PathBuf,
     page: Option<PathBuf>,
@@ -92,11 +98,13 @@ impl Stylesheets {
                 .map(|style| compile_plain(assets, manifest, prefix, style))
                 .collect(),
             CssProcessor::Tailwind => run_in_order(
-                &styles,
+                styles.iter().copied(),
                 thread::available_parallelism().unwrap_or(NonZeroUsize::MIN),
                 |style| {
-                    let run = TailwindRun::spawn(root, config, self.shared.as_ref(), style);
-                    (*style, run)
+                    (
+                        style,
+                        TailwindRun::spawn(root, config, self.shared.as_ref(), style),
+                    )
                 },
                 |(style, run)| run?.finish(assets, manifest, prefix, style),
             ),
@@ -147,6 +155,27 @@ fn compile_plain(
     publish_urls(assets, manifest, prefix, style, &stylesheet)
 }
 
+/// Starts items in order with at most `limit` running and finishes each in start order.
+fn run_in_order<T, R, O>(
+    items: impl IntoIterator<Item = T>,
+    limit: NonZeroUsize,
+    mut start: impl FnMut(T) -> R,
+    mut finish: impl FnMut(R) -> O,
+) -> Vec<O> {
+    let mut running = VecDeque::with_capacity(limit.get());
+    let mut finished = Vec::new();
+    for item in items {
+        if running.len() == limit.get()
+            && let Some(run) = running.pop_front()
+        {
+            finished.push(finish(run));
+        }
+        running.push_back(start(item));
+    }
+    finished.extend(running.into_iter().map(finish));
+    finished
+}
+
 /// A running `kiln-tailwindcss` compilation and the workspace holding its input.
 struct TailwindRun {
     _workspace: TempDir,
@@ -178,12 +207,7 @@ impl TailwindRun {
             _ = writeln!(source, "@source {};", tailwind_path(&dir)?);
         }
         fs::write(&input, source)?;
-        let binary = if cfg!(windows) {
-            "kiln-tailwindcss.cmd"
-        } else {
-            "kiln-tailwindcss"
-        };
-        let child = Command::new(binary)
+        let child = Command::new(TAILWIND_BINARY)
             .arg(&input)
             .current_dir(root)
             .stdin(Stdio::null())
@@ -228,27 +252,6 @@ impl TailwindRun {
         .map_err(|error| anyhow::anyhow!("{error}"))?;
         publish_urls(assets, manifest, prefix, style, &stylesheet)
     }
-}
-
-/// Starts items in order with at most `limit` running and finishes each in start order.
-fn run_in_order<T, R, O>(
-    items: impl IntoIterator<Item = T>,
-    limit: NonZeroUsize,
-    mut start: impl FnMut(T) -> R,
-    mut finish: impl FnMut(R) -> O,
-) -> Vec<O> {
-    let mut running = VecDeque::with_capacity(limit.get());
-    let mut finished = Vec::new();
-    for item in items {
-        if running.len() == limit.get()
-            && let Some(run) = running.pop_front()
-        {
-            finished.push(finish(run));
-        }
-        running.push_back(start(item));
-    }
-    finished.extend(running.into_iter().map(finish));
-    finished
 }
 
 fn tailwind_path(path: &Path) -> Result<String> {
