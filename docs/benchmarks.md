@@ -20,7 +20,7 @@ Each revision has a separate Criterion report with raw samples, logs, revision S
 
 | Group            | Measurement                                                                                           |
 | ---------------- | ----------------------------------------------------------------------------------------------------- |
-| `shortcodes`     | Emoji / icon replacement in ordinary text and unmatched colon prefixes                                |
+| `shortcodes`     | Page rendering with emoji / icon expansion in ordinary text and unmatched colon prefixes              |
 | `render_options` | Option extraction from small and large params tables                                                  |
 | `render`         | Prose and code fences with preloaded templates, syntax, and image resolver                            |
 | `syntax/load`    | Loading and destroying a fresh syntax set                                                             |

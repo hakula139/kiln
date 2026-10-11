@@ -1,88 +1,46 @@
-use std::fmt::Write;
 use std::sync::LazyLock;
 
 use regex::Regex;
 
-use crate::html::escape;
-use crate::markdown::replace_shortcodes;
-
-/// Matches icon shortcodes, e.g., `:(fas fa-link):`.
+/// Matches icon shortcodes, e.g., `:(fas fa-link):`. The class charset keeps emoticons such as
+/// `:( (really):` literal and needs no HTML escaping.
 static ICON_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^:\(([^)]+)\):").expect("icon regex should compile"));
+    LazyLock::new(|| Regex::new(r"^:\(([\w -]+)\):").expect("icon regex should compile"));
 
-/// Replaces `:(class):` shortcodes with `<i>` tags.
-///
-/// Skips replacements inside fenced code blocks (` ``` ` / `~~~`) and inline code spans (`` ` ``).
-#[must_use]
-pub fn replace_icons(input: &str) -> String {
-    replace_shortcodes(input, |rest, output| {
-        let caps = ICON_RE.captures(rest)?;
-        _ = write!(
-            output,
-            r#"<i class="{}" aria-hidden="true"></i>"#,
-            escape(&caps[1])
-        );
-        Some(caps[0].len())
-    })
+/// Returns an `<i>` element for an icon shortcode at the start of `text`, with the shortcode's
+/// byte length.
+pub(super) fn match_icon(text: &str) -> Option<(String, usize)> {
+    let caps = ICON_RE.captures(text)?;
+    let html = format!(r#"<i class="{}" aria-hidden="true"></i>"#, &caps[1]);
+    Some((html, caps[0].len()))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    // ── replace_icons ──
+    // ── match_icon ──
 
     #[test]
-    fn replace_icons_single() {
-        let input = "Click :(fas fa-link): here";
-        let output = replace_icons(input);
+    fn match_icon_class_shortcode() {
         assert_eq!(
-            output,
-            r#"Click <i class="fas fa-link" aria-hidden="true"></i> here"#
+            match_icon(":(fas fa-link): here"),
+            Some((
+                r#"<i class="fas fa-link" aria-hidden="true"></i>"#.to_owned(),
+                15
+            ))
         );
     }
 
     #[test]
-    fn replace_icons_multiple() {
-        let input = ":(fas fa-home): and :(fas fa-cog):";
-        let output = replace_icons(input);
-        assert_eq!(
-            output,
-            r#"<i class="fas fa-home" aria-hidden="true"></i> and <i class="fas fa-cog" aria-hidden="true"></i>"#
-        );
-    }
-
-    #[test]
-    fn replace_icons_escapes_html() {
-        let input = ":(fas fa-<script>):";
-        let output = replace_icons(input);
-        assert_eq!(
-            output,
-            r#"<i class="fas fa-&lt;script&gt;" aria-hidden="true"></i>"#
-        );
-    }
-
-    #[test]
-    fn replace_icons_preserves_nonmatching_prefix_before_shortcode() {
-        assert_eq!(
-            replace_icons(": invalid :(fas fa-link):"),
-            r#": invalid <i class="fas fa-link" aria-hidden="true"></i>"#
-        );
-    }
-
-    #[test]
-    fn replace_icons_no_match_passthrough() {
-        let input = "plain text";
-        let output = replace_icons(input);
-        assert_eq!(output, input);
-    }
-
-    #[test]
-    fn replace_icons_preserves_code_context() {
-        let input = ":(fas fa-link): `:(fas fa-link):`";
-        assert_eq!(
-            replace_icons(input),
-            r#"<i class="fas fa-link" aria-hidden="true"></i> `:(fas fa-link):`"#
-        );
+    fn match_icon_emoticons_and_markup_returns_none() {
+        for text in [
+            ":( (really):",
+            ":(fas fa-<script>):",
+            ":():",
+            "(fas fa-link):",
+        ] {
+            assert_eq!(match_icon(text), None, "{text}");
+        }
     }
 }

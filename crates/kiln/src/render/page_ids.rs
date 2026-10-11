@@ -5,6 +5,7 @@ use scraper::Html;
 #[derive(Default)]
 pub(super) struct PageIds {
     used: HashSet<String>,
+    claimed: HashSet<String>,
 }
 
 impl PageIds {
@@ -22,6 +23,22 @@ impl PageIds {
             {
                 self.reserve(id);
             }
+        }
+    }
+
+    /// Claims an explicit heading `id` unless another authored element or heading reserved it.
+    pub(super) fn claim(&mut self, id: &str) {
+        if self.used.insert(id.to_owned()) {
+            self.claimed.insert(id.to_owned());
+        }
+    }
+
+    /// Returns a claimed heading `id` once, and a suffixed ID for every other request.
+    pub(super) fn allocate_claimed(&mut self, id: &str) -> String {
+        if self.claimed.remove(id) {
+            id.to_owned()
+        } else {
+            self.allocate(id)
         }
     }
 

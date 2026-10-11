@@ -15,7 +15,6 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, ensure};
 use jiff::tz::TimeZone;
-use syntect::parsing::SyntaxSet;
 
 use self::git::GitInfo;
 use self::listing::{
@@ -47,7 +46,7 @@ struct BuildContext {
     deployment_prefix: String,
     i18n: I18n,
     time_zone: Option<TimeZone>,
-    syntax_set: SyntaxSet,
+    render_options: RenderOptions,
     stylesheets: Stylesheets,
     static_assets: StaticAssetManifest,
     template_engine: TemplateEngine,
@@ -88,7 +87,7 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
     let time_zone = config
         .time_zone()
         .context("failed to resolve configured time zone")?;
-    let syntax_set = two_face::syntax::extra_newlines();
+    let render_options = RenderOptions::from_params(&config.params)?;
 
     let site_templates = root.join("templates");
     let theme_dir = config.theme_dir(root);
@@ -149,7 +148,7 @@ pub fn build(root: &Path, options: BuildOptions<'_>) -> Result<()> {
         deployment_prefix,
         i18n,
         time_zone,
-        syntax_set,
+        render_options,
         stylesheets,
         static_assets,
         template_engine,
@@ -289,14 +288,8 @@ fn build_content_pages(
     output_dir: &Path,
     prepared: &[PreparedPage],
 ) -> Result<()> {
-    if content.pages.is_empty() {
-        return Ok(());
-    }
-
-    let options = RenderOptions::from_params(&ctx.config.params)?;
-
     for (page, prepared) in content.pages.iter().zip(prepared) {
-        build_page(ctx, &options, page, output_dir, prepared)?;
+        build_page(ctx, page, output_dir, prepared)?;
     }
 
     Ok(())
@@ -304,20 +297,15 @@ fn build_content_pages(
 
 fn build_page(
     ctx: &BuildContext,
-    options: &RenderOptions,
     page: &Page,
     output_dir: &Path,
     prepared: &PreparedPage,
 ) -> Result<()> {
-    let mut options = options.clone();
-    options.heading_numbering = page.frontmatter.heading_numbering;
-
     let rendered = render_page(
         &page.raw_content,
-        &ctx.syntax_set,
         &ctx.template_engine,
         &ctx.config,
-        &options,
+        &ctx.render_options,
         &PageResources {
             source_dir: page.source_path.parent(),
             images: &ctx.image_resolver,
@@ -325,6 +313,7 @@ fn build_page(
             page_url: &prepared.summary.url,
             deployment_prefix: &ctx.deployment_prefix,
         },
+        page.frontmatter.heading_numbering,
     )
     .with_context(|| format!("failed to render {}", page.source_path.display()))?;
 

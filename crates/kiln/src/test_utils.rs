@@ -1,9 +1,15 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 
+use crate::config::Config;
 use crate::content::frontmatter::Frontmatter;
 use crate::content::page::{Page, PageKind};
 use crate::i18n::I18n;
+use crate::render::lqip::{ImageConfig, ImageResolver};
+use crate::render::pipeline::{RenderedPage, render_page};
+use crate::render::{PageResources, RenderOptions};
+use crate::static_assets::StaticAssetManifest;
 use crate::template::TemplateEngine;
 
 #[path = "../tests/support/fixtures.rs"]
@@ -45,4 +51,31 @@ pub(crate) fn test_page(title: &str) -> Page {
         source_path: PathBuf::from(format!("content/{title}/index.md")),
         assets: Vec::new(),
     }
+}
+
+/// Creates `PageResources` for `/` with no published assets and no resolvable images.
+pub(crate) fn test_resources() -> PageResources<'static> {
+    static IMAGES: LazyLock<ImageResolver> =
+        LazyLock::new(|| ImageResolver::new(Path::new(""), ImageConfig::default()));
+    static ASSETS: LazyLock<StaticAssetManifest> = LazyLock::new(StaticAssetManifest::default);
+    PageResources {
+        source_dir: None,
+        images: &IMAGES,
+        assets: &ASSETS,
+        page_url: "/",
+        deployment_prefix: "",
+    }
+}
+
+/// Renders Markdown through the page pipeline with test templates and resources.
+pub(crate) fn render_test_page(input: &str, options: &RenderOptions) -> RenderedPage {
+    render_page(
+        input,
+        &test_engine(),
+        &Config::default(),
+        options,
+        &test_resources(),
+        false,
+    )
+    .unwrap()
 }

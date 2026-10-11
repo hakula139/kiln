@@ -1,18 +1,12 @@
-use std::borrow::Cow;
-use std::collections::HashMap;
 use std::path::Path;
 
 use anyhow::Result;
-use pulldown_cmark::{CodeBlockKind, Event, Tag, TagEnd};
-use syntect::parsing::SyntaxSet;
+use pulldown_cmark::{CodeBlockKind, Event, Tag};
 
 use super::assets::{AssetsHandle, PageAssets};
 use super::code_block::parse_fence_info;
-use super::emoji::replace_emojis;
-use super::heading::HeadingNumbers;
-use super::icon::replace_icons;
-use super::image_attrs::{ImageAttrs, extract_image_attrs};
-use super::markdown::{MarkdownDocument, MarkdownOutput, MarkdownSettings, render_markdown};
+use super::document::{MarkdownDocument, image_content, render_document};
+use super::heading::{HeadingNumbers, NUMBERING_START};
 use super::page_ids::PageIds;
 use super::toc::render_toc_html;
 use super::{PageResources, RenderOptions};
@@ -24,7 +18,7 @@ use crate::directive::{DirectiveBlock, DirectiveContext};
 use crate::template::TemplateEngine;
 
 /// The fully rendered output of a single page.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug)]
 pub struct RenderedPage {
     pub content_html: String,
     pub toc_html: String,
@@ -42,18 +36,17 @@ pub struct RenderedPage {
 /// or overflowing.
 pub fn render_page(
     raw_content: &str,
-    syntax_set: &SyntaxSet,
     engine: &TemplateEngine,
     config: &Config,
     options: &RenderOptions,
     resources: &PageResources<'_>,
+    heading_numbering: bool,
 ) -> Result<RenderedPage> {
     let mut placeholder_prefix = "<!--kiln-directive-".to_owned();
     while raw_content.contains(&placeholder_prefix) {
         placeholder_prefix.push('-');
     }
     let renderer = PageRenderer {
-        syntax_set,
         engine,
         config,
         options,
@@ -61,16 +54,21 @@ pub fn render_page(
         assets: AssetsHandle::default(),
         placeholder_prefix: &placeholder_prefix,
     };
-    let mut document = renderer.prepare_document(raw_content, &mut 0);
+    let mut document =
+        renderer.prepare_fragment(raw_content, parse_directives(raw_content), 0, 0, &mut 1);
     let mut ids = PageIds::default();
-    document.reserve_authored_ids(&mut ids, &placeholder_prefix);
-    let mut numbers = options.heading_numbering.then(HeadingNumbers::default);
+    let mut heading_ids = Vec::new();
+    document.reserve_authored_ids(&mut ids, &mut heading_ids, &placeholder_prefix);
+    for id in heading_ids {
+        ids.claim(id);
+    }
+    let mut numbers = heading_numbering.then(HeadingNumbers::default);
     document.allocate_headings(&mut ids, &mut numbers, &placeholder_prefix)?;
-    let md_output = renderer.render_document(document, &mut ids)?;
-    let toc_html = render_toc_html(&md_output.headings);
+    let toc_html = render_toc_html(&document.markdown.headings);
+    let content_html = renderer.render_fragment(document, &mut ids)?;
 
     Ok(RenderedPage {
-        content_html: md_output.html,
+        content_html,
         toc_html,
         assets: renderer.assets.snapshot(),
     })
@@ -78,7 +76,6 @@ pub fn render_page(
 
 /// Inputs shared by the page body and every directive body rendered for one page.
 struct PageRenderer<'a> {
-    syntax_set: &'a SyntaxSet,
     engine: &'a TemplateEngine,
     config: &'a Config,
     options: &'a RenderOptions,
@@ -90,28 +87,33 @@ struct PageRenderer<'a> {
 struct PreparedDocument {
     scope: usize,
     markdown: MarkdownDocument,
-    image_attrs: HashMap<usize, ImageAttrs>,
     directives: Vec<(DirectiveBlock, PreparedDocument)>,
 }
 
 impl PreparedDocument {
-    fn reserve_authored_ids(&self, ids: &mut PageIds, prefix: &str) {
+    /// Reserves authored non-heading IDs and collects explicit heading IDs in document order.
+    fn reserve_authored_ids<'a>(
+        &'a self,
+        ids: &mut PageIds,
+        heading_ids: &mut Vec<&'a str>,
+        prefix: &str,
+    ) {
         let mut raw_html = String::new();
-        let mut image_depth = 0;
-        for (event, range) in self.markdown.footnotes.events() {
+        let mut events = self.markdown.events();
+        while let Some((event, range)) = events.next() {
             match event {
+                Event::Start(Tag::Heading { id: Some(id), .. }) => heading_ids.push(id),
                 Event::Start(Tag::Image { .. }) => {
-                    if image_depth == 0
-                        && let Some(id) = self
-                            .image_attrs
-                            .get(&range.start)
-                            .and_then(|attrs| attrs.id.as_deref())
+                    if let Some(id) = self
+                        .markdown
+                        .image_attrs
+                        .get(&range.start)
+                        .and_then(|attrs| attrs.id.as_deref())
                     {
                         ids.reserve(id);
                     }
-                    image_depth += 1;
+                    image_content(&mut events).for_each(drop);
                 }
-                Event::End(TagEnd::Image) => image_depth -= 1,
                 Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(info))) => {
                     let spec = parse_fence_info(info, None);
                     if !spec
@@ -123,13 +125,13 @@ impl PreparedDocument {
                         ids.reserve(&id);
                     }
                 }
-                Event::Html(html) | Event::InlineHtml(html) if image_depth == 0 => {
+                Event::Html(html) | Event::InlineHtml(html) => {
                     if let Some(index) = placeholder_index(html, prefix) {
                         let (block, document) = &self.directives[index];
                         if let Some(id) = &block.args.identity.id {
                             ids.reserve(id);
                         }
-                        document.reserve_authored_ids(ids, prefix);
+                        document.reserve_authored_ids(ids, heading_ids, prefix);
                     } else {
                         raw_html.push_str(html);
                     }
@@ -140,29 +142,41 @@ impl PreparedDocument {
         ids.reserve_html(&raw_html);
     }
 
+    /// Allocates heading IDs and numbers in document order, descending into directives in place.
     fn allocate_headings(
         &mut self,
         ids: &mut PageIds,
         numbers: &mut Option<HeadingNumbers>,
         prefix: &str,
     ) -> Result<()> {
-        let mut headings = self.markdown.headings.iter_mut();
-        for (event, _) in self.markdown.footnotes.events() {
+        let MarkdownDocument {
+            body,
+            notes,
+            headings,
+            ..
+        } = &mut self.markdown;
+        let mut headings = headings.iter_mut();
+        for (event, _) in body.iter().chain(notes.events()) {
             match event {
-                Event::Start(Tag::Heading { attrs, .. }) => {
-                    if let Some(heading) = headings.next() {
-                        heading.id = ids.allocate(&heading.id);
-                        heading.number = numbers
-                            .as_mut()
-                            .map(|numbers| {
-                                let start = attrs
-                                    .iter()
-                                    .find(|(key, _)| key.as_ref() == "numbering-start")
-                                    .map(|(_, value)| value.as_deref().unwrap_or(""));
-                                numbers.next(heading.level, start, &heading.id)
-                            })
-                            .transpose()?;
-                    }
+                Event::Start(Tag::Heading { id, attrs, .. }) => {
+                    let heading = headings
+                        .next()
+                        .expect("collect_headings yields one entry per heading");
+                    heading.id = if id.is_some() {
+                        ids.allocate_claimed(&heading.id)
+                    } else {
+                        ids.allocate(&heading.id)
+                    };
+                    heading.number = numbers
+                        .as_mut()
+                        .map(|numbers| {
+                            let start = attrs
+                                .iter()
+                                .find(|(key, _)| key.as_ref() == NUMBERING_START)
+                                .map(|(_, value)| value.as_deref().unwrap_or(""));
+                            numbers.next(heading.level, start, &heading.id)
+                        })
+                        .transpose()?;
                 }
                 Event::Html(html) => {
                     if let Some(index) = placeholder_index(html, prefix) {
@@ -179,12 +193,6 @@ impl PreparedDocument {
 }
 
 impl PageRenderer<'_> {
-    fn prepare_document(&self, content: &str, next_scope: &mut usize) -> PreparedDocument {
-        let scope = *next_scope;
-        *next_scope += 1;
-        self.prepare_fragment(content, parse_directives(content), 0, scope, next_scope)
-    }
-
     fn prepare_fragment(
         &self,
         content: &str,
@@ -221,57 +229,40 @@ impl PageRenderer<'_> {
                 (node.block, inner)
             })
             .collect();
-        let mut content = Cow::Borrowed(processed.as_str());
-        if self.options.emojis {
-            content = Cow::Owned(replace_emojis(&content));
-        }
-        if self.options.fontawesome {
-            content = Cow::Owned(replace_icons(&content));
-        }
-        let (cleaned, image_attrs) = extract_image_attrs(&content);
         PreparedDocument {
             scope,
-            markdown: MarkdownDocument::parse(&cleaned),
-            image_attrs,
+            markdown: MarkdownDocument::parse(&processed, self.options),
             directives,
         }
     }
 
-    fn render_document(
-        &self,
-        mut document: PreparedDocument,
-        ids: &mut PageIds,
-    ) -> Result<MarkdownOutput> {
-        document
-            .markdown
-            .footnotes
-            .allocate_ids(ids, document.scope);
-        let mut fragments = Vec::with_capacity(document.directives.len());
-        for (block, inner) in document.directives {
-            let body = self.render_document(inner, ids)?;
-            let mut html = self.render_directive_block(&block, &body.html)?;
+    fn render_fragment(&self, document: PreparedDocument, ids: &mut PageIds) -> Result<String> {
+        let PreparedDocument {
+            scope,
+            mut markdown,
+            directives,
+        } = document;
+        markdown.notes.allocate_ids(&mut markdown.body, ids, scope);
+        let mut fragments = Vec::with_capacity(directives.len());
+        for (block, inner) in directives {
+            let body = self.render_fragment(inner, ids)?;
+            let mut html = self.render_directive_block(&block, &body)?;
             if !html.ends_with('\n') {
                 html.push('\n');
             }
             fragments.push(html);
         }
-        let mut output = render_markdown(
-            document.markdown,
-            self.syntax_set,
-            &document.image_attrs,
+        let html = render_document(
+            markdown,
             self.resources,
-            MarkdownSettings {
-                code_max_lines: if document.scope == 0 {
-                    self.options.code_max_lines
-                } else {
-                    None
-                },
-                table_nowrap_width: self.options.table_nowrap_width,
-            },
+            self.options,
             &mut self.assets.lock().features,
         );
-        output.html = restore_directives(output.html, self.placeholder_prefix, &fragments);
-        Ok(output)
+        Ok(restore_directives(
+            &html,
+            self.placeholder_prefix,
+            &fragments,
+        ))
     }
 
     /// Renders a directive through its `directives/<name>.html` template, or as a `<div>` when
@@ -303,66 +294,68 @@ impl PageRenderer<'_> {
     }
 }
 
-fn placeholder_index(html: &str, prefix: &str) -> Option<usize> {
-    html.strip_prefix(prefix)?
-        .strip_suffix("-->\n")?
-        .parse()
-        .ok()
-}
-
-/// Substitutes the fragments returned by [`PageRenderer::prepare_document`] back into the
-/// rendered HTML.
-fn restore_directives(mut html: String, prefix: &str, fragments: &[String]) -> String {
-    for (index, fragment) in fragments.iter().enumerate() {
-        html = html.replacen(&directive_placeholder(prefix, index), fragment, 1);
-    }
-    html
-}
-
 /// Returns the placeholder line for the `index`-th directive fragment. Fragments are
 /// newline-terminated, so each one replaces a whole line and keeps its own lines in the output.
 fn directive_placeholder(prefix: &str, index: usize) -> String {
     format!("{prefix}{index}-->\n")
 }
 
+fn placeholder_index(html: &str, prefix: &str) -> Option<usize> {
+    split_placeholder(html.strip_prefix(prefix)?).map(|(index, _)| index)
+}
+
+/// Splits the `<index>-->\n` that follows a placeholder prefix from the remaining text.
+fn split_placeholder(after_prefix: &str) -> Option<(usize, &str)> {
+    let (index, rest) = after_prefix.split_once("-->\n")?;
+    Some((index.parse().ok()?, rest))
+}
+
+/// Substitutes the fragments returned by [`PageRenderer::render_fragment`] for their placeholder
+/// lines in one pass.
+fn restore_directives(html: &str, prefix: &str, fragments: &[String]) -> String {
+    let mut output =
+        String::with_capacity(html.len() + fragments.iter().map(String::len).sum::<usize>());
+    let mut rest = html;
+    while let Some(start) = rest.find(prefix) {
+        output.push_str(&rest[..start]);
+        let after_prefix = &rest[start + prefix.len()..];
+        if let Some((index, after)) = split_placeholder(after_prefix)
+            && let Some(fragment) = fragments.get(index)
+        {
+            output.push_str(fragment);
+            rest = after;
+        } else {
+            output.push_str(prefix);
+            rest = after_prefix;
+        }
+    }
+    output.push_str(rest);
+    output
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
-    use std::path::Path;
-    use std::sync::LazyLock;
 
     use indoc::{formatdoc, indoc};
+    use tempfile::TempDir;
 
     use super::*;
     use crate::render::assets::Feature;
-    use crate::render::lqip::{ImageConfig, ImageResolver};
-    use crate::static_assets::StaticAssetManifest;
-    use crate::test_utils::{test_engine, test_i18n};
-
-    static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(two_face::syntax::extra_newlines);
-
-    // Empty static-root resolver: `resolve` returns `None` for any path these tests reference.
-    static EMPTY_RESOLVER: LazyLock<ImageResolver> =
-        LazyLock::new(|| ImageResolver::new(Path::new(""), ImageConfig::default()));
+    use crate::test_utils::{render_test_page, test_engine, test_i18n, test_resources};
 
     fn render(input: &str) -> RenderedPage {
-        render_with(input, &test_engine())
+        render_test_page(input, &RenderOptions::default())
     }
 
     fn render_with(input: &str, engine: &TemplateEngine) -> RenderedPage {
         render_page(
             input,
-            &SYNTAX_SET,
             engine,
             &Config::default(),
             &RenderOptions::default(),
-            &PageResources {
-                source_dir: None,
-                images: &EMPTY_RESOLVER,
-                assets: &StaticAssetManifest::default(),
-                page_url: "/",
-                deployment_prefix: "",
-            },
+            &test_resources(),
+            false,
         )
         .unwrap()
     }
@@ -370,21 +363,22 @@ mod tests {
     fn render_numbered(input: &str) -> Result<RenderedPage> {
         render_page(
             input,
-            &SYNTAX_SET,
             &test_engine(),
             &Config::default(),
-            &RenderOptions {
-                heading_numbering: true,
-                ..Default::default()
-            },
-            &PageResources {
-                source_dir: None,
-                images: &EMPTY_RESOLVER,
-                assets: &StaticAssetManifest::default(),
-                page_url: "/",
-                deployment_prefix: "",
-            },
+            &RenderOptions::default(),
+            &test_resources(),
+            true,
         )
+    }
+
+    /// Creates an engine whose only template is `directives/<name>.html`.
+    fn directive_engine(name: &str, template: &str) -> (TempDir, TemplateEngine) {
+        let dir = tempfile::tempdir().unwrap();
+        let directives = dir.path().join("directives");
+        fs::create_dir_all(&directives).unwrap();
+        fs::write(directives.join(format!("{name}.html")), template).unwrap();
+        let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
+        (dir, engine)
     }
 
     // ── render_page ──
@@ -406,74 +400,30 @@ mod tests {
     }
 
     #[test]
-    fn render_page_with_emojis_and_fontawesome() {
-        let engine = test_engine();
-        let options = RenderOptions {
-            emojis: true,
-            fontawesome: true,
-            ..RenderOptions::default()
-        };
-        let input = "Hello :smile: and :(fas fa-link):";
-        let page = render_page(
-            input,
-            &SYNTAX_SET,
-            &engine,
-            &Config::default(),
-            &options,
-            &PageResources {
-                source_dir: None,
-                images: &EMPTY_RESOLVER,
-                assets: &StaticAssetManifest::default(),
-                page_url: "/",
-                deployment_prefix: "",
-            },
-        )
-        .unwrap();
-        assert!(
-            page.content_html.contains('\u{1f604}'),
-            "emoji should be replaced, html:\n{}",
-            page.content_html
-        );
-        assert!(
-            page.content_html.contains(r#"class="fas fa-link""#),
-            "icon should be replaced, html:\n{}",
-            page.content_html
-        );
-    }
-
-    #[test]
     fn render_page_code_max_lines_reaches_code_blocks() {
-        let input = indoc! {"
-            ```
-            fenced code
-            ```
+        let page = render_test_page(
+            indoc! {"
+                ```
+                fenced code
+                ```
 
-                indented code
+                    indented code
 
-            ``` text {expand}
-            expanded code
-            ```
-        "};
-        let options = RenderOptions {
-            code_max_lines: Some(3),
-            ..RenderOptions::default()
-        };
+                ``` text {expand}
+                expanded code
+                ```
 
-        let page = render_page(
-            input,
-            &SYNTAX_SET,
-            &test_engine(),
-            &Config::default(),
-            &options,
-            &PageResources {
-                source_dir: None,
-                images: &EMPTY_RESOLVER,
-                assets: &StaticAssetManifest::default(),
-                page_url: "/",
-                deployment_prefix: "",
+                ::: callout
+                ```
+                directive code
+                ```
+                :::
+            "},
+            &RenderOptions {
+                code_max_lines: Some(3),
+                ..RenderOptions::default()
             },
-        )
-        .unwrap();
+        );
         let fragment = scraper::Html::parse_fragment(&page.content_html);
         let selector = scraper::Selector::parse(".code-body").unwrap();
         let max_lines: Vec<_> = fragment
@@ -481,7 +431,7 @@ mod tests {
             .map(|body| body.value().attr("data-max-lines"))
             .collect();
 
-        assert_eq!(max_lines, vec![Some("3"), Some("3"), None]);
+        assert_eq!(max_lines, vec![Some("3"), Some("3"), None, Some("3")]);
     }
 
     #[test]
@@ -504,85 +454,65 @@ mod tests {
     }
 
     #[test]
-    fn render_page_replaces_shortcodes_in_directive_bodies() {
-        let options = RenderOptions {
-            emojis: true,
-            fontawesome: true,
-            ..RenderOptions::default()
-        };
-        let page = render_page(
+    fn render_page_replaces_shortcodes_in_body_and_directive_bodies() {
+        let page = render_test_page(
             indoc! {"
-                ::: callout
                 Hello :smile: and :(fas fa-link):
+
+                ::: callout
+                Inside :smile: and :(fas fa-link):
 
                 `:smile:`
                 :::
             "},
-            &SYNTAX_SET,
-            &test_engine(),
-            &Config::default(),
-            &options,
-            &PageResources {
-                source_dir: None,
-                images: &EMPTY_RESOLVER,
-                assets: &StaticAssetManifest::default(),
-                page_url: "/",
-                deployment_prefix: "",
+            &RenderOptions {
+                emojis: true,
+                fontawesome: true,
+                ..RenderOptions::default()
             },
-        )
-        .unwrap();
-        assert!(
-            page.content_html.contains("Hello \u{1f604} and"),
-            "emoji should be replaced, html:\n{}",
-            page.content_html
         );
-        assert!(
-            page.content_html.contains(r#"class="fas fa-link""#),
-            "icon should be replaced, html:\n{}",
-            page.content_html
-        );
-        assert!(
-            page.content_html.contains("<code>:smile:</code>"),
-            "inline code should keep the shortcode, html:\n{}",
-            page.content_html
-        );
+        let icon = r#"<i class="fas fa-link" aria-hidden="true"></i>"#;
+        for expected in [
+            format!("<p>Hello \u{1f604} and {icon}</p>"),
+            format!("<p>Inside \u{1f604} and {icon}</p>"),
+            "<code>:smile:</code>".to_owned(),
+        ] {
+            assert!(
+                page.content_html.contains(&expected),
+                "{expected}: {}",
+                page.content_html
+            );
+        }
     }
 
     #[test]
     fn render_page_table_nowrap_reaches_directive_bodies() {
-        let options = RenderOptions {
-            table_nowrap_width: Some(8),
-            ..RenderOptions::default()
-        };
-        let input = indoc! {"
-            | Top |
-            | --- |
-            | a |
+        // The image's alt text and URL contribute nothing to the measured width.
+        let page = render_test_page(
+            indoc! {"
+                | Top |
+                | --- |
+                | a ![long alt text](a.png) |
 
-            ::: {.compact-table}
-            | Nested |
-            | ------ |
-            | b |
-            :::
-        "};
-        let page = render_page(
-            input,
-            &SYNTAX_SET,
-            &test_engine(),
-            &Config::default(),
-            &options,
-            &PageResources {
-                source_dir: None,
-                images: &EMPTY_RESOLVER,
-                assets: &StaticAssetManifest::default(),
-                page_url: "/",
-                deployment_prefix: "",
+                ::: {.compact-table}
+                | Nested |
+                | ------ |
+                | b |
+                :::
+            "},
+            &RenderOptions {
+                table_nowrap_width: Some(8),
+                ..RenderOptions::default()
             },
-        )
-        .unwrap();
+        );
         assert!(
             page.content_html.contains(r#"<th class="nowrap">Top</th>"#),
             "top-level table should get nowrap cells, html:\n{}",
+            page.content_html
+        );
+        assert!(
+            page.content_html.contains(r#"<td class="nowrap">a <img"#),
+            "image markup should not widen its cell, html:\n{}",
             page.content_html
         );
         assert!(
@@ -632,7 +562,7 @@ mod tests {
     }
 
     #[test]
-    fn render_page_heading_ids_follow_document_order_across_scopes() {
+    fn render_page_heading_ids_follow_document_order_around_authored_ids() {
         let page = render(indoc! {"
             ## Shared
 
@@ -654,16 +584,79 @@ mod tests {
         "});
         let mut previous = 0;
         for id in [
-            "shared", "shared-1", "shared-2", "shared-3", "shared-4", "shared-5",
+            "shared-1", "shared-2", "shared-3", "shared-4", "shared", "shared-5",
         ] {
             let position = page.content_html.find(&format!(r#"id="{id}""#)).unwrap();
             assert!(position >= previous, "{id}: {}", page.content_html);
             previous = position;
         }
-        for id in ["shared", "shared-3", "shared-5"] {
+        for id in ["shared-1", "shared-4", "shared-5"] {
             assert!(page.toc_html.contains(&format!(r##"href="#{id}""##)));
         }
-        assert!(!page.toc_html.contains(r##"href="#shared-1""##));
+        for id in ["shared", "shared-2"] {
+            assert!(!page.toc_html.contains(&format!(r##"href="#{id}""##)));
+        }
+    }
+
+    #[test]
+    fn render_page_duplicate_explicit_heading_ids_keep_first() {
+        let page = render(indoc! {"
+            ## First {#dup}
+
+            ## Dup
+
+            ::: callout
+            ## Second {#dup}
+            :::
+
+            ## Third {#dup}
+        "});
+        let mut previous = 0;
+        for heading in [
+            r#"<h2 id="dup">First</h2>"#,
+            r#"<h2 id="dup-1">Dup</h2>"#,
+            r#"<h2 id="dup-2">Second</h2>"#,
+            r#"<h2 id="dup-3">Third</h2>"#,
+        ] {
+            let position = page.content_html.find(heading).unwrap();
+            assert!(position >= previous, "{heading}: {}", page.content_html);
+            previous = position;
+        }
+        assert_eq!(
+            page.content_html.matches(r#"id="dup""#).count(),
+            1,
+            "{}",
+            page.content_html
+        );
+        for id in ["dup", "dup-1", "dup-3"] {
+            assert!(page.toc_html.contains(&format!(r##"href="#{id}""##)));
+        }
+    }
+
+    #[test]
+    fn render_page_explicit_heading_ids_yield_to_other_authored_ids() {
+        let page = render(indoc! {r#"
+            <div id="y"></div>
+
+            ## C {#y}
+
+            ## D {#late}
+
+            ::: callout {#late}
+            Body.
+            :::
+        "#});
+        for heading in [r#"<h2 id="y-1">C</h2>"#, r#"<h2 id="late-1">D</h2>"#] {
+            assert!(page.content_html.contains(heading), "{}", page.content_html);
+        }
+        for id in ["y", "late"] {
+            assert_eq!(
+                page.content_html.matches(&format!(r#"id="{id}""#)).count(),
+                1,
+                "{id}: {}",
+                page.content_html
+            );
+        }
     }
 
     #[test]
@@ -800,7 +793,11 @@ mod tests {
                     r#"id="{id}"><span class="heading-number">{number}</span> "#
                 )));
             }
-            assert_eq!(page, render_numbered(&input).unwrap());
+            let again = render_numbered(&input).unwrap();
+            assert_eq!(
+                (page.content_html, page.toc_html),
+                (again.content_html, again.toc_html)
+            );
         }
     }
 
@@ -1068,12 +1065,7 @@ mod tests {
 
     #[test]
     fn render_page_directive_template_output_keeps_own_line() {
-        let dir = tempfile::tempdir().unwrap();
-        let directives = dir.path().join("directives");
-        fs::create_dir_all(&directives).unwrap();
-        fs::write(directives.join("widget.html"), "<widget></widget>\n").unwrap();
-
-        let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
+        let (_dir, engine) = directive_engine("widget", "<widget></widget>\n");
         let page = render_with(
             indoc! {"
                 ::: widget
@@ -1175,6 +1167,25 @@ mod tests {
         );
     }
 
+    // ── restore_directives ──
+
+    #[test]
+    fn restore_directives_keeps_unmatched_placeholder_text() {
+        let html = indoc! {"
+            a <!--p-x-->
+            <!--p-1-->
+            <!--p-0-->
+            b"};
+        assert_eq!(
+            restore_directives(html, "<!--p-", &["F\n".to_owned()]),
+            indoc! {"
+                a <!--p-x-->
+                <!--p-1-->
+                F
+                b"}
+        );
+    }
+
     // ── render_directive_block ──
 
     #[test]
@@ -1212,17 +1223,11 @@ mod tests {
                     Body
                     :::
                 "},
-                &SYNTAX_SET,
                 &test_engine(),
                 &Config::default(),
                 &RenderOptions::default(),
-                &PageResources {
-                    source_dir: None,
-                    images: &EMPTY_RESOLVER,
-                    assets: &StaticAssetManifest::default(),
-                    page_url: "/",
-                    deployment_prefix: "",
-                },
+                &test_resources(),
+                false,
             )
             .unwrap_err();
             assert!(
@@ -1236,16 +1241,10 @@ mod tests {
 
     #[test]
     fn render_directive_block_uses_template() {
-        let dir = tempfile::tempdir().unwrap();
-        let directives = dir.path().join("directives");
-        fs::create_dir_all(&directives).unwrap();
-        fs::write(
-            directives.join("my-widget.html"),
+        let (_dir, engine) = directive_engine(
+            "my-widget",
             "<widget>{{ name }}: {{ body_html | safe }}</widget>",
-        )
-        .unwrap();
-
-        let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
+        );
         let page = render_with(
             indoc! {"
                 ::: my-widget
@@ -1268,16 +1267,10 @@ mod tests {
 
     #[test]
     fn render_directive_block_template_accesses_parsed_args() {
-        let dir = tempfile::tempdir().unwrap();
-        let directives = dir.path().join("directives");
-        fs::create_dir_all(&directives).unwrap();
-        fs::write(
-            directives.join("widget.html"),
+        let (_dir, engine) = directive_engine(
+            "widget",
             "my-pos={{ positional_args[0] }} my-key={{ named_args.key }}",
-        )
-        .unwrap();
-
-        let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
+        );
         let page = render_with(
             indoc! {r#"
                 ::: widget {"my-title" key="value"}
@@ -1300,35 +1293,26 @@ mod tests {
 
     #[test]
     fn render_directive_block_template_accesses_source_dir() {
-        let dir = tempfile::tempdir().unwrap();
-        let directives = dir.path().join("directives");
-        fs::create_dir_all(&directives).unwrap();
-        fs::write(
-            directives.join("reader.html"),
+        let (_dir, engine) = directive_engine(
+            "reader",
             "{% set data = read_file(positional_args[0]) %}DATA:{{ data }}",
-        )
-        .unwrap();
-
+        );
         let source = tempfile::tempdir().unwrap();
         fs::write(source.path().join("data.csv"), "A,B\n1,2").unwrap();
 
-        let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
         let page = render_page(
             indoc! {r#"
                 ::: reader {"data.csv"}
                 :::
             "#},
-            &SYNTAX_SET,
             &engine,
             &Config::default(),
             &RenderOptions::default(),
             &PageResources {
                 source_dir: Some(source.path()),
-                images: &EMPTY_RESOLVER,
-                assets: &StaticAssetManifest::default(),
-                page_url: "/",
-                deployment_prefix: "",
+                ..test_resources()
             },
+            false,
         )
         .unwrap();
         assert!(

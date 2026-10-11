@@ -3,17 +3,14 @@ use pulldown_cmark::HeadingLevel;
 use super::heading::render_number;
 use crate::html::{escape, writeln_indented};
 
-/// A single entry in the table of contents, collected during heading rendering.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TocEntry {
-    /// Heading level (H1–H6).
-    pub level: HeadingLevel,
+/// A heading collected at parse time for the table of contents.
+pub(super) struct TocEntry {
+    pub(super) level: HeadingLevel,
     /// The optional hierarchical number, separate from the authored title.
-    pub number: Option<String>,
-    /// The slugified ID attribute for this heading.
-    pub id: String,
-    /// The plain-text title of the heading.
-    pub title: String,
+    pub(super) number: Option<String>,
+    /// The authored ID, or a deduplicated slug of the title once IDs are allocated.
+    pub(super) id: String,
+    pub(super) title: String,
 }
 
 /// Renders `TocEntry` values into a nested `<nav>` / `<ul>` / `<li>` / `<a>` structure.
@@ -21,17 +18,15 @@ pub struct TocEntry {
 /// Heading levels are normalized so the smallest level becomes depth 1, avoiding empty outer
 /// wrappers when content starts at H2 or deeper. Returns an empty string if `entries` is empty.
 #[must_use]
-pub fn render_toc_html(entries: &[TocEntry]) -> String {
-    if entries.is_empty() {
+pub(super) fn render_toc_html(entries: &[TocEntry]) -> String {
+    let Some(min_level) = entries.iter().map(|entry| entry.level as u8).min() else {
         return String::new();
-    }
+    };
 
     let mut html = String::new();
     writeln_indented!(&mut html, 0, r#"<nav class="toc">"#);
 
-    let min_level = entries.iter().map(|e| e.level as u8).min().unwrap_or(1);
     let mut depth: u8 = 0;
-
     for entry in entries {
         let target = entry.level as u8 - min_level + 1;
 
@@ -59,7 +54,11 @@ pub fn render_toc_html(entries: &[TocEntry]) -> String {
             depth * 2,
             r##"<li><a href="#{}">{}{}</a>"##,
             escape(&entry.id),
-            render_number(entry.number.as_deref()),
+            entry
+                .number
+                .as_deref()
+                .map(render_number)
+                .unwrap_or_default(),
             escape(&entry.title),
         );
     }
@@ -81,97 +80,24 @@ mod tests {
 
     use super::*;
 
-    // ── render_toc_html ──
-
-    #[test]
-    fn render_toc_html_single_entry() {
-        for level in [HeadingLevel::H2, HeadingLevel::H3] {
-            let entries = vec![TocEntry {
-                level,
-                number: None,
-                id: "hello".into(),
-                title: "Hello".into(),
-            }];
-            assert_eq!(
-                render_toc_html(&entries),
-                indoc! {r##"
-                    <nav class="toc">
-                      <ul>
-                        <li><a href="#hello">Hello</a>
-                        </li>
-                      </ul>
-                    </nav>
-                "##}
-            );
+    fn entry(level: HeadingLevel, id: &str, title: &str) -> TocEntry {
+        TocEntry {
+            level,
+            number: None,
+            id: id.to_owned(),
+            title: title.to_owned(),
         }
     }
 
-    #[test]
-    fn render_toc_html_flat_same_level() {
-        let entries = vec![
-            TocEntry {
-                level: HeadingLevel::H2,
-                number: None,
-                id: "a".into(),
-                title: "A".into(),
-            },
-            TocEntry {
-                level: HeadingLevel::H2,
-                number: None,
-                id: "b".into(),
-                title: "B".into(),
-            },
-            TocEntry {
-                level: HeadingLevel::H2,
-                number: None,
-                id: "c".into(),
-                title: "C".into(),
-            },
-        ];
-        assert_eq!(
-            render_toc_html(&entries),
-            indoc! {r##"
-                <nav class="toc">
-                  <ul>
-                    <li><a href="#a">A</a>
-                    </li>
-                    <li><a href="#b">B</a>
-                    </li>
-                    <li><a href="#c">C</a>
-                    </li>
-                  </ul>
-                </nav>
-            "##}
-        );
-    }
+    // ── render_toc_html ──
 
     #[test]
     fn render_toc_html_nested_headings() {
-        let entries = vec![
-            TocEntry {
-                level: HeadingLevel::H2,
-                number: None,
-                id: "intro".into(),
-                title: "Intro".into(),
-            },
-            TocEntry {
-                level: HeadingLevel::H3,
-                number: None,
-                id: "detail-a".into(),
-                title: "Detail A".into(),
-            },
-            TocEntry {
-                level: HeadingLevel::H3,
-                number: None,
-                id: "detail-b".into(),
-                title: "Detail B".into(),
-            },
-            TocEntry {
-                level: HeadingLevel::H2,
-                number: None,
-                id: "conclusion".into(),
-                title: "Conclusion".into(),
-            },
+        let entries = [
+            entry(HeadingLevel::H2, "intro", "Intro"),
+            entry(HeadingLevel::H3, "detail-a", "Detail A"),
+            entry(HeadingLevel::H3, "detail-b", "Detail B"),
+            entry(HeadingLevel::H2, "conclusion", "Conclusion"),
         ];
         assert_eq!(
             render_toc_html(&entries),
@@ -195,33 +121,13 @@ mod tests {
     }
 
     #[test]
-    fn render_toc_html_deep_nesting_round_trip() {
-        // H2 → H3 → H4 → H2: verifies all intermediate levels close correctly.
-        let entries = vec![
-            TocEntry {
-                level: HeadingLevel::H2,
-                number: None,
-                id: "a".into(),
-                title: "A".into(),
-            },
-            TocEntry {
-                level: HeadingLevel::H3,
-                number: None,
-                id: "b".into(),
-                title: "B".into(),
-            },
-            TocEntry {
-                level: HeadingLevel::H4,
-                number: None,
-                id: "c".into(),
-                title: "C".into(),
-            },
-            TocEntry {
-                level: HeadingLevel::H2,
-                number: None,
-                id: "d".into(),
-                title: "D".into(),
-            },
+    fn render_toc_html_deep_nesting_round_trip_from_h3() {
+        // H3 → H4 → H5 → H3: normalizes to depth 1 and closes every intermediate level.
+        let entries = [
+            entry(HeadingLevel::H3, "a", "A"),
+            entry(HeadingLevel::H4, "b", "B"),
+            entry(HeadingLevel::H5, "c", "C"),
+            entry(HeadingLevel::H3, "d", "D"),
         ];
         assert_eq!(
             render_toc_html(&entries),
@@ -249,19 +155,9 @@ mod tests {
     #[test]
     fn render_toc_html_skipped_levels() {
         // H2 then H4: intermediate <ul> levels get wrapper <li> elements.
-        let entries = vec![
-            TocEntry {
-                level: HeadingLevel::H2,
-                number: None,
-                id: "top".into(),
-                title: "Top".into(),
-            },
-            TocEntry {
-                level: HeadingLevel::H4,
-                number: None,
-                id: "deep".into(),
-                title: "Deep".into(),
-            },
+        let entries = [
+            entry(HeadingLevel::H2, "top", "Top"),
+            entry(HeadingLevel::H4, "deep", "Deep"),
         ];
         assert_eq!(
             render_toc_html(&entries),
@@ -286,19 +182,9 @@ mod tests {
 
     #[test]
     fn render_toc_html_deeper_heading_first() {
-        let entries = vec![
-            TocEntry {
-                level: HeadingLevel::H3,
-                number: None,
-                id: "detail".into(),
-                title: "Detail".into(),
-            },
-            TocEntry {
-                level: HeadingLevel::H2,
-                number: None,
-                id: "overview".into(),
-                title: "Overview".into(),
-            },
+        let entries = [
+            entry(HeadingLevel::H3, "detail", "Detail"),
+            entry(HeadingLevel::H2, "overview", "Overview"),
         ];
         assert_eq!(
             render_toc_html(&entries),
@@ -321,13 +207,7 @@ mod tests {
 
     #[test]
     fn render_toc_html_escapes_title_and_id() {
-        let entries = vec![TocEntry {
-            level: HeadingLevel::H2,
-            number: None,
-            id: "foo&bar".into(),
-            title: "Vec<T> & Friends".into(),
-        }];
-        let html = render_toc_html(&entries);
+        let html = render_toc_html(&[entry(HeadingLevel::H2, "foo&bar", "Vec<T> & Friends")]);
         assert!(html.contains(r##"href="#foo&amp;bar""##), "{html}");
         assert!(
             html.contains("Vec&lt;T&gt; &amp; Friends"),

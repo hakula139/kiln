@@ -6,7 +6,7 @@ pub mod convert;
 mod css;
 pub mod directive;
 pub mod feed;
-pub mod html;
+pub(crate) mod html;
 pub mod i18n;
 pub mod init;
 mod markdown;

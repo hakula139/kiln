@@ -57,7 +57,7 @@ Explicit heading IDs override the auto-generated one:
 <!-- renders as: <h2 id="custom-id">My Section</h2> -->
 ```
 
-Heading IDs are unique across the page body and nested directives. Repeated IDs receive numeric suffixes in rendered document order (`name`, `name-1`, `name-2`). IDs on raw HTML, images, code blocks and directive wrappers are reserved before heading and footnote IDs are allocated.
+IDs are unique across the page body and nested directives. Authored IDs on raw HTML, images, code blocks and directive wrappers keep their values. An explicit heading ID is kept by the first heading that authors it, unless one of those elements already uses it. Other headings with that ID, and generated heading and footnote IDs that repeat any reserved ID or each other, receive numeric suffixes in rendered document order (`name`, `name-1`, `name-2`).
 
 Page-body headings populate the `toc` variable in post templates. Headings inside directives stay outside this table of contents. See [Post Templates](themes.md#post-templates-posthtml).
 
@@ -193,7 +193,7 @@ Notes render at the end of their scope, numbered by first reference in the body.
 
 ## Shortcodes
 
-Shortcodes are inline replacements. Code blocks and code spans retain their literal text.
+Shortcodes expand in Markdown text. Code, math, raw HTML, autolinks and link destinations retain their literal text. Escape the opening colon to keep a shortcode literal, as in `\:smile:`.
 
 ### Emoji
 
@@ -217,7 +217,7 @@ When `fontawesome = true` is set in `[params]`, icon shortcodes produce `<i>` el
 <!-- renders as: <i class="fas fa-link" aria-hidden="true"></i> Click here <i class="fab fa-github" aria-hidden="true"></i> -->
 ```
 
-The class inside `:(...):` is passed to the `class` attribute of the `<i>` element. The page template must include the [Font Awesome](https://fontawesome.com) CSS for icons to display.
+The class list inside `:(...):` becomes the `class` attribute of the `<i>` element and may contain letters, digits, `_`, `-` and spaces. The page template must include the [Font Awesome](https://fontawesome.com) CSS for icons to display.
 
 ## Directives
 

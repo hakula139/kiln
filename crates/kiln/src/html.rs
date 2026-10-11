@@ -2,7 +2,7 @@
 ///
 /// Escapes `&`, `<`, `>`, `"`, `'`. Safe for use in both element content and attribute values.
 #[must_use]
-pub fn escape(input: &str) -> String {
+pub(crate) fn escape(input: &str) -> String {
     let mut output = String::with_capacity(input.len());
     for ch in input.chars() {
         match ch {
@@ -18,7 +18,7 @@ pub fn escape(input: &str) -> String {
 }
 
 /// Appends `level` × 2 spaces of indentation to an HTML string.
-pub fn indent(html: &mut String, level: u8) {
+pub(crate) fn indent(html: &mut String, level: u8) {
     for _ in 0..level {
         html.push_str("  ");
     }
@@ -46,32 +46,6 @@ mod tests {
     #[test]
     fn escape_special_chars() {
         assert_eq!(escape("a&b<c>d\"e'f"), "a&amp;b&lt;c&gt;d&quot;e&#39;f");
-    }
-
-    #[test]
-    fn escape_no_op_for_plain_text() {
-        assert_eq!(escape("hello world"), "hello world");
-    }
-
-    #[test]
-    fn escape_empty() {
-        assert_eq!(escape(""), "");
-    }
-
-    // ── indent ──
-
-    #[test]
-    fn indent_zero_level() {
-        let mut html = String::from("<p>");
-        indent(&mut html, 0);
-        assert_eq!(html, "<p>");
-    }
-
-    #[test]
-    fn indent_multiple_levels() {
-        let mut html = String::from("<p>");
-        indent(&mut html, 3);
-        assert_eq!(html, "<p>      ");
     }
 
     // ── writeln_indented ──

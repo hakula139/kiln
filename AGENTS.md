@@ -75,7 +75,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 ├── init.rs              # Theme scaffolding (kiln init-theme)
 ├── lib.rs               # Library module declarations
 ├── main.rs              # CLI argument parsing and command dispatch
-├── markdown.rs          # Shared parser options, protected code ranges and shortcode scanning
+├── markdown.rs          # Shared parser options and protected code ranges
 ├── minify.rs            # Post-build HTML / CSS / JS minification (lightningcss, oxc_minifier, minify-html)
 ├── output.rs            # Owned build transactions, file output and static file copying
 ├── pagination.rs        # Paginator for windowed views over slices, page URL computation
@@ -83,18 +83,18 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 ├── render/              # Markdown rendering pipeline submodules
 │   ├── assets.rs        # PageAssets registry: scripts + auto-detected Feature flags (Math, Mermaid)
 │   ├── code_block.rs    # Fence info-string parsing → CodeBlockSpec (lang, title, highlights, collapse / expand)
-│   ├── emoji.rs         # GitHub-style :shortcode: → Unicode emoji replacement
+│   ├── document.rs      # Parsed Markdown fragments, shortcode expansion, headings, KaTeX, block / inline images
+│   ├── emoji.rs         # GitHub-style :shortcode: → Unicode emoji lookup
 │   ├── footnote.rs      # Footnote relocation into an end-of-document list with per-reference backlinks
 │   ├── heading.rs       # Hierarchical heading numbering and shared number markup
 │   ├── highlight.rs     # syntect + two-face CSS-class highlighting with line numbers, header (lang or title)
-│   ├── icon.rs          # :(class): → <i> FontAwesome icon shortcode replacement
+│   ├── icon.rs          # :(class): → <i> FontAwesome icon shortcode matching
 │   ├── image.rs         # Block (<figure>) and inline (<img>) image rendering, lazy loading, <span class="lqip"> wrapper emission
 │   ├── image_attrs.rs   # Pandoc-style {#id .class width=N} extraction for images
 │   ├── lqip.rs          # ImageResolver: on-disk dimension reads + base64 WebP placeholder encoding (consumed via the .lqip wrapper)
-│   ├── markdown.rs      # pulldown-cmark, GFM, CJK heading IDs, KaTeX, block / inline images
 │   ├── mermaid.rs       # `<pre class="mermaid">` emit for `` ```mermaid `` fences (with data-source mirror)
 │   ├── page_ids.rs      # Shared page-wide ID allocation for headings and footnotes
-│   ├── pipeline.rs      # Full pipeline: directives → pre-processors → markdown → ToC
+│   ├── pipeline.rs      # Full pipeline: directives → page-wide IDs → Markdown → ToC
 │   ├── table.rs         # `nowrap` class on cells of short table columns
 │   └── toc.rs           # TocEntry struct, nested <nav> table of contents generation
 ├── search.rs            # Pagefind search indexing (external binary invocation)

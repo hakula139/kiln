@@ -30,7 +30,6 @@ pub(super) fn benchmarks(criterion: &mut Criterion) {
         page_url: "/",
         deployment_prefix: "",
     };
-    let syntax_set = two_face::syntax::extra_newlines();
     let code = indoc! {r#"
         ```rust
         fn main() {
@@ -41,8 +40,7 @@ pub(super) fn benchmarks(criterion: &mut Criterion) {
     .repeat(20);
     let mut group = criterion.benchmark_group("render");
     for (name, input) in [("prose", PROSE.repeat(20)), ("highlighted_code", code)] {
-        let expected =
-            render_page(&input, &syntax_set, &engine, &config, &options, &resources).unwrap();
+        let expected = render_page(&input, &engine, &config, &options, &resources, false).unwrap();
         verify_render(name, &expected.content_html);
         group.throughput(Throughput::Bytes(input.len().try_into().unwrap()));
         group.bench_with_input(
@@ -52,11 +50,11 @@ pub(super) fn benchmarks(criterion: &mut Criterion) {
                 bencher.iter(|| {
                     render_page(
                         black_box(input),
-                        &syntax_set,
                         &engine,
                         &config,
                         &options,
                         &resources,
+                        false,
                     )
                     .unwrap()
                 });
