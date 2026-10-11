@@ -6,8 +6,7 @@ use crate::content::frontmatter::{FeaturedImage, Frontmatter, ImageCredit};
 /// Delimiter around Hugo YAML frontmatter.
 pub(crate) const YAML_DELIMITER: &str = "---";
 
-/// Converts supported YAML metadata and reports, sorted, the fields that require manual
-/// migration.
+/// Converts supported YAML metadata and reports the sorted fields that need manual migration.
 ///
 /// Hugo's `featuredImage` key and bare-string image sources become a `featured_image` table.
 pub(crate) fn convert_frontmatter(yaml_str: &str) -> Result<(String, Vec<String>)> {
