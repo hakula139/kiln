@@ -5,7 +5,6 @@ use std::path::{Component, Path};
 use minijinja::value::{Kwargs, Value};
 use minijinja::{Error, ErrorKind, State};
 
-use crate::html;
 use crate::i18n::I18n;
 use crate::render::assets::{AssetsHandle, LoadStrategy, ScriptTag};
 use crate::static_assets::{StaticAssetManifest, is_external};
@@ -113,10 +112,9 @@ impl AssetUrls {
     }
 }
 
-/// Returns the published URL of an asset path, HTML-escaped and marked safe for attributes.
-pub(super) fn tpl_asset_url(state: &State, urls: &AssetUrls, url: &str) -> Result<Value, Error> {
-    let url = urls.resolve(state, url)?;
-    Ok(Value::from_safe_string(html::escape(&url)))
+/// Returns the published URL of an asset path.
+pub(super) fn tpl_asset_url(state: &State, urls: &AssetUrls, url: &str) -> Result<String, Error> {
+    urls.resolve(state, url)
 }
 
 // ── Asset Registration ──
@@ -375,26 +373,30 @@ mod tests {
 
     #[test]
     fn tpl_asset_url_renders_prefixed_encoded_and_escaped_urls() {
-        let (_dir, engine) = asset_engine();
+        let (_dir, mut engine) = asset_engine();
+        engine
+            .env
+            .add_template(
+                "page.html",
+                indoc! {r#"
+                    <link rel="stylesheet" href="{{ asset_url('/shared.css') }}">
+                    <link rel="stylesheet" href="{{ asset_url('/blog/shared.css') }}">
+                    <script src="{{ asset_url('/page%20script.js') }}"></script>
+                    <img src="{{ asset_url('https://example.org/a.png?w=1&h=2') }}">
+                "#},
+            )
+            .unwrap();
 
         assert_eq!(
             engine
                 .env
-                .render_str(
-                    indoc! {r#"
-                        <link rel="stylesheet" href="{{ asset_url('/shared.css') }}">
-                        <link rel="stylesheet" href="{{ asset_url('/blog/shared.css') }}">
-                        <script src="{{ asset_url('/shared.js') | safe }}"></script>
-                        <script src="{{ asset_url('/page%20script.js') }}"></script>
-                        <img src="{{ asset_url('https://example.org/a.png?w=1&h=2') }}">
-                    "#},
-                    (),
-                )
+                .get_template("page.html")
+                .unwrap()
+                .render(())
                 .unwrap(),
             indoc! {r#"
                 <link rel="stylesheet" href="/blog/shared.ba7816bf8f01.css">
                 <link rel="stylesheet" href="/blog/blog/shared.9d6f965ac832.css">
-                <script src="/blog/shared.ba7816bf8f01.js"></script>
                 <script src="/blog/page%20script.ba7816bf8f01.js"></script>
                 <img src="https://example.org/a.png?w=1&amp;h=2">
             "#}

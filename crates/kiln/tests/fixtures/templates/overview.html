@@ -8,9 +8,9 @@
   <ul>
   {%- for bucket in buckets %}
     <li>
-      <a href="{{ bucket.url | safe }}">{{ bucket.name }}</a> ({{ bucket.pages | length }})
+      <a href="{{ bucket.url }}">{{ bucket.name }}</a> ({{ bucket.pages | length }})
       {%- for page in bucket.pages[:5] %}
-      <a href="{{ page.url | safe }}">{{ page.title }}</a>
+      <a href="{{ page.url }}">{{ page.title }}</a>
       {%- endfor %}
     </li>
   {%- endfor %}

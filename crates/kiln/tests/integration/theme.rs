@@ -19,8 +19,8 @@ fn build_fingerprints_merged_static_assets_after_minification() {
                 <!DOCTYPE html>
                 <html>
                 <head>
-                  <link rel="stylesheet" href="{{ asset_url('/style.css') | safe }}">
-                  <script src="{{ asset_url('/app.js') | safe }}"></script>
+                  <link rel="stylesheet" href="{{ asset_url('/style.css') }}">
+                  <script src="{{ asset_url('/app.js') }}"></script>
                 </head>
                 <body>{% block body %}{% endblock %}</body>
                 </html>

@@ -103,7 +103,7 @@ fn build_base_url_override() {
     let site = TestSite::new(r#"base_url = "https://example.com""#);
     site.write(
         "templates/post.html",
-        r#"<a href="{{ config.base_url | safe }}/">Home</a><link rel="canonical" href="{{ url | safe }}">"#,
+        r#"<a href="{{ config.base_url }}/">Home</a><link rel="canonical" href="{{ url }}">"#,
     )
     .titled_page("posts/hello", "Hello");
 

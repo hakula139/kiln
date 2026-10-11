@@ -57,7 +57,7 @@ pub fn init_theme(root: &Path, name: &str) -> Result<()> {
             {% block title %}<title>{{ title }} - {{ config.title }}</title>{% endblock %}
 
             {% block head %}
-            {% if page_css %}<link rel="stylesheet" href="{{ page_css | safe }}">{% endif %}
+            {% if page_css %}<link rel="stylesheet" href="{{ page_css }}">{% endif %}
             {% endblock %}
 
             {% block body %}

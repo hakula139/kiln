@@ -14,7 +14,7 @@ pub struct PageMetadata<'a> {
 /// Template variables for rendering a post page.
 ///
 /// `date` and `updated` are pre-formatted. HTML fields (`content`, `toc`) use `| safe` to avoid
-/// double-escaping. All other string fields are auto-escaped by `MiniJinja`.
+/// double-escaping. All other string fields are auto-escaped.
 #[derive(Debug, Serialize)]
 pub struct PostTemplateVars<'a> {
     #[serde(flatten)]

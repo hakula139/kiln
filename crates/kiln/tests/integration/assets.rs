@@ -98,8 +98,8 @@ fn build_image_urls_and_metadata_share_published_paths() {
     site.write(
         "templates/post.html",
         indoc! {r#"
-            <span style="--lqip-uri:url('{{ featured_image.lqip_uri | safe }}')">
-              <img src="{{ featured_image.src | safe }}" width="{{ featured_image.width }}" height="{{ featured_image.height }}">
+            <span style="--lqip-uri:url('{{ featured_image.lqip_uri }}')">
+              <img src="{{ featured_image.src }}" width="{{ featured_image.width }}" height="{{ featured_image.height }}">
             </span>
             {{ content | safe }}
         "#},

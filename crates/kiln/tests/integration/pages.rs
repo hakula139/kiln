@@ -15,7 +15,7 @@ fn build_exposes_dates_in_configured_timezone_and_linked_tags_without_git() {
         indoc! {r#"
             <time datetime="{{ date }}">{{ date[:10] }}</time>
             {% if updated %}<time datetime="{{ updated }}">{{ updated[:10] }}</time>{% endif %}
-            {% for tag in tags %}<a href="{{ tag.url | safe }}">{{ tag.name }}</a>{% endfor %}
+            {% for tag in tags %}<a href="{{ tag.url }}">{{ tag.name }}</a>{% endfor %}
         "#},
     )
     .page(
