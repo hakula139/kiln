@@ -172,7 +172,7 @@ impl PublishedAssets {
                 "{} publishes {} under its source name, which the immutable cache rule for \
                  content-addressed files would match. {hint}",
                 file.source.display(),
-                path.display(),
+                site_path(path),
             );
         }
         Ok(())
@@ -229,8 +229,8 @@ impl OutputFiles<'_> {
                      one of them",
                     self.files[existing].source.display(),
                     source.display(),
-                    existing.display(),
-                    output.display(),
+                    site_path(existing),
+                    site_path(output),
                 );
             }
             self.canonical.insert(canonical, output.clone());
@@ -338,6 +338,11 @@ mod tests {
     use super::*;
     use crate::content::discovery::discover_content;
     use crate::static_assets::content_fingerprint;
+
+    /// Converts a `/`-separated relative path to the platform's separators, as errors display it.
+    fn native_path(path: &str) -> String {
+        path.replace('/', std::path::MAIN_SEPARATOR_STR)
+    }
 
     // ── PublishedAssets::publish ──
 
@@ -519,7 +524,11 @@ mod tests {
                 .to_string();
 
         assert!(
-            err.contains("themes/example/assets/images/Logo.png and static/assets/images/logo.png"),
+            err.contains(&format!(
+                "{} and {} publish /assets/images/Logo.png and /assets/images/logo.png",
+                native_path("themes/example/assets/images/Logo.png"),
+                native_path("static/assets/images/logo.png"),
+            )),
             "got: {err}"
         );
     }
@@ -704,22 +713,22 @@ mod tests {
         for (file, output, hint) in [
             (
                 "static/logo.dark.png",
-                "logo.dark.png",
+                "/logo.dark.png",
                 "Move it to assets/",
             ),
             (
                 "static/vendor.min.js",
-                "vendor.min.js",
+                "/vendor.min.js",
                 "Remove the dots from its stem, or move it to assets/",
             ),
             (
                 "assets/js/app.min.js",
-                "assets/js/app.min.js",
+                "/assets/js/app.min.js",
                 "scripts that import or are imported keep their source names",
             ),
             (
                 "assets/css/site.min.css",
-                "assets/css/site.min.css",
+                "/assets/css/site.min.css",
                 "reserved for compiled stylesheets",
             ),
         ] {
@@ -732,8 +741,10 @@ mod tests {
                 .to_string();
 
             assert!(
-                err.contains(&format!("{file} publishes {output} under its source name"))
-                    && err.contains(hint),
+                err.contains(&format!(
+                    "{} publishes {output} under its source name",
+                    native_path(file)
+                )) && err.contains(hint),
                 "got: {err}"
             );
         }
@@ -783,7 +794,7 @@ mod tests {
         assert!(
             err.contains(
                 "assets/real/logo.png and static/assets/alias/logo.png publish \
-                 assets/real/logo.png and assets/alias/logo.png"
+                 /assets/real/logo.png and /assets/alias/logo.png"
             ),
             "got: {err}"
         );

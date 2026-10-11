@@ -88,7 +88,7 @@ fn build_failure_preserves_previous_output_returns_error() {
             );
         }),
         (
-            "static/logo.dark.png publishes logo.dark.png under its source name",
+            "publishes /logo.dark.png under its source name",
             None,
             |site| {
                 site.write("static/logo.dark.png", "image");
