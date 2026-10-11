@@ -9,7 +9,7 @@ pub(crate) mod html;
 pub mod i18n;
 pub mod init;
 mod markdown;
-pub mod minify;
+pub(crate) mod minify;
 pub(crate) mod output;
 pub(crate) mod pagination;
 pub mod render;

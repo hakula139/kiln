@@ -186,39 +186,6 @@ fn extension(path: &Path) -> String {
         .to_ascii_lowercase()
 }
 
-pub(crate) fn is_fingerprinted_copy(path: &Path) -> Result<bool> {
-    let Some(extension) = path.extension().and_then(|extension| extension.to_str()) else {
-        return Ok(false);
-    };
-    if !is_code(path) {
-        return Ok(false);
-    }
-    let Some((original_stem, fingerprint)) = path
-        .file_stem()
-        .and_then(|stem| stem.to_str())
-        .and_then(|stem| stem.rsplit_once('.'))
-    else {
-        return Ok(false);
-    };
-    if original_stem.is_empty()
-        || fingerprint.len() != FINGERPRINT_LENGTH
-        || !fingerprint.bytes().all(|byte| byte.is_ascii_hexdigit())
-    {
-        return Ok(false);
-    }
-
-    if !path
-        .with_file_name(format!("{original_stem}.{extension}"))
-        .is_file()
-    {
-        return Ok(false);
-    }
-
-    let bytes = fs::read(path)
-        .with_context(|| format!("failed to read static asset {}", path.display()))?;
-    Ok(fingerprint == content_fingerprint(&bytes))
-}
-
 fn fingerprinted_path(path: &Path, bytes: &[u8]) -> Result<PathBuf> {
     let file_stem = path
         .file_stem()
@@ -426,23 +393,5 @@ mod tests {
             manifest.resolve("/posts/a/photo%20%25.avif", "/blog/posts/a/", "/blog"),
             None
         );
-    }
-
-    // ── is_fingerprinted_copy ──
-
-    #[test]
-    fn is_fingerprinted_copy_requires_matching_original() {
-        let dir = tempfile::tempdir().unwrap();
-        let fingerprinted = dir.path().join("app.ba7816bf8f01.js");
-        fs::write(&fingerprinted, "abc").unwrap();
-
-        assert!(!is_fingerprinted_copy(&fingerprinted).unwrap());
-
-        fs::write(dir.path().join("app.js"), "original").unwrap();
-        assert!(is_fingerprinted_copy(&fingerprinted).unwrap());
-
-        let unrelated = dir.path().join("app.abcdef123456.js");
-        fs::write(&unrelated, "abc").unwrap();
-        assert!(!is_fingerprinted_copy(&unrelated).unwrap());
     }
 }
