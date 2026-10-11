@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::path::Path;
 
 use anyhow::Result;
 use pulldown_cmark::{CodeBlockKind, Event, Tag, TagEnd};
@@ -16,10 +17,10 @@ use super::page_ids::PageIds;
 use super::toc::render_toc_html;
 use super::{PageResources, RenderOptions};
 use crate::config::Config;
-use crate::directive::callout::render_callout;
+use crate::directive::callout::Callout;
 use crate::directive::div::render_div;
 use crate::directive::parser::{DirectiveNode, parse_directives};
-use crate::directive::{DirectiveBlock, DirectiveContext, DirectiveKind};
+use crate::directive::{DirectiveBlock, DirectiveContext};
 use crate::template::TemplateEngine;
 
 /// The fully rendered output of a single page.
@@ -125,7 +126,7 @@ impl PreparedDocument {
                 Event::Html(html) | Event::InlineHtml(html) if image_depth == 0 => {
                     if let Some(index) = placeholder_index(html, prefix) {
                         let (block, document) = &self.directives[index];
-                        if let Some(id) = &block.id {
+                        if let Some(id) = &block.args.identity.id {
                             ids.reserve(id);
                         }
                         document.reserve_authored_ids(ids, prefix);
@@ -209,10 +210,11 @@ impl PageRenderer<'_> {
             .map(|node| {
                 let child_scope = *next_scope;
                 *next_scope += 1;
+                let body = &node.block.body;
                 let inner = self.prepare_fragment(
-                    &node.block.body,
+                    &content[body.start - source_offset..body.end - source_offset],
                     node.children,
-                    node.body_start,
+                    body.start,
                     child_scope,
                     next_scope,
                 );
@@ -247,14 +249,7 @@ impl PageRenderer<'_> {
         let mut fragments = Vec::with_capacity(document.directives.len());
         for (block, inner) in document.directives {
             let body = self.render_document(inner, ids)?;
-            let mut html = render_directive_block(
-                &block,
-                &body.html,
-                self.engine,
-                self.config,
-                self.resources,
-                &self.assets,
-            )?;
+            let mut html = self.render_directive_block(&block, &body.html)?;
             if !html.ends_with('\n') {
                 html.push('\n');
             }
@@ -278,6 +273,34 @@ impl PageRenderer<'_> {
         output.html = restore_directives(output.html, self.placeholder_prefix, &fragments);
         Ok(output)
     }
+
+    /// Renders a directive through its `directives/<name>.html` template, or as a `<div>` when
+    /// the block is anonymous or the template is missing.
+    fn render_directive_block(&self, block: &DirectiveBlock, body_html: &str) -> Result<String> {
+        let args = &block.args;
+        if !block.name.is_empty() {
+            let callout = (block.name == "callout")
+                .then(|| Callout::from_args(&args.named))
+                .transpose()?;
+            let ctx = DirectiveContext {
+                name: &block.name,
+                positional_args: &args.positional,
+                named_args: &args.named,
+                identity: &args.identity,
+                body_html,
+                callout,
+                source_dir: self.resources.source_dir.map(Path::to_string_lossy),
+                page_url: self.resources.page_url,
+            };
+            if let Some(result) = self
+                .engine
+                .render_directive(&ctx, &self.assets, self.config)
+            {
+                return result;
+            }
+        }
+        Ok(render_div(&block.name, &args.identity, body_html))
+    }
 }
 
 fn placeholder_index(html: &str, prefix: &str) -> Option<usize> {
@@ -300,56 +323,6 @@ fn restore_directives(mut html: String, prefix: &str, fragments: &[String]) -> S
 /// newline-terminated, so each one replaces a whole line and keeps its own lines in the output.
 fn directive_placeholder(prefix: &str, index: usize) -> String {
     format!("{prefix}{index}-->\n")
-}
-
-/// Dispatches a directive block to its renderer.
-///
-/// For `Unknown` directives, checks the template engine for a `directives/<name>.html` template.
-/// Falls back to `render_div` if no template exists.
-fn render_directive_block(
-    block: &DirectiveBlock,
-    body_html: &str,
-    engine: &TemplateEngine,
-    config: &Config,
-    resources: &PageResources<'_>,
-    assets: &AssetsHandle,
-) -> Result<String> {
-    let id = block.id.as_deref();
-    let classes = &block.classes;
-
-    match &block.kind {
-        DirectiveKind::Callout { kind, title, open } => Ok(render_callout(
-            *kind,
-            title.as_deref(),
-            *open,
-            id,
-            classes,
-            body_html,
-        )),
-        DirectiveKind::Unknown {
-            name,
-            positional_args,
-            named_args,
-        } => {
-            let ctx = DirectiveContext {
-                name: name.clone(),
-                positional_args: positional_args.clone(),
-                named_args: named_args.clone(),
-                id: block.id.clone(),
-                classes: block.classes.clone(),
-                body_html: body_html.to_owned(),
-                body_raw: block.body.clone(),
-                source_dir: resources
-                    .source_dir
-                    .map(|p| p.to_string_lossy().into_owned()),
-                page_url: resources.page_url.to_owned(),
-            };
-            match engine.render_directive(name, ctx, assets, config) {
-                Some(result) => result,
-                None => Ok(render_div(name, id, classes, body_html)),
-            }
-        }
-    }
 }
 
 #[cfg(test)]
@@ -1007,29 +980,26 @@ mod tests {
     #[test]
     fn render_page_directives_sequential() {
         let page = render(indoc! {"
-            ::: callout
+            ::: first
             First.
             :::
 
             Some text between.
 
-            ::: callout {type=warning}
+            ::: second
             Second.
             :::
         "});
-        let first = page.content_html.find(r#"class="callout note""#).unwrap();
-        let first_body = page.content_html.find("<p>First.</p>").unwrap();
-        let first_close = page.content_html.find("</details>").unwrap();
-        let between = page.content_html.find("<p>Some text between.</p>").unwrap();
-        let second = page
-            .content_html
-            .find(r#"class="callout warning""#)
-            .unwrap();
-        let second_body = page.content_html.find("<p>Second.</p>").unwrap();
-        let second_close = page.content_html.rfind("</details>").unwrap();
-        assert!(first < first_body && first_body < first_close);
-        assert!(first_close < between && between < second);
-        assert!(second < second_body && second_body < second_close);
+        assert_eq!(
+            page.content_html,
+            indoc! {r#"
+                <div class="first"><p>First.</p>
+                </div>
+                <p>Some text between.</p>
+                <div class="second"><p>Second.</p>
+                </div>
+            "#}
+        );
     }
 
     #[test]
@@ -1054,26 +1024,23 @@ mod tests {
     #[test]
     fn render_page_directives_nested() {
         let page = render(indoc! {"
-            :::: callout {type=warning}
+            :::: outer
             Outer text.
 
-            ::: callout {type=tip}
+            ::: inner
             Inner text.
             :::
             ::::
         "});
-        let outer = page
-            .content_html
-            .find(r#"class="callout warning""#)
-            .unwrap();
-        let outer_body = page.content_html.find("<p>Outer text.</p>").unwrap();
-        let inner = page.content_html.find(r#"class="callout tip""#).unwrap();
-        let inner_body = page.content_html.find("<p>Inner text.</p>").unwrap();
-        let inner_close = page.content_html.find("</details>").unwrap();
-        let outer_close = page.content_html.rfind("</details>").unwrap();
-        assert!(outer < outer_body && outer_body < inner);
-        assert!(inner < inner_body && inner_body < inner_close);
-        assert!(inner_close < outer_close);
+        assert_eq!(
+            page.content_html,
+            indoc! {r#"
+                <div class="outer"><p>Outer text.</p>
+                <div class="inner"><p>Inner text.</p>
+                </div>
+                </div>
+            "#}
+        );
     }
 
     #[test]
@@ -1134,7 +1101,12 @@ mod tests {
         "});
         assert!(page.content_html.contains("<!--kiln-directive-99-->"));
         assert!(page.content_html.contains("<!--kiln-directive-0-->"));
-        assert_eq!(page.content_html.matches("<details").count(), 1);
+        assert_eq!(
+            page.content_html
+                .matches(r#"<div class="callout">"#)
+                .count(),
+            1
+        );
         assert!(page.toc_html.contains(r##"href="#inside-1""##));
     }
 
@@ -1206,42 +1178,60 @@ mod tests {
     // ── render_directive_block ──
 
     #[test]
-    fn render_directive_block_callout() {
-        let page = render(indoc! {"
-            ::: callout
-            Hello **world**.
-            :::
-        "});
-        assert!(
-            page.content_html.contains(r#"class="callout note""#),
-            "should have callout wrapper, html:\n{}",
-            page.content_html
+    fn render_directive_block_callout_template_receives_validated_options() {
+        let dir = tempfile::tempdir().unwrap();
+        let directives = dir.path().join("directives");
+        fs::create_dir_all(&directives).unwrap();
+        fs::write(
+            directives.join("callout.html"),
+            "{{ type }}|{{ title }}|{{ open }}|{{ id }}|{{ classes | join(' ') }}|{{ body_html | safe }}",
+        )
+        .unwrap();
+
+        let engine = TemplateEngine::new(Some(dir.path()), None, &test_i18n()).unwrap();
+        let page = render_with(
+            indoc! {"
+                ::: callout {#my-note .wide type=Tip open=false}
+                Hello **world**.
+                :::
+            "},
+            &engine,
         );
-        assert!(
-            page.content_html.contains("<strong>world</strong>"),
-            "body markdown should be rendered, html:\n{}",
-            page.content_html
+        assert_eq!(
+            page.content_html,
+            "tip|None|False|my-note|wide|<p>Hello <strong>world</strong>.</p>\n"
         );
     }
 
     #[test]
-    fn render_directive_block_with_id_and_classes() {
-        let page = render(indoc! {"
-            ::: callout {#my-note .highlight type=tip}
-            Body text.
-            :::
-        "});
-        assert!(
-            page.content_html.contains(r#"id="my-note""#),
-            "id should be propagated, html:\n{}",
-            page.content_html
-        );
-        assert!(
-            page.content_html
-                .contains(r#"class="callout tip highlight""#),
-            "classes should be propagated, html:\n{}",
-            page.content_html
-        );
+    fn render_directive_block_invalid_callout_returns_error() {
+        for name in ["callout", "Callout"] {
+            let error = render_page(
+                &formatdoc! {"
+                    ::: {name} {{type=warn}}
+                    Body
+                    :::
+                "},
+                &SYNTAX_SET,
+                &test_engine(),
+                &Config::default(),
+                &RenderOptions::default(),
+                &PageResources {
+                    source_dir: None,
+                    images: &EMPTY_RESOLVER,
+                    assets: &StaticAssetManifest::default(),
+                    page_url: "/",
+                    deployment_prefix: "",
+                },
+            )
+            .unwrap_err();
+            assert!(
+                error
+                    .to_string()
+                    .starts_with(r#"unknown callout type "warn""#),
+                "{name}: {error}"
+            );
+        }
     }
 
     #[test]
@@ -1351,19 +1341,16 @@ mod tests {
     #[test]
     fn render_directive_block_fallback_to_div() {
         let page = render(indoc! {"
-            ::: custom
+            ::: callout {#my-note .highlight type=tip}
             Some body.
             :::
         "});
-        assert!(
-            page.content_html.contains(r#"class="custom""#),
-            "unknown directive should be wrapped in div with name as class, html:\n{}",
-            page.content_html
-        );
-        assert!(
-            page.content_html.contains("<p>Some body.</p>"),
-            "unknown directive body rendered as markdown, html:\n{}",
-            page.content_html
+        assert_eq!(
+            page.content_html,
+            indoc! {r#"
+                <div id="my-note" class="callout highlight"><p>Some body.</p>
+                </div>
+            "#}
         );
     }
 

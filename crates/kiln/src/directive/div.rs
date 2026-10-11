@@ -1,35 +1,16 @@
-use crate::html::escape;
+use crate::attrs::Identity;
 
-/// Renders an unknown directive as a `<div>` wrapper.
+/// Renders a directive without a template as a `<div>`, with a non-empty name as its first class.
 ///
-/// - The directive name (if non-empty) becomes the first CSS class.
-/// - Extra `.class` tokens from Pandoc attributes are appended.
-/// - When no name, id, or classes are present, the body is passed through as-is.
+/// A block without a name, id or classes passes its body through unchanged.
 #[must_use]
-pub fn render_div(name: &str, id: Option<&str>, classes: &[String], body_html: &str) -> String {
-    let has_attrs = id.is_some() || !name.is_empty() || !classes.is_empty();
-    if !has_attrs {
+pub(crate) fn render_div(name: &str, identity: &Identity, body_html: &str) -> String {
+    let base: &[&str] = if name.is_empty() { &[] } else { &[name] };
+    let attrs = identity.html_attrs(base);
+    if attrs.is_empty() {
         return body_html.to_owned();
     }
-
-    let id_attr = id
-        .map(|v| format!(r#" id="{}""#, escape(v)))
-        .unwrap_or_default();
-
-    let mut class_parts = Vec::new();
-    if !name.is_empty() {
-        class_parts.push(escape(name));
-    }
-    for class in classes {
-        class_parts.push(escape(class));
-    }
-    let class_attr = if class_parts.is_empty() {
-        String::new()
-    } else {
-        format!(r#" class="{}""#, class_parts.join(" "))
-    };
-
-    format!("<div{id_attr}{class_attr}>{body_html}</div>\n")
+    format!("<div{attrs}>{body_html}</div>\n")
 }
 
 #[cfg(test)]
@@ -41,46 +22,12 @@ mod tests {
     // ── render_div ──
 
     #[test]
-    fn render_div_with_name() {
-        let html = render_div("compact-table", None, &[], "<p>Content</p>\n");
-        assert_eq!(
-            html,
-            indoc! {r#"
-                <div class="compact-table"><p>Content</p>
-                </div>
-            "#},
-        );
-    }
-
-    #[test]
-    fn render_div_with_id() {
-        let html = render_div("", Some("section-1"), &[], "<p>Content</p>\n");
-        assert_eq!(
-            html,
-            indoc! {r#"
-                <div id="section-1"><p>Content</p>
-                </div>
-            "#},
-        );
-    }
-
-    #[test]
-    fn render_div_with_extra_classes() {
-        let classes = vec!["compact".into(), "wide".into()];
-        let html = render_div("", None, &classes, "<p>Content</p>\n");
-        assert_eq!(
-            html,
-            indoc! {r#"
-                <div class="compact wide"><p>Content</p>
-                </div>
-            "#},
-        );
-    }
-
-    #[test]
     fn render_div_with_name_id_and_classes() {
-        let classes = vec!["extra".into(), "wide".into()];
-        let html = render_div("wrapper", Some("main"), &classes, "<p>Body</p>\n");
+        let identity = Identity {
+            id: Some("main".into()),
+            classes: vec!["extra".into(), "wide".into()],
+        };
+        let html = render_div("wrapper", &identity, "<p>Body</p>\n");
         assert_eq!(
             html,
             indoc! {r#"
@@ -91,35 +38,23 @@ mod tests {
     }
 
     #[test]
-    fn render_div_without_attrs() {
-        let html = render_div("", None, &[], "<p>Content</p>\n");
+    fn render_div_anonymous_with_classes() {
+        let identity = Identity {
+            id: None,
+            classes: vec!["compact".into()],
+        };
+        assert_eq!(
+            render_div("", &identity, "<p>Content</p>\n"),
+            indoc! {r#"
+                <div class="compact"><p>Content</p>
+                </div>
+            "#},
+        );
+    }
+
+    #[test]
+    fn render_div_without_attrs_passes_body_through() {
+        let html = render_div("", &Identity::default(), "<p>Content</p>\n");
         assert_eq!(html, "<p>Content</p>\n");
-    }
-
-    #[test]
-    fn render_div_escapes_name() {
-        let html = render_div("<script>", None, &[], "");
-        assert!(
-            html.contains(r#"class="&lt;script&gt;""#),
-            "name should be escaped, html:\n{html}"
-        );
-        assert!(
-            !html.contains("<script>"),
-            "raw script tag must not appear, html:\n{html}"
-        );
-    }
-
-    #[test]
-    fn render_div_escapes_id_and_classes() {
-        let classes = vec![r#"a"b"#.into()];
-        let html = render_div("", Some(r#"x"y"#), &classes, "");
-        assert!(
-            html.contains(r#"id="x&quot;y""#),
-            "id should be escaped, html:\n{html}"
-        );
-        assert!(
-            html.contains(r"a&quot;b"),
-            "class should be escaped, html:\n{html}"
-        );
     }
 }

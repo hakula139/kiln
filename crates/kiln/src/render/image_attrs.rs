@@ -57,7 +57,7 @@ fn find_brace_end(s: &str, start: usize) -> Option<usize> {
 fn parse_image_attrs(attr_str: &str) -> ImageAttrs {
     let pandoc = parse_pandoc_attrs(attr_str);
     let (mut width, mut height) = (None, None);
-    for (key, value) in pandoc.kvs {
+    for (key, value) in pandoc.named {
         match key {
             "width" => width = Some(value.into_owned()),
             "height" => height = Some(value.into_owned()),

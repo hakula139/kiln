@@ -39,7 +39,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 
 ````text
 .
-├── attrs.rs             # Pandoc-style `{#id .class key=value}` attribute parser, shared across renderers
+├── attrs.rs             # Pandoc-style `{#id .class key=value}` attribute parser and shared id / class identity
 ├── build.rs             # BuildContext, build orchestration, per-page rendering, static / asset copying
 ├── build/               # Listing pipeline and output generator submodules
 │   ├── archive.rs       # Paginated year-grouped archive pages (/posts/, /posts/<section>/, /tags/<slug>/)
@@ -64,10 +64,10 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 │   ├── frontmatter.rs   # YAML → TOML frontmatter serde round-trip
 │   └── shortcode.rs     # Hugo shortcode → kiln directive conversion
 ├── css.rs               # Shared / page CSS discovery, compilation, and published asset URL resolution
-├── directive.rs         # Directive shared types (CalloutKind, DirectiveKind, DirectiveContext) + arg parser
+├── directive.rs         # Directive block, owned arguments and template context types
 ├── directive/           # :::-fenced directive parsing + rendering submodules
-│   ├── callout.rs       # 12 callout types (<details> with id / class propagation)
-│   ├── div.rs           # Fenced divs and unknown directives (<div> with id / class propagation)
+│   ├── callout.rs       # Callout types and option validation for the theme's callout template
+│   ├── div.rs           # `<div>` fallback for anonymous and template-less directives
 │   └── parser.rs        # Nested directive tree with source ranges and parsed attributes
 ├── feed.rs              # RSS 2.0 XML generation (Channel, generate_rss, RFC 2822 date formatting)
 ├── html.rs              # Shared HTML utilities (escape, indent, writeln_indented)

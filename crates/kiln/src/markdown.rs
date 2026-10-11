@@ -81,6 +81,81 @@ mod tests {
 
     use super::*;
 
+    // ── code_ranges ──
+
+    #[test]
+    fn code_ranges_cover_fenced_blocks_through_closing_line() {
+        for input in [
+            indoc! {"
+                ```
+                ::: a
+                ```
+            "},
+            indoc! {"
+                ~~~
+                ::: a
+                ~~~\r
+            "},
+            indoc! {"
+                   ```
+                ::: a
+                   ```
+            "},
+        ] {
+            let start = input.find(['`', '~']).unwrap();
+            assert_eq!(only_code_range(input), start..input.len(), "{input:?}");
+        }
+    }
+
+    #[test]
+    fn code_ranges_unmatched_closing_fence_extends_to_end() {
+        for input in [
+            indoc! {"
+                ```
+                ::: a
+                ~~~
+            "},
+            indoc! {"
+                ```
+                ::: a
+                    ```
+            "},
+        ] {
+            assert_eq!(only_code_range(input), 0..input.len(), "{input:?}");
+        }
+    }
+
+    #[test]
+    fn code_ranges_reject_invalid_fence_openers() {
+        let indented = indoc! {"
+                ```
+            ::: a
+        "};
+        assert_eq!(
+            only_code_range(indented),
+            indented.find('`').unwrap()..indented.find(':').unwrap()
+        );
+        for input in [
+            indoc! {"
+                ``
+                ::: a
+            "},
+            indoc! {"
+                ```a`b
+                ::: a
+            "},
+        ] {
+            assert_eq!(code_ranges(input), Vec::<Range<usize>>::new(), "{input:?}");
+        }
+    }
+
+    fn only_code_range(input: &str) -> Range<usize> {
+        let [range] = code_ranges(input)
+            .try_into()
+            .unwrap_or_else(|ranges| panic!("{input:?}: {ranges:?}"));
+        range
+    }
+
     // ── replace_shortcodes ──
 
     #[test]
