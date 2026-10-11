@@ -9,7 +9,7 @@ use walkdir::WalkDir;
 
 use kiln::feed::DEFAULT_FEED_LIMIT;
 
-use super::fixtures::{INDEX_TAGS, PAGINATE, PROSE, Site};
+use super::fixtures::{COMMITTED, INDEX_TAGS, PAGINATE, PROSE, Site};
 
 /// Includes CLI startup and prior-output cleanup, with fixture validation outside sampling.
 pub(super) fn benchmarks(criterion: &mut Criterion) {
@@ -18,21 +18,18 @@ pub(super) fn benchmarks(criterion: &mut Criterion) {
     group.sampling_mode(SamplingMode::Flat);
     group.warm_up_time(Duration::from_secs(1));
     group.measurement_time(Duration::from_secs(5));
-    for (pages, minify, extra_params) in [
-        (20_usize, false, 0),
-        (200, false, 0),
-        (200, false, 1_000),
-        (200, true, 0),
+    for (mode, pages, minify, extra_params, git) in [
+        ("default", 20_usize, false, 0, false),
+        ("default", 200, false, 0, false),
+        ("large_params", 200, false, 1_000, false),
+        ("git_info", 200, false, 0, true),
+        ("minified", 200, true, 0, false),
     ] {
         let site = Site::new(pages, PROSE, extra_params);
-        verify_build(&site, pages, minify);
-        let mode = if minify {
-            "minified"
-        } else if extra_params > 0 {
-            "large_params"
-        } else {
-            "default"
-        };
+        if git {
+            site.commit_to_git();
+        }
+        verify_build(&site, pages, minify, git);
         group.throughput(Throughput::Elements(pages.try_into().unwrap()));
         group.bench_with_input(BenchmarkId::new(mode, pages), &site, |bencher, site| {
             bencher.iter(|| run_build(site, minify));
@@ -41,7 +38,7 @@ pub(super) fn benchmarks(criterion: &mut Criterion) {
     group.finish();
 }
 
-fn verify_build(site: &Site, pages: usize, minify: bool) {
+fn verify_build(site: &Site, pages: usize, minify: bool, git: bool) {
     let result = build_command(site, minify).output().unwrap();
     assert!(
         result.status.success(),
@@ -80,6 +77,13 @@ fn verify_build(site: &Site, pages: usize, minify: bool) {
         pages.min(DEFAULT_FEED_LIMIT)
     );
     assert!(feed.contains("<title>Post 0</title>"));
+    let sitemap = fs::read_to_string(output.join("sitemap.xml")).unwrap();
+    let lastmods = sitemap.matches("<lastmod>").count();
+    let committed = sitemap
+        .matches(&format!("<lastmod>{COMMITTED}</lastmod>"))
+        .count();
+    assert!(lastmods >= pages);
+    assert_eq!(committed, if git { lastmods } else { 0 });
     let css = fs::read_to_string(output.join("style.css")).unwrap();
     let script = fs::read_to_string(output.join("script.js")).unwrap();
     if minify {

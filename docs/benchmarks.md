@@ -18,16 +18,16 @@ Each revision has a separate Criterion report with raw samples, logs, revision S
 
 ## Workloads
 
-| Group            | Measurement                                                                                           |
-| ---------------- | ----------------------------------------------------------------------------------------------------- |
-| `shortcodes`     | Page rendering with emoji / icon expansion in ordinary text and unmatched colon prefixes              |
-| `render_options` | Option extraction from small and large params tables                                                  |
-| `render`         | Prose and code fences with preloaded templates, syntax, and image resolver                            |
-| `syntax/load`    | Loading and destroying a fresh syntax set                                                             |
-| `images`         | Generated PNG processing with a fresh cache, or lookup in a primed cache                              |
-| `build`          | CLI startup, prior-output cleanup, and complete builds with default, large-params, or minified output |
+| Group            | Measurement                                                                                                          |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `shortcodes`     | Page rendering with emoji / icon expansion in ordinary text and unmatched colon prefixes                             |
+| `render_options` | Option extraction from small and large params tables                                                                 |
+| `render`         | Prose and code fences with preloaded templates, syntax, and image resolver                                           |
+| `syntax/load`    | Loading and destroying a fresh syntax set                                                                            |
+| `images`         | Generated PNG processing with a fresh cache, or lookup in a primed cache                                             |
+| `build`          | CLI startup, prior-output cleanup, and complete builds with default, large-params, Git-timestamp, or minified output |
 
-Cold-image samples exclude image creation and resolver construction, but include processing and cache release. Build fixtures use minimal templates and warm filesystem caches, with search and Git timestamps disabled. Measure representative sites separately when evaluating theme or Pagefind costs.
+Cold-image samples exclude image creation and resolver construction, but include processing and cache release. Build fixtures use minimal templates and warm filesystem caches, with search disabled. Only the Git-timestamp variant commits its site and enables `enable_git_info`. Measure representative sites separately when evaluating theme or Pagefind costs.
 
 ## Comparing revisions
 

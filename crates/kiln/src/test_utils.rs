@@ -17,7 +17,7 @@ mod fixtures;
 
 #[cfg(unix)]
 pub(crate) use fixtures::PermissionGuard;
-pub(crate) use fixtures::{copy_templates, template_dir, write_test_file};
+pub(crate) use fixtures::{copy_templates, git, git_commit, template_dir, write_test_file};
 
 /// Creates a `TemplateEngine` using embedded test templates.
 pub(crate) fn test_engine() -> TemplateEngine {

@@ -1702,6 +1702,7 @@ dependencies = [
  "futures-util",
  "gh-emoji",
  "hex",
+ "icu_normalizer",
  "image",
  "imagesize",
  "indoc",
