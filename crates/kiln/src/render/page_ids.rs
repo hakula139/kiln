@@ -59,6 +59,8 @@ impl PageIds {
 
 #[cfg(test)]
 mod tests {
+    use indoc::indoc;
+
     use super::*;
 
     // ── PageIds::reserve_html ──
@@ -66,7 +68,7 @@ mod tests {
     #[test]
     fn decodes_attributes_and_ignores_text() {
         let mut ids = PageIds::default();
-        ids.reserve_html(indoc::indoc! {r#"
+        ids.reserve_html(indoc! {r#"
             <div ID=shared></div><span id='fn&#45;a'></span><p id="quoted"></p>
             <!-- <i id="comment"></i> -->
             <script>const text = '<i id="script"></i>';</script>

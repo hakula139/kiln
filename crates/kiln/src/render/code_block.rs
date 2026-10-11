@@ -4,24 +4,24 @@ use crate::attrs::parse_pandoc_attrs;
 
 /// Attributes extracted from a fenced code block's info string.
 #[derive(Debug, Default)]
-pub(crate) struct CodeBlockSpec {
-    pub lang: Option<String>,
-    pub id: Option<String>,
-    pub classes: Vec<String>,
-    pub title: Option<String>,
-    pub highlight: Vec<RangeInclusive<usize>>,
-    pub disclosure: Disclosure,
+pub(super) struct CodeBlockSpec {
+    pub(super) lang: Option<String>,
+    pub(super) id: Option<String>,
+    pub(super) classes: Vec<String>,
+    pub(super) title: Option<String>,
+    pub(super) highlight: Vec<RangeInclusive<usize>>,
+    pub(super) disclosure: Disclosure,
 }
 
 impl CodeBlockSpec {
-    pub(crate) fn is_mermaid(&self) -> bool {
+    pub(super) fn is_mermaid(&self) -> bool {
         self.lang.as_deref() == Some("mermaid")
     }
 }
 
 /// Authored disclosure state of a code block.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Disclosure {
+pub(super) enum Disclosure {
     /// Open, limited by the site's `code_max_lines`.
     #[default]
     Auto,
@@ -35,8 +35,7 @@ pub(crate) enum Disclosure {
 ///
 /// The language tag ends at the first whitespace or `{`. Without one, the first class names the
 /// language, as in Pandoc. Only the first `{...}` block is read, and the language is lowercased.
-#[must_use]
-pub(crate) fn parse_fence_info(info: &str) -> CodeBlockSpec {
+pub(super) fn parse_fence_info(info: &str) -> CodeBlockSpec {
     let info = info.trim();
     let (lang, rest) = info.split_at(
         info.find(|c: char| c == '{' || c.is_whitespace())

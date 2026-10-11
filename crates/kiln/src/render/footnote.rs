@@ -55,8 +55,8 @@ impl Notes {
                     id: String::new(),
                     references: Vec::new(),
                 });
-            } else if let Some(&number) = self.numbers.get(&key) {
-                self.notes[number].reference_count += 1;
+            } else {
+                self.notes[self.numbers[&key]].reference_count += 1;
             }
         }
     }
@@ -197,13 +197,13 @@ fn render_reference(id: &str, reference: &str, number: usize) -> String {
     )
 }
 
-/// U+FE0E keeps the return arrow in text presentation on platforms that default to emoji.
 fn render_backlinks(references: &[String]) -> String {
     let mut html = String::new();
     for (index, reference) in references.iter().enumerate() {
         if index > 0 {
             html.push(' ');
         }
+        // U+FE0E keeps the return arrow in text presentation on platforms that default to emoji.
         _ = write!(
             &mut html,
             r##"<a class="footnote-backref" href="#{}" role="doc-backlink">↩&#xFE0E;"##,

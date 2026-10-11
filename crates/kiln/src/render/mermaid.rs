@@ -6,7 +6,6 @@ use crate::html::escape;
 ///
 /// The escaped source appears both as inner text, where mermaid.js reads it, and in `data-source`,
 /// so a theme toggle can restore it after mermaid replaces the content with `<svg>`.
-#[must_use]
 pub(super) fn render_mermaid(source: &str) -> String {
     let escaped = escape(source);
     formatdoc! {r#"
@@ -42,8 +41,6 @@ mod tests {
     #[test]
     fn escapes_html_special_chars() {
         let html = render_mermaid(r#"A["<b>&"]"#);
-        // Both inner text and attribute value carry the escaped form so the
-        // browser's textContent / dataset.source decode back to the original.
         assert_eq!(
             html,
             indoc! {r#"
