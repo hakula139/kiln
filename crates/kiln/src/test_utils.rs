@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
@@ -40,6 +41,14 @@ pub(crate) fn test_i18n() -> I18n {
         &Language::default(),
     )
     .unwrap()
+}
+
+/// Collects `(key, value)` pairs into owned named directive arguments.
+pub(crate) fn named_args(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
+    pairs
+        .iter()
+        .map(|&(key, value)| (key.to_owned(), value.to_owned()))
+        .collect()
 }
 
 /// Creates a minimal standalone `Page` with the given title and an empty body.

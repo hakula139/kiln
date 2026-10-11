@@ -62,12 +62,16 @@ pub(crate) fn parse_open(value: &str) -> Option<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_utils::named_args;
 
     // ── Callout::from_args ──
 
     #[test]
     fn defaults_to_open_untitled_note() {
-        for named in [BTreeMap::new(), args(&[("title", ""), ("open", "true")])] {
+        for named in [
+            BTreeMap::new(),
+            named_args(&[("title", ""), ("open", "true")]),
+        ] {
             assert_eq!(
                 Callout::from_args(&named).unwrap(),
                 Callout {
@@ -82,7 +86,7 @@ mod tests {
 
     #[test]
     fn reads_type_title_and_open() {
-        let named = args(&[
+        let named = named_args(&[
             ("open", "FALSE"),
             ("title", "Careful"),
             ("type", "Warning"),
@@ -102,11 +106,11 @@ mod tests {
     fn rejects_unknown_type_and_open_value() {
         for (named, message) in [
             (
-                args(&[("type", "warn")]),
+                named_args(&[("type", "warn")]),
                 r#"unknown callout type "warn", expected one of: abstract, bug,"#,
             ),
             (
-                args(&[("open", "no")]),
+                named_args(&[("open", "no")]),
                 r#"callout open must be true or false, got "no""#,
             ),
         ] {
@@ -133,12 +137,5 @@ mod tests {
         assert_eq!(parse_open("FALSE"), Some(false));
         assert_eq!(parse_open("yes"), None);
         assert_eq!(parse_open(""), None);
-    }
-
-    fn args(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
-        pairs
-            .iter()
-            .map(|&(key, value)| (key.to_owned(), value.to_owned()))
-            .collect()
     }
 }

@@ -8,7 +8,7 @@ Content starts with TOML frontmatter between `+++` delimiters. See the [frontmat
 
 ## Pandoc-Style Attributes
 
-A `{...}` attribute block is the shared syntax kiln uses to attach metadata to images, fenced code blocks, and directives. Each consumer recognizes its own keys and interprets bare words as described below.
+A `{...}` attribute block is the shared syntax kiln uses to attach metadata to images, fenced code blocks and directives. Each consumer recognizes its own keys and interprets bare words as described below.
 
 The block accepts four token kinds, in any order:
 
@@ -47,7 +47,7 @@ Headings automatically receive `id` attributes generated from their text, suitab
 <!-- renders as: <h2 id="getting-started">Getting Started</h2> -->
 ```
 
-The slugification algorithm is CJK-aware and preserves Chinese / Japanese / Korean characters in IDs. Alphanumerics are lowercased, `+`, `.`, `_`, and `~` survive as-is (so `C++` becomes `c++`), and every other character collapses into a single `-`.
+The slugification algorithm is CJK-aware and preserves Chinese / Japanese / Korean characters in IDs. Alphanumerics are lowercased, `+`, `.`, `_` and `~` survive as-is (so `C++` becomes `c++`), and every other character collapses into a single `-`.
 
 Explicit heading IDs override the auto-generated one:
 
@@ -262,7 +262,7 @@ kiln validates the options, and the theme's `directives/callout.html` template r
 
 #### Type and Options
 
-The callout type defaults to `note`. Use `type=` to specify a different type. Custom titles and collapse behavior are set via key-value attributes. An unknown type or an `open` value other than `true` / `false` fails the build:
+The callout type defaults to `note`. Use `type=` to specify a different type. Custom titles and collapse behavior are set via key-value attributes. Types and `open` values are case-insensitive. An unknown type or an `open` value other than `true` / `false` fails the build:
 
 ```markdown
 ::: callout {type=warning title="Careful" open=false}
@@ -316,7 +316,7 @@ Arguments inside `{...}` (after `#id` and `.class` extraction) are split into **
 | `key="value"`     | `server="example"` | Named: `server → "example"` |
 | `key=value`       | `cols=3`           | Named: `cols → "3"`         |
 
-For example, `::: music {#player .wide server="example" type="song" id="12345"}` parses to: `id="player"`, `classes=["wide"]`, and `named_args={server: "example", type: "song", id: "12345"}`.
+For example, `::: music {#player .wide server="example" type="song" id="12345"}` parses to: `id="player"`, `classes=["wide"]` and `named_args={server: "example", type: "song", id: "12345"}`.
 
 ```html
 <iframe
@@ -324,4 +324,4 @@ For example, `::: music {#player .wide server="example" type="song" id="12345"}`
 ></iframe>
 ```
 
-For data-driven directives, the template-side helpers `read_file`, `parse_csv`, and `register_script` are documented under [Template Functions](themes.md#template-functions).
+For data-driven directives, the template-side helpers `read_file`, `parse_csv` and `register_script` are documented under [Template Functions](themes.md#template-functions).
