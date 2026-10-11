@@ -1,6 +1,7 @@
 use std::fs;
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
+use std::path::Path;
 
 use indoc::{formatdoc, indoc};
 use scraper::{Html, Selector};
@@ -78,7 +79,7 @@ fn build_fingerprints_bundle_assets_after_static_collisions() {
     assert_eq!(site.read("example/assets/image.avif"), "bundle-image");
     assert_eq!(
         site.read(&format!(
-            "_assets/example/assets/image.{}.avif",
+            "_assets/image.{}.avif",
             fingerprint("bundle-image")
         )),
         "bundle-image"
@@ -149,7 +150,7 @@ fn build_image_urls_and_metadata_share_published_paths() {
                 (
                     format!(
                         "{origin}/blog/_assets/{}.{}.png?q=1#view",
-                        path.strip_suffix(".png").unwrap(),
+                        Path::new(path).file_stem().unwrap().to_str().unwrap(),
                         fingerprint(fs::read(site.output(path)).unwrap())
                     ),
                     Some(meta.width.to_string()),
@@ -207,8 +208,8 @@ fn build_updates_managed_image_urls_and_retires_previous_fingerprints() {
         .unwrap();
 
         let hash = fingerprint(bytes);
-        let path = format!("_assets/example/photo %.{hash}.avif");
-        let url = format!("/blog/_assets/example/photo%20%25.{hash}.avif?quality=1#view");
+        let path = format!("_assets/photo %.{hash}.avif");
+        let url = format!("/blog/_assets/photo%20%25.{hash}.avif?quality=1#view");
         let html = site.read("example/index.html");
         let document = Html::parse_document(&html);
         let images: Vec<_> = document

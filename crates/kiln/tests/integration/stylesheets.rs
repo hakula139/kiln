@@ -73,7 +73,7 @@ fn build_compiles_shared_css_with_site_override_and_theme_asset_urls() {
     let css = site.read("assets/css/site.css");
     assert!(
         css.contains(&format!(
-            "../../_assets/assets/fonts/example.{}.woff2?v=1#font",
+            "../../_assets/example.{}.woff2?v=1#font",
             fingerprint("theme-font")
         )),
         "{css}"
@@ -214,7 +214,7 @@ fn build_compiles_tailwind_with_shared_context_and_fresh_candidates() {
     );
     assert!(
         shared.contains(&format!(
-            "../../_assets/assets/fonts/example.{}.woff2?version=1#font",
+            "../../_assets/example.{}.woff2?version=1#font",
             fingerprint("font")
         )),
         "{shared}"

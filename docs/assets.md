@@ -80,7 +80,7 @@ Link the shared stylesheet in the base template and page CSS in post / page temp
 
 ## Fingerprints and Minification
 
-Raster images (AVIF, BMP, GIF, ICO, JPEG, PNG and WebP) and fonts (OTF, TTF, WOFF and WOFF2) receive content-hashed URLs under the reserved `/_assets/` directory. Fingerprints use file bytes independently of image decoding and AVIF support. Original published paths remain available.
+Raster images (AVIF, BMP, GIF, ICO, JPEG, PNG and WebP) and fonts (OTF, TTF, WOFF and WOFF2) receive content-hashed copies in the flat, reserved `/_assets/` directory, named `<stem>.<hash>.<ext>` regardless of their source directory. For example, `/assets/images/cover.webp` publishes as `/_assets/cover.1cabe42ce865.webp`. Files with the same name and bytes share one copy. Fingerprints use file bytes independently of image decoding and AVIF support. Original published paths remain available.
 
 CSS and JavaScript receive sibling content-hashed filenames, preserving relative import locations. Changes to images or fonts referenced by compiled CSS also change its URL. Ordinary public CSS / JS imports retain their original URLs. Bundle those entries separately when their dependencies also need fingerprinted URLs.
 

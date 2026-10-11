@@ -50,55 +50,37 @@ impl StaticAssetManifest {
             }
         }
         let mut manifest = Self::default();
-        manifest.collect(output_dir, false)?;
+        let mut copies = BTreeSet::new();
+        for relative in published_files(output_dir)? {
+            let url = format!("/{}", path_url(&relative));
+            if !is_media(&relative) {
+                manifest.urls.insert(url.clone(), url);
+                continue;
+            }
+            let copy =
+                Path::new(MEDIA_DIRECTORY).join(fingerprinted_file_name(output_dir, &relative)?);
+            // Equal names imply an equal stem and content hash, so one copy serves every source.
+            if copies.insert(copy.clone()) {
+                copy_new_file(output_dir, &relative, &copy)?;
+            }
+            manifest.urls.insert(url, format!("/{}", path_url(&copy)));
+        }
         Ok(manifest)
     }
 
     pub(crate) fn fingerprint_code(&mut self, output_dir: &Path) -> Result<()> {
-        self.collect(output_dir, true)
-    }
-
-    fn collect(&mut self, output_dir: &Path, code: bool) -> Result<()> {
-        let paths = WalkDir::new(output_dir)
-            .follow_links(false)
-            .sort_by_file_name()
-            .into_iter()
-            .filter_entry(|entry| entry.path() != output_dir.join(MEDIA_DIRECTORY))
-            .filter_map(|entry| match entry {
-                Ok(entry) if entry.file_type().is_file() => Some(Ok(entry.into_path())),
-                Ok(_) => None,
-                Err(error) => Some(Err(error)),
-            })
-            .collect::<std::result::Result<Vec<_>, _>>()
-            .context("failed to collect published assets")?;
-        for path in paths {
-            let relative = path.strip_prefix(output_dir)?;
-            if code && !is_code(relative) {
+        for relative in published_files(output_dir)? {
+            if !is_code(&relative) {
                 continue;
             }
-            let url = format!("/{}", path_url(relative));
-            if !code && !is_media(relative) {
-                self.urls.insert(url.clone(), url);
-                continue;
-            }
-            let bytes = fs::read(&path)
-                .with_context(|| format!("failed to read static asset {}", path.display()))?;
-            let mut fingerprinted = fingerprinted_path(relative, &bytes)?;
-            if !code {
-                fingerprinted = Path::new(MEDIA_DIRECTORY).join(fingerprinted);
-            }
-            let target = output_dir.join(&fingerprinted);
-            if target.exists() {
-                bail!(
-                    "fingerprinted static asset conflicts with existing file {}",
-                    target.display()
-                );
-            }
-            copy_file(&path, &target)?;
-            self.urls
-                .insert(url, format!("/{}", path_url(&fingerprinted)));
-            self.fingerprinted_paths.insert(relative.to_owned());
-            self.fingerprinted_paths.insert(fingerprinted);
+            let copy = relative.with_file_name(fingerprinted_file_name(output_dir, &relative)?);
+            copy_new_file(output_dir, &relative, &copy)?;
+            self.urls.insert(
+                format!("/{}", path_url(&relative)),
+                format!("/{}", path_url(&copy)),
+            );
+            self.fingerprinted_paths.insert(relative);
+            self.fingerprinted_paths.insert(copy);
         }
         Ok(())
     }
@@ -147,7 +129,7 @@ impl StaticAssetManifest {
         })
     }
 
-    /// Returns relative paths of original fingerprinted assets and their generated copies.
+    /// Returns relative paths of fingerprinted CSS / JS originals and their generated copies.
     pub(crate) fn fingerprinted_paths(&self) -> &BTreeSet<PathBuf> {
         &self.fingerprinted_paths
     }
@@ -219,7 +201,25 @@ pub(crate) fn is_fingerprinted_copy(path: &Path) -> Result<bool> {
     Ok(fingerprint == content_fingerprint(&bytes))
 }
 
-fn fingerprinted_path(path: &Path, bytes: &[u8]) -> Result<PathBuf> {
+/// Returns sorted relative paths of published files outside the media store.
+fn published_files(output_dir: &Path) -> Result<Vec<PathBuf>> {
+    let media_dir = output_dir.join(MEDIA_DIRECTORY);
+    let mut files = Vec::new();
+    for entry in WalkDir::new(output_dir)
+        .follow_links(false)
+        .sort_by_file_name()
+        .into_iter()
+        .filter_entry(|entry| entry.path() != media_dir)
+    {
+        let entry = entry.context("failed to collect published assets")?;
+        if entry.file_type().is_file() {
+            files.push(entry.path().strip_prefix(output_dir)?.to_owned());
+        }
+    }
+    Ok(files)
+}
+
+fn fingerprinted_file_name(output_dir: &Path, path: &Path) -> Result<String> {
     let file_stem = path
         .file_stem()
         .and_then(|stem| stem.to_str())
@@ -228,8 +228,24 @@ fn fingerprinted_path(path: &Path, bytes: &[u8]) -> Result<PathBuf> {
         .extension()
         .and_then(|extension| extension.to_str())
         .with_context(|| format!("static asset has no UTF-8 extension: {}", path.display()))?;
-    let file_name = format!("{file_stem}.{}.{extension}", content_fingerprint(bytes));
-    Ok(path.with_file_name(file_name))
+    let source = output_dir.join(path);
+    let bytes = fs::read(&source)
+        .with_context(|| format!("failed to read static asset {}", source.display()))?;
+    Ok(format!(
+        "{file_stem}.{}.{extension}",
+        content_fingerprint(&bytes)
+    ))
+}
+
+fn copy_new_file(output_dir: &Path, source: &Path, target: &Path) -> Result<()> {
+    let target = output_dir.join(target);
+    if target.exists() {
+        bail!(
+            "fingerprinted static asset conflicts with existing file {}",
+            target.display()
+        );
+    }
+    copy_file(&output_dir.join(source), &target)
 }
 
 fn content_fingerprint(bytes: &[u8]) -> String {
@@ -275,24 +291,51 @@ mod tests {
     }
 
     #[test]
-    fn build_fingerprints_images_and_fonts() {
+    fn build_fingerprints_media_into_flat_deduplicated_store() {
         let dir = tempfile::tempdir().unwrap();
-        for name in ["photo.avif", "font.woff2"] {
-            fs::write(dir.path().join(name), "abc").unwrap();
+        for (name, bytes) in [
+            ("images/photo.avif", "abc"),
+            ("fonts/font.woff2", "abc"),
+            ("a/logo.png", "logo"),
+            ("b/nested/logo.png", "logo"),
+            ("c/logo.png", "other"),
+        ] {
+            let path = dir.path().join(name);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, bytes).unwrap();
         }
 
         let manifest = StaticAssetManifest::build(dir.path()).unwrap();
 
         for (source, published) in [
-            ("/photo.avif", "/_assets/photo.ba7816bf8f01.avif"),
-            ("/font.woff2", "/_assets/font.ba7816bf8f01.woff2"),
+            ("/images/photo.avif", "/_assets/photo.ba7816bf8f01.avif"),
+            ("/fonts/font.woff2", "/_assets/font.ba7816bf8f01.woff2"),
+            ("/a/logo.png", "/_assets/logo.3598ce6f965b.png"),
+            ("/b/nested/logo.png", "/_assets/logo.3598ce6f965b.png"),
+            ("/c/logo.png", "/_assets/logo.d9298a10d1b0.png"),
         ] {
             assert_eq!(manifest.asset_url(source).unwrap(), published);
-            assert_eq!(
-                fs::read(dir.path().join(published.trim_start_matches('/'))).unwrap(),
-                b"abc"
-            );
         }
+        let mut store: Vec<_> = fs::read_dir(dir.path().join(MEDIA_DIRECTORY))
+            .unwrap()
+            .map(|entry| {
+                let path = entry.unwrap().path();
+                (
+                    path.file_name().unwrap().to_string_lossy().into_owned(),
+                    fs::read_to_string(path).unwrap(),
+                )
+            })
+            .collect();
+        store.sort();
+        assert_eq!(
+            store,
+            [
+                ("font.ba7816bf8f01.woff2".to_owned(), "abc".to_owned()),
+                ("logo.3598ce6f965b.png".to_owned(), "logo".to_owned()),
+                ("logo.d9298a10d1b0.png".to_owned(), "other".to_owned()),
+                ("photo.ba7816bf8f01.avif".to_owned(), "abc".to_owned()),
+            ]
+        );
     }
 
     #[test]
@@ -325,8 +368,7 @@ mod tests {
                 format!("/{encoded}.ba7816bf8f01.js"),
             );
             assert_eq!(
-                fs::read(output.join(fingerprinted_path(Path::new(name), b"abc").unwrap()))
-                    .unwrap(),
+                fs::read(output.join(name.replace(".js", ".ba7816bf8f01.js"))).unwrap(),
                 b"abc",
             );
         }
@@ -401,7 +443,7 @@ mod tests {
 
         let manifest = StaticAssetManifest::build(dir.path()).unwrap();
 
-        let expected = "/blog/_assets/posts/a/photo%20%25.ba7816bf8f01.avif?x=1#view";
+        let expected = "/blog/_assets/photo%20%25.ba7816bf8f01.avif?x=1#view";
         for src in [
             "photo%20%25.avif?x=1#view",
             "../a/photo%20%25.avif?x=1#view",
