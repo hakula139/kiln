@@ -30,6 +30,7 @@ libiconv
 libwebp
 lqip
 luma
+msrv
 msvc
 msys
 nixfmt

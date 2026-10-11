@@ -110,6 +110,27 @@ jobs:
       - name: Test benchmark workloads
         run: cargo test --bench performance --features "${{ matrix.features }}"
 
+  msrv-check:
+    name: MSRV Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up AVIF
+        uses: ./.github/actions/setup-avif
+        with:
+          enabled: true
+
+      - name: Install cargo-hack
+        uses: taiki-e/install-action@cargo-hack
+
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check
+        run: cargo hack check --rust-version --workspace --all-features --locked
+
   coverage:
     name: Coverage
     runs-on: ubuntu-latest
