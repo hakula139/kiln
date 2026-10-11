@@ -92,7 +92,6 @@ impl AssetsHandle {
     }
 
     /// Returns an owned snapshot of the current assets.
-    #[must_use]
     pub(crate) fn snapshot(&self) -> PageAssets {
         self.lock().clone()
     }

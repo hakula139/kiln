@@ -85,9 +85,9 @@ fn render_img(
     }
 }
 
-/// Picks the `width` / `height` to emit. Manual `{width=...}` / `{height=...}`
-/// always win. When only one is set, the other is scaled from the resolver's
-/// auto aspect so the rendered box matches the source shape.
+/// Picks the `width` / `height` to emit. Manual `{width=...}` / `{height=...}` always win. When
+/// only one is set, the other is scaled from the resolver's auto aspect so the rendered box matches
+/// the source shape.
 fn final_dimensions(attrs: &ImageAttrs) -> (Option<Cow<'_, str>>, Option<Cow<'_, str>>) {
     let width = attrs.width.as_deref().map(Cow::Borrowed);
     let height = attrs.height.as_deref().map(Cow::Borrowed);
