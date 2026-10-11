@@ -10,13 +10,28 @@ use std::ops::AddAssign;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
-use lightningcss::stylesheet::{MinifyOptions, ParserOptions, PrinterOptions, StyleSheet};
-use minify_html::Cfg;
-use oxc_allocator::Allocator;
-use oxc_codegen::{Codegen, CodegenOptions, CommentOptions};
-use oxc_minifier::{CompressOptions, Minifier, MinifierOptions};
-use oxc_parser::Parser;
-use oxc_span::SourceType;
+use lightningcss::stylesheet::{
+    MinifyOptions, ParserOptions, PrinterOptions, StyleAttribute, StyleSheet,
+};
+use swc_common::sync::Lrc;
+use swc_common::{FileName, GLOBALS, Globals, Mark, SourceMap};
+use swc_ecma_ast::{EsVersion, Program};
+use swc_ecma_codegen::text_writer::{JsWriter, omit_trailing_semi};
+use swc_ecma_codegen::{Config as JsCodegenConfig, Emitter};
+use swc_ecma_minifier::option::{CompressOptions, ExtraOptions, MinifyOptions as JsMinifyOptions};
+use swc_ecma_parser::{Syntax, parse_file_as_module, parse_file_as_program};
+use swc_ecma_transforms_base::fixer::{fixer, paren_remover};
+use swc_ecma_transforms_base::resolver;
+use swc_ecma_visit::VisitMutWith;
+use swc_html_codegen::writer::basic::{BasicHtmlWriter, BasicHtmlWriterConfig};
+use swc_html_codegen::{CodeGenerator, CodegenConfig, Emit};
+use swc_html_minifier::option::{
+    CollapseWhitespaces, JsOptions, JsParserOptions, MinifyCssOption, MinifyJsOption,
+    MinifyOptions as HtmlMinifyOptions,
+};
+use swc_html_minifier::{CssMinificationMode, MinifyCss, minify_document_with_custom_css_minifier};
+use swc_html_parser::parse_file_as_document;
+use swc_html_parser::parser::ParserConfig;
 use walkdir::WalkDir;
 
 use crate::static_assets::is_fingerprinted_copy;
@@ -114,7 +129,7 @@ fn minify_output_dir_filtered(
             continue;
         }
 
-        minify_file(path, kind, &mut stats)
+        stats += minify_file(path, kind)
             .with_context(|| format!("failed to process {}", path.display()))?;
     }
 
@@ -138,31 +153,28 @@ fn classify(path: &Path) -> Option<AssetKind> {
     }
 }
 
-fn minify_file(path: &Path, kind: AssetKind, stats: &mut MinifyStats) -> Result<()> {
+fn minify_file(path: &Path, kind: AssetKind) -> Result<MinifyStats> {
     let input = fs::read(path).with_context(|| format!("failed to read {}", path.display()))?;
     let bytes_in = input.len() as u64;
 
     let output = match kind {
-        AssetKind::Html => Some(minify_html_bytes(&input)),
+        AssetKind::Html => minify_html_bytes(&input, path),
         AssetKind::Css => minify_css_bytes(&input, path),
         AssetKind::Js => minify_js_bytes(&input, path),
     };
 
-    stats.files_processed += 1;
-    stats.bytes_in += bytes_in;
-
-    match output {
-        Some(bytes) if (bytes.len() as u64) < bytes_in => {
-            fs::write(path, &bytes)
-                .with_context(|| format!("failed to write {}", path.display()))?;
-            stats.files_shrunk += 1;
-            stats.bytes_out += bytes.len() as u64;
-        }
-        _ => {
-            stats.bytes_out += bytes_in;
-        }
+    let mut stats = MinifyStats {
+        files_processed: 1,
+        files_shrunk: 0,
+        bytes_in,
+        bytes_out: bytes_in,
+    };
+    if let Some(bytes) = output.filter(|bytes| (bytes.len() as u64) < bytes_in) {
+        fs::write(path, &bytes).with_context(|| format!("failed to write {}", path.display()))?;
+        stats.files_shrunk = 1;
+        stats.bytes_out = bytes.len() as u64;
     }
-    Ok(())
+    Ok(stats)
 }
 
 /// Decodes UTF-8 input, or warns and returns `None`.
@@ -174,67 +186,171 @@ fn decode_utf8<'a>(input: &'a [u8], path: &Path, kind: &str) -> Option<&'a str> 
         .ok()
 }
 
-fn minify_html_bytes(input: &[u8]) -> Vec<u8> {
-    let mut cfg = Cfg::new();
-    cfg.minify_css = true;
-    cfg.minify_js = true;
-    cfg.minify_doctype = true;
-    minify_html::minify(input, &cfg)
+fn minify_html_bytes(input: &[u8], path: &Path) -> Option<Vec<u8>> {
+    let source = decode_utf8(input, path, "HTML")?;
+    // Inline script minification allocates swc `Mark`s, which require a scoped `GLOBALS`.
+    GLOBALS.set(&Globals::new(), || {
+        let cm = Lrc::new(SourceMap::default());
+        let fm = cm.new_source_file(Lrc::new(FileName::Anon), source.to_owned());
+        let parser_config = ParserConfig {
+            scripting_enabled: true,
+            ..ParserConfig::default()
+        };
+        let mut document = parse_file_as_document(&fm, parser_config, &mut Vec::new())
+            .inspect_err(|e| {
+                tracing::warn!(
+                    "skipping {} (HTML parse failed): {}",
+                    path.display(),
+                    e.message()
+                );
+            })
+            .ok()?;
+
+        let options = HtmlMinifyOptions {
+            collapse_whitespaces: CollapseWhitespaces::Smart,
+            minify_js: MinifyJsOption::Options(Box::new(JsOptions {
+                parser: JsParserOptions {
+                    target: EsVersion::latest(),
+                    ..JsParserOptions::default()
+                },
+                minifier: js_minify_options(),
+                codegen: JsCodegenConfig::default(),
+            })),
+            minify_css: MinifyCssOption::Bool(true),
+            ..HtmlMinifyOptions::default()
+        };
+        minify_document_with_custom_css_minifier(&mut document, &options, &LightningCss);
+
+        let mut output = String::new();
+        let writer = BasicHtmlWriter::new(&mut output, None, BasicHtmlWriterConfig::default());
+        let mut generator = CodeGenerator::new(
+            writer,
+            CodegenConfig {
+                minify: true,
+                scripting_enabled: true,
+                ..CodegenConfig::default()
+            },
+        );
+        generator.emit(&document).ok()?;
+        Some(output.into_bytes())
+    })
+}
+
+/// Minifies inline `<style>` elements and `style` attributes with lightningcss.
+struct LightningCss;
+
+impl MinifyCss for LightningCss {
+    type Options = ();
+
+    fn minify_css(
+        &self,
+        _options: &MinifyCssOption<()>,
+        data: String,
+        mode: CssMinificationMode,
+    ) -> Option<String> {
+        match mode {
+            CssMinificationMode::Stylesheet => {
+                print_minified_stylesheet(StyleSheet::parse(&data, ParserOptions::default()).ok()?)
+            }
+            CssMinificationMode::ListOfDeclarations => {
+                let mut attribute = StyleAttribute::parse(&data, ParserOptions::default()).ok()?;
+                attribute.minify(MinifyOptions::default());
+                Some(attribute.to_css(minified_printer()).ok()?.code)
+            }
+            CssMinificationMode::MediaQueryList => None,
+        }
+    }
 }
 
 fn minify_css_bytes(input: &[u8], path: &Path) -> Option<Vec<u8>> {
     let source = decode_utf8(input, path, "CSS")?;
-    let mut stylesheet = StyleSheet::parse(source, ParserOptions::default())
+    let stylesheet = StyleSheet::parse(source, ParserOptions::default())
         .inspect_err(|e| {
             tracing::warn!("skipping {} (CSS parse failed): {e}", path.display());
         })
         .ok()?;
+    print_minified_stylesheet(stylesheet).map(String::into_bytes)
+}
+
+fn print_minified_stylesheet(mut stylesheet: StyleSheet) -> Option<String> {
     // lightningcss's `minify` and `to_css` don't fail in practice with
     // default options, so silently keep the original if they ever do.
     stylesheet.minify(MinifyOptions::default()).ok()?;
-    let result = stylesheet
-        .to_css(PrinterOptions {
-            minify: true,
-            ..PrinterOptions::default()
-        })
-        .ok()?;
-    Some(result.code.into_bytes())
+    Some(stylesheet.to_css(minified_printer()).ok()?.code)
+}
+
+fn minified_printer<'a>() -> PrinterOptions<'a> {
+    PrinterOptions {
+        minify: true,
+        ..PrinterOptions::default()
+    }
 }
 
 fn minify_js_bytes(input: &[u8], path: &Path) -> Option<Vec<u8>> {
     let source = decode_utf8(input, path, "JS")?;
-
-    let source_type = if path
+    let is_module = path
         .extension()
         .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| extension.eq_ignore_ascii_case("mjs"))
-    {
-        SourceType::mjs()
-    } else {
-        SourceType::unambiguous()
-    };
-    let allocator = Allocator::default();
-    let parsed = Parser::new(&allocator, source, source_type).parse();
-    if let Some(first) = parsed.diagnostics.first() {
-        tracing::warn!("skipping {} (JS parse failed): {first}", path.display());
-        return None;
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("mjs"));
+
+    GLOBALS.set(&Globals::new(), || {
+        let cm = Lrc::new(SourceMap::default());
+        let fm = cm.new_source_file(Lrc::new(FileName::Anon), source.to_owned());
+        let target = EsVersion::latest();
+        let mut errors = Vec::new();
+        let parsed = if is_module {
+            parse_file_as_module(&fm, Syntax::default(), target, None, &mut errors)
+                .map(Program::Module)
+        } else {
+            parse_file_as_program(&fm, Syntax::default(), target, None, &mut errors)
+        };
+        if let Some(error) = parsed.as_ref().err().or(errors.first()) {
+            let message = error.kind().msg();
+            tracing::warn!("skipping {} (JS parse failed): {message}", path.display());
+            return None;
+        }
+        let mut program = parsed.ok()?;
+
+        let unresolved_mark = Mark::new();
+        let top_level_mark = Mark::new();
+        program.visit_mut_with(&mut resolver(unresolved_mark, top_level_mark, false));
+        let program = swc_ecma_minifier::optimize(
+            program.apply(paren_remover(None)),
+            cm.clone(),
+            None,
+            None,
+            &js_minify_options(),
+            &ExtraOptions {
+                unresolved_mark,
+                top_level_mark,
+                mangle_name_cache: None,
+            },
+        )
+        .apply(fixer(None));
+
+        let mut output = Vec::new();
+        Emitter {
+            cfg: JsCodegenConfig::default()
+                .with_minify(true)
+                .with_target(target),
+            cm: cm.clone(),
+            comments: None,
+            wr: omit_trailing_semi(JsWriter::new(cm, "\n", &mut output, None)),
+        }
+        .emit_program(&program)
+        .ok()?;
+        Some(output)
+    })
+}
+
+fn js_minify_options() -> JsMinifyOptions {
+    JsMinifyOptions {
+        compress: Some(CompressOptions {
+            ecma: EsVersion::latest(),
+            ..CompressOptions::default()
+        }),
+        ..JsMinifyOptions::default()
     }
-    let mut program = parsed.program;
-    let options = MinifierOptions {
-        mangle: None,
-        mangle_properties: None,
-        compress: Some(CompressOptions::smallest()),
-    };
-    let min_ret = Minifier::new(options).minify(&allocator, &mut program);
-    let result = Codegen::new()
-        .with_options(CodegenOptions {
-            minify: true,
-            comments: CommentOptions::disabled(),
-            ..CodegenOptions::default()
-        })
-        .with_scoping(min_ret.scoping)
-        .build(&program);
-    Some(result.code.into_bytes())
 }
 
 impl fmt::Display for MinifyStats {
@@ -336,7 +452,7 @@ mod tests {
 
         assert_eq!(
             fs::read_to_string(root.join("page.html")).unwrap(),
-            "<!doctypehtml><body><p>Hello world"
+            "<!doctype html><p>Hello world"
         );
         assert_eq!(
             fs::read_to_string(root.join("style.css")).unwrap(),
@@ -510,7 +626,7 @@ mod tests {
               </body>
             </html>
         "};
-        let output = minify_html_bytes(input.as_bytes());
+        let output = minify_html_bytes(input.as_bytes(), Path::new("page.html")).unwrap();
         let text = std::str::from_utf8(&output).unwrap();
         assert!(output.len() < input.len(), "should shrink, got {text}");
         assert!(!text.contains("a comment"), "should drop comments: {text}");
@@ -521,6 +637,77 @@ mod tests {
         assert!(
             text.contains("<p>Hello world"),
             "should preserve content, got: {text}",
+        );
+    }
+
+    #[test]
+    fn minify_html_bytes_keeps_significant_whitespace() {
+        let input = indoc! {r#"
+            <div>
+              <a href="/a">One</a>
+              <a href="/b">Two</a>
+              <em>three</em>
+            </div>
+            <pre>  indented
+                code  </pre>
+            <textarea>  keep   spaces </textarea>
+        "#};
+        let output = minify_html_bytes(input.as_bytes(), Path::new("page.html")).unwrap();
+        assert_eq!(
+            String::from_utf8(output).unwrap(),
+            "<div><a href=/a>One</a> <a href=/b>Two</a> <em>three</em></div><pre>\n  indented\n    code  </pre><textarea>  keep   spaces </textarea>"
+        );
+    }
+
+    #[test]
+    fn minify_html_bytes_minifies_inline_scripts_by_type() {
+        let input = indoc! {r#"
+            <script type="application/ld+json">
+              { "@type": "Article", "headline": "A </b> B" }
+            </script>
+            <script>
+              // dropped comment
+              var greeting = "hello <\/script>";
+              window.total = 1 + 2;
+            </script>
+            <script type="text/template"><p>  kept   as-is  </p></script>
+        "#};
+        let output = minify_html_bytes(input.as_bytes(), Path::new("page.html")).unwrap();
+        assert_eq!(
+            String::from_utf8(output).unwrap(),
+            concat!(
+                r#"<script type=application/ld+json>{"@type":"Article","headline":"A \u003C/b> B"}</script>"#,
+                r#"<script>var greeting="hello <\/script>";window.total=3</script>"#,
+                "<script type=text/template><p>  kept   as-is  </p></script>",
+            )
+        );
+    }
+
+    #[test]
+    fn minify_html_bytes_minifies_inline_css_with_lightningcss() {
+        let input = indoc! {r#"
+            <style>
+              .a { color: #ff0000; margin: 0px 0px; }
+            </style>
+            <link rel="stylesheet" href="/print.css" media="print  and  (min-width: 640px)">
+            <p style="color: #ff0000;  font-weight: bold">Text</p>
+        "#};
+        let output = minify_html_bytes(input.as_bytes(), Path::new("page.html")).unwrap();
+        assert_eq!(
+            String::from_utf8(output).unwrap(),
+            concat!(
+                "<style>.a{color:red;margin:0}</style>",
+                r#"<link rel=stylesheet href=/print.css media="print  and  (min-width: 640px)">"#,
+                "<p style=color:red;font-weight:700>Text",
+            )
+        );
+    }
+
+    #[test]
+    fn minify_html_bytes_invalid_utf8_returns_none() {
+        assert_eq!(
+            minify_html_bytes(&[0xff, 0xfe, 0xfd], Path::new("broken.html")),
+            None
         );
     }
 
