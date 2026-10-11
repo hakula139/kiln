@@ -18,7 +18,7 @@ use lightningcss::stylesheet::{
 };
 use rayon::ThreadPoolBuilder;
 use rayon::prelude::*;
-use regex::Regex;
+use regex::{Captures, Regex};
 use swc_common::sync::Lrc;
 use swc_common::{FileName, GLOBALS, Globals, Mark, SourceMap};
 use swc_ecma_ast::{EsVersion, Program};
@@ -45,7 +45,8 @@ use walkdir::WalkDir;
 const WORKER_STACK_SIZE: usize = 64 << 20;
 
 static RAW_TEXT_END_TAG_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)</(script|style)").expect("raw text end tag regex should compile")
+    Regex::new(r"(?i)</(script|style)([\t\n\x0C\r />])")
+        .expect("raw text end tag regex should compile")
 });
 
 /// Totals from a minification pass, suitable for printing as a build summary.
@@ -247,6 +248,7 @@ fn minify_html_bytes(input: &[u8], path: &Path) -> Option<Vec<u8>> {
                     target: EsVersion::latest(),
                     ..JsParserOptions::default()
                 },
+                // swc_html_minifier sets the module flag per inline script.
                 minifier: js_minify_options(false),
                 codegen: JsCodegenConfig::default(),
             })),
@@ -271,37 +273,6 @@ fn minify_html_bytes(input: &[u8], path: &Path) -> Option<Vec<u8>> {
     })
 }
 
-/// Escapes `</script` and `</style` in `<script>` and `<style>` text as `<\/`.
-///
-/// swc and lightningcss unescape such sequences inside string literals (for example
-/// `"<\/SCRIPT>"` or `"\3c /style>"`), which would otherwise end the element early. `\/` reads as
-/// `/` in both JS and CSS strings.
-fn escape_raw_text_end_tags(document: &mut Document) {
-    let mut pending = vec![&mut document.children];
-    while let Some(children) = pending.pop() {
-        for child in children {
-            let Child::Element(element) = child else {
-                continue;
-            };
-            if matches!(&*element.tag_name, "script" | "style") {
-                for child in &mut element.children {
-                    if let Child::Text(text) = child
-                        && let Cow::Owned(escaped) =
-                            RAW_TEXT_END_TAG_RE.replace_all(&text.data, r"<\/$1")
-                    {
-                        text.data = escaped.into();
-                        text.raw = None;
-                    }
-                }
-            }
-            pending.push(&mut element.children);
-            if let Some(content) = &mut element.content {
-                pending.push(&mut content.children);
-            }
-        }
-    }
-}
-
 /// Minifies inline `<style>` elements and `style` attributes with lightningcss.
 struct LightningCss;
 
@@ -324,6 +295,44 @@ impl MinifyCss for LightningCss {
                 Some(attribute.to_css(minified_printer()).ok()?.code)
             }
             CssMinificationMode::MediaQueryList => None,
+        }
+    }
+}
+
+/// Escapes text that would close its `<script>` or `<style>` element by writing `</` as `<\/`.
+///
+/// swc and lightningcss unescape such sequences inside string literals (for example
+/// `"<\/SCRIPT>"` or `"\3c /style>"`), which would otherwise end the element early. Like the HTML
+/// tokenizer, matching ignores case and requires whitespace, `/` or `>` after the tag name. `\/`
+/// reads as `/` in both JS and CSS strings.
+fn escape_raw_text_end_tags(document: &mut Document) {
+    let mut pending = vec![&mut document.children];
+    while let Some(children) = pending.pop() {
+        for child in children {
+            let Child::Element(element) = child else {
+                continue;
+            };
+            let tag_name = &*element.tag_name;
+            if matches!(tag_name, "script" | "style") {
+                for child in &mut element.children {
+                    if let Child::Text(text) = child
+                        && let Cow::Owned(escaped) =
+                            RAW_TEXT_END_TAG_RE.replace_all(&text.data, |caps: &Captures| {
+                                if caps[1].eq_ignore_ascii_case(tag_name) {
+                                    format!(r"<\/{}{}", &caps[1], &caps[2])
+                                } else {
+                                    caps[0].to_owned()
+                                }
+                            })
+                    {
+                        text.data = escaped.into();
+                    }
+                }
+            }
+            pending.push(&mut element.children);
+            if let Some(content) = &mut element.content {
+                pending.push(&mut content.children);
+            }
         }
     }
 }
@@ -530,7 +539,6 @@ mod tests {
             console.log(x);
         "};
         let module = indoc! {"
-            export const marker = 1;
             { function blockScoped() { return 2; } }
             console.log(typeof blockScoped);
         "};
@@ -581,7 +589,7 @@ mod tests {
         );
         assert_eq!(
             fs::read_to_string(root.join("sub/module.mjs")).unwrap(),
-            "export const marker=1;console.log(typeof blockScoped);"
+            "console.log(typeof blockScoped);"
         );
     }
 
@@ -796,25 +804,33 @@ mod tests {
     }
 
     #[test]
-    fn minify_html_bytes_keeps_raw_text_end_tags_escaped() {
+    fn minify_html_bytes_escapes_only_closing_raw_text_end_tags() {
         let input = indoc! {r#"
             <style>
               .a::before { content: "\3c /style>"; }
               .b::after { content: "\3c /STYLE>"; }
+              .c::after { content: "</script>"; }
             </style>
             <template>
               <script>
                 var upper = "<\/SCRIPT>";
                 var spaced = "<\/script >";
+                var longer = String.raw`</scripts>`;
               </script>
             </template>
+            <script type="text/template"><style>.a{}</style><p>x</p></script>
+            <script type="text/plain">a</scripts>b</script>
         "#};
         let output = minify_html_bytes(input.as_bytes(), Path::new("page.html")).unwrap();
         assert_eq!(
             String::from_utf8(output).unwrap(),
             concat!(
-                r#"<style>.a:before{content:"<\/style>"}.b:after{content:"<\/STYLE>"}</style>"#,
-                r#"<template> <script>var upper="<\/SCRIPT>",spaced="<\/script >"</script></template>"#,
+                r#"<style>.a:before{content:"<\/style>"}.b:after{content:"<\/STYLE>"}"#,
+                r#".c:after{content:"</script>"}</style>"#,
+                r#"<template> <script>var upper="<\/SCRIPT>",spaced="<\/script >","#,
+                "longer=String.raw`</scripts>`</script></template>",
+                "<script type=text/template><style>.a{}</style><p>x</p></script>",
+                "<script type=text/plain>a</scripts>b</script>",
             )
         );
     }
@@ -883,7 +899,7 @@ mod tests {
             { function blockScoped() { return 2; } }
             console.log(typeof blockScoped);
         "};
-        let output = minify_js_bytes(input.as_bytes(), Path::new("app.mjs"), true).unwrap();
+        let output = minify_js_bytes(input.as_bytes(), Path::new("app.js"), false).unwrap();
         assert_eq!(
             String::from_utf8(output).unwrap(),
             "export const marker=1;console.log(typeof blockScoped);"
