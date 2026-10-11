@@ -1,12 +1,12 @@
 use std::borrow::Borrow;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::HashMap;
 use std::ops::Range;
 use std::vec;
 
 use itertools::Either;
 use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, LinkType, Parser, Tag, TagEnd};
 
-use super::assets::Feature;
+use super::assets::{Feature, PageAssets};
 use super::code_block::{CodeBlockSpec, parse_fence_info};
 use super::emoji::match_emoji;
 use super::footnote::Notes;
@@ -56,14 +56,14 @@ impl MarkdownDocument {
     }
 }
 
-/// Renders a document with allocated IDs to HTML, inserting auto-detected features (math,
-/// mermaid) into `features`.
+/// Renders a document with allocated IDs to HTML, adding auto-detected features (math, mermaid)
+/// to `assets`.
 #[must_use]
 pub(super) fn render_document(
     document: MarkdownDocument,
     resources: &PageResources<'_>,
     options: &RenderOptions,
-    features: &mut BTreeSet<Feature>,
+    assets: &mut PageAssets,
 ) -> String {
     let MarkdownDocument {
         body,
@@ -75,7 +75,7 @@ pub(super) fn render_document(
         image_attrs: &image_attrs,
         resources,
         options,
-        features,
+        assets,
         headings: headings.into_iter(),
     };
     let mut html = renderer.render_events(body);
@@ -102,7 +102,7 @@ struct MarkdownRenderer<'a> {
     image_attrs: &'a HashMap<usize, ImageAttrs>,
     resources: &'a PageResources<'a>,
     options: &'a RenderOptions,
-    features: &'a mut BTreeSet<Feature>,
+    assets: &'a mut PageAssets,
     headings: vec::IntoIter<TocEntry>,
 }
 
@@ -118,7 +118,7 @@ impl MarkdownRenderer<'_> {
             &mut html,
             output
                 .into_iter()
-                .map(|event| transform_math(event, self.features)),
+                .map(|event| transform_math(event, self.assets)),
         );
         html
     }
@@ -192,26 +192,19 @@ impl MarkdownRenderer<'_> {
         events: &mut impl Iterator<Item = Spanned>,
     ) -> String {
         let spec = match kind {
-            CodeBlockKind::Fenced(info) => parse_fence_info(&info, self.options.code_max_lines),
-            CodeBlockKind::Indented => CodeBlockSpec {
-                max_lines: self.options.code_max_lines,
-                ..CodeBlockSpec::default()
-            },
+            CodeBlockKind::Fenced(info) => parse_fence_info(&info),
+            CodeBlockKind::Indented => CodeBlockSpec::default(),
         };
         let mut code = String::new();
         while let Some((Event::Text(text), _)) = events.next() {
             code.push_str(&text);
         }
 
-        if spec
-            .lang
-            .as_deref()
-            .is_some_and(|lang| lang.eq_ignore_ascii_case("mermaid"))
-        {
-            self.features.insert(Feature::Mermaid);
+        if spec.is_mermaid() {
+            self.assets.add_feature(Feature::Mermaid);
             render_mermaid(&code)
         } else {
-            highlight_code(&code, &spec)
+            highlight_code(&code, &spec, self.options.code_max_lines)
         }
     }
 
@@ -400,10 +393,10 @@ fn push_plain_text(buf: &mut String, event: &Event) {
 }
 
 /// Converts math events into KaTeX-compatible HTML and passes other events through.
-fn transform_math<'a>(event: Event<'a>, features: &mut BTreeSet<Feature>) -> Event<'a> {
+fn transform_math<'a>(event: Event<'a>, assets: &mut PageAssets) -> Event<'a> {
     match event {
         Event::InlineMath(content) => {
-            features.insert(Feature::Math);
+            assets.add_feature(Feature::Math);
             let html = format!(
                 r#"<span class="math math-inline">\({}\)</span>"#,
                 escape(&content)
@@ -411,7 +404,7 @@ fn transform_math<'a>(event: Event<'a>, features: &mut BTreeSet<Feature>) -> Eve
             Event::InlineHtml(html.into())
         }
         Event::DisplayMath(content) => {
-            features.insert(Feature::Math);
+            assets.add_feature(Feature::Math);
             let html = format!(
                 r#"<span class="math math-display">\[{}\]</span>"#,
                 escape(&content)
@@ -856,7 +849,11 @@ mod tests {
                 out.content_html
             );
             assert!(
-                out.content_html.contains(r#"data-lang="plaintext""#),
+                out.content_html.contains(indoc! {r#"
+                    <details class="code-block" open>
+                      <summary class="code-header">
+                        <span class="code-lang">Plain Text</span>
+                "#}),
                 "{}",
                 out.content_html
             );

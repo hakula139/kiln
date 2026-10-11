@@ -115,11 +115,8 @@ impl PreparedDocument {
                     image_content(&mut events).for_each(drop);
                 }
                 Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(info))) => {
-                    let spec = parse_fence_info(info, None);
-                    if !spec
-                        .lang
-                        .as_deref()
-                        .is_some_and(|lang| lang.eq_ignore_ascii_case("mermaid"))
+                    let spec = parse_fence_info(info);
+                    if !spec.is_mermaid()
                         && let Some(id) = spec.id
                     {
                         ids.reserve(&id);
@@ -256,7 +253,7 @@ impl PageRenderer<'_> {
             markdown,
             self.resources,
             self.options,
-            &mut self.assets.lock().features,
+            &mut self.assets.lock(),
         );
         Ok(restore_directives(
             &html,
@@ -335,7 +332,9 @@ fn restore_directives(html: &str, prefix: &str, fragments: &[String]) -> String 
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
     use std::fs;
+    use std::num::NonZeroUsize;
 
     use indoc::{formatdoc, indoc};
     use tempfile::TempDir;
@@ -396,7 +395,7 @@ mod tests {
             page.content_html
         );
         assert!(page.toc_html.contains(r##"href="#hello">Hello</a>"##));
-        assert!(page.assets.features.is_empty());
+        assert!(page.assets.features().is_empty());
     }
 
     #[test]
@@ -420,7 +419,7 @@ mod tests {
                 :::
             "},
             &RenderOptions {
-                code_max_lines: Some(3),
+                code_max_lines: NonZeroUsize::new(3),
                 ..RenderOptions::default()
             },
         );
@@ -1052,7 +1051,10 @@ mod tests {
             :::
         "});
         assert!(
-            !page.content_html.contains("<pre><code>"),
+            page.content_html
+                .match_indices("<pre><code>")
+                .all(|(start, tag)| page.content_html[start + tag.len()..]
+                    .starts_with(r#"<span class="line">"#)),
             "rendered body must not be reparsed as markdown, html:\n{}",
             page.content_html
         );
@@ -1109,16 +1111,7 @@ mod tests {
         let page = render(indoc! {r"
             Plain text with $a + b$ inline math.
         "});
-        assert!(
-            page.assets.features.contains(&Feature::Math),
-            "math expression should set Feature::Math, features: {:?}",
-            page.assets.features,
-        );
-        assert!(
-            !page.assets.features.contains(&Feature::Mermaid),
-            "no mermaid fence should leave Feature::Mermaid unset, features: {:?}",
-            page.assets.features,
-        );
+        assert_eq!(page.assets.features(), &BTreeSet::from([Feature::Math]));
     }
 
     #[test]
@@ -1131,10 +1124,10 @@ mod tests {
                 ```
             "};
             let page = render(&input);
-            assert!(
-                page.assets.features.contains(&Feature::Mermaid),
-                "fence {info:?} should set Feature::Mermaid, features: {:?}",
-                page.assets.features,
+            assert_eq!(
+                page.assets.features(),
+                &BTreeSet::from([Feature::Mermaid]),
+                "{info}"
             );
         }
     }
@@ -1160,11 +1153,7 @@ mod tests {
             "code should be highlighted, html:\n{}",
             page.content_html
         );
-        assert!(
-            page.assets.features.contains(&Feature::Math),
-            "math inside a directive body should bubble up to page assets, features: {:?}",
-            page.assets.features,
-        );
+        assert_eq!(page.assets.features(), &BTreeSet::from([Feature::Math]));
     }
 
     // ── restore_directives ──

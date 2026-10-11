@@ -15,13 +15,14 @@ pub mod pipeline;
 mod table;
 mod toc;
 
+use std::num::NonZeroUsize;
 use std::ops::Range;
 use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use pulldown_cmark::Event;
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 
 use self::lqip::{ImageMeta, ImageResolver};
 use crate::static_assets::StaticAssetManifest;
@@ -53,7 +54,9 @@ impl PageResources<'_> {
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub struct RenderOptions {
-    pub code_max_lines: Option<usize>,
+    /// Zero disables the limit, which lets a site override a theme default.
+    #[serde(deserialize_with = "deserialize_line_limit")]
+    pub code_max_lines: Option<NonZeroUsize>,
     pub emojis: bool,
     pub fontawesome: bool,
     /// In terminal columns.
@@ -72,6 +75,12 @@ impl RenderOptions {
             .try_into()
             .context("failed to parse render options from [params]")
     }
+}
+
+fn deserialize_line_limit<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<NonZeroUsize>, D::Error> {
+    Ok(Option::<usize>::deserialize(deserializer)?.and_then(NonZeroUsize::new))
 }
 
 #[cfg(test)]
@@ -103,10 +112,17 @@ mod tests {
         "#})
         .unwrap();
         let options = RenderOptions::from_params(&params).unwrap();
-        assert_eq!(options.code_max_lines, Some(40));
+        assert_eq!(options.code_max_lines, NonZeroUsize::new(40));
         assert!(options.emojis);
         assert!(options.fontawesome);
         assert_eq!(options.table_nowrap_width, Some(30));
+    }
+
+    #[test]
+    fn from_params_zero_code_max_lines_disables_limit() {
+        let params: toml::Table = toml::from_str("code_max_lines = 0").unwrap();
+        let options = RenderOptions::from_params(&params).unwrap();
+        assert!(options.code_max_lines.is_none());
     }
 
     #[test]

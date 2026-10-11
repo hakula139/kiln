@@ -20,7 +20,7 @@ pub struct PageAssets {
 
     /// Features auto-detected during render (math expressions, mermaid fences).
     /// Themes use these to conditionally load CSS / JS for the feature.
-    pub features: BTreeSet<Feature>,
+    features: BTreeSet<Feature>,
 }
 
 impl PageAssets {
@@ -59,6 +59,12 @@ impl PageAssets {
     #[must_use]
     pub fn scripts(&self) -> &[ScriptTag] {
         &self.scripts
+    }
+
+    /// Features detected during render.
+    #[must_use]
+    pub fn features(&self) -> &BTreeSet<Feature> {
+        &self.features
     }
 
     /// Marks a feature as needed by the current page.
@@ -102,33 +108,19 @@ pub struct ScriptTag {
     pub module: bool,
 }
 
-impl ScriptTag {
-    /// Builds a deferred, non-module script tag (the common case).
-    #[must_use]
-    pub fn deferred(url: impl Into<String>) -> Self {
-        Self {
-            url: url.into(),
-            load: LoadStrategy::Defer,
-            module: false,
-        }
-    }
-}
-
 /// Script execution strategy. Modules support deferred or asynchronous execution only.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, AsRefStr, EnumString)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, AsRefStr, EnumString)]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
 pub enum LoadStrategy {
-    #[default]
     Defer,
     Async,
     Sync,
 }
 
 /// A page-level feature flag, set during render and read by themes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, AsRefStr)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "lowercase")]
-#[strum(serialize_all = "lowercase")]
 pub enum Feature {
     Math,
     Mermaid,
@@ -138,13 +130,21 @@ pub enum Feature {
 mod tests {
     use super::*;
 
+    fn deferred(url: &str) -> ScriptTag {
+        ScriptTag {
+            url: url.to_owned(),
+            load: LoadStrategy::Defer,
+            module: false,
+        }
+    }
+
     // ── PageAssets::register_script ──
 
     #[test]
     fn register_script_preserves_order_and_deduplicates_identical_tags() {
         let mut assets = PageAssets::default();
-        let first = ScriptTag::deferred("/b.js");
-        let second = ScriptTag::deferred("/a.js");
+        let first = deferred("/b.js");
+        let second = deferred("/a.js");
         for tag in [&first, &second, &first] {
             assets.register_script(tag.clone()).unwrap();
         }
@@ -195,7 +195,7 @@ mod tests {
             (LoadStrategy::Defer, true, "load=defer, module=true"),
         ] {
             let mut assets = PageAssets::default();
-            let original = ScriptTag::deferred("/x.js");
+            let original = deferred("/x.js");
             assets.register_script(original.clone()).unwrap();
             let error = assets
                 .register_script(ScriptTag {
@@ -224,22 +224,22 @@ mod tests {
         assets.add_feature(Feature::Math);
         assets.add_feature(Feature::Math);
         assets.add_feature(Feature::Mermaid);
-        assert_eq!(assets.features.len(), 2);
-        assert!(assets.features.contains(&Feature::Math));
-        assert!(assets.features.contains(&Feature::Mermaid));
+        assert_eq!(
+            assets.features(),
+            &BTreeSet::from([Feature::Math, Feature::Mermaid])
+        );
     }
 
-    // ── Feature string form ──
+    // ── Feature: string form ──
 
     #[test]
     fn feature_string_form_is_lowercase_for_templates() {
-        // Themes test membership with `"math" in assets.features`. Verify the strum (AsRef) and
-        // serde (Serialize) string forms agree, since MiniJinja serializes via serde while strum
-        // drives our internal tooling.
-        assert_eq!(Feature::Math.as_ref(), "math");
-        assert_eq!(Feature::Mermaid.as_ref(), "mermaid");
-
-        let toml_value = toml::Value::try_from(Feature::Math).unwrap();
-        assert_eq!(toml_value.as_str(), Some("math"));
+        // Themes test membership with `"math" in assets.features`, which MiniJinja serializes.
+        for (feature, expected) in [(Feature::Math, "math"), (Feature::Mermaid, "mermaid")] {
+            assert_eq!(
+                toml::Value::try_from(feature).unwrap().as_str(),
+                Some(expected)
+            );
+        }
     }
 }
