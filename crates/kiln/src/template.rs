@@ -1,12 +1,15 @@
 mod functions;
 pub mod vars;
 
+use std::borrow::Cow;
 use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::{Context, Result, ensure};
-use minijinja::path_loader;
 use minijinja::value::{Kwargs, Value, merge_maps};
+use minijinja::{
+    AutoEscape, Output, State, default_auto_escape_callback, escape_formatter, path_loader,
+};
 use serde::Serialize;
 
 use self::functions::{
@@ -15,6 +18,7 @@ use self::functions::{
 use self::vars::{ArchivePageVars, HomePageVars, OverviewPageVars, PageMetadata, PostTemplateVars};
 use crate::config::Config;
 use crate::directive::DirectiveContext;
+use crate::html;
 use crate::i18n::I18n;
 use crate::render::PageResources;
 use crate::render::assets::{AssetsHandle, PageAssets};
@@ -73,6 +77,8 @@ impl TemplateEngine {
             }
             Ok(None)
         });
+        env.set_auto_escape_callback(auto_escape);
+        env.set_formatter(format_value);
         env.add_global("config", Value::from_serialize(config));
         env.add_function("now", tpl_now);
         env.add_function("read_file", tpl_read_file);
@@ -83,12 +89,12 @@ impl TemplateEngine {
             prefix: config.base_url.prefix().to_owned(),
         });
         let urls = Arc::clone(&asset_urls);
-        env.add_function("asset_url", move |state: &minijinja::State, url: &str| {
+        env.add_function("asset_url", move |state: &State, url: &str| {
             tpl_asset_url(state, &urls, url)
         });
         env.add_function(
             "register_script",
-            move |state: &minijinja::State, url: &str, kwargs: Kwargs| {
+            move |state: &State, url: &str, kwargs: Kwargs| {
                 tpl_register_script(state, &asset_urls, url, &kwargs)
             },
         );
@@ -210,6 +216,30 @@ impl TemplateEngine {
             .render(context)
             .with_context(|| format!("failed to render {name} template"))
     }
+}
+
+/// HTML autoescaping that leaves `/` intact, unlike the built-in [`AutoEscape::Html`]. A custom
+/// mode also sends the `escape` filter through [`format_value`].
+const HTML: AutoEscape = AutoEscape::Custom("html");
+
+/// Selects [`HTML`] wherever the default callback selects [`AutoEscape::Html`].
+fn auto_escape(name: &str) -> AutoEscape {
+    match default_auto_escape_callback(name) {
+        AutoEscape::Html => HTML,
+        other => other,
+    }
+}
+
+/// Formats values like [`escape_formatter`], but escapes [`HTML`] with [`html::escape`].
+fn format_value(out: &mut Output, state: &State, value: &Value) -> Result<(), minijinja::Error> {
+    if state.auto_escape() != HTML || value.is_safe() {
+        return escape_formatter(out, state, value);
+    }
+    let text = value
+        .as_str()
+        .map_or_else(|| Cow::Owned(value.to_string()), Cow::Borrowed);
+    out.write_str(&html::escape(&text))
+        .map_err(minijinja::Error::from)
 }
 
 #[cfg(test)]
@@ -334,7 +364,7 @@ mod tests {
 
         assert_eq!(
             engine.render_post(&vars, &assets).unwrap(),
-            "Post A|Description|https:&#x2f;&#x2f;example.com&#x2f;post-a&#x2f;|2026-01-01T12:34:56Z|2026-02-01T12:34:56Z|&#x2f;image.webp|&#x2f;page.css|My Site|All Posts|True|&#x2f;script.js|CC0-1.0|Tag A|Section A"
+            "Post A|Description|https://example.com/post-a/|2026-01-01T12:34:56Z|2026-02-01T12:34:56Z|/image.webp|/page.css|My Site|All Posts|True|/script.js|CC0-1.0|Tag A|Section A"
         );
     }
 
@@ -351,7 +381,7 @@ mod tests {
 
         assert_eq!(
             engine.render_post(&vars, &PageAssets::default()).unwrap(),
-            "&lt;title&gt;|&lt;strong&gt;Body&lt;&#x2f;strong&gt;|<strong>Body</strong>|<nav>Contents</nav>"
+            "&lt;title&gt;|&lt;strong&gt;Body&lt;/strong&gt;|<strong>Body</strong>|<nav>Contents</nav>"
         );
     }
 
@@ -376,7 +406,7 @@ mod tests {
 
         assert_eq!(
             engine.render_home(&vars).unwrap(),
-            "Home|Latest pages|https:&#x2f;&#x2f;example.com&#x2f;page&#x2f;2&#x2f;|Post A:&#x2f;post-a&#x2f;|2/3|0"
+            "Home|Latest pages|https://example.com/page/2/|Post A:/post-a/|2/3|0"
         );
     }
 
@@ -405,7 +435,7 @@ mod tests {
 
         assert_eq!(
             engine.render_archive(&vars).unwrap(),
-            "Rust|Description|https:&#x2f;&#x2f;example.com&#x2f;tags&#x2f;rust&#x2f;page&#x2f;2&#x2f;|tag|2026:Post A:&#x2f;post-a&#x2f;|2/3|0"
+            "Rust|Description|https://example.com/tags/rust/page/2/|tag|2026:Post A:/post-a/|2/3|0"
         );
     }
 
@@ -441,7 +471,7 @@ mod tests {
 
         assert_eq!(
             engine.render_overview(&vars).unwrap(),
-            "All Tags|Description|https:&#x2f;&#x2f;example.com&#x2f;tags&#x2f;|tag|Rust:&#x2f;tags&#x2f;rust&#x2f;:Post A:&#x2f;post-a&#x2f;|Empty:&#x2f;tags&#x2f;empty&#x2f;:|0"
+            "All Tags|Description|https://example.com/tags/|tag|Rust:/tags/rust/:Post A:/post-a/|Empty:/tags/empty/:|0"
         );
     }
 
@@ -476,7 +506,7 @@ mod tests {
         };
         assert_eq!(
             engine.render_404(&vars).unwrap(),
-            "Not Found|Description|https:&#x2f;&#x2f;example.com&#x2f;404.html|/_assets/bg.8f8cbb7dcf46.png|0"
+            "Not Found|Description|https://example.com/404.html|/_assets/bg.8f8cbb7dcf46.png|0"
         );
     }
 
@@ -618,7 +648,7 @@ mod tests {
                 &PageAssets::default(),
             )
             .unwrap();
-        assert_eq!(html, "&#x2f;page&#x2f;|0");
+        assert_eq!(html, "/page/|0");
     }
 
     #[test]
@@ -664,6 +694,37 @@ mod tests {
             &test_i18n(),
             &StaticAssetManifest::default(),
         )
+    }
+
+    // ── format_value ──
+
+    #[test]
+    fn format_value_escapes_markup_but_keeps_slashes() {
+        let mut engine = test_engine();
+        for (name, source) in [
+            (
+                "page.html",
+                r#"<a href="{{ url }}" title="{{ title }}">{{ text }}</a>|{{ text | e }}|{{ html }}|{{ list }}|{{ count }}"#,
+            ),
+            ("page.txt", "{{ title }}|{{ text }}"),
+        ] {
+            engine.env.add_template(name, source).unwrap();
+        }
+        let ctx = minijinja::context! {
+            url => "https://example.com/a?b=1&c=2",
+            title => r#"Say "hi" & 'bye'"#,
+            text => "<b>/x</b>",
+            html => Value::from_safe_string("<i>/y</i>".to_owned()),
+            list => ["a/b"],
+            count => 3,
+        };
+        let render = |name| engine.env.get_template(name).unwrap().render(&ctx).unwrap();
+
+        assert_eq!(
+            render("page.html"),
+            r#"<a href="https://example.com/a?b=1&amp;c=2" title="Say &quot;hi&quot; &amp; &#39;bye&#39;">&lt;b&gt;/x&lt;/b&gt;</a>|&lt;b&gt;/x&lt;/b&gt;|<i>/y</i>|[&quot;a/b&quot;]|3"#
+        );
+        assert_eq!(render("page.txt"), r#"Say "hi" & 'bye'|<b>/x</b>"#);
     }
 
     fn engine_with_template(name: &'static str, source: &'static str) -> TemplateEngine {

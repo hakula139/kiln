@@ -4,7 +4,7 @@
   <div class="home">
     <ul>
     {%- for page in pages %}
-      <li><a href="{{ page.url | safe }}">{{ page.title }}</a></li>
+      <li><a href="{{ page.url }}">{{ page.title }}</a></li>
     {%- endfor %}
     </ul>
     {%- if pagination.total_pages > 1 %}

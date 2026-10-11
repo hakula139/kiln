@@ -177,7 +177,7 @@ emojis = true
 
 Every page template receives `title`, `description`, canonical `url` and [`assets`](#page-assets). Every template, including partials and directives, can read the site configuration as `config`.
 
-MiniJinja auto-escapes strings. Apply `| safe` to generated HTML such as `content`, `toc` and `body_html`. Dates are ISO 8601 timestamps with an offset in the configured time zone. Templates may use `date[:10]` when only the date is wanted.
+kiln auto-escapes strings in HTML templates, encoding `&`, `<`, `>`, `"` and `'` while leaving `/` intact, so URLs need no `| safe`. Apply `| safe` to generated HTML such as `content`, `toc` and `body_html`. Dates are ISO 8601 timestamps with an offset in the configured time zone. Templates may use `date[:10]` when only the date is wanted.
 
 #### Post Templates (`post.html`)
 

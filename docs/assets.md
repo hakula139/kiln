@@ -73,7 +73,7 @@ Link the shared stylesheet in the base template and page CSS in the post templat
 
 ```jinja
 <link rel="stylesheet" href="{{ asset_url('/assets/css/site.css') }}">
-{% if page_css %}<link rel="stylesheet" href="{{ page_css | safe }}">{% endif %}
+{% if page_css %}<link rel="stylesheet" href="{{ page_css }}">{% endif %}
 ```
 
 `page_css` contains the fingerprinted stylesheet URL, including the deployment prefix. Only the owning page receives it. Its selectors still share a document with theme components, so use a wrapper class to limit their scope when needed.
