@@ -44,11 +44,11 @@ pub(crate) fn test_page(title: &str) -> Page {
             title: title.to_owned(),
             ..Frontmatter::default()
         },
-        raw_content: String::new(),
+        body: String::new(),
         kind: PageKind::Page,
-        slug: title.to_lowercase().replace(' ', "-"),
         summary: None,
         source_path: PathBuf::from(format!("content/{title}/index.md")),
+        output_dir: PathBuf::from(title),
         assets: Vec::new(),
     }
 }

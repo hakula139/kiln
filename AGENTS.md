@@ -57,10 +57,10 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 │   ├── discovery.rs     # Recursive content walking with draft / _-prefix / no-frontmatter exclusion
 │   ├── frontmatter.rs   # TOML frontmatter parsing (+++), Frontmatter / FeaturedImage / ImageCredit
 │   ├── index.rs         # Shared section / taxonomy index metadata loading
-│   └── page.rs          # Page struct, PageKind, slug derivation, summary, output paths, co-located assets
+│   └── page.rs          # Page struct, PageKind, output directories, summary, co-located assets
 ├── convert.rs           # Hugo → kiln content converter orchestrator
 ├── convert/             # Hugo → kiln converter submodules
-│   ├── frontmatter.rs   # YAML → TOML frontmatter serde round-trip
+│   ├── frontmatter.rs   # YAML → TOML frontmatter round-trip, Hugo featured image normalization
 │   └── shortcode.rs     # Hugo shortcode → kiln directive conversion
 ├── css.rs               # Shared / page CSS discovery, compilation, and published asset URL resolution
 ├── directive.rs         # Directive block, owned arguments and template context types

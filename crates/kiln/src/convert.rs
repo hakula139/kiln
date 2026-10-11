@@ -8,7 +8,9 @@ use std::path::{Component, Path, PathBuf};
 use anyhow::{Context, Result, bail, ensure};
 use walkdir::WalkDir;
 
+use crate::content::frontmatter::{has_delimited_frontmatter, split_delimited_frontmatter};
 use crate::content::is_markdown;
+use crate::convert::frontmatter::YAML_DELIMITER;
 
 /// Converts a Hugo site root to kiln format.
 ///
@@ -157,8 +159,8 @@ fn convert_or_copy_markdown(src: &Path, dest: &Path) -> Result<()> {
     let content =
         fs::read_to_string(src).with_context(|| format!("failed to read {}", src.display()))?;
 
-    if content.trim_start_matches('\u{feff}').starts_with("---") {
-        let (yaml_fm, body) = frontmatter::split_yaml_frontmatter(&content)
+    if has_delimited_frontmatter(&content, YAML_DELIMITER) {
+        let (yaml_fm, body) = split_delimited_frontmatter(&content, YAML_DELIMITER)
             .with_context(|| format!("malformed YAML frontmatter in {}", src.display()))?;
         convert_markdown_file(yaml_fm, body, dest)
     } else {

@@ -118,7 +118,7 @@ fn build_image_urls_and_metadata_share_published_paths() {
                 +++
                 title = "Example"
                 slug = "b"
-                featured_image = {featured:?}
+                featured_image = {{ src = {featured:?} }}
                 +++
                 ![Root](/blog/shared.png?q=1#view)
 
@@ -277,7 +277,7 @@ fn write_image_lifecycle_page(site: &TestSite, featured: &str) {
         &formatdoc! {r#"
             +++
             title = "Example"
-            featured_image = {featured:?}
+            featured_image = {{ src = {featured:?} }}
             +++
             ![Block](./photo%20%25.avif?quality=1#view)
 

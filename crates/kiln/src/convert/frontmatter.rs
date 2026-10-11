@@ -1,70 +1,78 @@
-use std::collections::BTreeMap;
-
 use anyhow::{Context, Result};
-use serde::Deserialize;
+use serde_yaml::{Mapping, Value};
 
-use crate::content::frontmatter::{Frontmatter, split_delimited_frontmatter};
+use crate::content::frontmatter::{FeaturedImage, Frontmatter, ImageCredit};
 
-const DELIMITER: &str = "---";
+/// Delimiter around Hugo YAML frontmatter.
+pub(crate) const YAML_DELIMITER: &str = "---";
 
-/// Splits content into raw YAML frontmatter and the remaining body.
+/// Converts supported YAML metadata and reports the sorted fields that need manual migration.
 ///
-/// # Errors
-///
-/// Returns an error if the `---` delimiters are missing or malformed.
-pub(crate) fn split_yaml_frontmatter(content: &str) -> Result<(&str, &str)> {
-    split_delimited_frontmatter(content, DELIMITER)
-}
-
-#[derive(Deserialize)]
-struct MigrationFrontmatter {
-    #[serde(flatten)]
-    supported: Frontmatter,
-    #[serde(flatten)]
-    unsupported: BTreeMap<String, serde_yaml::Value>,
-}
-
-/// Converts supported YAML metadata and reports fields that require manual migration.
+/// Hugo's `featuredImage` key and bare-string image sources become a `featured_image` table.
 pub(crate) fn convert_frontmatter(yaml_str: &str) -> Result<(String, Vec<String>)> {
-    let value: serde_yaml::Value =
+    let mut value: Value =
         serde_yaml::from_str(yaml_str).context("failed to parse YAML frontmatter")?;
     let mut unsupported = Vec::new();
-    collect_image_fields(&value, &mut unsupported);
-    let fm: MigrationFrontmatter =
+    if let Some(mapping) = value.as_mapping_mut() {
+        for key in ["featured_image", "featuredImage"] {
+            let Some(image) = mapping.get_mut(key).and_then(Value::as_mapping_mut) else {
+                continue;
+            };
+            retain_fields(
+                image,
+                &format!("{key}."),
+                &FeaturedImage::FIELDS,
+                &mut unsupported,
+            );
+            if let Some(credit) = image.get_mut("credit").and_then(Value::as_mapping_mut) {
+                retain_fields(
+                    credit,
+                    &format!("{key}.credit."),
+                    &ImageCredit::FIELDS,
+                    &mut unsupported,
+                );
+            }
+        }
+        normalize_featured_image(mapping);
+        retain_fields(mapping, "", &Frontmatter::FIELDS, &mut unsupported);
+    }
+    unsupported.sort();
+
+    let fm: Frontmatter =
         serde_yaml::from_value(value).context("failed to parse YAML frontmatter")?;
-    unsupported.extend(fm.unsupported.into_keys());
-    let toml_str =
-        toml::to_string_pretty(&fm.supported).context("failed to serialize TOML frontmatter")?;
+    let toml_str = toml::to_string_pretty(&fm).context("failed to serialize TOML frontmatter")?;
     Ok((toml_str, unsupported))
 }
 
-fn collect_image_fields(value: &serde_yaml::Value, unsupported: &mut Vec<String>) {
-    for field in ["featured_image", "featuredImage"] {
-        let Some(image) = value.get(field).and_then(serde_yaml::Value::as_mapping) else {
-            continue;
-        };
-        collect_unknown_fields(image, field, &["src", "position", "credit"], unsupported);
-        if let Some(credit) = image.get("credit").and_then(serde_yaml::Value::as_mapping) {
-            collect_unknown_fields(
-                credit,
-                &format!("{field}.credit"),
-                &["title", "author", "url"],
-                unsupported,
-            );
-        }
-    }
-}
-
-fn collect_unknown_fields(
-    mapping: &serde_yaml::Mapping,
+/// Removes string keys outside `supported`, recording them with `prefix`. Other keys stay so
+/// deserialization rejects them.
+fn retain_fields(
+    mapping: &mut Mapping,
     prefix: &str,
     supported: &[&str],
     unsupported: &mut Vec<String>,
 ) {
-    for key in mapping.keys().filter_map(serde_yaml::Value::as_str) {
-        if !supported.contains(&key) {
-            unsupported.push(format!("{prefix}.{key}"));
+    mapping.retain(|key, _| {
+        let Some(name) = key.as_str() else {
+            return true;
+        };
+        let keep = supported.contains(&name);
+        if !keep {
+            unsupported.push(format!("{prefix}{name}"));
         }
+        keep
+    });
+}
+
+fn normalize_featured_image(mapping: &mut Mapping) {
+    if !mapping.contains_key("featured_image")
+        && let Some(image) = mapping.remove("featuredImage")
+    {
+        mapping.insert("featured_image".into(), image);
+    }
+    if let Some(image @ Value::String(_)) = mapping.get_mut("featured_image") {
+        let src = std::mem::take(image);
+        *image = Value::Mapping(Mapping::from_iter([("src".into(), src)]));
     }
 }
 
@@ -73,38 +81,6 @@ mod tests {
     use indoc::indoc;
 
     use super::*;
-
-    // ── split_yaml_frontmatter ──
-
-    #[test]
-    fn split_yaml_frontmatter_basic() {
-        let input = indoc! {r"
-            ---
-            title: Hello
-            ---
-            Body text here.
-        "};
-        let (fm, body) = split_yaml_frontmatter(input).unwrap();
-        assert_eq!(fm, "title: Hello\n");
-        assert_eq!(body, "Body text here.\n");
-    }
-
-    #[test]
-    fn split_yaml_frontmatter_no_body() {
-        let input = indoc! {"
-            ---
-            title: No Body
-            ---
-        "};
-        let (fm, body) = split_yaml_frontmatter(input).unwrap();
-        assert_eq!(fm, "title: No Body\n");
-        assert_eq!(body, "");
-    }
-
-    #[test]
-    fn split_yaml_frontmatter_missing_delimiter_returns_error() {
-        assert!(split_yaml_frontmatter("No frontmatter here").is_err());
-    }
 
     // ── convert_frontmatter ──
 
@@ -161,6 +137,39 @@ mod tests {
     }
 
     #[test]
+    fn convert_frontmatter_maps_hugo_featured_image_forms() {
+        for (yaml, expected_unsupported) in [
+            ("featured_image: /img.webp", Vec::<&str>::new()),
+            ("featuredImage: /img.webp", vec![]),
+            (
+                indoc! {"
+                    featuredImage:
+                      src: /img.webp
+                "},
+                vec![],
+            ),
+            (
+                indoc! {"
+                    featured_image: /img.webp
+                    featuredImage: /other.webp
+                "},
+                vec!["featuredImage"],
+            ),
+        ] {
+            let (toml, unsupported) = convert_frontmatter(yaml).unwrap();
+            assert_eq!(
+                toml,
+                indoc! {r#"
+                    [featured_image]
+                    src = "/img.webp"
+                "#},
+                "{yaml}"
+            );
+            assert_eq!(unsupported, expected_unsupported, "{yaml}");
+        }
+    }
+
+    #[test]
     fn convert_frontmatter_reports_nested_fields() {
         let (toml, unsupported) = convert_frontmatter(indoc! {r"
             featuredImage:
@@ -173,7 +182,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             unsupported,
-            ["featuredImage.width", "featuredImage.credit.custom"]
+            ["featuredImage.credit.custom", "featuredImage.width"]
         );
         assert_eq!(
             toml,
@@ -207,14 +216,19 @@ mod tests {
 
     #[test]
     fn convert_frontmatter_invalid_yaml_returns_error() {
-        let yaml = indoc! {"
-            :
-              invalid: [yaml
-        "};
-        let err = convert_frontmatter(yaml).unwrap_err();
-        assert!(
-            err.to_string().contains("failed to parse YAML"),
-            "got: {err}"
-        );
+        for yaml in [
+            indoc! {"
+                :
+                  invalid: [yaml
+            "},
+            "- not a mapping",
+            "1: numeric key",
+        ] {
+            let err = convert_frontmatter(yaml).unwrap_err();
+            assert!(
+                err.to_string().contains("failed to parse YAML"),
+                "{yaml}: {err}"
+            );
+        }
     }
 }
