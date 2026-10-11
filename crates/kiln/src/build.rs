@@ -6,7 +6,6 @@ mod git;
 mod home;
 mod listing;
 mod overview;
-mod paginate;
 mod routes;
 mod sitemap;
 
@@ -18,7 +17,7 @@ use anyhow::{Context, Result};
 
 use self::bucket::Taxonomy;
 use self::git::GitInfo;
-use self::listing::{PreparedPage, format_page_date, prepare_pages};
+use self::listing::{PreparedPage, format_page_date, prepare_pages, sort_pinned_first};
 use self::routes::RoutePlan;
 use crate::config::Config;
 use crate::content::discovery::discover_content;
@@ -26,8 +25,8 @@ use crate::content::page::PageKind;
 use crate::css::Stylesheets;
 use crate::i18n::I18n;
 use crate::minify::{self, MinifyStats};
+use crate::output::OutputTransaction;
 use crate::output::guard::resolve_output_dir;
-use crate::output::{OutputTransaction, write_output};
 use crate::render::lqip::ImageResolver;
 use crate::render::pipeline::render_page;
 use crate::render::{PageResources, RenderOptions};
@@ -138,18 +137,18 @@ pub fn build(root: &Path, options: &BuildOptions<'_>) -> Result<()> {
     })?;
     let prepared = prepare_pages(&ctx, &content.pages, &taxonomy)?;
     let listings = taxonomy.resolve(&prepared);
-    let posts = &listings.posts.pages;
+    let mut home = listings.posts.pages.clone();
+    sort_pinned_first(&mut home);
 
-    let plan = RoutePlan::new(&ctx, &prepared, posts, &listings, &output_dir)?;
-    build_content_pages(&ctx, &prepared, &output_dir)?;
-    let mut page_count = content.pages.len();
-    page_count += home::build_home_pages(&ctx, posts, &output_dir)?;
-    page_count += archive::build_archive_pages(&ctx, &listings, &output_dir)?;
-    page_count += overview::build_overview_pages(&ctx, &listings, &output_dir)?;
-
-    feed::build_feeds(&ctx, posts, &listings, &output_dir)?;
-    sitemap::build_sitemap_and_robots(&ctx, &plan, &output_dir)?;
-    page_count += error::build_404(&ctx, &output_dir)?;
+    let plan = RoutePlan::new(
+        &ctx,
+        &prepared,
+        &listings.posts,
+        &home,
+        &listings,
+        &output_dir,
+    )?;
+    let page_count = plan.render(&ctx, &output_dir)?;
 
     finish_build(
         &ctx,
@@ -227,19 +226,7 @@ fn format_build_summary(
 
 // ── Content rendering ──
 
-fn build_content_pages(
-    ctx: &BuildContext,
-    prepared: &[PreparedPage],
-    output_dir: &Path,
-) -> Result<()> {
-    for prepared in prepared {
-        build_page(ctx, prepared, output_dir)?;
-    }
-
-    Ok(())
-}
-
-fn build_page(ctx: &BuildContext, prepared: &PreparedPage, output_dir: &Path) -> Result<()> {
+fn render_content_page(ctx: &BuildContext, prepared: &PreparedPage) -> Result<String> {
     let page = prepared.page;
     let rendered = render_page(
         &page.body,
@@ -281,13 +268,11 @@ fn build_page(ctx: &BuildContext, prepared: &PreparedPage, output_dir: &Path) ->
         config: &ctx.config,
     };
 
-    let html = match page.kind {
+    match page.kind {
         PageKind::Page if ctx.template_engine.has_template("page.html") => {
             ctx.template_engine.render_page(&vars)
         }
         _ => ctx.template_engine.render_post(&vars),
     }
-    .with_context(|| format!("failed to render {}", page.source_path.display()))?;
-
-    write_output(&output_dir.join(page.output_path()), &html)
+    .with_context(|| format!("failed to render {}", page.source_path.display()))
 }

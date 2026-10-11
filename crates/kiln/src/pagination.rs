@@ -1,155 +1,102 @@
+use std::num::NonZeroUsize;
+use std::path::{Path, PathBuf};
+
 use serde::Serialize;
 
-/// A paginator that provides windowed views over a slice of items.
-///
-/// Page numbers are 1-indexed. Borrows items and performs zero allocation for pagination math.
-#[derive(Debug)]
-pub struct Paginator<'a, T> {
-    items: &'a [T],
-    per_page: usize,
-}
+use crate::url::directory_url;
 
-impl<'a, T> Paginator<'a, T> {
-    /// Creates a new paginator.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `per_page` is zero.
-    #[must_use]
-    pub fn new(items: &'a [T], per_page: usize) -> Self {
-        assert!(per_page > 0, "per_page must be positive");
-        Self { items, per_page }
-    }
-
-    #[must_use]
-    pub fn total_pages(&self) -> usize {
-        self.items.len().div_ceil(self.per_page).max(1)
-    }
-
-    /// Returns the items on the given page (1-indexed).
-    ///
-    /// Returns an empty slice for out-of-range page numbers.
-    #[must_use]
-    pub fn page_items(&self, page_num: usize) -> &'a [T] {
-        if page_num == 0 || page_num > self.total_pages() {
-            return &[];
-        }
-        let start = (page_num - 1) * self.per_page;
-        let end = start.saturating_add(self.per_page).min(self.items.len());
-        &self.items[start..end]
-    }
-}
-
-/// Computes the URL for a paginated page of the listing at `base_path`, which ends in `/`.
-///
-/// Page 1 is the canonical URL (just `base_path`). Page N>1 appends `page/{n}/`.
-fn paginated_url(base_path: &str, page_num: usize) -> String {
-    if page_num <= 1 {
-        base_path.to_owned()
+/// Splits listing items into pages of `per_page`, keeping one empty page for an empty listing.
+pub(crate) fn paginate<T>(items: &[T], per_page: NonZeroUsize) -> Vec<&[T]> {
+    if items.is_empty() {
+        vec![items]
     } else {
-        format!("{base_path}page/{page_num}/")
+        items.chunks(per_page.get()).collect()
     }
+}
+
+/// Output directory of page `number` (1-indexed) of the listing at `base`.
+pub(crate) fn page_dir(base: &Path, number: usize) -> PathBuf {
+    if number == 1 {
+        base.to_owned()
+    } else {
+        base.join("page").join(number.to_string())
+    }
+}
+
+/// URL of page `number` of the listing at `listing_url`, which ends in `/`.
+fn numbered_url(listing_url: &str, number: usize) -> String {
+    format!(
+        "{listing_url}{}",
+        directory_url(&page_dir(Path::new(""), number))
+    )
 }
 
 /// Template-friendly pagination metadata.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Serialize)]
 pub struct PaginationVars {
     pub current_page: usize,
     pub total_pages: usize,
-    /// Base URL for constructing page URLs (e.g., `/tags/rust`).
-    ///
-    /// Page 1 URL is `{base_url}/`, page N URL is `{base_url}/page/{n}/`.
-    /// Useful for page-jump controls that need to navigate to arbitrary pages.
-    pub base_url: String,
+    /// Listing URL path without its trailing slash (e.g., `/tags/rust`), for page-jump controls.
+    /// Page 1 lives at `{base_path}/` and page N at `{base_path}/page/{n}/`.
+    pub base_path: String,
     pub prev_url: Option<String>,
     pub next_url: Option<String>,
-    /// Numbered page entries with ellipsis markers for display.
-    ///
-    /// Shows first, last, and pages within ±2 of the current page.
-    /// Gaps are represented by items with `number: None`.
+    /// The first and last pages and those within two of the current one, with gaps between.
     pub items: Vec<PaginationItem>,
 }
 
-/// A single entry in the pagination display.
-///
-/// When `number` is `None`, this represents an ellipsis ("...") marker.
-#[derive(Debug, Clone, Serialize)]
-pub struct PaginationItem {
-    /// Page number, or `None` for an ellipsis marker.
-    pub number: Option<usize>,
-    /// Page URL, or `None` for an ellipsis marker.
-    pub url: Option<String>,
-    pub is_current: bool,
+/// One entry of the numbered page navigation.
+#[derive(Debug, PartialEq, Eq, Serialize)]
+#[serde(untagged)]
+pub enum PaginationItem {
+    Page {
+        number: usize,
+        url: String,
+        is_current: bool,
+    },
+    /// Elided pages, serialized as `none`.
+    Gap,
 }
 
 impl PaginationVars {
-    /// Creates metadata for a page in `1..=total_pages` of the listing at `base_path`, a URL path
-    /// ending in `/`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the page is outside that range or `base_path` lacks its trailing slash.
-    #[must_use]
-    pub fn new(base_path: &str, current_page: usize, total_pages: usize) -> Self {
-        assert!(
-            (1..=total_pages).contains(&current_page),
-            "invalid page number"
-        );
-        let base_url = base_path
-            .strip_suffix('/')
-            .expect("listing URLs end with `/`")
-            .to_owned();
-        let prev_url = (current_page > 1).then(|| paginated_url(base_path, current_page - 1));
-        let next_url =
-            (current_page < total_pages).then(|| paginated_url(base_path, current_page + 1));
-        let items = build_pagination_items(base_path, current_page, total_pages);
-
+    /// Creates metadata for page `current_page` in `1..=total_pages` of the listing at
+    /// `listing_url`, a URL path ending in `/`.
+    pub(crate) fn new(listing_url: &str, current_page: usize, total_pages: usize) -> Self {
+        let url = |number| numbered_url(listing_url, number);
         Self {
             current_page,
             total_pages,
-            base_url,
-            prev_url,
-            next_url,
-            items,
+            base_path: listing_url.trim_end_matches('/').to_owned(),
+            prev_url: (current_page > 1).then(|| url(current_page - 1)),
+            next_url: (current_page < total_pages).then(|| url(current_page + 1)),
+            items: pagination_items(current_page, total_pages, url),
         }
     }
 }
 
-/// Builds the pagination display items with ellipsis gaps.
-///
-/// Always shows the first and last pages. Shows pages within ±2 of the
-/// current page. Gaps between shown ranges get a single ellipsis marker.
-fn build_pagination_items(
-    base_path: &str,
+fn pagination_items(
     current_page: usize,
     total_pages: usize,
+    url: impl Fn(usize) -> String,
 ) -> Vec<PaginationItem> {
-    let start = current_page.saturating_sub(2).max(1);
-    let end = current_page.saturating_add(2).min(total_pages);
-    let mut numbers = vec![1];
-    numbers.extend(start..=end);
-    numbers.push(total_pages);
+    let window = current_page.saturating_sub(2).max(1)..=(current_page + 2).min(total_pages);
+    let mut numbers: Vec<_> = [1, total_pages].into_iter().chain(window).collect();
     numbers.sort_unstable();
     numbers.dedup();
 
-    let mut items = Vec::with_capacity(9);
+    let mut items = Vec::new();
     let mut previous = 0;
     for number in numbers {
         if number > previous + 1 {
-            items.push(PaginationItem {
-                number: None,
-                url: None,
-                is_current: false,
-            });
+            items.push(PaginationItem::Gap);
         }
-        items.push(PaginationItem {
-            number: Some(number),
-            url: Some(paginated_url(base_path, number)),
+        items.push(PaginationItem::Page {
+            number,
+            url: url(number),
             is_current: number == current_page,
         });
         previous = number;
     }
-
     items
 }
 
@@ -157,70 +104,62 @@ fn build_pagination_items(
 mod tests {
     use super::*;
 
-    // ── Paginator ──
+    // ── paginate ──
 
     #[test]
-    fn paginator_basic() {
-        let items: Vec<i32> = (0..25).collect();
-        let p = Paginator::new(&items, 10);
-
-        assert_eq!(p.total_pages(), 3);
-        assert_eq!(p.page_items(1), &(0..10).collect::<Vec<_>>());
-        assert_eq!(p.page_items(2), &(10..20).collect::<Vec<_>>());
-        assert_eq!(p.page_items(3), &(20..25).collect::<Vec<_>>());
-        assert!(p.page_items(0).is_empty(), "page 0 should return empty");
-        assert!(
-            p.page_items(4).is_empty(),
-            "past last page should return empty"
+    fn paginate_chunks_items_and_keeps_one_empty_page() {
+        let per_page = NonZeroUsize::new(10).unwrap();
+        let items: Vec<_> = (0..25).collect();
+        assert_eq!(
+            paginate(&items, per_page)
+                .iter()
+                .map(|page| (page[0], page.len()))
+                .collect::<Vec<_>>(),
+            [(0, 10), (10, 10), (20, 5)]
         );
+        assert_eq!(paginate::<i32>(&[], per_page), [&[] as &[i32]]);
     }
 
-    #[test]
-    fn paginator_exact_fit() {
-        let items: Vec<i32> = (0..20).collect();
-        let p = Paginator::new(&items, 10);
-        assert_eq!(p.total_pages(), 2);
-        assert_eq!(p.page_items(2), &(10..20).collect::<Vec<_>>());
-    }
+    // ── page_dir ──
 
     #[test]
-    fn paginator_empty() {
-        let items: Vec<i32> = Vec::new();
-        let p = Paginator::new(&items, 10);
-        assert_eq!(p.total_pages(), 1);
-        assert_eq!(p.page_items(1), items.as_slice());
-    }
-
-    // ── paginated_url ──
-
-    #[test]
-    fn paginated_url_canonical_vs_subsequent() {
-        assert_eq!(paginated_url("/tags/rust/", 1), "/tags/rust/");
-        assert_eq!(paginated_url("/tags/rust/", 2), "/tags/rust/page/2/");
-        assert_eq!(paginated_url("/", 2), "/page/2/");
-    }
-
-    // ── PaginationVars ──
-
-    #[test]
-    fn pagination_vars_boundaries() {
-        for (current, total, previous, next) in [
-            (1, 1, None, None),
-            (1, 3, None, Some("/t/page/2/")),
-            (2, 3, Some("/t/"), Some("/t/page/3/")),
-            (3, 3, Some("/t/page/2/"), None),
+    fn page_dir_nests_later_pages() {
+        for (base, number, expected) in [
+            ("", 1, ""),
+            ("", 2, "page/2"),
+            ("tags/rust", 1, "tags/rust"),
+            ("tags/rust", 12, "tags/rust/page/12"),
         ] {
-            let vars = PaginationVars::new("/t/", current, total);
-            assert_eq!(vars.current_page, current);
-            assert_eq!(vars.total_pages, total);
-            assert_eq!(vars.base_url, "/t");
-            assert_eq!(vars.prev_url.as_deref(), previous);
-            assert_eq!(vars.next_url.as_deref(), next);
+            assert_eq!(page_dir(Path::new(base), number), Path::new(expected));
+        }
+    }
+
+    // ── PaginationVars::new ──
+
+    #[test]
+    fn new_links_neighbors_and_strips_base_path() {
+        for (listing_url, current, total, base_path, previous, next) in [
+            ("/", 1, 1, "", None, None),
+            ("/t/", 1, 3, "/t", None, Some("/t/page/2/")),
+            ("/t/", 2, 3, "/t", Some("/t/"), Some("/t/page/3/")),
+            ("/blog/t/", 3, 3, "/blog/t", Some("/blog/t/page/2/"), None),
+        ] {
+            let vars = PaginationVars::new(listing_url, current, total);
+            assert_eq!(
+                (
+                    vars.current_page,
+                    vars.total_pages,
+                    vars.base_path.as_str(),
+                    vars.prev_url.as_deref(),
+                    vars.next_url.as_deref()
+                ),
+                (current, total, base_path, previous, next)
+            );
         }
     }
 
     #[test]
-    fn pagination_vars_windowed_items() {
+    fn new_windows_items_around_current_page() {
         for (current, total, numbers) in [
             (1, 1, vec![Some(1)]),
             (2, 4, vec![Some(1), Some(2), Some(3), Some(4)]),
@@ -242,27 +181,29 @@ mod tests {
             ),
             (10, 10, vec![Some(1), None, Some(8), Some(9), Some(10)]),
         ] {
-            let vars = PaginationVars::new("/t/", current, total);
             let expected: Vec<_> = numbers
                 .into_iter()
-                .map(|number| {
-                    let url = number.map(|number| {
-                        if number == 1 {
+                .map(|number| match number {
+                    Some(number) => PaginationItem::Page {
+                        number,
+                        url: if number == 1 {
                             "/t/".to_owned()
                         } else {
                             format!("/t/page/{number}/")
-                        }
-                    });
-                    (number, url, number == Some(current))
+                        },
+                        is_current: number == current,
+                    },
+                    None => PaginationItem::Gap,
                 })
                 .collect();
-            assert_eq!(
-                vars.items
-                    .into_iter()
-                    .map(|item| (item.number, item.url, item.is_current))
-                    .collect::<Vec<_>>(),
-                expected
-            );
+            assert_eq!(PaginationVars::new("/t/", current, total).items, expected);
         }
+    }
+
+    // ── PaginationItem ──
+
+    #[test]
+    fn pagination_item_gap_serializes_as_none() {
+        assert!(minijinja::Value::from_serialize(PaginationItem::Gap).is_none());
     }
 }

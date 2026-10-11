@@ -1,70 +1,33 @@
-use std::path::Path;
-
 use anyhow::{Context, Result};
-use strum::IntoEnumIterator;
 
 use super::BuildContext;
-use super::bucket::{BucketKind, Listings};
-use crate::output::write_output;
-use crate::template::vars::{BucketSummary, OverviewPageVars, PageMetadata};
-use crate::url::page_url;
+use super::bucket::{BucketKind, Listing};
+use crate::template::vars::{OverviewPageVars, PageMetadata};
 
-/// Generates `/sections/` and `/tags/` overview pages and returns the number written.
-///
-/// Skipped when `overview.html` is not present in the template set.
-pub(super) fn build_overview_pages(
-    ctx: &BuildContext,
-    listings: &Listings<'_>,
-    output_dir: &Path,
-) -> Result<usize> {
-    if !ctx.template_engine.has_template("overview.html") {
-        return Ok(0);
-    }
-
-    let mut page_count = 0;
-    for kind in BucketKind::iter().filter(|k| k.has_overview()) {
-        let summaries: Vec<BucketSummary> = listings
-            .terms
-            .iter()
-            .filter(|b| b.kind == kind)
-            .map(|bucket| bucket.summary(&ctx.config.base_url))
-            .collect();
-        write_overview(ctx, kind, summaries, output_dir)?;
-        page_count += 1;
-    }
-
-    Ok(page_count)
-}
-
-// ── Helpers ──
-
-fn write_overview(
+/// Renders the overview of every bucket of `kind`.
+pub(super) fn render(
     ctx: &BuildContext,
     kind: BucketKind,
-    buckets: Vec<BucketSummary<'_>>,
-    output_dir: &Path,
-) -> Result<()> {
+    buckets: &[Listing<'_>],
+    url: &str,
+) -> Result<String> {
     let title = ctx.i18n.t(&format!("all_{}", kind.plural()));
     let vars = OverviewPageVars {
         metadata: PageMetadata {
             title: &title,
             description: &ctx.config.description,
-            url: page_url(
-                &ctx.config.base_url,
-                &Path::new(kind.plural()).join("index.html"),
-            )
-            .into(),
+            url: url.into(),
         },
         kind: kind.plural(),
         singular: kind.singular(),
-        buckets,
+        buckets: buckets
+            .iter()
+            .filter(|bucket| bucket.kind == kind)
+            .map(|bucket| bucket.summary(&ctx.config.base_url))
+            .collect(),
         config: &ctx.config,
     };
-
-    let html = ctx
-        .template_engine
+    ctx.template_engine
         .render_overview(&vars)
-        .with_context(|| format!("failed to render {} overview", kind.plural()))?;
-
-    write_output(&output_dir.join(kind.plural()).join("index.html"), &html)
+        .with_context(|| format!("failed to render {} overview", kind.plural()))
 }

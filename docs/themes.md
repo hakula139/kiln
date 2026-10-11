@@ -251,9 +251,9 @@ A page group has `key` (the year, or an empty string for undated entries) and `p
 
 #### Pagination
 
-The `pagination` object contains `current_page`, `total_pages`, `base_url`, `prev_url`, `next_url` and `items`. Previous / next URLs are `none` at the respective boundaries. Each item contains `number`, `url` and `is_current`. Gaps are represented by `number = none` and `url = none`.
+The `pagination` object contains `current_page`, `total_pages`, `base_path`, `prev_url`, `next_url` and `items`. Previous / next URLs are `none` at the respective boundaries. Each page item contains `number`, `url` and `is_current`, and each gap between shown pages is a `none` item.
 
-Controls include the first and last pages plus pages within two of the current page. For a page-jump control, page one is `{base_url}/` and later pages use `{base_url}/page/{n}/`.
+Controls include the first and last pages plus pages within two of the current page. For a page-jump control, page one is `{base_path}/` and later pages use `{base_path}/page/{n}/`.
 
 #### Featured Images
 
