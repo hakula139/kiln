@@ -3,11 +3,12 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, ensure};
 use itertools::Itertools;
-use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{Event, Parser, Tag, TagEnd};
 use walkdir::WalkDir;
 
 use super::frontmatter::{self, Frontmatter};
 use super::is_markdown;
+use crate::markdown::markdown_options;
 
 /// Distinguishes blog posts (under `content/posts/`) from standalone pages.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -264,7 +265,7 @@ fn extract_summary(body: &str) -> Option<String> {
 
 /// Strips markdown to plain text from the region before `summary_end`.
 fn strip_markdown(full_text: &str, summary_end: usize) -> String {
-    let parser = Parser::new_ext(full_text, Options::all()).into_offset_iter();
+    let parser = Parser::new_ext(full_text, markdown_options()).into_offset_iter();
 
     let mut plain = String::with_capacity(summary_end);
     let mut in_image = false;
@@ -808,6 +809,19 @@ mod tests {
         assert_eq!(
             extract_summary(body).unwrap(),
             "First paragraph.\nSecond paragraph."
+        );
+    }
+
+    #[test]
+    fn extract_summary_keeps_authored_punctuation() {
+        let body = indoc! {r#"
+            "Quoted" text -- with 'marks'...
+
+            <!--more-->
+        "#};
+        assert_eq!(
+            extract_summary(body).unwrap(),
+            r#""Quoted" text -- with 'marks'..."#
         );
     }
 
