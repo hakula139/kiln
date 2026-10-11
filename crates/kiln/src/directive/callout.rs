@@ -66,19 +66,22 @@ mod tests {
     // ── Callout::from_args ──
 
     #[test]
-    fn callout_from_args_defaults() {
-        assert_eq!(
-            Callout::from_args(&BTreeMap::new()).unwrap(),
-            Callout {
-                kind: "note",
-                title: None,
-                open: true,
-            }
-        );
+    fn defaults_to_open_untitled_note() {
+        for named in [BTreeMap::new(), args(&[("title", ""), ("open", "true")])] {
+            assert_eq!(
+                Callout::from_args(&named).unwrap(),
+                Callout {
+                    kind: "note",
+                    title: None,
+                    open: true,
+                },
+                "{named:?}"
+            );
+        }
     }
 
     #[test]
-    fn callout_from_args_reads_all_keys() {
+    fn reads_type_title_and_open() {
         let named = args(&[
             ("open", "FALSE"),
             ("title", "Careful"),
@@ -96,20 +99,7 @@ mod tests {
     }
 
     #[test]
-    fn callout_from_args_empty_title_is_none() {
-        let named = args(&[("title", ""), ("open", "true")]);
-        assert_eq!(
-            Callout::from_args(&named).unwrap(),
-            Callout {
-                kind: "note",
-                title: None,
-                open: true,
-            }
-        );
-    }
-
-    #[test]
-    fn callout_from_args_invalid_value_returns_error() {
+    fn rejects_unknown_type_and_open_value() {
         for (named, message) in [
             (
                 args(&[("type", "warn")]),
@@ -128,7 +118,7 @@ mod tests {
     // ── find_type ──
 
     #[test]
-    fn find_type_returns_canonical_name() {
+    fn returns_canonical_name() {
         assert_eq!(find_type("quote"), Some("quote"));
         assert_eq!(find_type("TIP"), Some("tip"));
         assert_eq!(find_type("tips"), None);
@@ -138,7 +128,7 @@ mod tests {
     // ── parse_open ──
 
     #[test]
-    fn parse_open_accepts_booleans_case_insensitively() {
+    fn accepts_booleans_case_insensitively() {
         assert_eq!(parse_open("True"), Some(true));
         assert_eq!(parse_open("FALSE"), Some(false));
         assert_eq!(parse_open("yes"), None);

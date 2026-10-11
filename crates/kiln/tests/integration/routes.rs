@@ -133,7 +133,7 @@ fn build_sitemap_only_contains_emitted_html() {
 }
 
 #[test]
-fn build_conflicting_content_generated_and_static_routes_returns_error() {
+fn build_rejects_conflicting_content_generated_and_static_routes() {
     for destination in [
         "content/index.md",
         "content/posts/index.md",

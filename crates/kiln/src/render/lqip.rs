@@ -146,7 +146,7 @@ mod tests {
     // ── ImageResolver::resolve ──
 
     #[test]
-    fn resolve_reads_dimensions_and_caches_placeholder() {
+    fn reads_dimensions_and_caches_placeholder() {
         let dir = tempdir().unwrap();
         let bundle = dir.path().join("bundle");
         write_tiny_png(&bundle.join("img.png"));
@@ -160,7 +160,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_lqip_preserves_aspect_ratio_and_averages_pixels() {
+    fn placeholder_preserves_aspect_ratio_and_averages_pixels() {
         for (width, height, expected) in [(64, 32, (16, 8)), (32, 64, (8, 16))] {
             let dir = tempdir().unwrap();
             let path = dir.path().join("checker.png");
@@ -185,7 +185,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_lqip_preserves_large_16_bit_values() {
+    fn placeholder_preserves_16_bit_brightness() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("bright.png");
         let img = image::ImageBuffer::<image::Luma<u16>, Vec<u16>>::from_pixel(
@@ -211,7 +211,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_avif_feature_controls_placeholder() {
+    fn avif_feature_controls_placeholder() {
         let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
         let resolver = ImageResolver::new(
             &fixtures,
@@ -230,7 +230,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_decodes_local_urls_and_retains_metadata_on_encoding_failure() {
+    fn decodes_local_urls_and_retains_metadata_on_encoding_failure() {
         let dir = tempdir().unwrap();
         write_tiny_png(&dir.path().join("photo one.png"));
         let resolver = ImageResolver::new(
@@ -248,7 +248,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_yields_dimensions_but_no_lqip_for_undecodable_png() {
+    fn keeps_dimensions_of_undecodable_png() {
         // The header exposes dimensions to `imagesize` while full image decoding fails.
         let dir = tempdir().unwrap();
         let bundle = dir.path().join("bundle");
@@ -273,31 +273,51 @@ mod tests {
     }
 
     #[test]
-    fn resolve_missing_file_returns_none() {
-        let dir = tempdir().unwrap();
-        let bundle = dir.path().join("bundle");
-        fs::create_dir_all(&bundle).unwrap();
-
-        let r = ImageResolver::new(dir.path(), ImageConfig::default());
-        assert!(r.resolve("missing.png", Some(&bundle)).is_none());
-    }
-
-    #[test]
-    fn resolve_remote_returns_none() {
-        let dir = tempdir().unwrap();
-        let r = ImageResolver::new(dir.path(), ImageConfig::default());
-        assert!(r.resolve("https://example.com/x.png", None).is_none());
-    }
-
-    #[test]
-    fn resolve_unrecognized_format_returns_none() {
+    fn none_for_missing_remote_or_unrecognized_images() {
         let dir = tempdir().unwrap();
         let bundle = dir.path().join("bundle");
         fs::create_dir_all(&bundle).unwrap();
         fs::write(bundle.join("garbage.png"), b"not actually an image").unwrap();
 
         let r = ImageResolver::new(dir.path(), ImageConfig::default());
-        assert!(r.resolve("garbage.png", Some(&bundle)).is_none());
+        for src in ["missing.png", "https://example.com/x.png", "garbage.png"] {
+            assert!(r.resolve(src, Some(&bundle)).is_none(), "{src}");
+        }
+    }
+
+    // ── ImageResolver::resolve_path ──
+
+    #[test]
+    fn anchors_absolute_paths_at_output_root() {
+        let dir = tempdir().unwrap();
+        let output_root = dir.path().join("public");
+        let r = ImageResolver::new(&output_root, ImageConfig::default());
+        let resolved = r.resolve_path("/images/cover.webp", None).unwrap();
+        assert_eq!(resolved, output_root.join("images/cover.webp"));
+    }
+
+    #[test]
+    fn anchors_relative_paths_at_base_dir() {
+        let dir = tempdir().unwrap();
+        let bundle = dir.path().join("bundle");
+        let r = ImageResolver::new(dir.path(), ImageConfig::default());
+        let resolved = r.resolve_path("assets/foo.png", Some(&bundle)).unwrap();
+        assert_eq!(resolved, bundle.join("assets/foo.png"));
+    }
+
+    #[test]
+    fn none_for_remote_empty_or_unanchored_paths() {
+        let dir = tempdir().unwrap();
+        let r = ImageResolver::new(dir.path(), ImageConfig::default());
+        for src in [
+            "https://example.com/x.png",
+            "//example.com/x.png",
+            "data:image/png;base64,xx",
+            "",
+            "foo.png",
+        ] {
+            assert!(r.resolve_path(src, None).is_none(), "{src}");
+        }
     }
 
     fn decode_placeholder(meta: &ImageMeta) -> image::RgbImage {
@@ -317,42 +337,5 @@ mod tests {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         let img = image::RgbaImage::from_pixel(2, 2, image::Rgba([200, 100, 50, 255]));
         img.save_with_format(path, image::ImageFormat::Png).unwrap();
-    }
-
-    // ── ImageResolver::resolve_path ──
-
-    #[test]
-    fn resolve_path_absolute_uses_output_root() {
-        let dir = tempdir().unwrap();
-        let output_root = dir.path().join("public");
-        let r = ImageResolver::new(&output_root, ImageConfig::default());
-        let resolved = r.resolve_path("/images/cover.webp", None).unwrap();
-        assert_eq!(resolved, output_root.join("images/cover.webp"));
-    }
-
-    #[test]
-    fn resolve_path_relative_uses_base_dir() {
-        let dir = tempdir().unwrap();
-        let bundle = dir.path().join("bundle");
-        let r = ImageResolver::new(dir.path(), ImageConfig::default());
-        let resolved = r.resolve_path("assets/foo.png", Some(&bundle)).unwrap();
-        assert_eq!(resolved, bundle.join("assets/foo.png"));
-    }
-
-    #[test]
-    fn resolve_path_remote_returns_none() {
-        let dir = tempdir().unwrap();
-        let r = ImageResolver::new(dir.path(), ImageConfig::default());
-        assert!(r.resolve_path("https://example.com/x.png", None).is_none());
-        assert!(r.resolve_path("//example.com/x.png", None).is_none());
-        assert!(r.resolve_path("data:image/png;base64,xx", None).is_none());
-        assert!(r.resolve_path("", None).is_none());
-    }
-
-    #[test]
-    fn resolve_path_relative_without_base_returns_none() {
-        let dir = tempdir().unwrap();
-        let r = ImageResolver::new(dir.path(), ImageConfig::default());
-        assert!(r.resolve_path("foo.png", None).is_none());
     }
 }

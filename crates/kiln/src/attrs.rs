@@ -221,11 +221,6 @@ pub(crate) fn scan_quoted_value(s: &str) -> (usize, bool) {
     (s.len(), has_escapes)
 }
 
-/// Quotes a value so that it parses back unchanged.
-pub(crate) fn quote(value: &str) -> String {
-    format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
-}
-
 /// Unescapes `\"` → `"` and `\\` → `\` in a quoted attribute value.
 fn unescape_quoted(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
@@ -247,6 +242,11 @@ fn unescape_quoted(s: &str) -> String {
     result
 }
 
+/// Quotes a value so that it parses back unchanged.
+pub(crate) fn quote(value: &str) -> String {
+    format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -254,7 +254,7 @@ mod tests {
     // ── PandocAttrs::identity ──
 
     #[test]
-    fn identity_copies_id_and_classes() {
+    fn copies_id_and_classes() {
         assert_eq!(
             parse_pandoc_attrs("#main .a key=value .b").identity(),
             Identity {
@@ -267,20 +267,28 @@ mod tests {
     // ── parse_pandoc_attrs ──
 
     #[test]
-    fn parse_pandoc_attrs_unquoted_value() {
-        assert_eq!(named("key=value"), vec![pair("key", "value")]);
+    fn collects_first_id_and_all_classes() {
+        let input = ".a #first .b #second .c open=false";
+        let result = parse_pandoc_attrs(input);
+        assert_eq!(result.id, Some("first"));
+        assert_eq!(result.classes, vec!["a", "b", "c"]);
+        assert_eq!(named(input), vec![pair("open", "false")]);
     }
 
     #[test]
-    fn parse_pandoc_attrs_quoted_value() {
+    fn keeps_named_values_in_source_order() {
         assert_eq!(
-            named(r#"key="hello world""#),
-            vec![pair("key", "hello world")]
+            named(r#"title="Hello world" open=false title=again"#),
+            vec![
+                pair("title", "Hello world"),
+                pair("open", "false"),
+                pair("title", "again")
+            ]
         );
     }
 
     #[test]
-    fn parse_pandoc_attrs_escaped_quotes() {
+    fn unescapes_quoted_values() {
         assert_eq!(
             named(r#"title="He said \"hi\"""#),
             vec![pair("title", r#"He said "hi""#)]
@@ -301,40 +309,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_pandoc_attrs_multiple_pairs_keep_source_order() {
-        assert_eq!(
-            named(r#"title="Title" open=false title=again"#),
-            vec![
-                pair("title", "Title"),
-                pair("open", "false"),
-                pair("title", "again")
-            ]
-        );
-    }
-
-    #[test]
-    fn parse_pandoc_attrs_extracts_class_and_id() {
-        let input = ".highlight #my-id open=false";
-        let result = parse_pandoc_attrs(input);
-        assert_eq!(result.id, Some("my-id"));
-        assert_eq!(result.classes, vec!["highlight"]);
-        assert_eq!(named(input), vec![pair("open", "false")]);
-    }
-
-    #[test]
-    fn parse_pandoc_attrs_first_id_wins() {
-        let result = parse_pandoc_attrs("#first #second");
-        assert_eq!(result.id, Some("first"));
-    }
-
-    #[test]
-    fn parse_pandoc_attrs_multiple_classes() {
-        let result = parse_pandoc_attrs(".a .b .c");
-        assert_eq!(result.classes, vec!["a", "b", "c"]);
-    }
-
-    #[test]
-    fn parse_pandoc_attrs_collects_bare_and_quoted_positional_values() {
+    fn collects_bare_and_quoted_positional_values() {
         let input = r##"collapse title="please collapse now" "#literal" expand =value"##;
         assert_eq!(
             parse_pandoc_attrs(input).positional,
@@ -344,14 +319,14 @@ mod tests {
     }
 
     #[test]
-    fn parse_pandoc_attrs_stops_at_unquoted_close_brace() {
+    fn stops_at_unquoted_close_brace() {
         let result = parse_pandoc_attrs(r#"title="a}b" a}b"#);
         assert_eq!(result.named, [("title", Cow::Borrowed("a}b"))]);
         assert_eq!(result.positional, ["a"]);
     }
 
     #[test]
-    fn parse_pandoc_attrs_splits_tokens_on_unicode_whitespace() {
+    fn splits_tokens_on_unicode_whitespace() {
         let result = parse_pandoc_attrs("title=\"a}b\"\u{3000}\"c d\"\u{3000}highlight=2");
         assert_eq!(
             result.named,
@@ -364,7 +339,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_pandoc_attrs_keeps_quotes_inside_unquoted_tokens() {
+    fn keeps_quotes_inside_unquoted_tokens() {
         let result = parse_pandoc_attrs(r#"#a"b .c"d .last title=e"f"#);
         assert_eq!(result.id, Some(r#"a"b"#));
         assert_eq!(result.classes, [r#"c"d"#, "last"]);
@@ -373,7 +348,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_pandoc_attrs_empty() {
+    fn empty_input_yields_no_attrs() {
         let result = parse_pandoc_attrs("");
         assert!(result.id.is_none());
         assert_eq!(result.classes, Vec::<&str>::new());
@@ -382,7 +357,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_pandoc_attrs_empty_hash_and_dot_ignored() {
+    fn ignores_bare_hash_and_dot() {
         let result = parse_pandoc_attrs("# . .real");
         assert_eq!(result.id, None);
         assert_eq!(result.classes, vec!["real"]);
@@ -390,7 +365,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_pandoc_attrs_unclosed_quote() {
+    fn unclosed_quote_consumes_rest() {
         assert_eq!(
             named(r#"key="no closing quote"#),
             vec![pair("key", "no closing quote")]
@@ -401,13 +376,13 @@ mod tests {
     // ── find_attr_block_end ──
 
     #[test]
-    fn find_attr_block_end_skips_quoted_braces() {
+    fn skips_quoted_braces() {
         let input = r#"#id .class title="a}b"} trailing"#;
         assert_eq!(find_attr_block_end(input), input.find("} trailing"));
     }
 
     #[test]
-    fn find_attr_block_end_unclosed_returns_none() {
+    fn unclosed_block_has_no_end() {
         assert_eq!(find_attr_block_end(r#"title="a}b"#), None);
         assert_eq!(find_attr_block_end("#id .class"), None);
     }
@@ -415,7 +390,7 @@ mod tests {
     // ── Identity::html_attrs ──
 
     #[test]
-    fn html_attrs_writes_id_then_base_and_authored_classes() {
+    fn writes_id_then_base_and_authored_classes() {
         let identity = Identity {
             id: Some("main".into()),
             classes: vec!["extra".into(), "wide".into()],
@@ -428,7 +403,7 @@ mod tests {
     }
 
     #[test]
-    fn html_attrs_omits_empty_attributes() {
+    fn omits_empty_attributes() {
         assert_eq!(Identity::default().html_attrs(&[]), "");
         assert_eq!(
             Identity::default().html_attrs(&["wrapper"]),
@@ -437,7 +412,7 @@ mod tests {
     }
 
     #[test]
-    fn html_attrs_escapes_values() {
+    fn escapes_attribute_values() {
         let identity = Identity {
             id: Some(r#"x"y"#.into()),
             classes: vec!["a<b".into()],
@@ -451,7 +426,7 @@ mod tests {
     // ── ArgTokens ──
 
     #[test]
-    fn arg_tokens_treat_pandoc_syntax_as_values() {
+    fn treats_pandoc_syntax_as_values() {
         assert_eq!(
             ArgTokens::new(r#"# .a a}b title="A \"quote\"" "two words""#).collect::<Vec<_>>(),
             vec![
@@ -467,7 +442,7 @@ mod tests {
     // ── quote ──
 
     #[test]
-    fn quote_round_trips_through_parser() {
+    fn round_trips_through_arg_tokens() {
         for value in ["plain", r#"He said "hi""#, r"path\to\", r#"a\"b"#, ""] {
             let quoted = quote(value);
             assert_eq!(

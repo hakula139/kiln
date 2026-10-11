@@ -104,7 +104,7 @@ mod tests {
     // ── extract_image_attrs ──
 
     #[test]
-    fn extract_image_attrs_authored_fields() {
+    fn extracts_authored_fields() {
         let (output, attrs) = extract_image_attrs(
             r#"![alt](img.png){#photo .hero width="my .fake class" height=300 foo=bar}"#,
         );
@@ -117,7 +117,7 @@ mod tests {
     }
 
     #[test]
-    fn extract_image_attrs_uses_markdown_image_boundaries() {
+    fn uses_markdown_image_boundaries() {
         for image in [
             r#"![Alt](photo.png "title")"#,
             "![Alt [nested]](photo.png)",
@@ -135,7 +135,7 @@ mod tests {
     }
 
     #[test]
-    fn extract_image_attrs_with_quoted_brace_in_value() {
+    fn keeps_quoted_braces_in_values() {
         for (input, width) in [
             (r#"![alt](img.png){width="a}b" height=300} tail"#, "a}b"),
             (r#"![alt](img.png){width="a\"}b" height=300} tail"#, "a\"}b"),
@@ -149,29 +149,48 @@ mod tests {
     }
 
     #[test]
-    fn extract_image_attrs_multiple_images() {
-        let input = "![a](a.png){width=100} text ![b](b.png){width=200}";
+    fn keys_each_image_by_output_offset() {
+        let input = "图片 ![a](a.png){width=100} 文本 ![b](b.png){width=200}";
         let (output, attrs) = extract_image_attrs(input);
-        assert_eq!(output, "![a](a.png) text ![b](b.png)");
+        assert_eq!(output, "图片 ![a](a.png) 文本 ![b](b.png)");
         assert_eq!(attrs.len(), 2);
-        let a = &attrs[&0];
+        let a = &attrs[&output.find("![a]").unwrap()];
         assert_eq!(a.width.as_deref(), Some("100"));
         let b = &attrs[&output.find("![b]").unwrap()];
         assert_eq!(b.width.as_deref(), Some("200"));
     }
 
     #[test]
-    fn extract_image_attrs_non_ascii() {
-        let input = "图片说明 ![描述](图片.png){width=200} 后续文本";
+    fn extracts_after_fenced_code() {
+        let input = indoc! {"
+            ```
+            code
+            ```
+            ![alt](img.png){width=500}
+        "};
         let (output, attrs) = extract_image_attrs(input);
-        assert_eq!(output, "图片说明 ![描述](图片.png) 后续文本");
+        let expected = indoc! {"
+            ```
+            code
+            ```
+            ![alt](img.png)
+        "};
+        assert_eq!(output, expected);
         assert_eq!(attrs.len(), 1);
-        let a = &attrs[&output.find("![描述]").unwrap()];
-        assert_eq!(a.width.as_deref(), Some("200"));
+        let a = &attrs[&output.find("![alt]").unwrap()];
+        assert_eq!(a.width.as_deref(), Some("500"));
     }
 
     #[test]
-    fn extract_image_attrs_preserves_code_contexts() {
+    fn strips_empty_block_without_entry() {
+        let input = "![alt](img.png){}";
+        let (output, attrs) = extract_image_attrs(input);
+        assert_eq!(output, "![alt](img.png)");
+        assert!(attrs.is_empty());
+    }
+
+    #[test]
+    fn ignores_images_in_code() {
         for input in [
             "`![alt](img.png){width=500}` rest",
             indoc! {"
@@ -197,41 +216,12 @@ mod tests {
         ] {
             let (cleaned, attrs) = extract_image_attrs(input);
             assert_eq!(cleaned, input);
-            assert!(attrs.is_empty());
+            assert!(attrs.is_empty(), "{input}");
         }
     }
 
     #[test]
-    fn extract_image_attrs_after_fenced_code() {
-        let input = indoc! {"
-            ```
-            code
-            ```
-            ![alt](img.png){width=500}
-        "};
-        let (output, attrs) = extract_image_attrs(input);
-        let expected = indoc! {"
-            ```
-            code
-            ```
-            ![alt](img.png)
-        "};
-        assert_eq!(output, expected);
-        assert_eq!(attrs.len(), 1);
-        let a = &attrs[&output.find("![alt]").unwrap()];
-        assert_eq!(a.width.as_deref(), Some("500"));
-    }
-
-    #[test]
-    fn extract_image_attrs_empty_brace_block_drops_attrs_entry() {
-        let input = "![alt](img.png){}";
-        let (output, attrs) = extract_image_attrs(input);
-        assert_eq!(output, "![alt](img.png)");
-        assert!(attrs.is_empty());
-    }
-
-    #[test]
-    fn extract_image_attrs_preserves_unattributed_and_malformed_input() {
+    fn preserves_unattributed_and_malformed_input() {
         for input in [
             "![alt](img.png)",
             "!{width=500}",
@@ -254,67 +244,46 @@ mod tests {
     // ── ImageAttrs::is_empty ──
 
     #[test]
-    fn is_empty_default() {
+    fn empty_only_when_every_field_is_unset() {
         assert!(ImageAttrs::default().is_empty());
-    }
-
-    #[test]
-    fn is_empty_with_any_field_returns_false() {
-        assert!(
-            !ImageAttrs {
+        for attrs in [
+            ImageAttrs {
                 id: Some("x".into()),
                 ..Default::default()
-            }
-            .is_empty()
-        );
-        assert!(
-            !ImageAttrs {
+            },
+            ImageAttrs {
                 classes: vec!["x".into()],
                 ..Default::default()
-            }
-            .is_empty()
-        );
-        assert!(
-            !ImageAttrs {
+            },
+            ImageAttrs {
                 width: Some("100".into()),
                 ..Default::default()
-            }
-            .is_empty()
-        );
-        assert!(
-            !ImageAttrs {
+            },
+            ImageAttrs {
                 height: Some("100".into()),
                 ..Default::default()
-            }
-            .is_empty()
-        );
-        assert!(
-            !ImageAttrs {
+            },
+            ImageAttrs {
                 auto_width: Some(100),
                 ..Default::default()
-            }
-            .is_empty()
-        );
-        assert!(
-            !ImageAttrs {
+            },
+            ImageAttrs {
                 auto_height: Some(100),
                 ..Default::default()
-            }
-            .is_empty()
-        );
-        assert!(
-            !ImageAttrs {
+            },
+            ImageAttrs {
                 lqip_uri: Some("data:image/webp;base64,AAA".into()),
                 ..Default::default()
-            }
-            .is_empty()
-        );
+            },
+        ] {
+            assert!(!attrs.is_empty(), "{attrs:?}");
+        }
     }
 
     // ── ImageAttrs::fill_from_meta ──
 
     #[test]
-    fn fill_from_meta_stamps_auto_dims_and_lqip() {
+    fn stamps_auto_dims_and_lqip() {
         let mut attrs = ImageAttrs::default();
         let meta = ImageMeta {
             width: 1600,
@@ -331,7 +300,7 @@ mod tests {
     }
 
     #[test]
-    fn fill_from_meta_preserves_manual_fields() {
+    fn preserves_manual_fields() {
         let mut attrs = ImageAttrs {
             id: Some("hero".into()),
             classes: vec!["wide".into()],

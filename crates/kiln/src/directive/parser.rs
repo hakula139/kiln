@@ -128,7 +128,7 @@ mod tests {
     // ── parse_directives ──
 
     #[test]
-    fn parse_directives_records_name_body_and_range() {
+    fn records_name_body_and_range() {
         let input = indoc! {"
             ::: callout
             Hello world
@@ -144,28 +144,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_directives_distinguishes_literal_fences_from_code_in_arguments() {
-        let input = indoc! {r#"
-            `literal
-            ::: ignored
-            :::
-            `
-
-            ::: callout {title="Use `code`"}
-            Body
-            :::
-        "#};
-        let blocks = parse_directives(input);
-        assert_eq!(blocks.len(), 1);
-        assert_eq!(
-            blocks[0].block.args.named,
-            named(&[("title", "Use `code`")])
-        );
-        assert_eq!(body(input, &blocks[0]), "Body");
-    }
-
-    #[test]
-    fn parse_directives_interleaved_pandoc_attrs() {
+    fn parses_interleaved_pandoc_attrs() {
         let input = indoc! {r#"
             ::: callout {.highlight type=tip #my-id title="Hello #world .bold" .wide open=false}
             Body
@@ -190,7 +169,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_directives_anonymous_blocks_have_empty_name() {
+    fn anonymous_blocks_have_empty_name() {
         let input = indoc! {r#"
             ::: {#section .note}
             :::
@@ -209,7 +188,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_directives_sequential_multiline_and_empty_bodies() {
+    fn separates_sequential_blocks_with_multiline_and_empty_bodies() {
         let input = indoc! {"
             ::: first
             First paragraph.
@@ -237,7 +216,7 @@ mod tests {
     // ── parse_directives: nesting ──
 
     #[test]
-    fn parse_directives_nested_directives() {
+    fn nests_inner_directive_in_outer_body() {
         let input = indoc! {"
             :::: outer
             ::: inner
@@ -264,7 +243,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_directives_nested_directive_siblings() {
+    fn collects_nested_siblings_in_order() {
         let input = indoc! {"
             ::::: wrapper
             ::: callout
@@ -285,7 +264,7 @@ mod tests {
     // ── parse_directives: closing fence ──
 
     #[test]
-    fn parse_directives_closing_fence_colon_count() {
+    fn closing_fence_needs_at_least_opening_colons() {
         let input = indoc! {"
             ::: callout
             Body
@@ -305,7 +284,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_directives_closing_fence_cannot_skip_unclosed_inner() {
+    fn closing_fence_cannot_skip_unclosed_inner() {
         let input = indoc! {"
             :::: outer
             ::: inner-a
@@ -322,7 +301,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_directives_unclosed_directive_skipped() {
+    fn skips_unclosed_directive() {
         let input = indoc! {"
             ::: callout
             No closing fence
@@ -333,7 +312,7 @@ mod tests {
     // ── parse_directives: code ──
 
     #[test]
-    fn parse_directives_ignores_fences_inside_code() {
+    fn ignores_fences_inside_code() {
         let input = indoc! {"
             ```
             ::: ignored
@@ -357,10 +336,31 @@ mod tests {
         );
     }
 
+    #[test]
+    fn distinguishes_literal_fences_from_code_in_arguments() {
+        let input = indoc! {r#"
+            `literal
+            ::: ignored
+            :::
+            `
+
+            ::: callout {title="Use `code`"}
+            Body
+            :::
+        "#};
+        let blocks = parse_directives(input);
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(
+            blocks[0].block.args.named,
+            named(&[("title", "Use `code`")])
+        );
+        assert_eq!(body(input, &blocks[0]), "Body");
+    }
+
     // ── parse_directives: edge cases ──
 
     #[test]
-    fn parse_directives_indented_directive_fence_ignored() {
+    fn ignores_indented_fence() {
         let input = indoc! {"
              ::: callout
             Body
@@ -370,7 +370,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_directives_trailing_whitespace_on_fences() {
+    fn allows_trailing_whitespace_on_fences() {
         let input = concat!("::: callout   \n", "Body\n", ":::   \n",);
         let blocks = parse_directives(input);
         assert_eq!(blocks.len(), 1);
@@ -378,7 +378,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_directives_utf8_body_and_range() {
+    fn measures_utf8_body_and_range_in_bytes() {
         let prefix = "前言：世界\n";
         let directive = indoc! {"
             ::: callout
@@ -397,7 +397,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_directives_no_directives_returns_empty() {
+    fn plain_markdown_yields_no_directives() {
         let input = indoc! {"
             Just some regular markdown.
 
@@ -407,7 +407,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_directives_eof_without_trailing_newline() {
+    fn closes_at_eof_without_trailing_newline() {
         let input = indoc! {"
             ::: callout
             Body
@@ -420,7 +420,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_directives_crlf_line_endings() {
+    fn strips_crlf_line_endings() {
         let input = indoc! {"
             ::: callout\r
             Hello\r
@@ -435,29 +435,23 @@ mod tests {
     // ── count_leading_colons ──
 
     #[test]
-    fn count_leading_colons_returns_count_for_three_or_more() {
+    fn counts_three_or_more_colons() {
         assert_eq!(count_leading_colons(":::"), Some(3));
         assert_eq!(count_leading_colons("::::"), Some(4));
         assert_eq!(count_leading_colons("::::: callout"), Some(5));
     }
 
     #[test]
-    fn count_leading_colons_returns_none_for_fewer_than_three() {
-        assert_eq!(count_leading_colons(""), None);
-        assert_eq!(count_leading_colons(":"), None);
-        assert_eq!(count_leading_colons("::"), None);
-    }
-
-    #[test]
-    fn count_leading_colons_returns_none_for_indented_line() {
-        assert_eq!(count_leading_colons(" :::"), None);
-        assert_eq!(count_leading_colons("\t:::"), None);
+    fn ignores_short_or_indented_runs() {
+        for line in ["", ":", "::", " :::", "\t:::"] {
+            assert_eq!(count_leading_colons(line), None, "{line:?}");
+        }
     }
 
     // ── parse_directive_head ──
 
     #[test]
-    fn parse_directive_head_bare_name() {
+    fn bare_name_has_default_args() {
         assert_eq!(
             parse_directive_head("callout"),
             ("callout".to_owned(), DirectiveArgs::default())
@@ -465,7 +459,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_directive_head_name_and_attrs() {
+    fn splits_name_from_attrs_with_or_without_space() {
         for text in [
             "callout {.wide type=warning}",
             "callout{.wide type=warning}",
@@ -478,7 +472,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_directive_head_lowercases_name_only() {
+    fn lowercases_name_only() {
         let (name, args) = parse_directive_head("Callout {#Tip-1 .Wide type=Tip}");
         assert_eq!(name, "callout");
         assert_eq!(args.identity.id.as_deref(), Some("Tip-1"));
@@ -487,7 +481,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_directive_head_quoted_braces() {
+    fn keeps_quoted_braces_in_attrs() {
         let (_, args) = parse_directive_head(r#"callout {"a}b" title="a\"}b" type=warning}"#);
         assert_eq!(args.positional, ["a}b"]);
         assert_eq!(
@@ -497,15 +491,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_directive_head_attrs_only_yields_empty_name() {
-        let (name, args) = parse_directive_head("{#section .note}");
-        assert_eq!(name, "");
-        assert_eq!(args.identity.id.as_deref(), Some("section"));
-        assert_eq!(args.identity.classes, ["note"]);
-    }
-
-    #[test]
-    fn parse_directive_head_ignores_text_outside_closed_attrs() {
+    fn ignores_text_outside_closed_attrs() {
         for (text, expected) in [
             (
                 r#"embed {src="example.com"} <!-- note } -->"#,
@@ -524,7 +510,7 @@ mod tests {
     // ── body_end ──
 
     #[test]
-    fn body_end_excludes_one_line_ending() {
+    fn excludes_one_line_ending() {
         for (content, expected) in [
             ("Hello\n", 5),
             ("Hello\r\n", 5),

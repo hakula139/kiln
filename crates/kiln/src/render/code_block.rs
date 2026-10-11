@@ -13,6 +13,12 @@ pub(crate) struct CodeBlockSpec {
     pub disclosure: Disclosure,
 }
 
+impl CodeBlockSpec {
+    pub(crate) fn is_mermaid(&self) -> bool {
+        self.lang.as_deref() == Some("mermaid")
+    }
+}
+
 /// Authored disclosure state of a code block.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Disclosure {
@@ -23,12 +29,6 @@ pub(crate) enum Disclosure {
     Collapse,
     /// Open without a line limit.
     Expand,
-}
-
-impl CodeBlockSpec {
-    pub(crate) fn is_mermaid(&self) -> bool {
-        self.lang.as_deref() == Some("mermaid")
-    }
 }
 
 /// Parses a fence info string of the form `lang {#id .class key=value ...}`.
@@ -106,7 +106,7 @@ mod tests {
     // ── is_mermaid ──
 
     #[test]
-    fn is_mermaid_matches_lang_case_insensitively() {
+    fn matches_lang_case_insensitively() {
         for (info, expected) in [
             ("mermaid", true),
             ("Mermaid {#flow}", true),
@@ -120,7 +120,7 @@ mod tests {
     // ── parse_fence_info ──
 
     #[test]
-    fn parse_fence_info_lang_only() {
+    fn lang_only_has_default_attrs() {
         let spec = parse_fence_info("rust");
         assert_eq!(spec.lang.as_deref(), Some("rust"));
         assert!(spec.id.is_none());
@@ -131,7 +131,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_fence_info_all_attrs() {
+    fn reads_all_attrs() {
         let spec = parse_fence_info(
             r#"rust {#my-id .special .wide title="main.rs" highlight="1,3-5" collapse}"#,
         );
@@ -144,7 +144,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_fence_info_disclosure_flags() {
+    fn reads_disclosure_flags() {
         for (info, expected) in [
             ("rust {expand}", Disclosure::Expand),
             ("rust {expand collapse}", Disclosure::Collapse),
@@ -155,7 +155,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_fence_info_brace_attrs_and_first_class_lang() {
+    fn first_class_names_missing_lang() {
         for (info, lang, classes) in [
             (r#"{title="T"}"#, None, vec![]),
             (r#"Rust{.wide title="T"}"#, Some("rust"), vec!["wide"]),
@@ -169,7 +169,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_fence_info_quoted_brace_in_title() {
+    fn keeps_quoted_brace_and_ignores_later_blocks() {
         let spec = parse_fence_info(r#"rust {title="a}b.rs" highlight="2"} ignored {.x}"#);
         assert_eq!(spec.title.as_deref(), Some("a}b.rs"));
         assert_eq!(spec.highlight, vec![2..=2]);
@@ -177,7 +177,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_fence_info_ignores_unbraced_words_and_unknown_attrs() {
+    fn ignores_unbraced_words_and_unknown_attrs() {
         let spec = parse_fence_info(r#"rust no_run {title="T" unknown="val" foo=bar}"#);
         assert_eq!(spec.lang.as_deref(), Some("rust"));
         assert_eq!(spec.title.as_deref(), Some("T"));
@@ -190,7 +190,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_fence_info_empty_returns_default() {
+    fn blank_info_has_no_lang() {
         let spec = parse_fence_info("  ");
         assert!(spec.lang.is_none());
         assert!(spec.title.is_none());
@@ -200,7 +200,7 @@ mod tests {
     // ── parse_highlight_ranges ──
 
     #[test]
-    fn parse_highlight_ranges_valid_ranges() {
+    fn parses_single_lines_and_ranges() {
         for (input, expected) in [
             ("3", std::iter::once(3..=3).collect()),
             ("2-5", std::iter::once(2..=5).collect()),
@@ -212,18 +212,9 @@ mod tests {
     }
 
     #[test]
-    fn parse_highlight_ranges_malformed_skipped() {
-        assert_eq!(
-            parse_highlight_ranges("1,bad,x-2,2-x,3"),
-            vec![1..=1, 3..=3]
-        );
-    }
-
-    #[test]
-    fn parse_highlight_ranges_empty() {
-        assert_eq!(
-            parse_highlight_ranges(""),
-            Vec::<RangeInclusive<usize>>::new()
-        );
+    fn skips_malformed_entries() {
+        for (input, expected) in [("1,bad,x-2,2-x,3", vec![1..=1, 3..=3]), ("", vec![])] {
+            assert_eq!(parse_highlight_ranges(input), expected, "{input}");
+        }
     }
 }

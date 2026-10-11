@@ -43,7 +43,7 @@ fn build_exposes_dates_in_configured_timezone_and_linked_tags_without_git() {
 }
 
 #[test]
-fn build_heading_numbering_is_per_page() {
+fn build_numbers_headings_per_page() {
     let site = TestSite::new(indoc! {r#"
         base_url = "https://example.com"
         title = "Test Site"
@@ -127,7 +127,7 @@ fn build_heading_numbering_is_per_page() {
 }
 
 #[test]
-fn build_invalid_render_options_returns_error() {
+fn build_rejects_invalid_render_options() {
     let site = TestSite::new(indoc! {r#"
         [params]
         emojis = "yes"

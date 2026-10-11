@@ -85,7 +85,7 @@ mod tests {
     // ── convert_frontmatter ──
 
     #[test]
-    fn convert_frontmatter_minimal() {
+    fn omits_null_dates() {
         let yaml = indoc! {"
             title: Minimal
             date: ~
@@ -101,7 +101,7 @@ mod tests {
     }
 
     #[test]
-    fn convert_frontmatter_full() {
+    fn converts_every_supported_field() {
         let yaml = indoc! {"
             title: Full Post
             description: A description
@@ -137,7 +137,7 @@ mod tests {
     }
 
     #[test]
-    fn convert_frontmatter_maps_hugo_featured_image_forms() {
+    fn maps_hugo_featured_image_forms() {
         for (yaml, expected_unsupported) in [
             ("featured_image: /img.webp", Vec::<&str>::new()),
             ("featuredImage: /img.webp", vec![]),
@@ -170,7 +170,25 @@ mod tests {
     }
 
     #[test]
-    fn convert_frontmatter_reports_nested_fields() {
+    fn reports_unsupported_top_level_fields() {
+        let yaml = indoc! {"
+            title: Test
+            unknownField: dropped
+            code:
+              maxShownLines: 10
+        "};
+        let (toml, unsupported) = convert_frontmatter(yaml).unwrap();
+        assert_eq!(unsupported, ["code", "unknownField"]);
+        assert_eq!(
+            toml,
+            indoc! {r#"
+                title = "Test"
+            "#}
+        );
+    }
+
+    #[test]
+    fn reports_unsupported_nested_fields() {
         let (toml, unsupported) = convert_frontmatter(indoc! {r"
             featuredImage:
               src: photo.webp
@@ -197,25 +215,7 @@ mod tests {
     }
 
     #[test]
-    fn convert_frontmatter_reports_unsupported_fields() {
-        let yaml = indoc! {"
-            title: Test
-            unknownField: dropped
-            code:
-              maxShownLines: 10
-        "};
-        let (toml, unsupported) = convert_frontmatter(yaml).unwrap();
-        assert_eq!(unsupported, ["code", "unknownField"]);
-        assert_eq!(
-            toml,
-            indoc! {r#"
-                title = "Test"
-            "#}
-        );
-    }
-
-    #[test]
-    fn convert_frontmatter_invalid_yaml_returns_error() {
+    fn rejects_malformed_or_non_mapping_yaml() {
         for yaml in [
             indoc! {"
                 :

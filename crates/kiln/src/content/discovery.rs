@@ -90,7 +90,7 @@ mod tests {
     // ── discover_content ──
 
     #[test]
-    fn discover_content_excludes_drafts_private_paths_and_non_content_files() {
+    fn excludes_drafts_private_paths_and_non_content_files() {
         let root = tempfile::tempdir().unwrap();
         for (path, contents) in [
             (
@@ -146,7 +146,7 @@ mod tests {
     }
 
     #[test]
-    fn discover_content_sorts_dated_pages_before_undated_pages() {
+    fn sorts_newest_first_then_undated_by_path() {
         let root = tempfile::tempdir().unwrap();
         write_test_file(
             root.path(),
@@ -205,14 +205,14 @@ mod tests {
     }
 
     #[test]
-    fn discover_content_missing_dir_returns_empty() {
+    fn missing_content_dir_yields_no_pages() {
         let root = tempfile::tempdir().unwrap();
         let set = discover_content(root.path()).unwrap();
         assert!(set.pages.is_empty());
     }
 
     #[test]
-    fn discover_content_invalid_utf8_returns_error() {
+    fn reports_invalid_utf8() {
         let root = tempfile::tempdir().unwrap();
         let content_dir = root.path().join("content");
         std::fs::create_dir(&content_dir).unwrap();
@@ -232,7 +232,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn discover_content_follows_symlinks() {
+    fn follows_symlinks() {
         let root = tempfile::tempdir().unwrap();
         let external = tempfile::tempdir().unwrap();
         for (path, title) in [
@@ -277,7 +277,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn discover_content_broken_symlink_returns_error() {
+    fn reports_broken_symlink() {
         let root = tempfile::tempdir().unwrap();
         let content_dir = root.path().join("content");
         std::fs::create_dir(&content_dir).unwrap();

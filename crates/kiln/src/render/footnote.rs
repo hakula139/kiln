@@ -224,27 +224,10 @@ mod tests {
 
     use super::*;
 
-    fn render(content: &str) -> String {
-        let events = Parser::new_ext(content, Options::ENABLE_FOOTNOTES)
-            .into_offset_iter()
-            .map(|(event, range)| (event.into_static(), range));
-        let (mut body, mut notes) = Notes::extract(events);
-        notes.allocate_ids(&mut body, &mut PageIds::default(), 0);
-        let mut html = push_html(body);
-        notes.render(&mut html, push_html);
-        html
-    }
-
-    fn push_html(events: Vec<Spanned>) -> String {
-        let mut html = String::new();
-        pulldown_cmark::html::push_html(&mut html, events.into_iter().map(|(event, _)| event));
-        html
-    }
-
     // ── render ──
 
     #[test]
-    fn render_single_reference() {
+    fn renders_reference_and_endnote_list() {
         let html = render(indoc! {"
             Text[^a].
 
@@ -269,7 +252,7 @@ mod tests {
     }
 
     #[test]
-    fn render_multiple_references_get_numbered_backlinks() {
+    fn multiple_references_get_numbered_backlinks() {
         let html = render(indoc! {"
             First[^a] and second[^a].
 
@@ -289,7 +272,7 @@ mod tests {
     }
 
     #[test]
-    fn render_numbers_by_first_reference() {
+    fn numbers_by_first_reference() {
         let html = render(indoc! {"
             [^b]: Bee.
 
@@ -305,7 +288,7 @@ mod tests {
     }
 
     #[test]
-    fn render_matches_names_case_insensitively() {
+    fn matches_names_case_insensitively() {
         let html = render(indoc! {"
             Upper[^Note] and lower[^note].
 
@@ -317,7 +300,7 @@ mod tests {
     }
 
     #[test]
-    fn render_unicode_equivalent_labels_share_one_note() {
+    fn unicode_equivalent_labels_share_one_note() {
         let html = render(indoc! {"
             One[^STRASSE], two[^straße], three[^Σ], four[^ς].
 
@@ -332,7 +315,7 @@ mod tests {
     }
 
     #[test]
-    fn render_backlinks_join_last_paragraph() {
+    fn backlinks_join_last_paragraph() {
         let html = render(indoc! {"
             Text[^a].
 
@@ -350,7 +333,7 @@ mod tests {
     }
 
     #[test]
-    fn render_backlinks_follow_non_paragraph_ending() {
+    fn backlinks_follow_non_paragraph_ending() {
         let html = render(indoc! {"
             Text[^a].
 
@@ -366,7 +349,7 @@ mod tests {
     }
 
     #[test]
-    fn render_nested_reference() {
+    fn renders_nested_reference() {
         let html = render(indoc! {"
             Text[^a].
 
@@ -382,7 +365,7 @@ mod tests {
     }
 
     #[test]
-    fn render_counts_only_reachable_first_definitions() {
+    fn counts_only_reachable_first_definitions() {
         let html = render(indoc! {"
             [^unused]: Hidden[^b].
 
@@ -411,7 +394,7 @@ mod tests {
     }
 
     #[test]
-    fn render_nested_duplicate_keeps_first_definition() {
+    fn nested_duplicate_keeps_first_definition() {
         let html = render(indoc! {"
             Body[^a].
 
@@ -425,7 +408,7 @@ mod tests {
     }
 
     #[test]
-    fn render_self_reference_terminates() {
+    fn self_reference_terminates() {
         let html = render(indoc! {"
             Body[^a].
 
@@ -437,7 +420,7 @@ mod tests {
     }
 
     #[test]
-    fn render_prunes_only_containers_emptied_by_definitions() {
+    fn prunes_only_containers_emptied_by_definitions() {
         let html = render(indoc! {"
             Body[^a][^b].
 
@@ -457,7 +440,7 @@ mod tests {
     }
 
     #[test]
-    fn render_unsafe_labels_without_collisions() {
+    fn slugs_unsafe_labels_without_collisions() {
         let html = render(indoc! {"
             Body[^a b][^a-b][^a%20b][^a#b][^a~20b].
 
@@ -477,7 +460,7 @@ mod tests {
     }
 
     #[test]
-    fn render_escapes_names() {
+    fn replaces_quotes_in_ids() {
         let html = render(indoc! {r#"
             Text[^a"b].
 
@@ -488,7 +471,7 @@ mod tests {
     }
 
     #[test]
-    fn render_punctuation_labels_have_nonempty_ids() {
+    fn punctuation_labels_have_nonempty_ids() {
         let html = render(indoc! {"
             Body[^!][^?].
 
@@ -501,8 +484,25 @@ mod tests {
     }
 
     #[test]
-    fn render_without_references_is_identity() {
+    fn without_references_is_identity() {
         let html = render("Plain [^missing] text.");
         assert_eq!(html, "<p>Plain [^missing] text.</p>\n");
+    }
+
+    fn render(content: &str) -> String {
+        let events = Parser::new_ext(content, Options::ENABLE_FOOTNOTES)
+            .into_offset_iter()
+            .map(|(event, range)| (event.into_static(), range));
+        let (mut body, mut notes) = Notes::extract(events);
+        notes.allocate_ids(&mut body, &mut PageIds::default(), 0);
+        let mut html = push_html(body);
+        notes.render(&mut html, push_html);
+        html
+    }
+
+    fn push_html(events: Vec<Spanned>) -> String {
+        let mut html = String::new();
+        pulldown_cmark::html::push_html(&mut html, events.into_iter().map(|(event, _)| event));
+        html
     }
 }

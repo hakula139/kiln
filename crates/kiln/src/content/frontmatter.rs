@@ -251,7 +251,7 @@ mod tests {
     // ── Frontmatter::serialize ──
 
     #[test]
-    fn serialize_omits_unset_and_derived_fields() {
+    fn omits_unset_and_derived_fields() {
         let frontmatter = Frontmatter {
             featured_image: Some(FeaturedImage {
                 src: "/img.webp".into(),
@@ -269,7 +269,7 @@ mod tests {
     }
 
     #[test]
-    fn serialize_round_trips_flags() {
+    fn round_trips_boolean_flags() {
         for (enabled, expected) in [
             (false, ""),
             (
@@ -297,7 +297,7 @@ mod tests {
     // ── Frontmatter::FIELDS / FeaturedImage::FIELDS / ImageCredit::FIELDS ──
 
     #[test]
-    fn fields_match_authored_keys() {
+    fn cover_every_authored_key() {
         let credit = ImageCredit {
             title: Some("Example".into()),
             author: Some("Artist".into()),
@@ -349,7 +349,7 @@ mod tests {
     // ── parse ──
 
     #[test]
-    fn parse_minimal() {
+    fn empty_frontmatter_yields_defaults() {
         let input = indoc! {r"
             +++
             +++
@@ -361,7 +361,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_full() {
+    fn reads_every_field() {
         let input = indoc! {r#"
             +++
             title = "My Post"
@@ -417,7 +417,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_featured_image_minimal() {
+    fn featured_image_needs_only_src() {
         let input = indoc! {r#"
             +++
             [featured_image]
@@ -435,31 +435,27 @@ mod tests {
     }
 
     #[test]
-    fn parse_heading_numbering_disabled() {
-        let input = indoc! {"
-            +++
-            heading_numbering = false
-            +++
-        "};
-        let (frontmatter, _) = parse(input).unwrap();
-        assert!(!frontmatter.heading_numbering);
-    }
-
-    #[test]
-    fn parse_invalid_toml_returns_error() {
-        let input = indoc! {r"
-            +++
-            {{invalid toml
-            +++
-            Body
-        "};
-        assert!(parse(input).is_err());
-    }
-
-    #[test]
-    fn parse_invalid_field_returns_error() {
+    fn rejects_invalid_toml_and_fields() {
         for (field, expected) in [
+            ("{{invalid toml", "invalid key-value pair, expected key"),
             ("date = 42", "a datetime string with UTC offset"),
+            // Local datetimes come through as TOML maps, and jiff rejects the missing offset.
+            (
+                "date = 2024-06-15T10:30:00",
+                "dates must include a UTC offset",
+            ),
+            (
+                "heading_numbering = 2",
+                "invalid type: integer `2`, expected a boolean",
+            ),
+            (
+                r#"heading_numbering = "true""#,
+                r#"invalid type: string "true", expected a boolean"#,
+            ),
+            (
+                "heading_numbering = {}",
+                "invalid type: map, expected a boolean",
+            ),
             (
                 r#"featured_image = "/images/cover.webp""#,
                 "expected a `[featured_image]` table with a `src` key",
@@ -487,37 +483,10 @@ mod tests {
         }
     }
 
-    #[test]
-    fn parse_local_datetime_without_offset_returns_error() {
-        let input = indoc! {"
-            +++
-            date = 2024-06-15T10:30:00
-            +++
-        "};
-        // Local datetimes come through as TOML maps, and jiff rejects the missing offset.
-        let err = parse(input).unwrap_err().to_string();
-        assert!(
-            err.contains("UTC offset"),
-            "error should mention UTC offset requirement, got: {err}"
-        );
-    }
-
-    #[test]
-    fn parse_invalid_heading_numbering_returns_error() {
-        for value in ["2", r#""true""#, "{}"] {
-            let input = formatdoc! {"
-                +++
-                heading_numbering = {value}
-                +++
-            "};
-            assert!(parse(&input).is_err(), "{value}");
-        }
-    }
-
     // ── has_delimited_frontmatter ──
 
     #[test]
-    fn has_delimited_frontmatter_accepts_bom_and_rejects_other_markdown() {
+    fn accepts_bom_and_rejects_other_markdown() {
         for (content, expected) in [
             ("+++\ntitle = \"A\"\n+++\n", true),
             ("\u{feff}+++\n+++\n", true),
@@ -535,7 +504,7 @@ mod tests {
     // ── split_delimited_frontmatter ──
 
     #[test]
-    fn split_delimited_frontmatter_basic() {
+    fn splits_frontmatter_from_body() {
         let input = indoc! {r#"
             +++
             title = "Hello"
@@ -553,7 +522,7 @@ mod tests {
     }
 
     #[test]
-    fn split_delimited_frontmatter_with_bom() {
+    fn strips_bom() {
         // BOM (\u{feff}) can't appear in raw strings, so use concat! here.
         let input = concat!("\u{feff}", "+++\ntitle = \"BOM\"\n+++\nBody\n");
         let (fm, body) = split_delimited_frontmatter(input, TOML_DELIMITER).unwrap();
@@ -562,7 +531,7 @@ mod tests {
     }
 
     #[test]
-    fn split_delimited_frontmatter_crlf() {
+    fn accepts_crlf_line_endings() {
         // Explicit \r\n line endings can't be expressed in indoc.
         let input = "+++\r\ntitle = \"Windows\"\r\n+++\r\nBody\r\n";
         let (fm, body) = split_delimited_frontmatter(input, TOML_DELIMITER).unwrap();
@@ -571,7 +540,7 @@ mod tests {
     }
 
     #[test]
-    fn split_delimited_frontmatter_empty() {
+    fn allows_empty_frontmatter() {
         let input = indoc! {r"
             +++
             +++
@@ -583,7 +552,7 @@ mod tests {
     }
 
     #[test]
-    fn split_delimited_frontmatter_no_body() {
+    fn allows_missing_body() {
         let input = indoc! {r#"
             +++
             title = "No Body"
@@ -600,7 +569,7 @@ mod tests {
     }
 
     #[test]
-    fn split_delimited_frontmatter_closing_delimiter_inside_value_ignored() {
+    fn ignores_delimiter_inside_value() {
         let input = indoc! {r#"
             +++
             foo = "+++ not a delimiter"
@@ -618,7 +587,7 @@ mod tests {
     }
 
     #[test]
-    fn split_delimited_frontmatter_closing_delimiter_must_end_line() {
+    fn closing_delimiter_must_fill_line() {
         let input = indoc! {r#"
             +++
             title = "test"
@@ -638,48 +607,33 @@ mod tests {
     }
 
     #[test]
-    fn split_delimited_frontmatter_opening_not_on_own_line_returns_error() {
-        let input = indoc! {"
-            +++extra
-            +++
-        "};
-        let err = split_delimited_frontmatter(input, TOML_DELIMITER)
-            .unwrap_err()
-            .to_string();
-        assert!(
-            err.contains("must be on its own line"),
-            "should reject opening delimiter with trailing content, got: {err}"
-        );
-    }
-
-    #[test]
-    fn split_delimited_frontmatter_missing_opening_returns_error() {
-        let input = indoc! {r#"
-            title = "Hello"
-            +++
-            Body
-        "#};
-        let err = split_delimited_frontmatter(input, TOML_DELIMITER)
-            .unwrap_err()
-            .to_string();
-        assert!(
-            err.contains("missing opening `+++` delimiter"),
-            "should report missing opening delimiter, got: {err}"
-        );
-    }
-
-    #[test]
-    fn split_delimited_frontmatter_missing_closing_returns_error() {
-        let input = indoc! {r#"
-            +++
-            title = "Hello"
-        "#};
-        let err = split_delimited_frontmatter(input, TOML_DELIMITER)
-            .unwrap_err()
-            .to_string();
-        assert!(
-            err.contains("missing closing `+++` delimiter"),
-            "should report missing closing delimiter, got: {err}"
-        );
+    fn rejects_malformed_delimiters() {
+        for (input, expected) in [
+            (
+                indoc! {"
+                    +++extra
+                    +++
+                "},
+                "opening `+++` must be on its own line",
+            ),
+            (
+                indoc! {r#"
+                    title = "Hello"
+                    +++
+                    Body
+                "#},
+                "missing opening `+++` delimiter",
+            ),
+            (
+                indoc! {r#"
+                    +++
+                    title = "Hello"
+                "#},
+                "missing closing `+++` delimiter",
+            ),
+        ] {
+            let error = split_delimited_frontmatter(input, TOML_DELIMITER).unwrap_err();
+            assert_eq!(error.to_string(), expected, "{input:?}");
+        }
     }
 }

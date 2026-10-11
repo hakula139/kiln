@@ -80,19 +80,10 @@ mod tests {
 
     use super::*;
 
-    fn entry(level: HeadingLevel, id: &str, title: &str) -> TocEntry {
-        TocEntry {
-            level,
-            number: None,
-            id: id.to_owned(),
-            title: title.to_owned(),
-        }
-    }
-
     // ── render_toc_html ──
 
     #[test]
-    fn render_toc_html_nested_headings() {
+    fn nests_headings_by_level() {
         let entries = [
             entry(HeadingLevel::H2, "intro", "Intro"),
             entry(HeadingLevel::H3, "detail-a", "Detail A"),
@@ -121,7 +112,7 @@ mod tests {
     }
 
     #[test]
-    fn render_toc_html_deep_nesting_round_trip_from_h3() {
+    fn closes_deep_nesting_back_to_first_level() {
         // H3 → H4 → H5 → H3: normalizes to depth 1 and closes every intermediate level.
         let entries = [
             entry(HeadingLevel::H3, "a", "A"),
@@ -153,7 +144,7 @@ mod tests {
     }
 
     #[test]
-    fn render_toc_html_skipped_levels() {
+    fn wraps_skipped_levels_in_empty_items() {
         // H2 then H4: intermediate <ul> levels get wrapper <li> elements.
         let entries = [
             entry(HeadingLevel::H2, "top", "Top"),
@@ -181,7 +172,7 @@ mod tests {
     }
 
     #[test]
-    fn render_toc_html_deeper_heading_first() {
+    fn wraps_leading_deeper_heading_in_empty_item() {
         let entries = [
             entry(HeadingLevel::H3, "detail", "Detail"),
             entry(HeadingLevel::H2, "overview", "Overview"),
@@ -206,7 +197,7 @@ mod tests {
     }
 
     #[test]
-    fn render_toc_html_escapes_title_and_id() {
+    fn escapes_title_and_id() {
         let html = render_toc_html(&[entry(HeadingLevel::H2, "foo&bar", "Vec<T> & Friends")]);
         assert!(html.contains(r##"href="#foo&amp;bar""##), "{html}");
         assert!(
@@ -216,7 +207,16 @@ mod tests {
     }
 
     #[test]
-    fn render_toc_html_empty_entries_returns_empty() {
+    fn empty_entries_render_nothing() {
         assert_eq!(render_toc_html(&[]), "");
+    }
+
+    fn entry(level: HeadingLevel, id: &str, title: &str) -> TocEntry {
+        TocEntry {
+            level,
+            number: None,
+            id: id.to_owned(),
+            title: title.to_owned(),
+        }
     }
 }

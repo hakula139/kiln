@@ -139,7 +139,7 @@ mod tests {
     // ── resolve_output_dir ──
 
     #[test]
-    fn resolve_output_dir_default_relative_path() {
+    fn defaults_to_public_under_root() {
         let dir = tempfile::tempdir().unwrap();
         let canonical_root = dir.path().canonicalize().unwrap();
         let resolved = resolve_output_dir(dir.path(), &Config::default(), None).unwrap();
@@ -148,52 +148,34 @@ mod tests {
     }
 
     #[test]
-    fn resolve_output_dir_nested_relative_path() {
-        let dir = tempfile::tempdir().unwrap();
-        let canonical_root = dir.path().canonicalize().unwrap();
-
-        let resolved = output_dir_for(dir.path(), "dist/site").unwrap();
-
-        assert_eq!(resolved, canonical_root.join("dist").join("site"));
-    }
-
-    #[test]
-    fn resolve_output_dir_canonicalizes_dotdot_segments() {
-        let dir = tempfile::tempdir().unwrap();
-        fs::create_dir(dir.path().join("build")).unwrap();
-        let canonical_root = dir.path().canonicalize().unwrap();
-
-        let resolved = output_dir_for(dir.path(), "build/../out").unwrap();
-
-        assert_eq!(resolved, canonical_root.join("out"));
-    }
-
-    #[test]
-    fn resolve_output_dir_absolute_path_outside_root() {
-        let root = tempfile::tempdir().unwrap();
-        let target_parent = tempfile::tempdir().unwrap();
-        let canonical_target_parent = target_parent.path().canonicalize().unwrap();
-        let target = canonical_target_parent.join("site");
-
-        let resolved = output_dir_for(root.path(), &target).unwrap();
-
-        assert_eq!(resolved, target);
-    }
-
-    #[test]
-    fn resolve_output_dir_relative_path_outside_root() {
+    fn resolves_relative_and_absolute_paths() {
         let outer = tempfile::tempdir().unwrap();
         let root = outer.path().join("project");
-        fs::create_dir(&root).unwrap();
+        fs::create_dir_all(root.join("build")).unwrap();
         let canonical_outer = outer.path().canonicalize().unwrap();
+        let canonical_root = canonical_outer.join("project");
+        let external = tempfile::tempdir().unwrap();
+        let target = external.path().canonicalize().unwrap().join("site");
 
-        let resolved = output_dir_for(&root, "../sibling").unwrap();
-
-        assert_eq!(resolved, canonical_outer.join("sibling"));
+        for (output, expected) in [
+            (
+                Path::new("dist/site"),
+                canonical_root.join("dist").join("site"),
+            ),
+            (Path::new("build/../out"), canonical_root.join("out")),
+            (Path::new("../sibling"), canonical_outer.join("sibling")),
+            (&target, target.clone()),
+        ] {
+            assert_eq!(
+                output_dir_for(&root, output).unwrap(),
+                expected,
+                "{output:?}"
+            );
+        }
     }
 
     #[test]
-    fn resolve_output_dir_empty_returns_error() {
+    fn rejects_empty_path() {
         let dir = tempfile::tempdir().unwrap();
 
         let err = output_dir_for(dir.path(), "").unwrap_err().to_string();
@@ -205,7 +187,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_output_dir_root_or_ancestor_returns_error() {
+    fn rejects_project_root_or_ancestor() {
         let dir = tempfile::tempdir().unwrap();
         let canonical_root = dir.path().canonicalize().unwrap();
         let filesystem_root = canonical_root.ancestors().last().unwrap();
@@ -225,7 +207,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_output_dir_input_or_metadata_overlap_returns_error() {
+    fn rejects_overlap_with_inputs_or_metadata() {
         let root = tempfile::tempdir().unwrap();
         for output in [
             "content",
@@ -250,7 +232,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_output_dir_linked_git_metadata_returns_error() {
+    fn rejects_linked_worktree_git_metadata() {
         let root = tempfile::tempdir().unwrap();
         let repository = tempfile::tempdir().unwrap();
         let git_dir = repository.path().join("worktrees/example");
@@ -278,7 +260,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_output_dir_parent_repository_metadata_returns_error() {
+    fn rejects_parent_repository_metadata() {
         let repository = tempfile::tempdir().unwrap();
         let root = repository.path().join("site");
         fs::create_dir(&root).unwrap();
@@ -297,7 +279,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn resolve_output_dir_symlink_to_root_or_ancestor_returns_error() {
+    fn rejects_symlink_to_root_or_ancestor() {
         let outer = tempfile::tempdir().unwrap();
         let root = outer.path().join("project");
         fs::create_dir(&root).unwrap();
@@ -316,7 +298,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn resolve_output_dir_symlinked_inputs_and_output_returns_error() {
+    fn rejects_output_behind_input_symlinks() {
         let root = tempfile::tempdir().unwrap();
         let external = tempfile::tempdir().unwrap();
         fs::create_dir_all(root.path().join("content/posts/example")).unwrap();
@@ -347,7 +329,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn resolve_output_dir_linked_theme_protects_inputs_and_metadata() {
+    fn linked_theme_protects_inputs_and_metadata() {
         use std::os::unix::fs::symlink;
 
         let theme = tempfile::tempdir().unwrap();
@@ -357,17 +339,20 @@ mod tests {
         symlink(linked_assets.path(), theme.path().join("assets")).unwrap();
         fs::create_dir(theme.path().join(".git")).unwrap();
 
-        for root in [
-            theme.path().join("example"),
-            external_site.path().join("site"),
+        for (root, link_target, theme_error) in [
+            (
+                theme.path().join("example"),
+                Path::new("../.."),
+                "would overwrite the project root",
+            ),
+            (
+                external_site.path().join("site"),
+                theme.path(),
+                "overlaps project input",
+            ),
         ] {
             fs::create_dir_all(root.join("themes")).unwrap();
-            let target = if root.starts_with(theme.path()) {
-                Path::new("../..")
-            } else {
-                theme.path()
-            };
-            symlink(target, root.join("themes/example")).unwrap();
+            symlink(link_target, root.join("themes/example")).unwrap();
             fs::write(root.join("config.toml"), r#"theme = "example""#).unwrap();
             let config = Config::load(&root).unwrap();
             assert_eq!(
@@ -388,10 +373,21 @@ mod tests {
                 theme.path().join(".git/generated"),
             ] {
                 let error = resolve_output_dir(&root, &config, Some(&output)).unwrap_err();
-                assert!(error.to_string().contains("overlaps project input"));
+                assert!(
+                    error.to_string().contains("overlaps project input"),
+                    "{output:?}: {error}"
+                );
             }
-            for output in [theme.path(), theme.path().parent().unwrap()] {
-                assert!(resolve_output_dir(&root, &config, Some(output)).is_err());
+            // Both temporary directories share the system temp directory as their parent.
+            for (output, expected) in [
+                (theme.path(), theme_error),
+                (
+                    theme.path().parent().unwrap(),
+                    "would overwrite the project root",
+                ),
+            ] {
+                let error = resolve_output_dir(&root, &config, Some(output)).unwrap_err();
+                assert!(error.to_string().contains(expected), "{output:?}: {error}");
             }
         }
     }

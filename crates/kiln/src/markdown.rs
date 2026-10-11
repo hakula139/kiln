@@ -39,7 +39,7 @@ mod tests {
     // ── code_ranges ──
 
     #[test]
-    fn code_ranges_cover_code_spans_and_fences_with_line_endings() {
+    fn covers_code_spans_and_fences_with_line_endings() {
         let input = indoc! {"
             :x: `:x:` ``:x: ` :x:``
             ```text
@@ -79,7 +79,7 @@ mod tests {
     }
 
     #[test]
-    fn code_ranges_cover_multiline_indented_and_nested_code() {
+    fn covers_multiline_indented_and_nested_code() {
         for input in [
             indoc! {"
                 `first
@@ -107,7 +107,7 @@ mod tests {
     }
 
     #[test]
-    fn code_ranges_cover_fenced_blocks_through_closing_line() {
+    fn covers_fenced_blocks_through_closing_line() {
         for input in [
             indoc! {"
                 ```
@@ -131,7 +131,7 @@ mod tests {
     }
 
     #[test]
-    fn code_ranges_unmatched_closing_fence_extends_to_end() {
+    fn unmatched_closing_fence_extends_to_end() {
         for input in [
             indoc! {"
                 ```
@@ -149,7 +149,7 @@ mod tests {
     }
 
     #[test]
-    fn code_ranges_reject_invalid_fence_openers() {
+    fn rejects_invalid_fence_openers() {
         let indented = indoc! {"
                 ```
             ::: a

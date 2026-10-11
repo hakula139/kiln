@@ -194,7 +194,7 @@ mod tests {
     // ── convert ──
 
     #[test]
-    fn convert_directory_structure() {
+    fn converts_content_and_copies_static_files() {
         let dir = tempfile::tempdir().unwrap();
         let source = dir.path().join("source");
         let dest = dir.path().join("dest");
@@ -264,7 +264,7 @@ mod tests {
     }
 
     #[test]
-    fn convert_maps_indexes_to_archive_title_paths() {
+    fn maps_indexes_to_archive_title_paths() {
         let dir = tempfile::tempdir().unwrap();
         let source = dir.path().join("source");
         let dest = dir.path().join("dest");
@@ -319,49 +319,7 @@ mod tests {
     }
 
     #[test]
-    fn convert_colliding_section_indexes_returns_error() {
-        let dir = tempfile::tempdir().unwrap();
-        let source = dir.path().join("source");
-        let dest = dir.path().join("dest");
-        let content_source = source.join("content");
-
-        for path in [
-            "about.md",
-            "posts/anime/_index.md",
-            "categories/anime/_index.md",
-        ] {
-            let file = content_source.join(path);
-            fs::create_dir_all(file.parent().unwrap()).unwrap();
-            fs::write(
-                file,
-                indoc! {r"
-                    ---
-                    title: Anime
-                    ---
-                "},
-            )
-            .unwrap();
-        }
-
-        let error = convert(&source, &dest).unwrap_err();
-        let section = Path::new("posts").join("anime").join("_index.md");
-        assert_eq!(
-            error.to_string(),
-            format!(
-                "{} and {} both convert to {}",
-                Path::new("categories")
-                    .join("anime")
-                    .join("_index.md")
-                    .display(),
-                section.display(),
-                section.display()
-            )
-        );
-        assert!(!dest.exists());
-    }
-
-    #[test]
-    fn convert_does_not_overwrite_existing_files() {
+    fn keeps_existing_destination_files() {
         let dir = tempfile::tempdir().unwrap();
         let source = dir.path().join("source");
         let dest = dir.path().join("dest");
@@ -448,7 +406,49 @@ mod tests {
     }
 
     #[test]
-    fn convert_missing_content_dir_returns_error() {
+    fn rejects_colliding_indexes_before_writing() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source");
+        let dest = dir.path().join("dest");
+        let content_source = source.join("content");
+
+        for path in [
+            "about.md",
+            "posts/anime/_index.md",
+            "categories/anime/_index.md",
+        ] {
+            let file = content_source.join(path);
+            fs::create_dir_all(file.parent().unwrap()).unwrap();
+            fs::write(
+                file,
+                indoc! {r"
+                    ---
+                    title: Anime
+                    ---
+                "},
+            )
+            .unwrap();
+        }
+
+        let error = convert(&source, &dest).unwrap_err();
+        let section = Path::new("posts").join("anime").join("_index.md");
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "{} and {} both convert to {}",
+                Path::new("categories")
+                    .join("anime")
+                    .join("_index.md")
+                    .display(),
+                section.display(),
+                section.display()
+            )
+        );
+        assert!(!dest.exists());
+    }
+
+    #[test]
+    fn requires_source_content_dir() {
         let dir = tempfile::tempdir().unwrap();
         let source = dir.path().join("source");
         let dest = dir.path().join("dest");
@@ -466,7 +466,7 @@ mod tests {
     // ── convert_or_copy_markdown ──
 
     #[test]
-    fn convert_or_copy_markdown_converts_yaml_frontmatter() {
+    fn converts_yaml_frontmatter_and_shortcodes() {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("input.md");
         let dest = dir.path().join("output.md");
@@ -517,7 +517,7 @@ mod tests {
     }
 
     #[test]
-    fn convert_or_copy_markdown_no_frontmatter_copies_as_is() {
+    fn copies_markdown_without_frontmatter() {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("raw.md");
         let dest = dir.path().join("out.md");
@@ -529,17 +529,17 @@ mod tests {
     }
 
     #[test]
-    fn convert_or_copy_markdown_unreadable_returns_error() {
+    fn reports_unreadable_source() {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("missing.md");
         let dest = dir.path().join("output.md");
 
         let err = convert_or_copy_markdown(&src, &dest).unwrap_err();
-        assert!(err.to_string().contains("failed to read"), "got: {err}");
+        assert_eq!(err.to_string(), format!("failed to read {}", src.display()));
     }
 
     #[test]
-    fn convert_or_copy_markdown_invalid_yaml_returns_error() {
+    fn reports_invalid_yaml() {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("bad.md");
         let dest = dir.path().join("output.md");

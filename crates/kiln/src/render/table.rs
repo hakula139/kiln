@@ -110,19 +110,10 @@ mod tests {
 
     use super::*;
 
-    fn render(content: &str, max_width: usize) -> String {
-        let options = Options::ENABLE_TABLES | Options::ENABLE_FOOTNOTES | Options::ENABLE_MATH;
-        let mut events: Vec<_> = Parser::new_ext(content, options).collect();
-        stamp_nowrap(&mut events, max_width);
-        let mut html = String::new();
-        pulldown_cmark::html::push_html(&mut html, events.into_iter());
-        html
-    }
-
     // ── stamp_nowrap ──
 
     #[test]
-    fn stamp_nowrap_marks_every_cell_of_short_columns() {
+    fn marks_every_cell_of_short_columns() {
         // 名称 peaks at 8 with `Cherries`, 产地 at 4, 价格 at 5, and 说明 at 12 (CJK = 2).
         let html = render(
             indoc! {"
@@ -144,7 +135,7 @@ mod tests {
     }
 
     #[test]
-    fn stamp_nowrap_measures_visible_text_and_math_source() {
+    fn measures_visible_text_and_math_source() {
         // Visible text is `ab 🎮 cd x2`: the link target, code backticks, math delimiters, and
         // footnote label contribute nothing, and the emoji counts as 2.
         let md = indoc! {"
@@ -165,7 +156,7 @@ mod tests {
     }
 
     #[test]
-    fn stamp_nowrap_follows_padded_ragged_rows() {
+    fn follows_padded_ragged_rows() {
         // pulldown-cmark pads short rows and drops cells beyond the header's column count.
         let html = render(
             indoc! {"
@@ -187,7 +178,7 @@ mod tests {
     }
 
     #[test]
-    fn stamp_nowrap_resets_per_table() {
+    fn resets_per_table() {
         let html = render(
             indoc! {"
                 | A |
@@ -204,5 +195,14 @@ mod tests {
             html.contains("<th>A</th>") && html.contains(r#"<th class="nowrap">B</th>"#),
             "column widths should not leak between tables, html:\n{html}"
         );
+    }
+
+    fn render(content: &str, max_width: usize) -> String {
+        let options = Options::ENABLE_TABLES | Options::ENABLE_FOOTNOTES | Options::ENABLE_MATH;
+        let mut events: Vec<_> = Parser::new_ext(content, options).collect();
+        stamp_nowrap(&mut events, max_width);
+        let mut html = String::new();
+        pulldown_cmark::html::push_html(&mut html, events.into_iter());
+        html
     }
 }

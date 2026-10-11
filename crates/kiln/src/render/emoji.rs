@@ -23,13 +23,13 @@ mod tests {
     // ── match_emoji ──
 
     #[test]
-    fn match_emoji_known_shortcodes() {
+    fn matches_known_shortcodes_with_length() {
         assert_eq!(match_emoji(":rocket: and more"), Some(("\u{1f680}", 8)));
         assert_eq!(match_emoji(":+1:"), Some(("\u{1f44d}", 4)));
     }
 
     #[test]
-    fn match_emoji_unrecognized_text_returns_none() {
+    fn ignores_unknown_or_malformed_shortcodes() {
         for text in [":not_a_real_emoji:", ": smile:", ":30 today:", "smile:"] {
             assert_eq!(match_emoji(text), None, "{text}");
         }

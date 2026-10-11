@@ -76,7 +76,7 @@ mod tests {
     // ── slugify ──
 
     #[test]
-    fn slugify_preserves_letters_and_url_safe_punctuation() {
+    fn preserves_letters_and_url_safe_punctuation() {
         for (input, expected) in [
             ("Hello World", "hello-world"),
             ("你好世界", "你好世界"),
@@ -92,7 +92,7 @@ mod tests {
     }
 
     #[test]
-    fn slugify_collapses_separators_and_trims_edges() {
+    fn collapses_separators_and_trims_edges() {
         for (input, expected) in [
             ("CS:APP", "cs-app"),
             ("Rock & Roll", "rock-roll"),
@@ -108,7 +108,7 @@ mod tests {
     // ── slugify_or ──
 
     #[test]
-    fn slugify_or_falls_back_only_without_alphanumerics() {
+    fn falls_back_only_without_alphanumerics() {
         for (input, expected) in [("Hello World", "hello-world"), ("!?", "note"), ("", "note")] {
             assert_eq!(slugify_or(input, "note"), expected, "{input}");
         }
@@ -117,7 +117,7 @@ mod tests {
     // ── titlecase ──
 
     #[test]
-    fn titlecase_capitalizes_words() {
+    fn capitalizes_words() {
         for (input, expected) in [
             ("hello-world", "Hello World"),
             ("note", "Note"),

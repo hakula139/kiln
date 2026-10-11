@@ -290,7 +290,7 @@ mod tests {
     // ── convert_shortcodes ──
 
     #[test]
-    fn convert_shortcodes_preserves_inline_body_and_surrounding_prose() {
+    fn preserves_inline_body_and_surrounding_prose() {
         assert_eq!(
             convert_shortcodes(r#"Before{{< admonition type="warning" title="A \"quote\"" open=false >}}Keep **this**.{{< /admonition >}}After"#).unwrap(),
             indoc! {r#"
@@ -303,7 +303,7 @@ mod tests {
     }
 
     #[test]
-    fn convert_shortcodes_defaults_and_nested_blocks() {
+    fn defaults_type_and_nests_blocks() {
         let input = indoc! {r#"
             {{< admonition >}}
             Outer
@@ -326,7 +326,7 @@ mod tests {
     }
 
     #[test]
-    fn convert_shortcodes_canonicalizes_admonition_type_and_open() {
+    fn canonicalizes_admonition_type_and_open() {
         assert_eq!(
             convert_shortcodes(
                 r#"{{< admonition Warning "Careful" FALSE >}}Body{{< /admonition >}}"#
@@ -341,7 +341,7 @@ mod tests {
     }
 
     #[test]
-    fn convert_shortcodes_preserves_image_link_dimensions_and_alt() {
+    fn preserves_image_link_dimensions_and_alt() {
         assert_eq!(convert_shortcodes(r#"[{{< image src="a b.svg" alt="[Icon]" width=50 height=30 >}}](https://example.com)"#).unwrap(),
             r"[![\[Icon\]](a%20b.svg){width=50 height=30}](https://example.com)");
 
@@ -357,7 +357,7 @@ mod tests {
     }
 
     #[test]
-    fn convert_shortcodes_preserves_mermaid_and_generic_arguments() {
+    fn preserves_mermaid_and_generic_arguments() {
         assert_eq!(
             convert_shortcodes(indoc! {r#"
                 {{< mermaid >}}
@@ -382,7 +382,7 @@ mod tests {
     }
 
     #[test]
-    fn convert_shortcodes_literal_code_is_unchanged() {
+    fn leaves_literal_code_unchanged() {
         let input = indoc! {r"
             ```markdown
             {{< admonition >}}
@@ -392,7 +392,7 @@ mod tests {
     }
 
     #[test]
-    fn convert_shortcodes_multiline_arguments_preserve_backticks() {
+    fn multiline_arguments_preserve_backticks() {
         assert_eq!(
             convert_shortcodes(indoc! {r#"
                 {{< admonition
@@ -412,31 +412,56 @@ mod tests {
     }
 
     #[test]
-    fn convert_shortcodes_malformed_or_lossy_inputs_returns_error() {
-        for input in [
-            "{{< /unknown >}}",
-            "{{< admonition >}}body",
-            "{{< image src=x",
-            "{{< style >}}body{{< /style >}}",
-            "{{< admonition >}}body{{< /mermaid >}}",
-            "{{< image src=\"unfinished >}}",
-            "{{< image src=x linked=false >}}",
-            "{{< admonition open=maybe >}}",
-            "{{< image src=x src=y >}}",
-            "{{< >}}",
-            indoc! {r#"
-                {{< admonition title="multiple
-                lines" >}}
-            "#},
+    fn rejects_malformed_or_lossy_inputs() {
+        for (input, expected) in [
+            ("{{< /unknown >}}", "unmatched closing shortcode `unknown`"),
+            (
+                "{{< admonition >}}body",
+                "unclosed Hugo shortcode `admonition`",
+            ),
+            ("{{< image src=x", "unclosed Hugo shortcode"),
+            (
+                "{{< style >}}body{{< /style >}}",
+                "style shortcode requires manual conversion to page CSS",
+            ),
+            (
+                "{{< admonition >}}body{{< /mermaid >}}",
+                "unmatched closing shortcode `mermaid`",
+            ),
+            (
+                "{{< image src=\"unfinished >}}",
+                "unclosed quote in Hugo shortcode",
+            ),
+            (
+                "{{< image src=x linked=false >}}",
+                "unsupported image argument `linked`",
+            ),
+            (
+                "{{< admonition open=maybe >}}",
+                "admonition open must be true or false",
+            ),
+            (
+                "{{< image src=x src=y >}}",
+                "duplicate shortcode argument `src`",
+            ),
+            ("{{< >}}", "invalid Hugo shortcode name ``"),
+            (
+                indoc! {r#"
+                    {{< admonition title="multiple
+                    lines" >}}
+                "#},
+                "multiline shortcode values require manual conversion",
+            ),
         ] {
-            assert!(convert_shortcodes(input).is_err(), "{input}");
+            let error = convert_shortcodes(input).unwrap_err();
+            assert_eq!(error.to_string(), expected, "{input}");
         }
     }
 
     // ── parse_shortcode_args ──
 
     #[test]
-    fn parse_shortcode_args_decodes_escaped_values() {
+    fn decodes_escaped_values() {
         let args = parse_shortcode_args(r#"title="A \"quoted\" title" path="C:\\docs""#).unwrap();
         assert_eq!(args.get("title"), Some(r#"A "quoted" title"#));
         assert_eq!(args.get("path"), Some(r"C:\docs"));
