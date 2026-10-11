@@ -22,7 +22,7 @@ mod tests {
     // ── match_icon ──
 
     #[test]
-    fn match_icon_class_shortcode() {
+    fn renders_class_shortcode_as_icon() {
         assert_eq!(
             match_icon(":(fas fa-link): here"),
             Some((
@@ -33,7 +33,7 @@ mod tests {
     }
 
     #[test]
-    fn match_icon_emoticons_and_markup_returns_none() {
+    fn ignores_emoticons_and_markup() {
         for text in [
             ":( (really):",
             ":(fas fa-<script>):",

@@ -130,18 +130,10 @@ pub enum Feature {
 mod tests {
     use super::*;
 
-    fn deferred(url: &str) -> ScriptTag {
-        ScriptTag {
-            url: url.to_owned(),
-            load: LoadStrategy::Defer,
-            module: false,
-        }
-    }
-
     // ── PageAssets::register_script ──
 
     #[test]
-    fn register_script_preserves_order_and_deduplicates_identical_tags() {
+    fn preserves_order_and_deduplicates_identical_tags() {
         let mut assets = PageAssets::default();
         let first = deferred("/b.js");
         let second = deferred("/a.js");
@@ -152,7 +144,7 @@ mod tests {
     }
 
     #[test]
-    fn register_script_supported_strategies() {
+    fn accepts_every_supported_strategy() {
         for (load, module) in [
             (LoadStrategy::Defer, false),
             (LoadStrategy::Async, false),
@@ -172,7 +164,7 @@ mod tests {
     }
 
     #[test]
-    fn register_script_synchronous_module_returns_error() {
+    fn rejects_synchronous_module() {
         let mut assets = PageAssets::default();
         let error = assets
             .register_script(ScriptTag {
@@ -189,7 +181,7 @@ mod tests {
     }
 
     #[test]
-    fn register_script_conflicting_attributes_returns_error() {
+    fn rejects_conflicting_attributes_for_url() {
         for (load, module, attributes) in [
             (LoadStrategy::Async, false, "load=async, module=false"),
             (LoadStrategy::Defer, true, "load=defer, module=true"),
@@ -219,7 +211,7 @@ mod tests {
     // ── PageAssets::add_feature ──
 
     #[test]
-    fn add_feature_dedupes() {
+    fn deduplicates_features() {
         let mut assets = PageAssets::default();
         assets.add_feature(Feature::Math);
         assets.add_feature(Feature::Math);
@@ -233,13 +225,21 @@ mod tests {
     // ── Feature: string form ──
 
     #[test]
-    fn feature_string_form_is_lowercase_for_templates() {
+    fn serializes_lowercase_for_templates() {
         // Themes test membership with `"math" in assets.features`, which MiniJinja serializes.
         for (feature, expected) in [(Feature::Math, "math"), (Feature::Mermaid, "mermaid")] {
             assert_eq!(
                 toml::Value::try_from(feature).unwrap().as_str(),
                 Some(expected)
             );
+        }
+    }
+
+    fn deferred(url: &str) -> ScriptTag {
+        ScriptTag {
+            url: url.to_owned(),
+            load: LoadStrategy::Defer,
+            module: false,
         }
     }
 }

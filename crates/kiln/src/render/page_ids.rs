@@ -64,7 +64,7 @@ mod tests {
     // ── PageIds::reserve_html ──
 
     #[test]
-    fn reserve_html_decodes_attributes_and_ignores_text() {
+    fn decodes_attributes_and_ignores_text() {
         let mut ids = PageIds::default();
         ids.reserve_html(indoc::indoc! {r#"
             <div ID=shared></div><span id='fn&#45;a'></span><p id="quoted"></p>
@@ -86,7 +86,7 @@ mod tests {
     // ── PageIds::allocate ──
 
     #[test]
-    fn allocate_skips_authored_and_generated_suffixes() {
+    fn skips_authored_and_generated_suffixes() {
         let mut ids = PageIds::default();
         ids.reserve("name-1");
         assert_eq!(ids.allocate("name"), "name");

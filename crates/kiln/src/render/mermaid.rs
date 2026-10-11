@@ -23,7 +23,7 @@ mod tests {
     // ── render_mermaid ──
 
     #[test]
-    fn render_mermaid_wraps_source_in_pre_with_class() {
+    fn wraps_source_in_pre_with_class() {
         let source = indoc! {"
             graph TD
                 A --> B
@@ -40,7 +40,7 @@ mod tests {
     }
 
     #[test]
-    fn render_mermaid_escapes_html_special_chars() {
+    fn escapes_html_special_chars() {
         let html = render_mermaid(r#"A["<b>&"]"#);
         // Both inner text and attribute value carry the escaped form so the
         // browser's textContent / dataset.source decode back to the original.
@@ -53,7 +53,7 @@ mod tests {
     }
 
     #[test]
-    fn render_mermaid_empty_source() {
+    fn empty_source_renders_empty_pre() {
         let html = render_mermaid("");
         assert_eq!(
             html,

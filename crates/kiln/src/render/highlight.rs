@@ -260,50 +260,10 @@ mod tests {
     use super::*;
     use crate::render::code_block::parse_fence_info;
 
-    fn highlight(info: &str, code: &str) -> String {
-        highlight_code(code, &parse_fence_info(info), None)
-    }
-
-    /// Returns the rendered code text and each row's text and `hl` flag.
-    fn rendered_rows(html: &str) -> (String, Vec<(String, bool)>) {
-        let fragment = scraper::Html::parse_fragment(html);
-        let code = scraper::Selector::parse(".code code").unwrap();
-        let line = scraper::Selector::parse(".code .line").unwrap();
-        let text = fragment.select(&code).next().unwrap().text().collect();
-        let rows = fragment
-            .select(&line)
-            .map(|row| {
-                (
-                    row.text().collect(),
-                    row.value().classes().any(|class| class == "hl"),
-                )
-            })
-            .collect();
-        (text, rows)
-    }
-
-    /// Returns whether each row contains an element matching `selector`.
-    fn rows_matching(html: &str, selector: &str) -> Vec<bool> {
-        let fragment = scraper::Html::parse_fragment(html);
-        let line = scraper::Selector::parse(".code .line").unwrap();
-        let selector = scraper::Selector::parse(selector).unwrap();
-        fragment
-            .select(&line)
-            .map(|row| row.select(&selector).next().is_some())
-            .collect()
-    }
-
-    fn rows(expected: &[(&str, bool)]) -> Vec<(String, bool)> {
-        expected
-            .iter()
-            .map(|&(text, hl)| (text.to_owned(), hl))
-            .collect()
-    }
-
     // ── highlight_code ──
 
     #[test]
-    fn highlight_code_renders_details_table() {
+    fn renders_details_table() {
         assert_eq!(
             highlight("text {#my-code .wide}", "a <b>\n\nc\n"),
             indoc! {r#"
@@ -333,7 +293,7 @@ mod tests {
     }
 
     #[test]
-    fn highlight_code_escapes_custom_classes() {
+    fn escapes_custom_classes() {
         let html = highlight(r#"rs {.a"b .x&copy;}"#, "fn main() {}\n");
         let fragment = scraper::Html::parse_fragment(&html);
         let selector = scraper::Selector::parse(".code-block").unwrap();
@@ -350,7 +310,7 @@ mod tests {
     }
 
     #[test]
-    fn highlight_code_title_replaces_lang_pill() {
+    fn title_replaces_lang_pill() {
         let html = highlight(r#"html {title="<script>.js"}"#, "<div></div>\n");
         assert!(
             html.starts_with(indoc! {r#"
@@ -364,7 +324,7 @@ mod tests {
     }
 
     #[test]
-    fn highlight_code_lang_token_selects_syntax_and_label() {
+    fn lang_token_selects_syntax_and_label() {
         for (info, data_lang, label, scope) in [
             ("Rust", Some("rust"), "Rust", "source rust"),
             ("ts", Some("ts"), "TypeScript", "source ts"),
@@ -400,7 +360,7 @@ mod tests {
     }
 
     #[test]
-    fn highlight_code_marks_highlighted_rows() {
+    fn marks_highlighted_rows() {
         let code = indoc! {"
             first line
             second line
@@ -432,7 +392,7 @@ mod tests {
     }
 
     #[test]
-    fn highlight_code_preserves_multiline_syntax_scopes() {
+    fn preserves_multiline_syntax_scopes() {
         let code = indoc! {"
             /* first
             middle <&>
@@ -463,7 +423,7 @@ mod tests {
     }
 
     #[test]
-    fn highlight_code_preserves_empty_rows() {
+    fn preserves_empty_rows() {
         for (code, expected) in [
             ("", rows(&[("", true)])),
             ("\n", rows(&[("", true)])),
@@ -480,7 +440,7 @@ mod tests {
     }
 
     #[test]
-    fn highlight_code_disclosure_controls_open_state_and_line_limit() {
+    fn disclosure_controls_open_state_and_line_limit() {
         for (info, open, max_lines) in [
             ("rust", true, Some("40")),
             ("rust {collapse}", false, None),
@@ -513,7 +473,7 @@ mod tests {
     }
 
     #[test]
-    fn highlight_code_preserves_source_when_syntax_dependency_is_missing() {
+    fn preserves_source_when_syntax_dependency_is_missing() {
         // Syntect's non-exhaustive context-reference variants require deserialization.
         let missing_scope = serde_yaml::from_str(indoc! {"
             !ByScope
@@ -573,14 +533,23 @@ mod tests {
     // ── display_label ──
 
     #[test]
-    fn display_label_plaintext_aliases() {
+    fn capitalizes_unknown_tokens() {
+        assert_eq!(display_label("rust"), "Rust");
+        assert_eq!(display_label("python"), "Python");
+        assert_eq!(display_label("go"), "Go");
+        assert_eq!(display_label("dockerfile"), "Dockerfile");
+        assert_eq!(display_label("unknown-lang"), "Unknown-lang");
+    }
+
+    #[test]
+    fn labels_plain_text_aliases() {
         for token in ["", "plain", "plaintext", "text"] {
             assert_eq!(display_label(token), "Plain Text", "for input {token:?}");
         }
     }
 
     #[test]
-    fn display_label_short_form_aliases() {
+    fn expands_short_forms() {
         assert_eq!(display_label("js"), "JavaScript");
         assert_eq!(display_label("kt"), "Kotlin");
         assert_eq!(display_label("md"), "Markdown");
@@ -591,7 +560,7 @@ mod tests {
     }
 
     #[test]
-    fn display_label_shell_family_canonicalized() {
+    fn collapses_shell_family() {
         // Different shell flavors share the syntect grammar, so the label collapses to "Shell".
         for shell in ["bash", "fish", "sh", "zsh"] {
             assert_eq!(display_label(shell), "Shell", "for input {shell:?}");
@@ -599,7 +568,7 @@ mod tests {
     }
 
     #[test]
-    fn display_label_special_punctuation() {
+    fn spells_punctuated_names() {
         assert_eq!(display_label("cs"), "C#");
         assert_eq!(display_label("cpp"), "C++");
         assert_eq!(display_label("c++"), "C++");
@@ -607,14 +576,14 @@ mod tests {
     }
 
     #[test]
-    fn display_label_mixed_case_brand_names() {
+    fn keeps_brand_casing() {
         assert_eq!(display_label("gql"), "GraphQL");
         assert_eq!(display_label("graphql"), "GraphQL");
         assert_eq!(display_label("sass"), "Sass");
     }
 
     #[test]
-    fn display_label_all_caps_acronyms() {
+    fn uppercases_acronyms() {
         for token in ["css", "html", "json", "php", "scss", "toml", "yaml"] {
             assert_eq!(
                 display_label(token),
@@ -624,12 +593,43 @@ mod tests {
         }
     }
 
-    #[test]
-    fn display_label_default_capitalizes_first() {
-        assert_eq!(display_label("rust"), "Rust");
-        assert_eq!(display_label("python"), "Python");
-        assert_eq!(display_label("go"), "Go");
-        assert_eq!(display_label("dockerfile"), "Dockerfile");
-        assert_eq!(display_label("unknown-lang"), "Unknown-lang");
+    fn highlight(info: &str, code: &str) -> String {
+        highlight_code(code, &parse_fence_info(info), None)
+    }
+
+    /// Returns the rendered code text and each row's text and `hl` flag.
+    fn rendered_rows(html: &str) -> (String, Vec<(String, bool)>) {
+        let fragment = scraper::Html::parse_fragment(html);
+        let code = scraper::Selector::parse(".code code").unwrap();
+        let line = scraper::Selector::parse(".code .line").unwrap();
+        let text = fragment.select(&code).next().unwrap().text().collect();
+        let rows = fragment
+            .select(&line)
+            .map(|row| {
+                (
+                    row.text().collect(),
+                    row.value().classes().any(|class| class == "hl"),
+                )
+            })
+            .collect();
+        (text, rows)
+    }
+
+    /// Returns whether each row contains an element matching `selector`.
+    fn rows_matching(html: &str, selector: &str) -> Vec<bool> {
+        let fragment = scraper::Html::parse_fragment(html);
+        let line = scraper::Selector::parse(".code .line").unwrap();
+        let selector = scraper::Selector::parse(selector).unwrap();
+        fragment
+            .select(&line)
+            .map(|row| row.select(&selector).next().is_some())
+            .collect()
+    }
+
+    fn rows(expected: &[(&str, bool)]) -> Vec<(String, bool)> {
+        expected
+            .iter()
+            .map(|&(text, hl)| (text.to_owned(), hl))
+            .collect()
     }
 }
