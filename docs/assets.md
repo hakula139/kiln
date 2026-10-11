@@ -20,18 +20,18 @@ Site files override theme files. Within each owner, `static/` overlays `assets/`
 
 Use `asset_url(path)` in templates, including directives, to resolve published files. Markdown images, featured images and compiled CSS references also use the asset manifest. Keep authored filenames unchanged when their contents change.
 
-| Reference               | Relative URL                                   | Root-relative URL                             |
-| ----------------------- | ---------------------------------------------- | --------------------------------------------- |
-| Template `asset_url()`  | Relative to the page output URL                | Site path, with the deployment prefix added   |
-| Featured image          | Relative to the owning page output URL         | Site path, with the deployment prefix added   |
-| Markdown image          | Relative to the page output URL                | Browser root, including any deployment prefix |
-| Compiled CSS `url(...)` | Relative to the stylesheet source declaring it | Browser root, including any deployment prefix |
+| Reference               | Relative URL                                   | Root-relative URL                                 |
+| ----------------------- | ---------------------------------------------- | ------------------------------------------------- |
+| Template `asset_url()`  | Relative to the page output URL                | Site path, with the deployment prefix added       |
+| Featured image          | Relative to the owning page output URL         | Site path, with the deployment prefix added       |
+| Markdown image          | Relative to the page output URL                | Path starting with the configured `base_url` path |
+| Compiled CSS `url(...)` | Relative to the stylesheet source declaring it | Path starting with the configured `base_url` path |
 
-For a site deployed under `/blog`, `asset_url('/images/photo.png')` and Markdown `![Photo](/blog/images/photo.png)` select the same published file. Bundle-relative references such as `assets/photo.png` resolve from the page's output location, including when its slug differs from its source directory. Image dimensions and placeholders use that same published file.
+For a site whose `base_url` ends in `/blog/`, `asset_url('/images/photo.png')` and Markdown `![Photo](/blog/images/photo.png)` select the same published file. Authored root-relative paths follow the configured `base_url` even when `kiln serve` or `kiln build --base-url` publishes under another path, and kiln rewrites them to that path. Bundle-relative references such as `assets/photo.png` resolve from the page's output location, including when its slug differs from its source directory. Image dimensions and placeholders use that same published file.
 
 Encode filename components, using `%20` for a space and `%25` for a literal percent sign. Queries and fragments are preserved, and external URLs pass through unchanged.
 
-Every site reference that kiln resolves must select a published file, so a missing one fails the build. External URLs, `data:` URLs, fragments and root-relative paths outside the deployment prefix pass through unchanged. Relative template references require a page context.
+Every site reference that kiln resolves must select a published file, so a missing one fails the build. External URLs, `data:` URLs, fragments and root-relative paths outside the configured `base_url` path pass through unchanged. Relative template references require a page context.
 
 Prepared `featured_image.src` is an absolute URL, ready for image elements and metadata. Protocol-relative featured images inherit the page's scheme. See [Page Bundles](content.md#page-bundles) for frontmatter examples.
 
@@ -91,7 +91,7 @@ kiln publishes a file under a content-addressed name, `<stem>.<hash>.<ext>` besi
 | Scripts (`.js` and `.mjs`) from `assets/` and page bundles that neither import nor are imported                              | `<stem>.<hash>.<ext>`, such as `/assets/js/search.3f2a9c41d0be.js`      |
 | All `static/` files, importing or imported scripts, SVG, other CSS and remaining files                                       | Source name                                                             |
 
-Images and fonts reference no other files, so their fingerprints cover their bytes alone and do not depend on image decoding or AVIF support. Compiled stylesheets are fingerprinted after their `url(...)` references are rewritten and the output is minified, so a changed image or font also changes the stylesheet URL.
+Images and fonts reference no other files, so their fingerprints cover their bytes alone and do not depend on image decoding or AVIF support. Compiled stylesheets are fingerprinted after their `url(...)` references are rewritten and the output is minified, so a changed image or font from `assets/` or a page bundle also changes the stylesheet URL. A `static/` file keeps its source name, so changing it leaves the stylesheet URL unchanged.
 
 Scripts are fingerprinted after minification. Module specifiers resolve by URL, and kiln does not rewrite them, so a script keeps its source name when it has a static `import`, `export ... from` or `import()`, or when another published script imports it. A computed `import()` expression could load any script, so one anywhere in the output keeps every script under its source name. Scripts that kiln cannot parse also keep their source names.
 
@@ -107,6 +107,8 @@ Content-addressed files can be cached immutably, while every other file needs re
 | ------------------------- | ------------------------------------------------------------------------------------------ |
 | Images, fonts and scripts | `/*.:hash.<ext>` for each extension listed above                                           |
 | Compiled stylesheets      | `/assets/css/site.:hash.css`, `/assets/css/page.:hash.css`, `/*/assets/css/page.:hash.css` |
+
+A vendor file such as `static/vendor.min.js` therefore needs a stem without dots, such as `vendor-min.js`, or a place under `assets/` where it can take a content-addressed name. Pagefind's generated scripts have no dots in their stems, and its stylesheets live outside `assets/css/`, so these patterns do not match them.
 
 A Cloudflare `_headers` placeholder matches one path segment, and `!` removes a header inherited from the catch-all rule:
 

@@ -37,7 +37,6 @@ pub(super) fn benchmarks(criterion: &mut Criterion) {
         images: &resolver,
         assets: &manifest,
         page_url: "/",
-        deployment_prefix: "/",
     };
     let mut group = criterion.benchmark_group("shortcodes");
     for (name, prefix) in [

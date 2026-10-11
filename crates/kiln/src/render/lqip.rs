@@ -52,7 +52,19 @@ impl ImageResolver {
     /// Panics if the cache mutex is poisoned.
     #[must_use]
     pub fn resolve(&self, src: &str, base_dir: Option<&Path>) -> Option<Arc<ImageMeta>> {
-        let path = self.resolve_path(src, base_dir)?;
+        self.read(&self.resolve_path(src, base_dir)?)
+    }
+
+    /// Returns metadata for a file published at an output-relative path.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache mutex is poisoned.
+    pub(crate) fn resolve_published(&self, path: &Path) -> Option<Arc<ImageMeta>> {
+        self.read(&self.output_root.join(path))
+    }
+
+    fn read(&self, path: &Path) -> Option<Arc<ImageMeta>> {
         let canonical = path.canonicalize().ok()?;
 
         // Single-lock entry pattern so concurrent callers don't double-decode.

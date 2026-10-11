@@ -37,7 +37,6 @@ percent-encoding = { workspace = true }
 pulldown-cmark = { workspace = true }
 rayon = { workspace = true }
 regex = { workspace = true }
-same-file = { workspace = true }
 scraper = { workspace = true }
 semver = { workspace = true }
 serde = { workspace = true }

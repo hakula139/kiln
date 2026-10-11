@@ -20,7 +20,7 @@ use crate::content::page::Page;
 use crate::output::write_output;
 use crate::static_assets::publication::PublishedAssets;
 use crate::static_assets::{StaticAssetManifest, is_passthrough};
-use crate::url::{join_site_url, path_url};
+use crate::url::path_url;
 
 pub(crate) const ENTRY: &str = "assets/css/_src/style.css";
 
@@ -90,12 +90,11 @@ impl Stylesheets {
         manifest: &StaticAssetManifest,
         output_dir: &Path,
     ) -> Result<()> {
-        let prefix = config.base_url.prefix();
         let styles: Vec<_> = self.shared.iter().chain(self.pages.values()).collect();
         let compiled: Vec<_> = match config.css.processor.unwrap_or_default() {
             CssProcessor::Plain => styles
                 .iter()
-                .map(|style| compile_plain(assets, manifest, prefix, style))
+                .map(|style| compile_plain(assets, manifest, style))
                 .collect(),
             CssProcessor::Tailwind => run_in_order(
                 styles.iter().copied(),
@@ -106,7 +105,7 @@ impl Stylesheets {
                         TailwindRun::spawn(root, config, self.shared.as_ref(), style),
                     )
                 },
-                |(style, run)| run?.finish(assets, manifest, prefix, style),
+                |(style, run)| run?.finish(assets, manifest, style),
             ),
         };
         for (style, css) in styles.into_iter().zip(compiled) {
@@ -142,17 +141,12 @@ impl Stylesheets {
     /// Returns an error for a missing compiled stylesheet.
     pub(crate) fn page_url(
         &self,
-        deployment_prefix: &str,
         manifest: &StaticAssetManifest,
         page: &Page,
     ) -> Result<Option<String>> {
         self.pages
             .get(&page.source_path)
-            .map(|style| {
-                let path = format!("/{}", path_url(&style.output));
-                let hashed = manifest.asset_url(&path)?;
-                Ok(join_site_url(deployment_prefix, hashed))
-            })
+            .map(|style| manifest.asset_url(&format!("/{}", path_url(&style.output))))
             .transpose()
     }
 }
@@ -160,7 +154,6 @@ impl Stylesheets {
 fn compile_plain(
     assets: &PublishedAssets,
     manifest: &StaticAssetManifest,
-    prefix: &str,
     style: &Stylesheet,
 ) -> Result<String> {
     let provider = CssProvider(FileProvider::new());
@@ -168,7 +161,7 @@ fn compile_plain(
     let stylesheet = bundler
         .bundle(&style.source)
         .map_err(|error| anyhow::anyhow!("{error}"))?;
-    publish_urls(assets, manifest, prefix, style, &stylesheet)
+    publish_urls(assets, manifest, style, &stylesheet)
 }
 
 /// Starts items in order with at most `limit` running and finishes each in start order.
@@ -242,7 +235,6 @@ impl TailwindRun {
         self,
         assets: &PublishedAssets,
         manifest: &StaticAssetManifest,
-        prefix: &str,
         style: &Stylesheet,
     ) -> Result<String> {
         let result = self
@@ -266,7 +258,7 @@ impl TailwindRun {
             },
         )
         .map_err(|error| anyhow::anyhow!("{error}"))?;
-        publish_urls(assets, manifest, prefix, style, &stylesheet)
+        publish_urls(assets, manifest, style, &stylesheet)
     }
 }
 
@@ -299,7 +291,6 @@ impl SourceProvider for CssProvider {
 fn publish_urls(
     assets: &PublishedAssets,
     manifest: &StaticAssetManifest,
-    prefix: &str,
     style: &Stylesheet,
     stylesheet: &StyleSheet<'_>,
 ) -> Result<String> {
@@ -317,7 +308,7 @@ fn publish_urls(
             Dependency::Import(import) => (import.placeholder, import.url),
             Dependency::Url(url) => {
                 let source = PathBuf::from(&url.loc.file_path);
-                let published = published_url(assets, manifest, prefix, style, &source, &url.url)?;
+                let published = published_url(assets, manifest, style, &source, &url.url)?;
                 (url.placeholder, published)
             }
         };
@@ -329,7 +320,6 @@ fn publish_urls(
 fn published_url(
     assets: &PublishedAssets,
     manifest: &StaticAssetManifest,
-    prefix: &str,
     style: &Stylesheet,
     source: &Path,
     url: &str,
@@ -340,14 +330,13 @@ fn published_url(
     let split = url.find(['?', '#']).unwrap_or(url.len());
     let (path, suffix) = url.split_at(split);
     let destination = if path.starts_with('/') {
-        let Some(asset) = manifest.resolve_local(path, "/", prefix)? else {
+        let published = manifest
+            .published_path(path)
+            .with_context(|| format!("cannot resolve CSS asset {url} from {}", source.display()))?;
+        let Some(published) = published else {
             return Ok(url.to_owned());
         };
-        PathBuf::from(
-            percent_decode_str(asset.path.trim_start_matches('/'))
-                .decode_utf8()?
-                .as_ref(),
-        )
+        published.to_owned()
     } else {
         let decoded = percent_decode_str(path)
             .decode_utf8()
@@ -420,7 +409,8 @@ mod tests {
         let stylesheets = Stylesheets::discover(root.path(), &config, &pages);
         let output = root.path().join("public");
         let assets = PublishedAssets::publish(root.path(), None, &pages, &output).unwrap();
-        let mut manifest = StaticAssetManifest::new(assets.outputs());
+        let mut manifest =
+            StaticAssetManifest::new(assets.outputs()).with_prefixes("/blog/", "/blog/");
         stylesheets
             .compile(root.path(), &config, &assets, &manifest, &output)
             .unwrap();
@@ -431,9 +421,7 @@ mod tests {
         assert!(css.contains(".page"), "{css}");
         assert!(!output.join("a % # 世界/assets/css/page.css").exists());
         assert_eq!(
-            stylesheets
-                .page_url("/blog/", &manifest, &pages[0])
-                .unwrap(),
+            stylesheets.page_url(&manifest, &pages[0]).unwrap(),
             Some(
                 "/blog/a%20%25%20%23%20%E4%B8%96%E7%95%8C/assets/css/page.65f6d4d0a9a8.css"
                     .to_owned()
@@ -463,8 +451,8 @@ mod tests {
         };
         let assets =
             PublishedAssets::publish(root.path(), None, &[], &root.path().join("public")).unwrap();
-        let manifest = StaticAssetManifest::default();
-        let css = compile_plain(&assets, &manifest, "/blog/", &style).unwrap();
+        let manifest = StaticAssetManifest::default().with_prefixes("/blog/", "/blog/");
+        let css = compile_plain(&assets, &manifest, &style).unwrap();
         for url in [
             "https://example.com/base.css",
             "/images/root.svg",
@@ -494,7 +482,7 @@ mod tests {
             output: PathBuf::from("assets/css/site.css"),
         };
         let manifest = StaticAssetManifest::new(assets.outputs());
-        let css = compile_plain(&assets, &manifest, "", &style).unwrap();
+        let css = compile_plain(&assets, &manifest, &style).unwrap();
         assert!(
             css.contains("../../a%20%25%20%23%20%E4%B8%96%E7%95%8C.svg?v=1#icon"),
             "{css}"
@@ -532,7 +520,7 @@ mod tests {
         let assets =
             PublishedAssets::publish(root.path(), None, &[], &root.path().join("public")).unwrap();
         let manifest = StaticAssetManifest::new(assets.outputs());
-        let css = compile_plain(&assets, &manifest, "", &style).unwrap();
+        let css = compile_plain(&assets, &manifest, &style).unwrap();
         assert!(css.contains("../../alias.svg"), "{css}");
         assert!(css.contains("../../shared/image.svg"), "{css}");
         assert!(!css.contains("shared/../"), "{css}");
@@ -587,7 +575,6 @@ mod tests {
         let private = published_url(
             &assets,
             &StaticAssetManifest::default(),
-            "",
             &style,
             &style.source,
             "../../../_secret.svg",
@@ -597,7 +584,6 @@ mod tests {
         let unpublished = published_url(
             &assets,
             &StaticAssetManifest::default(),
-            "",
             &style,
             &style.source,
             "../../../../../unpublished.svg",
@@ -618,7 +604,6 @@ mod tests {
         let private = published_url(
             &assets,
             &StaticAssetManifest::default(),
-            "",
             &root_style,
             &root_style.source,
             "../../../_secret.svg",
@@ -631,7 +616,6 @@ mod tests {
             let error = published_url(
                 &assets,
                 &StaticAssetManifest::default(),
-                "",
                 &root_style,
                 &root_style.source,
                 url,
@@ -643,16 +627,16 @@ mod tests {
         let missing = published_url(
             &assets,
             &StaticAssetManifest::default(),
-            "/blog/",
             &root_style,
             &root_style.source,
             "/blog/missing.svg?v=1",
         )
         .unwrap_err();
+        let missing = format!("{missing:#}");
         assert!(
-            missing
-                .to_string()
-                .contains("static asset not found: /blog/missing.svg"),
+            missing.contains("cannot resolve CSS asset /blog/missing.svg?v=1 from")
+                && missing.contains("content/assets/css/_src/style.css")
+                && missing.contains("static asset not found: /blog/missing.svg"),
             "{missing}"
         );
     }

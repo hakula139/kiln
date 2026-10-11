@@ -13,7 +13,7 @@ use minijinja::{
 use serde::Serialize;
 
 use self::functions::{
-    AssetUrls, tpl_asset_url, tpl_now, tpl_parse_csv, tpl_read_file, tpl_register_script, tpl_t,
+    tpl_asset_url, tpl_now, tpl_parse_csv, tpl_read_file, tpl_register_script, tpl_t,
 };
 use self::vars::{ArchivePageVars, HomePageVars, OverviewPageVars, PageMetadata, PostTemplateVars};
 use crate::config::Config;
@@ -84,18 +84,15 @@ impl TemplateEngine {
         env.add_function("read_file", tpl_read_file);
         env.add_function("parse_csv", tpl_parse_csv);
 
-        let asset_urls = Arc::new(AssetUrls {
-            manifest: static_assets.clone(),
-            prefix: config.base_url.prefix().to_owned(),
-        });
-        let urls = Arc::clone(&asset_urls);
+        let manifest = Arc::new(static_assets.clone());
+        let asset_manifest = Arc::clone(&manifest);
         env.add_function("asset_url", move |state: &State, url: &str| {
-            tpl_asset_url(state, &urls, url)
+            tpl_asset_url(state, &asset_manifest, url)
         });
         env.add_function(
             "register_script",
             move |state: &State, url: &str, kwargs: Kwargs| {
-                tpl_register_script(state, &asset_urls, url, &kwargs)
+                tpl_register_script(state, &manifest, url, &kwargs)
             },
         );
 
@@ -256,7 +253,8 @@ mod tests {
     use crate::render::assets::{Feature, LoadStrategy, ScriptTag};
     use crate::template::vars::{BucketSummary, LinkedTerm, PageGroup, PageSummary};
     use crate::test_utils::{
-        test_engine, test_engine_with, test_i18n, test_resources, test_site_engine,
+        fingerprinted_manifest, test_engine, test_engine_with, test_i18n, test_resources,
+        test_site_engine,
     };
 
     // ── new ──
@@ -495,7 +493,7 @@ mod tests {
             None,
             &Config::default(),
             &test_i18n(),
-            &StaticAssetManifest::build(&static_dir).unwrap(),
+            &fingerprinted_manifest(&static_dir, |_| true),
         )
         .unwrap();
 

@@ -1,10 +1,11 @@
 use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
 
-use anyhow::{Context, Result};
-use same_file::is_same_file;
+use anyhow::{Context, Result, bail};
 
-use super::{is_media, is_script, rename_fingerprinted};
+use super::{
+    StaticAssetManifest, has_extension, is_media, is_script, rename_fingerprinted, site_path,
+};
 use crate::content::is_private;
 use crate::content::page::Page;
 use crate::output::{copy_directory, copy_file};
@@ -19,21 +20,36 @@ struct PublishedFiles {
 pub(crate) struct PublishedAssets {
     shared_files: PublishedFiles,
     pages: BTreeMap<PathBuf, PublishedFiles>,
-    /// Source-named output paths mapped to the paths their files were published at.
-    outputs: BTreeMap<PathBuf, PathBuf>,
-    /// Published script paths, marking those from `assets/` and page bundles.
-    scripts: BTreeMap<PathBuf, bool>,
+    /// Published files keyed by their source-named output paths.
+    files: BTreeMap<PathBuf, PublishedFile>,
 }
 
-/// Output files with the publication of their final writer.
-#[derive(Default)]
-struct OutputFiles {
-    /// Whether each file is published from `assets/` or a page bundle.
-    addressed: BTreeMap<PathBuf, bool>,
-    /// The first output path recorded for each case-folded path.
-    folded: BTreeMap<String, PathBuf>,
-    /// Paths that a case-insensitive filesystem resolved to an earlier output file.
-    aliases: BTreeMap<PathBuf, PathBuf>,
+/// Whether kiln may publish a file under a content-addressed name.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Naming {
+    /// A file from `assets/` or a page bundle, which takes a content-addressed name when kiln can
+    /// derive one from its final bytes.
+    Addressable,
+    /// A `static/` file, which keeps its source name.
+    Fixed,
+}
+
+/// The file whose copy last wrote an output path.
+struct PublishedFile {
+    /// Source path, relative to the site root when it lies inside it.
+    source: PathBuf,
+    naming: Naming,
+    /// Output path the file was published at.
+    published: PathBuf,
+}
+
+/// Output files written so far, with the owner of each.
+struct OutputFiles<'a> {
+    root: &'a Path,
+    output_dir: &'a Path,
+    files: BTreeMap<PathBuf, PublishedFile>,
+    /// Output paths keyed by the canonical path of the file each one names.
+    canonical: BTreeMap<PathBuf, PathBuf>,
 }
 
 impl PublishedAssets {
@@ -43,8 +59,8 @@ impl PublishedAssets {
     ///
     /// # Errors
     ///
-    /// Returns an error if an asset cannot be copied, renamed, or its source or output path
-    /// cannot be resolved.
+    /// Returns an error if an asset cannot be copied or renamed, if its source or output path
+    /// cannot be resolved, or if two differently named outputs are one file on the filesystem.
     pub(crate) fn publish(
         root: &Path,
         theme_dir: Option<&Path>,
@@ -52,7 +68,12 @@ impl PublishedAssets {
         output_dir: &Path,
     ) -> Result<Self> {
         let mut shared_files = PublishedFiles::default();
-        let mut written = OutputFiles::default();
+        let mut written = OutputFiles {
+            root,
+            output_dir,
+            files: BTreeMap::new(),
+            canonical: BTreeMap::new(),
+        };
         for owner in theme_dir.into_iter().chain(std::iter::once(root)) {
             let assets = PublishedFiles::new(
                 copy_directory(&owner.join("assets"), &output_dir.join("assets"), |name| {
@@ -60,48 +81,36 @@ impl PublishedAssets {
                 })?,
                 output_dir,
             )?;
-            written.record(output_dir, &assets, true)?;
+            written.record(&assets, Naming::Addressable)?;
             shared_files.extend(assets);
             let statics = PublishedFiles::new(
                 copy_directory(&owner.join("static"), output_dir, |_| true)?,
                 output_dir,
             )?;
-            written.record(output_dir, &statics, false)?;
+            written.record(&statics, Naming::Fixed)?;
             shared_files.extend(statics);
         }
 
         let mut page_files = BTreeMap::new();
         for page in pages {
             let files = PublishedFiles::new(copy_page_assets(page, output_dir)?, output_dir)?;
-            written.record(output_dir, &files, true)?;
+            written.record(&files, Naming::Addressable)?;
             page_files.insert(page.source_path.clone(), files);
         }
 
-        let mut outputs = BTreeMap::new();
-        let mut scripts = BTreeMap::new();
-        for (path, addressed) in written.addressed {
-            let published = if addressed && is_media(&path) {
-                rename_fingerprinted(output_dir, &path)?
-            } else {
-                path.clone()
-            };
-            if is_script(&path) {
-                scripts.insert(path.clone(), addressed);
+        let mut files = written.files;
+        for (path, file) in &mut files {
+            if file.naming == Naming::Addressable && is_media(path) {
+                file.published = rename_fingerprinted(output_dir, path)?;
             }
-            outputs.insert(path, published);
         }
-        for (alias, path) in written.aliases {
-            let published = outputs[&path].clone();
-            outputs.insert(alias, published);
-        }
-        for files in std::iter::once(&mut shared_files).chain(page_files.values_mut()) {
-            files.relocate(&outputs);
+        for published_files in std::iter::once(&mut shared_files).chain(page_files.values_mut()) {
+            published_files.relocate(&files);
         }
         Ok(Self {
             shared_files,
             pages: page_files,
-            outputs,
-            scripts,
+            files,
         })
     }
 
@@ -124,41 +133,115 @@ impl PublishedAssets {
     }
 
     /// Returns source-named output paths and the paths their files were published at.
-    pub(crate) fn outputs(&self) -> &BTreeMap<PathBuf, PathBuf> {
-        &self.outputs
+    pub(crate) fn outputs(&self) -> impl Iterator<Item = (&PathBuf, &PathBuf)> {
+        self.files
+            .iter()
+            .map(|(path, file)| (path, &file.published))
     }
 
-    /// Returns published script paths, marking those that may take content-addressed names.
-    pub(crate) fn scripts(&self) -> &BTreeMap<PathBuf, bool> {
-        &self.scripts
+    /// Returns published script paths with their naming.
+    pub(crate) fn scripts(&self) -> impl Iterator<Item = (&Path, Naming)> {
+        self.files
+            .iter()
+            .filter(|(path, _)| is_script(path))
+            .map(|(path, file)| (path.as_path(), file.naming))
+    }
+
+    /// Rejects copied files that keep their source names under names the host cache rules for
+    /// content-addressed files would match.
+    ///
+    /// A source-named image, font or script must not have a dotted stem, and a dotted `site` or
+    /// `page` stylesheet under `assets/css/` is reserved for compiled stylesheets.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error naming the first such file's source.
+    pub(crate) fn ensure_unaddressed_names(&self, manifest: &StaticAssetManifest) -> Result<()> {
+        for (path, file) in &self.files {
+            let source_named = manifest
+                .paths
+                .get(&site_path(path))
+                .is_none_or(|published| published == path);
+            let Some(hint) = source_named
+                .then(|| reserved_name_hint(path, file.naming))
+                .flatten()
+            else {
+                continue;
+            };
+            bail!(
+                "{} publishes {} under its source name, which the immutable cache rule for \
+                 content-addressed files would match. {hint}",
+                file.source.display(),
+                path.display(),
+            );
+        }
+        Ok(())
     }
 }
 
-impl OutputFiles {
+/// Returns how to rename a source-named output that cache rules for content-addressed files
+/// would match, or `None` when no rule matches it.
+fn reserved_name_hint(path: &Path, naming: Naming) -> Option<&'static str> {
+    let stem = path.file_stem()?.to_str()?;
+    let (name, _) = stem.split_once('.')?;
+    if is_media(path) {
+        Some(
+            "Move it to assets/ to publish it under a content-addressed name, or remove the dots from its stem.",
+        )
+    } else if is_script(path) && naming == Naming::Fixed {
+        Some(
+            "Remove the dots from its stem, or move it to assets/ to publish it under a content-addressed name.",
+        )
+    } else if is_script(path) {
+        Some(
+            "Remove the dots from its stem, since scripts that import or are imported keep their source names.",
+        )
+    } else if has_extension(path, &["css"])
+        && matches!(name, "page" | "site")
+        && path
+            .parent()
+            .is_some_and(|parent| parent.ends_with("assets/css"))
+    {
+        Some(
+            "Rename it, since site.*.css and page.*.css under assets/css/ are reserved for compiled stylesheets.",
+        )
+    } else {
+        None
+    }
+}
+
+impl OutputFiles<'_> {
     /// Records published files over the files they overlay.
-    fn record(
-        &mut self,
-        output_dir: &Path,
-        files: &PublishedFiles,
-        content_addressed: bool,
-    ) -> Result<()> {
-        for output in files.paths.values() {
-            let folded = output.to_string_lossy().to_lowercase();
-            let path = match self.folded.get(&folded) {
-                Some(first)
-                    if first != output
-                        && is_same_file(output_dir.join(first), output_dir.join(output))? =>
-                {
-                    self.aliases.insert(output.clone(), first.clone());
-                    first.clone()
-                }
-                Some(_) => output.clone(),
-                None => {
-                    self.folded.insert(folded, output.clone());
-                    output.clone()
-                }
-            };
-            self.addressed.insert(path, content_addressed);
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if an output file cannot be resolved, or if it is also an earlier output
+    /// recorded under a different name.
+    fn record(&mut self, files: &PublishedFiles, naming: Naming) -> Result<()> {
+        for (source, output) in &files.paths {
+            let source = source.strip_prefix(self.root).unwrap_or(source).to_owned();
+            let canonical = self.output_dir.join(output).canonicalize()?;
+            if let Some(existing) = self.canonical.get(&canonical)
+                && existing != output
+            {
+                bail!(
+                    "{} and {} publish {} and {}, which are one file on this filesystem. Rename \
+                     one of them",
+                    self.files[existing].source.display(),
+                    source.display(),
+                    existing.display(),
+                    output.display(),
+                );
+            }
+            self.canonical.insert(canonical, output.clone());
+            self.files.insert(
+                output.clone(),
+                PublishedFile {
+                    source,
+                    naming,
+                    published: output.clone(),
+                },
+            );
         }
         Ok(())
     }
@@ -199,10 +282,10 @@ impl PublishedFiles {
     }
 
     /// Replaces source-named output paths with the paths their files were published at.
-    fn relocate(&mut self, outputs: &BTreeMap<PathBuf, PathBuf>) {
+    fn relocate(&mut self, files: &BTreeMap<PathBuf, PublishedFile>) {
         for output in self.paths.values_mut().chain(self.aliases.values_mut()) {
             // Every recorded output path has a published entry.
-            output.clone_from(&outputs[output]);
+            output.clone_from(&files[output].published);
         }
     }
 
@@ -375,13 +458,12 @@ mod tests {
             ("vendor.js", "vendor.js".to_owned()),
         ]
         .map(|(source, published)| (PathBuf::from(source), PathBuf::from(published)));
-        assert_eq!(assets.outputs(), &BTreeMap::from(expected.clone()));
         assert_eq!(
-            assets.scripts(),
-            &BTreeMap::from([
-                (PathBuf::from("assets/js/app.js"), true),
-                (PathBuf::from("vendor.js"), false),
-            ])
+            assets
+                .outputs()
+                .map(|(source, published)| (source.clone(), published.clone()))
+                .collect::<BTreeMap<_, _>>(),
+            BTreeMap::from(expected.clone())
         );
         let mut files: Vec<_> = walkdir::WalkDir::new(&output)
             .into_iter()
@@ -414,44 +496,32 @@ mod tests {
     }
 
     #[test]
-    fn publish_case_variant_overlays_follow_the_filesystem() {
+    fn publish_case_variant_outputs_returns_error() {
         let root = tempfile::tempdir().unwrap();
+        let probe = root.path().join("CaseProbe");
+        fs::write(&probe, "probe").unwrap();
+        if !root.path().join("caseprobe").exists() {
+            return;
+        }
         let theme = root.path().join("themes/example");
-        let output = root.path().join("public");
         for (path, value) in [
-            (theme.join("static/assets/Logo.png"), "theme"),
-            (root.path().join("assets/logo.png"), "site"),
+            (theme.join("assets/images/Logo.png"), "theme"),
+            (root.path().join("static/assets/images/logo.png"), "site"),
         ] {
             fs::create_dir_all(path.parent().unwrap()).unwrap();
             fs::write(path, value).unwrap();
         }
-        fs::write(root.path().join("probe"), "").unwrap();
-        let case_insensitive = root.path().join("PROBE").exists();
 
-        let assets = PublishedAssets::publish(root.path(), Some(&theme), &[], &output).unwrap();
+        let err =
+            PublishedAssets::publish(root.path(), Some(&theme), &[], &root.path().join("public"))
+                .err()
+                .unwrap()
+                .to_string();
 
-        let site = format!("assets/logo.{}.png", content_fingerprint(b"site"));
-        let theme_output = if case_insensitive {
-            format!("assets/Logo.{}.png", content_fingerprint(b"site"))
-        } else {
-            "assets/Logo.png".to_owned()
-        };
-        let published = if case_insensitive {
-            &theme_output
-        } else {
-            &site
-        };
-        assert_eq!(
-            assets.outputs(),
-            &BTreeMap::from([
-                (
-                    PathBuf::from("assets/Logo.png"),
-                    PathBuf::from(&theme_output)
-                ),
-                (PathBuf::from("assets/logo.png"), PathBuf::from(published)),
-            ])
+        assert!(
+            err.contains("themes/example/assets/images/Logo.png and static/assets/images/logo.png"),
+            "got: {err}"
         );
-        assert_eq!(fs::read_to_string(output.join(published)).unwrap(), "site");
     }
 
     // ── PublishedAssets::resolve ──
@@ -570,6 +640,152 @@ mod tests {
         assert_eq!(
             fs::read_to_string(output.join("first/assets/second.svg")).unwrap(),
             "page image",
+        );
+    }
+
+    // ── PublishedAssets::scripts ──
+
+    fn publish_files(root: &Path, files: &[&str]) -> PublishedAssets {
+        for file in files {
+            let path = root.join(file);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, "body").unwrap();
+        }
+        PublishedAssets::publish(root, None, &[], &root.join("public")).unwrap()
+    }
+
+    #[test]
+    fn scripts_marks_assets_and_bundle_scripts_addressable() {
+        let root = tempfile::tempdir().unwrap();
+        let assets = publish_files(
+            root.path(),
+            &[
+                "assets/js/app.js",
+                "assets/js/App.MJS",
+                "assets/style.css",
+                "static/vendor.js",
+            ],
+        );
+
+        assert_eq!(
+            assets.scripts().collect::<Vec<_>>(),
+            [
+                (Path::new("assets/js/App.MJS"), Naming::Addressable),
+                (Path::new("assets/js/app.js"), Naming::Addressable),
+                (Path::new("vendor.js"), Naming::Fixed),
+            ]
+        );
+    }
+
+    // ── PublishedAssets::ensure_unaddressed_names ──
+
+    #[test]
+    fn ensure_unaddressed_names_accepts_hashed_and_unreserved_names() {
+        let root = tempfile::tempdir().unwrap();
+        let assets = publish_files(
+            root.path(),
+            &[
+                "assets/images/logo.dark.png",
+                "assets/css/theme.min.css",
+                "static/favicon.ico",
+                "static/app.js",
+                "static/site.min.css",
+                "static/data.v1.json",
+            ],
+        );
+
+        assets
+            .ensure_unaddressed_names(&StaticAssetManifest::new(assets.outputs()))
+            .unwrap();
+    }
+
+    #[test]
+    fn ensure_unaddressed_names_reserved_source_names_returns_error() {
+        for (file, output, hint) in [
+            (
+                "static/logo.dark.png",
+                "logo.dark.png",
+                "Move it to assets/",
+            ),
+            (
+                "static/vendor.min.js",
+                "vendor.min.js",
+                "Remove the dots from its stem, or move it to assets/",
+            ),
+            (
+                "assets/js/app.min.js",
+                "assets/js/app.min.js",
+                "scripts that import or are imported keep their source names",
+            ),
+            (
+                "assets/css/site.min.css",
+                "assets/css/site.min.css",
+                "reserved for compiled stylesheets",
+            ),
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let assets = publish_files(root.path(), &[file]);
+
+            let err = assets
+                .ensure_unaddressed_names(&StaticAssetManifest::new(assets.outputs()))
+                .unwrap_err()
+                .to_string();
+
+            assert!(
+                err.contains(&format!("{file} publishes {output} under its source name"))
+                    && err.contains(hint),
+                "got: {err}"
+            );
+        }
+    }
+
+    // ── OutputFiles::record ──
+
+    #[cfg(unix)]
+    #[test]
+    fn record_outputs_naming_one_file_returns_error() {
+        let root = tempfile::tempdir().unwrap();
+        let output = root.path().join("public");
+        fs::create_dir_all(output.join("assets/real")).unwrap();
+        fs::write(output.join("assets/real/logo.png"), "image").unwrap();
+        symlink(output.join("assets/real"), output.join("assets/alias")).unwrap();
+        let files = |source: &str, output: &str| PublishedFiles {
+            paths: BTreeMap::from([(root.path().join(source), PathBuf::from(output))]),
+            aliases: BTreeMap::new(),
+        };
+        let mut written = OutputFiles {
+            root: root.path(),
+            output_dir: &output,
+            files: BTreeMap::new(),
+            canonical: BTreeMap::new(),
+        };
+
+        written
+            .record(
+                &files("assets/real/logo.png", "assets/real/logo.png"),
+                Naming::Addressable,
+            )
+            .unwrap();
+        written
+            .record(
+                &files("assets/real/logo.png", "assets/real/logo.png"),
+                Naming::Fixed,
+            )
+            .unwrap();
+        let err = written
+            .record(
+                &files("static/assets/alias/logo.png", "assets/alias/logo.png"),
+                Naming::Fixed,
+            )
+            .unwrap_err()
+            .to_string();
+
+        assert!(
+            err.contains(
+                "assets/real/logo.png and static/assets/alias/logo.png publish \
+                 assets/real/logo.png and assets/alias/logo.png"
+            ),
+            "got: {err}"
         );
     }
 }

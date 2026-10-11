@@ -9,7 +9,7 @@ use crate::content::frontmatter::FeaturedImage;
 use crate::content::page::Page;
 use crate::render::PageResources;
 use crate::template::vars::{LinkedTerm, PageGroup, PageSummary};
-use crate::url::{page_url, site_asset_url};
+use crate::url::page_url;
 
 // ── Prepared pages ──
 
@@ -84,7 +84,6 @@ fn prepare_page<'a>(
             images: &ctx.image_resolver,
             assets: &ctx.static_assets,
             page_url: &url,
-            deployment_prefix: ctx.config.base_url.prefix(),
         },
     )?;
     Ok(PreparedPage {
@@ -146,8 +145,7 @@ fn resolve_featured_image(
     let Some(fi) = featured_image else {
         return Ok(None);
     };
-    let source = site_asset_url(&fi.src, resources.deployment_prefix);
-    let (published, meta) = resources.resolve_image(&source)?;
+    let (published, meta) = resources.resolve_site_image(&fi.src)?;
     let resolved_src = url::Url::parse(resources.page_url)?
         .join(&published)
         .with_context(|| format!("invalid featured image URL: {}", fi.src))?
@@ -215,6 +213,7 @@ mod tests {
     use crate::content::frontmatter::ImageCredit;
     use crate::render::lqip::ImageResolver;
     use crate::static_assets::StaticAssetManifest;
+    use crate::test_utils::fingerprinted_manifest;
 
     static EMPTY_RESOLVER: LazyLock<ImageResolver> =
         LazyLock::new(|| ImageResolver::new(Path::new(""), ImageConfig::default()));
@@ -297,7 +296,7 @@ mod tests {
             (PathBuf::from(path), PathBuf::from(published))
         })
         .collect();
-        let assets = StaticAssetManifest::new(&outputs);
+        let assets = StaticAssetManifest::new(&outputs).with_prefixes("/blog/", "/blog/");
         for (source, expected) in [
             (
                 "/images/cover.webp",
@@ -336,34 +335,12 @@ mod tests {
                     images: &EMPTY_RESOLVER,
                     assets: &assets,
                     page_url: "https://example.com/blog/posts/foo/",
-                    deployment_prefix: "/blog/",
                 },
             )
             .unwrap()
             .unwrap();
             assert_eq!(resolved.src, expected);
         }
-    }
-
-    #[test]
-    fn resolve_featured_image_missing_site_image_returns_error() {
-        let err = resolve_featured_image(
-            Some(&make_featured_image("assets/missing.webp")),
-            &PageResources {
-                source_dir: None,
-                images: &EMPTY_RESOLVER,
-                assets: &StaticAssetManifest::default(),
-                page_url: "https://example.com/posts/foo/",
-                deployment_prefix: "",
-            },
-        )
-        .unwrap_err();
-
-        assert!(
-            err.to_string()
-                .contains("static asset not found: assets/missing.webp"),
-            "{err}"
-        );
     }
 
     #[test]
@@ -385,7 +362,6 @@ mod tests {
                 images: &EMPTY_RESOLVER,
                 assets: &StaticAssetManifest::default(),
                 page_url: "https://example.com/posts/foo/",
-                deployment_prefix: "/",
             },
         )
         .unwrap()
@@ -417,9 +393,8 @@ mod tests {
             &PageResources {
                 source_dir: Some(&bundle),
                 images: &img_resolver,
-                assets: &StaticAssetManifest::build(dir.path()).unwrap(),
+                assets: &fingerprinted_manifest(dir.path(), |_| true),
                 page_url: "https://example.com/posts/foo/",
-                deployment_prefix: "/",
             },
         )
         .unwrap()
@@ -445,11 +420,30 @@ mod tests {
                     images: &EMPTY_RESOLVER,
                     assets: &StaticAssetManifest::default(),
                     page_url: "https://example.com/posts/foo/",
-                    deployment_prefix: "/",
                 }
             )
             .unwrap()
             .is_none()
+        );
+    }
+
+    #[test]
+    fn resolve_featured_image_missing_site_image_returns_error() {
+        let err = resolve_featured_image(
+            Some(&make_featured_image("assets/missing.webp")),
+            &PageResources {
+                source_dir: None,
+                images: &EMPTY_RESOLVER,
+                assets: &StaticAssetManifest::default(),
+                page_url: "https://example.com/posts/foo/",
+            },
+        )
+        .unwrap_err();
+
+        assert!(
+            err.to_string()
+                .contains("static asset not found: assets/missing.webp"),
+            "{err}"
         );
     }
 

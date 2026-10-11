@@ -114,15 +114,6 @@ pub(crate) fn join_site_url(base: &str, path: &str) -> String {
     format!("{base}{}", path.trim_start_matches('/'))
 }
 
-/// Adds the deployment prefix to site-root-relative asset URLs.
-pub(crate) fn site_asset_url(src: &str, prefix: &str) -> String {
-    if src.starts_with('/') && !src.starts_with("//") {
-        join_site_url(prefix, src)
-    } else {
-        src.to_owned()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

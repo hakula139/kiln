@@ -756,6 +756,61 @@ mod tests {
         assert!(site_css().contains(".recovered"));
     }
 
+    #[test]
+    fn rebuild_resolves_subpath_references_under_localhost() {
+        let root = tempfile::tempdir().unwrap();
+        setup_site(root.path());
+        fs::write(
+            root.path().join("config.toml"),
+            r#"base_url = "https://example.com/blog/""#,
+        )
+        .unwrap();
+        fs::write(
+            root.path().join("content/posts/hello/index.md"),
+            indoc! {r#"
+                +++
+                title = "Hello"
+                +++
+                ![Photo](/blog/assets/images/photo.png)
+            "#},
+        )
+        .unwrap();
+        for (path, content) in [
+            ("assets/images/photo.png", "image"),
+            (
+                "assets/css/_src/style.css",
+                ".photo { background: url(/blog/assets/images/photo.png); }",
+            ),
+        ] {
+            let path = root.path().join(path);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, content).unwrap();
+        }
+        let output_dir = root.path().join("public");
+
+        rebuild(root.path(), "http://localhost:0", &output_dir).unwrap();
+
+        let names = |dir: &str| -> Vec<String> {
+            fs::read_dir(output_dir.join(dir))
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+                .collect()
+        };
+        let [photo] = names("assets/images").try_into().unwrap();
+        let [css] = names("assets/css").try_into().unwrap();
+        assert!(
+            photo.starts_with("photo.") && photo != "photo.png",
+            "{photo}"
+        );
+        let html = fs::read_to_string(output_dir.join("posts/hello/index.html")).unwrap();
+        assert!(
+            html.contains(&format!(r#"src="/assets/images/{photo}""#)),
+            "{html}"
+        );
+        let css = fs::read_to_string(output_dir.join("assets/css").join(css)).unwrap();
+        assert!(css.contains(&format!("../images/{photo}")), "{css}");
+    }
+
     // ── build_router ──
 
     #[tokio::test]

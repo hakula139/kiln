@@ -98,8 +98,27 @@ pub(crate) fn test_resources() -> PageResources<'static> {
         images: &IMAGES,
         assets: &ASSETS,
         page_url: "/",
-        deployment_prefix: "/",
     }
+}
+
+/// Records every file in `output_dir` under its source name, then renames the files `hash`
+/// selects to content-addressed names.
+pub(crate) fn fingerprinted_manifest(
+    output_dir: &Path,
+    hash: impl Fn(&Path) -> bool,
+) -> StaticAssetManifest {
+    let files: Vec<PathBuf> = walkdir::WalkDir::new(output_dir)
+        .sort_by_file_name()
+        .into_iter()
+        .map(Result::unwrap)
+        .filter(|entry| entry.file_type().is_file())
+        .map(|entry| entry.path().strip_prefix(output_dir).unwrap().to_owned())
+        .collect();
+    let mut manifest = StaticAssetManifest::new(files.iter().map(|path| (path, path)));
+    for path in files.iter().filter(|path| hash(path)) {
+        manifest.fingerprint(output_dir, path).unwrap();
+    }
+    manifest
 }
 
 /// Renders Markdown through the page pipeline with test templates and resources.

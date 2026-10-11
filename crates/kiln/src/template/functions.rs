@@ -8,7 +8,6 @@ use minijinja::{Error, ErrorKind, State};
 use crate::i18n::I18n;
 use crate::render::assets::{AssetsHandle, LoadStrategy, ScriptTag};
 use crate::static_assets::{StaticAssetManifest, is_passthrough};
-use crate::url::site_asset_url;
 
 // ── Date / Time ──
 
@@ -89,37 +88,27 @@ pub(super) fn tpl_t(i18n: &I18n, key: &str, kwargs: &Kwargs) -> Result<String, E
 
 // ── Static Assets ──
 
-/// Published asset URLs and the deployment prefix they are served under.
-#[derive(Debug)]
-pub(super) struct AssetUrls {
-    pub(super) manifest: StaticAssetManifest,
-    pub(super) prefix: String,
-}
-
-impl AssetUrls {
-    /// Resolves a site-root-relative or page-relative path to its published asset URL.
-    fn resolve(&self, state: &State, url: &str) -> Result<String, Error> {
-        if is_passthrough(url) {
-            return Ok(url.to_owned());
-        }
-        let page_url = state.lookup("__page_url");
-        let page_url = page_url.as_ref().and_then(Value::as_str);
-        let base = if url.starts_with('/') {
-            "/"
-        } else {
-            page_url.ok_or_else(|| invalid("relative asset paths require a page URL"))?
-        };
-        self.manifest
-            .resolve_local(&site_asset_url(url, &self.prefix), base, &self.prefix)
-            .map_err(|error| invalid(error.to_string()))?
-            .map(|asset| asset.url)
-            .ok_or_else(|| invalid(format!("static asset path is outside the site: {url}")))
+/// Returns the published URL of a site-root-relative or page-relative asset path.
+pub(super) fn tpl_asset_url(
+    state: &State,
+    manifest: &StaticAssetManifest,
+    url: &str,
+) -> Result<String, Error> {
+    if is_passthrough(url) {
+        return Ok(url.to_owned());
     }
-}
-
-/// Returns the published URL of an asset path.
-pub(super) fn tpl_asset_url(state: &State, urls: &AssetUrls, url: &str) -> Result<String, Error> {
-    urls.resolve(state, url)
+    let page_url = state.lookup("__page_url");
+    let page_url = page_url.as_ref().and_then(Value::as_str);
+    let base = if url.starts_with('/') {
+        "/"
+    } else {
+        page_url.ok_or_else(|| invalid("relative asset paths require a page URL"))?
+    };
+    manifest
+        .resolve_template_url(url, base)
+        .map_err(|error| invalid(error.to_string()))?
+        .map(|asset| asset.url)
+        .ok_or_else(|| invalid(format!("asset path is outside the site: {url}")))
 }
 
 // ── Asset Registration ──
@@ -132,7 +121,7 @@ pub(super) fn tpl_asset_url(state: &State, urls: &AssetUrls, url: &str) -> Resul
 /// re-registering the same URL with different attributes is an error.
 pub(super) fn tpl_register_script(
     state: &State,
-    urls: &AssetUrls,
+    manifest: &StaticAssetManifest,
     url: &str,
     kwargs: &Kwargs,
 ) -> Result<&'static str, Error> {
@@ -163,7 +152,7 @@ pub(super) fn tpl_register_script(
         })?,
     };
 
-    let url = urls.resolve(state, url)?;
+    let url = tpl_asset_url(state, manifest, url)?;
     handle
         .lock()
         .register_script(ScriptTag { url, load, module })
@@ -190,7 +179,7 @@ mod tests {
     use crate::config::Config;
     use crate::i18n::Language;
     use crate::template::TemplateEngine;
-    use crate::test_utils::{test_engine, test_i18n};
+    use crate::test_utils::{fingerprinted_manifest, test_engine, test_i18n};
 
     // ── tpl_now ──
 
@@ -425,6 +414,21 @@ mod tests {
             assert_eq!(error.kind(), ErrorKind::InvalidOperation);
             assert!(error.to_string().contains(expected), "{error}");
         }
+
+        let (_dir, engine) = asset_engine();
+        let error = engine
+            .env
+            .render_str(
+                r"{{ asset_url('../../../image.png') }}",
+                context! { __page_url => "/blog/posts/a/" },
+            )
+            .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("asset path is outside the site: ../../../image.png"),
+            "{error}"
+        );
     }
 
     // ── tpl_register_script ──
@@ -473,7 +477,7 @@ mod tests {
         for (template, message) in [
             (
                 r#"{{ register_script("/missing.js") }}"#,
-                "static asset not found: /blog/missing.js",
+                "static asset not found: /missing.js",
             ),
             (
                 r#"{{ register_script("/x.js", load="sync", module=true) }}"#,
@@ -535,7 +539,8 @@ mod tests {
         )
     }
 
-    /// Creates an engine deployed under `/blog/` whose manifest holds a few code assets.
+    /// Creates an engine deployed under `/blog/` whose manifest holds hashed images and source-named
+    /// scripts.
     fn asset_engine() -> (TempDir, TemplateEngine) {
         let dir = tempfile::tempdir().unwrap();
         let static_dir = dir.path().join("static");
@@ -557,7 +562,10 @@ mod tests {
             None,
             &config,
             &test_i18n(),
-            &StaticAssetManifest::build(&static_dir).unwrap(),
+            &fingerprinted_manifest(&static_dir, |path| {
+                path.extension().is_some_and(|extension| extension == "png")
+            })
+            .with_prefixes("/blog/", "/blog/"),
         )
         .unwrap();
         (dir, engine)

@@ -186,6 +186,42 @@ fn build_image_urls_and_metadata_share_published_paths() {
 }
 
 #[test]
+fn build_base_url_override_republishes_authored_root_paths() {
+    let site = TestSite::new(r#"base_url = "https://example.com/blog/""#);
+    site.page(
+        "posts/hello",
+        indoc! {r#"
+            +++
+            title = "Hello"
+            +++
+            ![Photo](/blog/assets/images/photo.png?v=1)
+        "#},
+    )
+    .write("assets/images/photo.png", "image")
+    .write(
+        "assets/css/_src/style.css",
+        ".photo { background: url(/blog/assets/images/photo.png); }",
+    );
+
+    site.build_with(&BuildOptions {
+        base_url_override: Some("https://preview.example.com/preview/"),
+        ..Default::default()
+    })
+    .unwrap();
+
+    let photo = site.hashed_path("assets/images/photo.png");
+    assert!(
+        site.read("posts/hello/index.html")
+            .contains(&format!(r#"src="/preview/{photo}?v=1""#))
+    );
+    let name = photo.rsplit('/').next().unwrap();
+    assert!(
+        site.read_hashed("assets/css/site.css")
+            .contains(&format!("../images/{name}"))
+    );
+}
+
+#[test]
 fn build_updates_managed_image_urls_and_retires_previous_fingerprints() {
     let site = TestSite::new(r#"base_url = "https://example.com/blog""#);
     write_image_lifecycle_templates(&site);

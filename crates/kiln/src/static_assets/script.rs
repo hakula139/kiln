@@ -1,6 +1,6 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::{Context, Result};
 use swc_common::SourceMap;
@@ -8,6 +8,7 @@ use swc_common::sync::Lrc;
 use swc_ecma_ast::{CallExpr, Callee, ExportAll, Expr, ImportDecl, Lit, NamedExport, Str};
 use swc_ecma_visit::{Visit, VisitWith};
 
+use super::publication::Naming;
 use super::{StaticAssetManifest, is_passthrough, site_key, site_path};
 use crate::minify::{AssetKind, asset_kind, parse_js};
 use crate::url::join_site_url;
@@ -31,14 +32,15 @@ enum ScriptImports {
 /// # Errors
 ///
 /// Returns an error if a script cannot be read or renamed.
-pub(crate) fn fingerprint_scripts(
+pub(crate) fn fingerprint_scripts<'a>(
     manifest: &mut StaticAssetManifest,
-    scripts: &BTreeMap<PathBuf, bool>,
+    scripts: impl IntoIterator<Item = (&'a Path, Naming)>,
     output_dir: &Path,
-    prefix: &str,
 ) -> Result<()> {
+    let scripts: Vec<_> = scripts.into_iter().collect();
+    let prefix = &manifest.deployment_prefix;
     let mut linked = BTreeSet::new();
-    for path in scripts.keys() {
+    for &(path, _) in &scripts {
         let file = output_dir.join(path);
         let bytes =
             fs::read(&file).with_context(|| format!("failed to read script {}", file.display()))?;
@@ -61,10 +63,9 @@ pub(crate) fn fingerprint_scripts(
         );
     }
 
-    for (path, _) in scripts
-        .iter()
-        .filter(|(path, addressed)| **addressed && !linked.contains(&site_path(path)))
-    {
+    for (path, _) in scripts.into_iter().filter(|&(path, naming)| {
+        naming == Naming::Addressable && !linked.contains(&site_path(path))
+    }) {
         manifest.fingerprint(output_dir, path)?;
     }
     Ok(())
@@ -126,9 +127,18 @@ impl Visit for ImportCollector {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+    use std::path::PathBuf;
+
     use indoc::indoc;
 
     use super::*;
+
+    fn as_entries(scripts: &BTreeMap<PathBuf, Naming>) -> impl Iterator<Item = (&Path, Naming)> {
+        scripts
+            .iter()
+            .map(|(path, naming)| (path.as_path(), *naming))
+    }
 
     // ── fingerprint_scripts ──
 
@@ -136,41 +146,54 @@ mod tests {
     fn fingerprint_scripts_renames_only_unlinked_bundled_scripts() {
         let dir = tempfile::tempdir().unwrap();
         let mut scripts = BTreeMap::new();
-        for (path, source, addressed) in [
-            ("assets/js/classic.js", "window.ready = true;", true),
+        for (path, source, naming) in [
+            (
+                "assets/js/classic.js",
+                "window.ready = true;",
+                Naming::Addressable,
+            ),
             (
                 "assets/js/app.js",
                 "import { value } from './lib.js';",
-                true,
+                Naming::Addressable,
             ),
-            ("assets/js/lib.js", "export const value = 1;", true),
-            ("assets/js/lazy.mjs", "export const lazy = 1;", true),
-            ("assets/js/broken.js", "function () {", true),
+            (
+                "assets/js/lib.js",
+                "export const value = 1;",
+                Naming::Addressable,
+            ),
+            (
+                "assets/js/lazy.mjs",
+                "export const lazy = 1;",
+                Naming::Addressable,
+            ),
+            ("assets/js/broken.js", "function () {", Naming::Addressable),
             (
                 "posts/a/chart.js",
                 "import('/blog/assets/js/lazy.mjs');",
-                true,
+                Naming::Addressable,
             ),
-            ("vendor.js", "window.vendor = true;", false),
+            ("vendor.js", "window.vendor = true;", Naming::Fixed),
         ] {
             let file = dir.path().join(path);
             fs::create_dir_all(file.parent().unwrap()).unwrap();
             fs::write(file, source).unwrap();
-            scripts.insert(PathBuf::from(path), addressed);
+            scripts.insert(PathBuf::from(path), naming);
         }
-        let mut manifest = StaticAssetManifest::new(scripts.keys().map(|path| (path, path)));
+        let mut manifest = StaticAssetManifest::new(scripts.keys().map(|path| (path, path)))
+            .with_prefixes("/blog/", "/blog/");
 
-        fingerprint_scripts(&mut manifest, &scripts, dir.path(), "/blog/").unwrap();
+        fingerprint_scripts(&mut manifest, as_entries(&scripts), dir.path()).unwrap();
 
         let classic = format!(
-            "/assets/js/classic.{}.js",
+            "assets/js/classic.{}.js",
             super::super::content_fingerprint(b"window.ready = true;")
         );
         assert_eq!(
             manifest.asset_url("/assets/js/classic.js").unwrap(),
-            classic
+            format!("/blog/{classic}")
         );
-        assert!(dir.path().join(&classic[1..]).exists());
+        assert!(dir.path().join(&classic).exists());
         assert!(!dir.path().join("assets/js/classic.js").exists());
         for path in [
             "/assets/js/app.js",
@@ -180,7 +203,7 @@ mod tests {
             "/posts/a/chart.js",
             "/vendor.js",
         ] {
-            assert_eq!(manifest.asset_url(path).unwrap(), path);
+            assert_eq!(manifest.asset_url(path).unwrap(), format!("/blog{path}"));
             assert!(dir.path().join(&path[1..]).exists(), "{path}");
         }
     }
@@ -194,11 +217,11 @@ mod tests {
             ("plugin.js", "window.plugin = true;"),
         ] {
             fs::write(dir.path().join(path), source).unwrap();
-            scripts.insert(PathBuf::from(path), true);
+            scripts.insert(PathBuf::from(path), Naming::Addressable);
         }
         let mut manifest = StaticAssetManifest::new(scripts.keys().map(|path| (path, path)));
 
-        fingerprint_scripts(&mut manifest, &scripts, dir.path(), "").unwrap();
+        fingerprint_scripts(&mut manifest, as_entries(&scripts), dir.path()).unwrap();
 
         assert_eq!(manifest.asset_url("/plugin.js").unwrap(), "/plugin.js");
         assert!(dir.path().join("plugin.js").exists());

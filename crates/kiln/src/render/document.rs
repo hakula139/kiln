@@ -90,15 +90,26 @@ pub(super) fn render_document(
     Ok(html)
 }
 
-/// Resolves every image in the document, merging authored attributes with on-disk metadata.
+/// Resolves every rendered image in the document, merging authored attributes with on-disk
+/// metadata.
+///
+/// Images nested in another image's alt text render as plain text, so they are skipped.
 fn resolve_images(
     document: &MarkdownDocument,
     resources: &PageResources<'_>,
 ) -> Result<ResolvedImages> {
+    let mut depth = 0_usize;
     document
         .events()
         .filter_map(|(event, range)| match event {
-            Event::Start(Tag::Image { dest_url, .. }) => Some((range.start, dest_url)),
+            Event::Start(Tag::Image { dest_url, .. }) => {
+                depth += 1;
+                (depth == 1).then_some((range.start, dest_url))
+            }
+            Event::End(TagEnd::Image) => {
+                depth -= 1;
+                None
+            }
             _ => None,
         })
         .map(|(offset, src)| {
@@ -443,8 +454,9 @@ mod tests {
     use crate::render::lqip::ImageResolver;
     use crate::render::pipeline::{RenderedPage, render_page};
     use crate::render::{PageResources, RenderOptions};
-    use crate::static_assets::StaticAssetManifest;
-    use crate::test_utils::{render_test_page, test_engine, test_resources};
+    use crate::test_utils::{
+        fingerprinted_manifest, render_test_page, test_engine, test_resources,
+    };
 
     fn render(content: &str) -> RenderedPage {
         render_test_page(content, &RenderOptions::default())
@@ -461,7 +473,7 @@ mod tests {
             &RenderOptions::default(),
             &PageResources {
                 images: resolver,
-                assets: &StaticAssetManifest::build(output_dir).unwrap(),
+                assets: &fingerprinted_manifest(output_dir, |_| true),
                 ..test_resources()
             },
             false,
@@ -1223,6 +1235,19 @@ mod tests {
     }
 
     #[test]
+    fn render_document_skips_images_nested_in_alt_text() {
+        let html =
+            render("![Outer ![Inner](missing.png)](https://example.com/outer.png)").content_html;
+
+        assert!(
+            html.contains(r#"src="https://example.com/outer.png""#),
+            "{html}"
+        );
+        assert!(html.contains(r#"alt="Outer Inner""#), "{html}");
+        assert!(!html.contains("missing.png"), "{html}");
+    }
+
+    #[test]
     fn render_document_missing_site_image_in_footnote_returns_error() {
         let err = render_page(
             indoc! {"
@@ -1239,7 +1264,7 @@ mod tests {
         .unwrap();
 
         assert!(
-            format!("{err:#}").contains("static asset not found: missing.png?q=1"),
+            format!("{err:#}").contains("static asset not found: missing.png"),
             "{err:#}"
         );
     }

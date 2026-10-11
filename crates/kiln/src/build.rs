@@ -75,6 +75,7 @@ pub fn build(root: &Path, options: &BuildOptions<'_>) -> Result<()> {
     } = options;
 
     let mut config = Config::load(root).context("failed to load config")?;
+    let authored_prefix = config.base_url.prefix().to_owned();
     if let Some(base_url) = base_url_override {
         config.base_url = base_url.parse()?;
     }
@@ -102,7 +103,7 @@ pub fn build(root: &Path, options: &BuildOptions<'_>) -> Result<()> {
         theme_dir.as_deref(),
         &content.pages,
         &output_dir,
-        config.base_url.prefix(),
+        &authored_prefix,
         minify,
     )?;
     let template_engine = TemplateEngine::new(
@@ -158,12 +159,13 @@ fn publish_assets(
     theme_dir: Option<&Path>,
     pages: &[Page],
     output_dir: &Path,
-    deployment_prefix: &str,
+    authored_prefix: &str,
     minify: bool,
 ) -> Result<(Stylesheets, StaticAssetManifest, Option<MinifyStats>)> {
     let assets = PublishedAssets::publish(root, theme_dir, pages, output_dir)?;
     let stylesheets = Stylesheets::discover(root, config, pages);
-    let mut static_assets = StaticAssetManifest::new(assets.outputs());
+    let mut static_assets = StaticAssetManifest::new(assets.outputs())
+        .with_prefixes(authored_prefix, config.base_url.prefix());
     stylesheets.compile(root, config, &assets, &static_assets, output_dir)?;
 
     let minify_stats = if minify {
@@ -173,17 +175,12 @@ fn publish_assets(
         None
     };
 
-    fingerprint_scripts(
-        &mut static_assets,
-        assets.scripts(),
-        output_dir,
-        deployment_prefix,
-    )
-    .context("failed to fingerprint scripts")?;
+    fingerprint_scripts(&mut static_assets, assets.scripts(), output_dir)
+        .context("failed to fingerprint scripts")?;
     stylesheets
         .fingerprint(&mut static_assets, output_dir)
         .context("failed to fingerprint stylesheets")?;
-    static_assets.ensure_unaddressed_names()?;
+    assets.ensure_unaddressed_names(&static_assets)?;
     Ok((stylesheets, static_assets, minify_stats))
 }
 

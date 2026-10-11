@@ -169,7 +169,7 @@ src = "cover.webp"
 +++
 ```
 
-Templates and listings receive a prepared absolute URL, using the published image's fingerprint and the deployment prefix. See [Referencing Assets](assets.md#referencing-assets) for root-relative and external URL behavior.
+Templates and listings receive a prepared absolute URL with the deployment prefix. Images from `assets/` and page bundles use their content-addressed names, while `static/` images keep their source names. See [Referencing Assets](assets.md#referencing-assets) for root-relative and external URL behavior.
 
 ### Per-Page CSS
 

@@ -88,7 +88,7 @@ fn build_failure_preserves_previous_output_returns_error() {
             );
         }),
         (
-            "dotted name is reserved for content-addressed assets",
+            "static/logo.dark.png publishes logo.dark.png under its source name",
             None,
             |site| {
                 site.write("static/logo.dark.png", "image");
