@@ -218,8 +218,8 @@ impl TemplateEngine {
     }
 }
 
-/// HTML autoescaping that leaves `/` intact, unlike the built-in [`AutoEscape::Html`]. A custom
-/// mode also sends the `escape` filter through [`format_value`].
+/// Autoescape mode of HTML templates. Being custom, it also sends the `escape` filter through
+/// [`format_value`].
 const HTML: AutoEscape = AutoEscape::Custom("html");
 
 /// Selects [`HTML`] wherever the default callback selects [`AutoEscape::Html`].
@@ -230,9 +230,9 @@ fn auto_escape(name: &str) -> AutoEscape {
     }
 }
 
-/// Formats values like [`escape_formatter`], but escapes [`HTML`] with [`html::escape`].
+/// Formats values like [`escape_formatter`], but escapes HTML with [`html::escape`].
 fn format_value(out: &mut Output, state: &State, value: &Value) -> Result<(), minijinja::Error> {
-    if state.auto_escape() != HTML || value.is_safe() {
+    if !matches!(state.auto_escape(), HTML | AutoEscape::Html) || value.is_safe() {
         return escape_formatter(out, state, value);
     }
     let text = value
@@ -686,16 +686,6 @@ mod tests {
         }
     }
 
-    fn new_engine(site_dir: Option<&Path>, theme_dir: Option<&Path>) -> Result<TemplateEngine> {
-        TemplateEngine::new(
-            site_dir,
-            theme_dir,
-            &Config::default(),
-            &test_i18n(),
-            &StaticAssetManifest::default(),
-        )
-    }
-
     // ── format_value ──
 
     #[test]
@@ -706,7 +696,10 @@ mod tests {
                 "page.html",
                 r#"<a href="{{ url }}" title="{{ title }}">{{ text }}</a>|{{ text | e }}|{{ html }}|{{ list }}|{{ count }}"#,
             ),
-            ("page.txt", "{{ title }}|{{ text }}"),
+            (
+                "page.txt",
+                r#"{{ title }}|{{ text }}|{% autoescape "html" %}{{ text }}{% endautoescape %}"#,
+            ),
         ] {
             engine.env.add_template(name, source).unwrap();
         }
@@ -724,7 +717,20 @@ mod tests {
             render("page.html"),
             r#"<a href="https://example.com/a?b=1&amp;c=2" title="Say &quot;hi&quot; &amp; &#39;bye&#39;">&lt;b&gt;/x&lt;/b&gt;</a>|&lt;b&gt;/x&lt;/b&gt;|<i>/y</i>|[&quot;a/b&quot;]|3"#
         );
-        assert_eq!(render("page.txt"), r#"Say "hi" & 'bye'|<b>/x</b>"#);
+        assert_eq!(
+            render("page.txt"),
+            r#"Say "hi" & 'bye'|<b>/x</b>|&lt;b&gt;/x&lt;/b&gt;"#
+        );
+    }
+
+    fn new_engine(site_dir: Option<&Path>, theme_dir: Option<&Path>) -> Result<TemplateEngine> {
+        TemplateEngine::new(
+            site_dir,
+            theme_dir,
+            &Config::default(),
+            &test_i18n(),
+            &StaticAssetManifest::default(),
+        )
     }
 
     fn engine_with_template(name: &'static str, source: &'static str) -> TemplateEngine {

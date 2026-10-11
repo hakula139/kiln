@@ -177,7 +177,7 @@ emojis = true
 
 Every page template receives `title`, `description`, canonical `url` and [`assets`](#page-assets). Every template, including partials and directives, can read the site configuration as `config`.
 
-kiln auto-escapes strings in HTML templates, encoding `&`, `<`, `>`, `"` and `'` while leaving `/` intact, so URLs need no `| safe`. Apply `| safe` to generated HTML such as `content`, `toc` and `body_html`. Dates are ISO 8601 timestamps with an offset in the configured time zone. Templates may use `date[:10]` when only the date is wanted.
+kiln auto-escapes strings in `.html`, `.htm` and `.xml` templates, encoding `&`, `<`, `>`, `"` and `'` while leaving `/` intact, so URLs need no `| safe`. Apply `| safe` to generated HTML such as `content`, `toc` and `body_html`. Dates are ISO 8601 timestamps with an offset in the configured time zone. Templates may use `date[:10]` when only the date is wanted.
 
 #### Post Templates (`post.html`)
 
@@ -310,7 +310,7 @@ Looks up and interpolates a translation. See [Internationalization](#internation
 
 #### `asset_url(path)`
 
-Resolves a published site-root-relative or page-relative path to its public URL, including supported asset fingerprints and the deployment prefix. The result is escaped for HTML text and attribute values, so it needs no `| safe` there. That escaping leaves it unsuitable raw inside `<script>` or `<style>` or under `tojson`, where a URL containing `&` would come out as `&amp;`. See [Referencing Assets](assets.md#referencing-assets).
+Resolves a published site-root-relative or page-relative path to its public URL, including supported asset fingerprints and the deployment prefix. The result is a plain URL that autoescaping handles like any other value. See [Referencing Assets](assets.md#referencing-assets).
 
 #### `register_script(url, load="defer", module=false)`
 

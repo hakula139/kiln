@@ -174,13 +174,13 @@ fn route_site() -> TestSite {
         site.write(
             &format!("templates/{template}.html"),
             indoc! {r#"
-                <title>{{ title }}</title><link href="{{ url | safe }}">
+                <title>{{ title }}</title><link href="{{ url }}">
                 {{ description }} {{ updated }} {{ license }}
-                {% for tag in tags %}<a href="{{ tag.url | safe }}">{{ tag.name }}</a>{% endfor %}
-                {% for page in pages %}<a href="{{ page.url | safe }}">{{ page.title }}</a>{% endfor %}
-                {% for bucket in buckets %}<a href="{{ bucket.url | safe }}">{{ bucket.name }}</a>{% endfor %}
+                {% for tag in tags %}<a href="{{ tag.url }}">{{ tag.name }}</a>{% endfor %}
+                {% for page in pages %}<a href="{{ page.url }}">{{ page.title }}</a>{% endfor %}
+                {% for bucket in buckets %}<a href="{{ bucket.url }}">{{ bucket.name }}</a>{% endfor %}
                 {% if pagination %}{{ pagination.current_page }}/{{ pagination.total_pages }}{% endif %}
-                {% if pagination %}{% for item in pagination.items %}<a href="{{ item.url | safe }}">{{ item.number }}</a>{% endfor %}{% endif %}
+                {% if pagination %}{% for item in pagination.items %}<a href="{{ item.url }}">{{ item.number }}</a>{% endfor %}{% endif %}
             "#},
         );
     }

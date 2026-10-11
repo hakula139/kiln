@@ -12,7 +12,7 @@ use super::support::{TestSite, stylesheet_urls};
 fn build_base_url_argument_and_environment_precedence() {
     let site = TestSite::empty();
     site.write("config.toml", r#"base_url = "https://config.example.com""#)
-        .write("templates/post.html", "{{ url | safe }}")
+        .write("templates/post.html", "{{ url }}")
         .titled_page("about", "About");
 
     for (argument, environment, expected) in [
