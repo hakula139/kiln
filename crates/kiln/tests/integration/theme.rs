@@ -10,7 +10,7 @@ use super::support::{TestSite, stylesheet_url};
 // ── build: theme ──
 
 #[test]
-fn build_minifies_code_before_content_addressing_asset_scripts() {
+fn build_minifies_asset_scripts_before_content_addressing_template_urls() {
     let site = TestSite::empty();
     site.theme("")
         .templates("themes/example/templates")
@@ -23,10 +23,17 @@ fn build_minifies_code_before_content_addressing_asset_scripts() {
                   <link rel="stylesheet" href="{{ asset_url('/style.css') }}">
                   <script src="{{ asset_url('/app.js') }}"></script>
                   <script src="{{ asset_url('/assets/js/theme.js') }}"></script>
+                  {%- for script in assets.scripts %}
+                  <script src="{{ script.url }}" defer></script>
+                  {%- endfor %}
                 </head>
                 <body>{% block body %}{% endblock %}</body>
                 </html>
             "#},
+        )
+        .write(
+            "themes/example/templates/directives/widget.html",
+            r#"{{ register_script("/assets/js/theme.js") }}<div class="widget"></div>"#,
         )
         .write(
             "themes/example/static/style.css",
@@ -43,6 +50,16 @@ fn build_minifies_code_before_content_addressing_asset_scripts() {
         .write(
             "static/style.css",
             ".site { color: #ff0000; margin: 0px; }\n",
+        )
+        .page(
+            "posts/widget",
+            indoc! {r#"
+                +++
+                title = "Widget"
+                +++
+                ::: widget
+                :::
+            "#},
         );
 
     site.build_with(&BuildOptions {
@@ -60,6 +77,12 @@ fn build_minifies_code_before_content_addressing_asset_scripts() {
     assert_eq!(stylesheet_url(&html), "/style.css");
     let theme_js = site.hashed_path("assets/js/theme.js");
     assert_eq!(scripts, ["/app.js".to_owned(), format!("/{theme_js}")]);
+    let registered = Selector::parse("script[defer]").unwrap();
+    let registered: Vec<_> = Html::parse_document(&site.read("posts/widget/index.html"))
+        .select(&registered)
+        .map(|script| script.value().attr("src").unwrap().to_owned())
+        .collect();
+    assert_eq!(registered, [format!("/{theme_js}")]);
     assert_eq!(
         site.read(&theme_js),
         r#"const label="ab";console.log("ab");"#
