@@ -86,7 +86,7 @@ url = "https://example.com/artworks/123"
 +++
 ```
 
-All fields are optional. Defaults:
+All fields are optional, and an unknown key, including one inside `[featured_image]`, fails the build. Defaults:
 
 | Field               | Default                      |
 | ------------------- | ---------------------------- |

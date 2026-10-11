@@ -1,7 +1,4 @@
-use std::collections::BTreeMap;
-
 use anyhow::{Context, Result};
-use serde::Deserialize;
 use serde_yaml::{Mapping, Value};
 
 use crate::content::frontmatter::{FeaturedImage, Frontmatter, ImageCredit};
@@ -9,71 +6,70 @@ use crate::content::frontmatter::{FeaturedImage, Frontmatter, ImageCredit};
 /// Delimiter around Hugo YAML frontmatter.
 pub(crate) const YAML_DELIMITER: &str = "---";
 
-#[derive(Deserialize)]
-struct MigrationFrontmatter {
-    #[serde(flatten)]
-    supported: Frontmatter,
-    #[serde(flatten)]
-    unsupported: BTreeMap<String, Value>,
-}
-
-/// Converts supported YAML metadata and reports fields that require manual migration.
+/// Converts supported YAML metadata and reports, sorted, the fields that require manual
+/// migration.
 ///
 /// Hugo's `featuredImage` key and bare-string image sources become a `featured_image` table.
 pub(crate) fn convert_frontmatter(yaml_str: &str) -> Result<(String, Vec<String>)> {
     let mut value: Value =
         serde_yaml::from_str(yaml_str).context("failed to parse YAML frontmatter")?;
     let mut unsupported = Vec::new();
-    collect_image_fields(&value, &mut unsupported);
-    normalize_featured_image(&mut value, &mut unsupported);
-    let fm: MigrationFrontmatter =
+    if let Some(mapping) = value.as_mapping_mut() {
+        for key in ["featured_image", "featuredImage"] {
+            let Some(image) = mapping.get_mut(key).and_then(Value::as_mapping_mut) else {
+                continue;
+            };
+            retain_fields(
+                image,
+                &format!("{key}."),
+                &FeaturedImage::FIELDS,
+                &mut unsupported,
+            );
+            if let Some(credit) = image.get_mut("credit").and_then(Value::as_mapping_mut) {
+                retain_fields(
+                    credit,
+                    &format!("{key}.credit."),
+                    &ImageCredit::FIELDS,
+                    &mut unsupported,
+                );
+            }
+        }
+        normalize_featured_image(mapping);
+        retain_fields(mapping, "", &Frontmatter::FIELDS, &mut unsupported);
+    }
+    unsupported.sort();
+
+    let fm: Frontmatter =
         serde_yaml::from_value(value).context("failed to parse YAML frontmatter")?;
-    unsupported.extend(fm.unsupported.into_keys());
-    let toml_str =
-        toml::to_string_pretty(&fm.supported).context("failed to serialize TOML frontmatter")?;
+    let toml_str = toml::to_string_pretty(&fm).context("failed to serialize TOML frontmatter")?;
     Ok((toml_str, unsupported))
 }
 
-fn collect_image_fields(value: &Value, unsupported: &mut Vec<String>) {
-    for field in ["featured_image", "featuredImage"] {
-        let Some(image) = value.get(field).and_then(Value::as_mapping) else {
-            continue;
-        };
-        collect_unknown_fields(image, field, &FeaturedImage::FIELDS, unsupported);
-        if let Some(credit) = image.get("credit").and_then(Value::as_mapping) {
-            collect_unknown_fields(
-                credit,
-                &format!("{field}.credit"),
-                &ImageCredit::FIELDS,
-                unsupported,
-            );
-        }
-    }
-}
-
-fn collect_unknown_fields(
-    mapping: &Mapping,
+/// Removes string keys outside `supported`, recording them with `prefix`. Other keys stay so
+/// deserialization rejects them.
+fn retain_fields(
+    mapping: &mut Mapping,
     prefix: &str,
     supported: &[&str],
     unsupported: &mut Vec<String>,
 ) {
-    for key in mapping.keys().filter_map(Value::as_str) {
-        if !supported.contains(&key) {
-            unsupported.push(format!("{prefix}.{key}"));
+    mapping.retain(|key, _| {
+        let Some(name) = key.as_str() else {
+            return true;
+        };
+        let keep = supported.contains(&name);
+        if !keep {
+            unsupported.push(format!("{prefix}{name}"));
         }
-    }
+        keep
+    });
 }
 
-fn normalize_featured_image(value: &mut Value, unsupported: &mut Vec<String>) {
-    let Some(mapping) = value.as_mapping_mut() else {
-        return;
-    };
-    if let Some(image) = mapping.remove("featuredImage") {
-        if mapping.contains_key("featured_image") {
-            unsupported.push("featuredImage".into());
-        } else {
-            mapping.insert("featured_image".into(), image);
-        }
+fn normalize_featured_image(mapping: &mut Mapping) {
+    if !mapping.contains_key("featured_image")
+        && let Some(image) = mapping.remove("featuredImage")
+    {
+        mapping.insert("featured_image".into(), image);
     }
     if let Some(image @ Value::String(_)) = mapping.get_mut("featured_image") {
         let src = std::mem::take(image);
@@ -187,7 +183,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             unsupported,
-            ["featuredImage.width", "featuredImage.credit.custom"]
+            ["featuredImage.credit.custom", "featuredImage.width"]
         );
         assert_eq!(
             toml,
@@ -227,6 +223,7 @@ mod tests {
                   invalid: [yaml
             "},
             "- not a mapping",
+            "1: numeric key",
         ] {
             let err = convert_frontmatter(yaml).unwrap_err();
             assert!(

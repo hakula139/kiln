@@ -1,17 +1,13 @@
 use anyhow::{Result, bail};
 use jiff::Timestamp;
-use serde::{Deserialize, Deserializer, Serialize, de};
+use serde::{Deserialize, Serialize};
 
 /// Delimiter around native TOML frontmatter.
 pub(crate) const TOML_DELIMITER: &str = "+++";
 
 /// Metadata parsed from the TOML frontmatter of a content file.
 #[derive(Debug, Default, PartialEq, Deserialize, Serialize)]
-#[serde(default)]
-#[expect(
-    clippy::manual_non_exhaustive,
-    reason = "the private unit field rejects Hugo's `featuredImage` key during deserialization"
-)]
+#[serde(default, deny_unknown_fields)]
 pub struct Frontmatter {
     #[serde(skip_serializing_if = "String::is_empty")]
     pub title: String,
@@ -38,14 +34,6 @@ pub struct Frontmatter {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub featured_image: Option<FeaturedImage>,
 
-    /// Hugo's `featuredImage` key, rejected so the image is not silently dropped.
-    #[serde(
-        rename = "featuredImage",
-        skip_serializing,
-        deserialize_with = "reject_featured_image_alias"
-    )]
-    pub(crate) featured_image_alias: (),
-
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
 
@@ -62,10 +50,30 @@ pub struct Frontmatter {
     pub heading_numbering: bool,
 }
 
+impl Frontmatter {
+    /// Authored keys, which `kiln convert` keeps while reporting any others.
+    pub(crate) const FIELDS: [&str; 11] = [
+        "title",
+        "description",
+        "slug",
+        "date",
+        "updated",
+        "featured_image",
+        "tags",
+        "draft",
+        "weight",
+        "license",
+        "heading_numbering",
+    ];
+}
+
 /// Featured image metadata. `width` / `height` / `lqip_uri` are stamped by
 /// the build pipeline from the on-disk source, not authored.
 #[derive(Debug, Default, Clone, PartialEq, Deserialize, Serialize)]
-#[serde(expecting = "a `[featured_image]` table with a `src` key")]
+#[serde(
+    deny_unknown_fields,
+    expecting = "a `[featured_image]` table with a `src` key"
+)]
 pub struct FeaturedImage {
     pub src: String,
 
@@ -94,7 +102,7 @@ impl FeaturedImage {
 
 /// Attribution metadata for a featured image.
 #[derive(Debug, Default, Clone, PartialEq, Deserialize, Serialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct ImageCredit {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
@@ -110,12 +118,6 @@ pub struct ImageCredit {
 impl ImageCredit {
     /// Authored keys, which `kiln convert` keeps while reporting any others.
     pub(crate) const FIELDS: [&str; 3] = ["title", "author", "url"];
-}
-
-fn reject_featured_image_alias<'de, D: Deserializer<'de>>(_: D) -> Result<(), D::Error> {
-    Err(de::Error::custom(
-        "`featuredImage` is not supported, use a `[featured_image]` table",
-    ))
 }
 
 /// Deserializes `jiff::Timestamp` from a string.
@@ -292,7 +294,7 @@ mod tests {
         }
     }
 
-    // ── FeaturedImage::FIELDS / ImageCredit::FIELDS ──
+    // ── Frontmatter::FIELDS / FeaturedImage::FIELDS / ImageCredit::FIELDS ──
 
     #[test]
     fn fields_match_authored_keys() {
@@ -309,12 +311,32 @@ mod tests {
             height: None,
             lqip_uri: None,
         };
+        let frontmatter = Frontmatter {
+            title: "Example".into(),
+            description: Some("Summary".into()),
+            slug: Some("example".into()),
+            date: Some(Timestamp::UNIX_EPOCH),
+            updated: Some(Timestamp::UNIX_EPOCH),
+            featured_image: Some(image.clone()),
+            tags: vec!["rust".into()],
+            draft: true,
+            weight: Some(1),
+            license: Some("CC BY 4.0".into()),
+            heading_numbering: true,
+        };
         for (table, fields) in [
             (
-                toml::Table::try_from(&image).unwrap(),
-                FeaturedImage::FIELDS,
+                toml::Table::try_from(&frontmatter).unwrap(),
+                Frontmatter::FIELDS.as_slice(),
             ),
-            (toml::Table::try_from(&credit).unwrap(), ImageCredit::FIELDS),
+            (
+                toml::Table::try_from(&image).unwrap(),
+                FeaturedImage::FIELDS.as_slice(),
+            ),
+            (
+                toml::Table::try_from(&credit).unwrap(),
+                ImageCredit::FIELDS.as_slice(),
+            ),
         ] {
             let mut keys: Vec<_> = table.keys().map(String::as_str).collect();
             let mut fields = fields.to_vec();
@@ -413,26 +435,6 @@ mod tests {
     }
 
     #[test]
-    fn parse_featured_image_ignores_derived_metadata() {
-        let (frontmatter, _) = parse(indoc! {r#"
-            +++
-            [featured_image]
-            src = "photo.webp"
-            width = 800
-            height = 600
-            lqip_uri = "authored-placeholder"
-            +++
-        "#})
-        .unwrap();
-        let image = frontmatter.featured_image.unwrap();
-        assert_eq!(image.src, "photo.webp");
-        assert_eq!(
-            (image.width, image.height, image.lqip_uri),
-            (None, None, None)
-        );
-    }
-
-    #[test]
     fn parse_heading_numbering_disabled() {
         let input = indoc! {"
             +++
@@ -455,7 +457,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_wrong_type_returns_error() {
+    fn parse_invalid_field_returns_error() {
         for (field, expected) in [
             ("date = 42", "a datetime string with UTC offset"),
             (
@@ -464,7 +466,15 @@ mod tests {
             ),
             (
                 r#"featuredImage = "/images/cover.webp""#,
-                "`featuredImage` is not supported, use a `[featured_image]` table",
+                "unknown field `featuredImage`",
+            ),
+            (
+                r#"featured_image = { src = "/a.webp", width = 800 }"#,
+                "unknown field `width`",
+            ),
+            (
+                r#"featured_image = { src = "/a.webp", credit = { artist = "A" } }"#,
+                "unknown field `artist`",
             ),
         ] {
             let input = formatdoc! {"
