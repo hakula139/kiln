@@ -139,13 +139,12 @@ fn build_summary_counts_generated_pages_and_includes_search_time() {
         assert!(total > search, "{stderr}");
 
         assert!(stderr.contains("Search warning"), "{stderr}");
-        assert!(!stderr.contains("999 seconds"), "{stderr}");
-        let stdout = String::from_utf8(output.stdout).unwrap();
         assert_eq!(
-            stdout.contains("999 seconds"),
+            stderr.contains("999 seconds"),
             log_filter.is_some(),
-            "{stdout}"
+            "{stderr}"
         );
+        assert_eq!(String::from_utf8(output.stdout).unwrap(), "");
     }
 }
 
@@ -396,7 +395,7 @@ fn convert_relative_paths_and_warns_with_file_path() {
     );
     let converted = fs::canonicalize(site.path("destination/content/post.md")).unwrap();
     let span = format!("convert{{path={}}}", converted.display());
-    let logs = String::from_utf8_lossy(&output.stdout);
+    let logs = String::from_utf8_lossy(&output.stderr);
     for warning in [
         "frontmatter field requires manual migration",
         "image caption differs from alt",
