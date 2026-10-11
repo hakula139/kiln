@@ -21,7 +21,6 @@ csv = { workspace = true }
 dunce = { workspace = true }
 gh-emoji = { workspace = true }
 hex = { workspace = true }
-http-body-util = { workspace = true }
 image = { workspace = true }
 imagesize = { workspace = true }
 indoc = { workspace = true }
@@ -64,8 +63,8 @@ webp = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }
+futures-util = { workspace = true }
 reqwest = { workspace = true }
-tokio-stream = { workspace = true }
 tokio-tungstenite = { workspace = true }
 
 [[bench]]

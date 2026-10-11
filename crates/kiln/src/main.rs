@@ -55,7 +55,7 @@ enum Command {
         root: PathBuf,
 
         /// Port to serve on.
-        #[arg(long, default_value_t = kiln::DEFAULT_PORT)]
+        #[arg(long, default_value_t = kiln::config::DEFAULT_PORT)]
         port: u16,
 
         /// Open the site in the default browser after starting.

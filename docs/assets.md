@@ -95,6 +95,6 @@ Set host cache policies according to the URL:
 
 ## Live Reload
 
-`kiln serve` watches existing site `assets/`, `content/`, `i18n/`, `static/`, and `templates/` directories, plus theme configuration and corresponding theme source directories. Imported files within those trees trigger rebuilds.
+`kiln serve` watches the site `config.toml` and existing `assets/`, `content/`, `i18n/`, `static/`, and `templates/` directories, plus the active theme's `theme.toml` and corresponding source directories. Imported files within those trees trigger rebuilds. The startup log lists the watched paths.
 
-Restart after changing `output_dir`, creating a top-level source directory that was absent at startup, switching themes, or changing an imported file outside the watched trees.
+Restart after changing `output_dir`, creating a top-level input that was absent at startup, switching themes, or changing an imported file outside the watched trees.

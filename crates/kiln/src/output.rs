@@ -208,6 +208,27 @@ mod tests {
     }
 
     #[test]
+    fn output_transaction_preserves_unowned_neighbors() {
+        let root = tempfile::tempdir().unwrap();
+        let neighbors = ["public.staging", "public.prev"];
+        for name in neighbors {
+            let directory = root.path().join(name);
+            fs::create_dir(&directory).unwrap();
+            fs::write(directory.join("sentinel.txt"), name).unwrap();
+        }
+
+        let transaction = OutputTransaction::new(root.path().join("public")).unwrap();
+        transaction.commit().unwrap();
+
+        for name in neighbors {
+            assert_eq!(
+                fs::read_to_string(root.path().join(name).join("sentinel.txt")).unwrap(),
+                name
+            );
+        }
+    }
+
+    #[test]
     fn output_transaction_abandoned_build_preserves_output() {
         let root = tempfile::tempdir().unwrap();
         let output = root.path().join("public");
