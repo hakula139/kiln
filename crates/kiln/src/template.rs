@@ -107,7 +107,7 @@ impl TemplateEngine {
     ///
     /// Returns an error if the template is missing or rendering fails.
     pub fn render_post(&self, vars: &PostTemplateVars<'_>, assets: &PageAssets) -> Result<String> {
-        self.render_page_template("post.html", vars, &vars.metadata.url, assets)
+        self.render_page_template("post.html", vars, vars.metadata.url, assets)
     }
 
     /// Renders the home page using the `home.html` template.
@@ -116,7 +116,7 @@ impl TemplateEngine {
     ///
     /// Returns an error if the template is missing or rendering fails.
     pub fn render_home(&self, vars: &HomePageVars<'_>) -> Result<String> {
-        self.render_generated("home.html", vars, &vars.metadata.url)
+        self.render_generated("home.html", vars, vars.metadata.url)
     }
 
     /// Renders an archive page using the `archive.html` template.
@@ -125,7 +125,7 @@ impl TemplateEngine {
     ///
     /// Returns an error if the template is missing or rendering fails.
     pub fn render_archive(&self, vars: &ArchivePageVars<'_>) -> Result<String> {
-        self.render_generated("archive.html", vars, &vars.metadata.url)
+        self.render_generated("archive.html", vars, vars.metadata.url)
     }
 
     /// Renders a bucket overview page (e.g., `/tags/`, `/sections/`).
@@ -134,7 +134,7 @@ impl TemplateEngine {
     ///
     /// Returns an error if the template is missing or rendering fails.
     pub fn render_overview(&self, vars: &OverviewPageVars<'_>) -> Result<String> {
-        self.render_generated("overview.html", vars, &vars.metadata.url)
+        self.render_generated("overview.html", vars, vars.metadata.url)
     }
 
     /// Renders the 404 error page using the `404.html` template.
@@ -143,7 +143,7 @@ impl TemplateEngine {
     ///
     /// Returns an error if the template is missing or rendering fails.
     pub fn render_404(&self, vars: &PageMetadata<'_>) -> Result<String> {
-        self.render_generated("404.html", vars, &vars.url)
+        self.render_generated("404.html", vars, vars.url)
     }
 
     /// Tries to render a directive using `directives/<name>.html`.
@@ -368,7 +368,7 @@ mod tests {
             metadata: PageMetadata {
                 title: "Home",
                 description: "Latest pages",
-                url: "https://example.com/page/2/".into(),
+                url: "https://example.com/page/2/",
             },
             pages: vec![&page],
             pagination: PaginationVars::new("/", 2, 3),
@@ -393,7 +393,7 @@ mod tests {
             metadata: PageMetadata {
                 title: "Rust",
                 description: "Description",
-                url: "https://example.com/tags/rust/page/2/".into(),
+                url: "https://example.com/tags/rust/page/2/",
             },
             kind: "tag",
             page_groups: vec![PageGroup {
@@ -422,7 +422,7 @@ mod tests {
             metadata: PageMetadata {
                 title: "All Tags",
                 description: "Description",
-                url: "https://example.com/tags/".into(),
+                url: "https://example.com/tags/",
             },
             kind: "tag",
             buckets: vec![
@@ -472,7 +472,7 @@ mod tests {
         let vars = PageMetadata {
             title: "Not Found",
             description: "Description",
-            url: "https://example.com/404.html".into(),
+            url: "https://example.com/404.html",
         };
         assert_eq!(
             engine.render_404(&vars).unwrap(),
@@ -677,7 +677,7 @@ mod tests {
             metadata: PageMetadata {
                 title: "Post A",
                 description: "Description",
-                url: "https://example.com/post-a/".into(),
+                url: "https://example.com/post-a/",
             },
             featured_image: None,
             license: None,

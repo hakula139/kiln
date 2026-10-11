@@ -16,7 +16,7 @@ pub(super) fn render(
         metadata: PageMetadata {
             title: &title,
             description: &ctx.config.description,
-            url: url.into(),
+            url,
         },
         kind: kind.as_ref(),
         buckets: buckets

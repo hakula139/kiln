@@ -82,7 +82,7 @@ pub fn init_theme(root: &Path, name: &str) -> Result<()> {
     fs::write(
         i18n_dir.join("zh-Hans.toml"),
         indoc! {r#"
-            all_posts = "全部文章"
+            all_posts = "所有文章"
             back_to_top = "回到顶部"
             table_of_contents = "目录"
         "#},
@@ -128,7 +128,7 @@ mod tests {
         assert_eq!(en_i18n.t("all_posts").as_ref(), "All Posts");
         let zh_i18n =
             I18n::load(site.path(), Some(&theme_dir), &"zh-Hans".parse().unwrap()).unwrap();
-        assert_eq!(zh_i18n.t("all_posts").as_ref(), "全部文章");
+        assert_eq!(zh_i18n.t("all_posts").as_ref(), "所有文章");
     }
 
     #[test]

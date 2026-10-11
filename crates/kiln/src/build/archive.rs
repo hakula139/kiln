@@ -17,7 +17,7 @@ pub(super) fn render(
         metadata: PageMetadata {
             title: &bucket.name,
             description: &ctx.config.description,
-            url: url.into(),
+            url,
         },
         kind: bucket.kind.as_ref(),
         page_groups: group_by_year(page.pages),

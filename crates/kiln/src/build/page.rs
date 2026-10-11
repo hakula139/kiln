@@ -31,7 +31,7 @@ pub(super) fn render(ctx: &BuildContext, prepared: &PreparedPage) -> Result<Stri
         metadata: PageMetadata {
             title: &prepared.summary.title,
             description: &prepared.summary.description,
-            url: prepared.summary.url.as_str().into(),
+            url: &prepared.summary.url,
         },
         featured_image: prepared.summary.featured_image.as_ref(),
         license: page.frontmatter.license.as_deref(),

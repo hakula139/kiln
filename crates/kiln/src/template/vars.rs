@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use serde::Serialize;
 
 use crate::content::frontmatter::FeaturedImage;
@@ -10,7 +8,7 @@ use crate::pagination::PaginationVars;
 pub struct PageMetadata<'a> {
     pub title: &'a str,
     pub description: &'a str,
-    pub url: Cow<'a, str>,
+    pub url: &'a str,
 }
 
 /// Template variables for rendering a post page.
