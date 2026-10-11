@@ -134,14 +134,14 @@ fn build_sitemap_only_contains_emitted_html() {
 
 #[test]
 fn build_rejects_conflicting_content_generated_and_static_routes() {
-    for destination in [
-        "content/index.md",
-        "content/posts/index.md",
-        "content/tags/index.md",
-        "content/page/2/index.md",
-        "static/posts/index.html",
-        "static/sitemap.xml",
-        "content/posts/one/index.md",
+    for (destination, owner) in [
+        ("content/index.md", "home page 1"),
+        ("content/posts/index.md", "all_posts page 1"),
+        ("content/tags/index.md", "tags overview"),
+        ("content/page/2/index.md", "home page 2"),
+        ("static/posts/index.html", "all_posts page 1"),
+        ("static/sitemap.xml", "generated sitemap.xml"),
+        ("content/posts/one/index.md", "one.md"),
     ] {
         let site = route_site();
         write_post(&site, "content/posts/one.md", "One");
@@ -150,9 +150,10 @@ fn build_rejects_conflicting_content_generated_and_static_routes() {
 
         let error = site.build().unwrap_err();
 
+        let message = format!("{error:#}");
         assert!(
-            format!("{error:#}").contains("collision"),
-            "{destination}: {error:#}"
+            message.starts_with("output route collision") && message.contains(owner),
+            "{destination}: {message}"
         );
     }
 }

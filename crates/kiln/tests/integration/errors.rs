@@ -23,6 +23,22 @@ fn build_invalid_config_returns_error() {
 }
 
 #[test]
+fn build_invalid_render_options_returns_error() {
+    let site = TestSite::new(indoc! {r#"
+        [params]
+        emojis = "yes"
+    "#});
+
+    let err = site.build().unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "failed to parse render options from [params]"
+    );
+    assert!(format!("{err:#}").contains("invalid type: string \"yes\", expected a boolean"));
+    assert!(!site.path("public").exists());
+}
+
+#[test]
 fn build_missing_templates_returns_error() {
     let site = TestSite::empty();
     site.write("config.toml", "");
