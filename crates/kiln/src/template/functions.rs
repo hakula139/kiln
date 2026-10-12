@@ -134,17 +134,20 @@ pub(super) fn tpl_register_script(
         .downcast_object::<AssetsHandle>()
         .ok_or_else(|| invalid("__assets is not a recognized asset handle"))?;
 
-    let load_str: Option<&str> = kwargs.get("load")?;
+    let load: Option<Value> = kwargs.get("load")?;
     let module: bool = kwargs.get::<Option<bool>>("module")?.unwrap_or(false);
     kwargs.assert_all_used()?;
 
-    let load = match load_str {
+    let load = match load {
         None => LoadStrategy::Defer,
-        Some(s) => s.parse::<LoadStrategy>().map_err(|_| {
-            invalid(format!(
-                r#"register_script: load must be one of "defer", "async", "sync"; got "{s}""#,
-            ))
-        })?,
+        Some(value) => value
+            .as_str()
+            .and_then(|s| s.parse::<LoadStrategy>().ok())
+            .ok_or_else(|| {
+                invalid(format!(
+                    r#"register_script: load must be one of "defer", "async", "sync"; got {value:?}"#,
+                ))
+            })?,
     };
 
     let url = tpl_asset_url(state, manifest, url)?;
@@ -500,7 +503,7 @@ mod tests {
             ),
             (
                 r#"{{ register_script("/x.js", load=1) }}"#,
-                "value is not a string",
+                r#"register_script: load must be one of "defer", "async", "sync"; got 1"#,
             ),
             (
                 r#"{{ register_script("/x.js", module="yes") }}"#,
