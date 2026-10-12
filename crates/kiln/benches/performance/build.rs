@@ -113,14 +113,22 @@ fn verify_listings(output: &Path, pages: usize) {
     expected_posts.truncate(PAGINATE);
 
     let selector = Selector::parse("a").unwrap();
-    for path in [
-        "index.html",
-        "posts/index.html",
-        "posts/notes/index.html",
-        "tags/common/index.html",
+    let heading_selector = Selector::parse("h1").unwrap();
+    for (path, heading) in [
+        ("index.html", None),
+        ("posts/index.html", None),
+        ("posts/notes/index.html", Some("Notes")),
+        ("tags/common/index.html", Some("Common")),
     ] {
         let html = fs::read_to_string(output.join(path)).unwrap();
         let document = Html::parse_document(&html);
+        if let Some(heading) = heading {
+            let headings: Vec<String> = document
+                .select(&heading_selector)
+                .map(|item| item.text().collect())
+                .collect();
+            assert_eq!(headings, [heading], "{path}");
+        }
         let posts: Vec<_> = document
             .select(&selector)
             .map(|post| {
@@ -132,8 +140,6 @@ fn verify_listings(output: &Path, pages: usize) {
             .collect();
         assert_eq!(posts, expected_posts, "{path}");
     }
-    let html = fs::read_to_string(output.join("tags/common/index.html")).unwrap();
-    assert!(html.contains("<h1>Common</h1>"), "{html}");
     let html = fs::read_to_string(output.join("sections/index.html")).unwrap();
     let document = Html::parse_document(&html);
     let sections: Vec<_> = document.select(&selector).collect();

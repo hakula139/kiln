@@ -10,7 +10,7 @@ mod page;
 mod routes;
 mod sitemap;
 
-use std::fmt::Write;
+use std::fmt::Write as _;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
