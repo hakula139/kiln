@@ -75,7 +75,7 @@ The engine supplies content and template contracts. [IgnIt](https://github.com/h
 - Output validation protects the project root, source trees and repository metadata from being overwritten. Route planning reports collisions between content, generated pages and public files before publishing.
 - Builds prepare output separately and publish it after rendering and optional search indexing succeed, preserving the previous output when a build fails.
 - `kiln serve` provides local preview, directory redirects, a custom 404 response and browser live reload after successful rebuilds. Preview builds use the local server URL and skip minification.
-- Rust unit / integration tests cover rendering and build behavior. [Benchmarks](benchmarks.md) cover representative rendering, discovery and full-build workloads.
+- Rust unit / integration tests cover rendering and build behavior. [Benchmarks](benchmarks.md) cover rendering, shortcode, image, stylesheet and full-build workloads.
 - Cargo, Nix and npm installation paths. Nix provides the engine, Pagefind and the Tailwind processor. npm distributes base / extended variants for Linux x86_64, Apple Silicon and Windows x86_64.
 
 Constraints:
