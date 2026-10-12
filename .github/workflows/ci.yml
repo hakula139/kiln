@@ -85,7 +85,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: '24'
+          node-version: 24
 
       - name: Install build tools
         run: npm install --global @kiln-ssg/tailwindcss@0.1.2 pagefind@1.5.2
