@@ -44,4 +44,4 @@ For API changes or separate worktrees, use the `Benchmarks` workflow so each rev
 
 ## Adding workloads
 
-Add a module under `crates/kiln/benches/performance/` and register it in `main.rs`. Reuse fixtures and public APIs, validate behavior before timing, and keep setup outside the timed closure. Separate cold initialization from cached work. Use the build group's flat sampling for expensive cases.
+Add a module under `crates/kiln/benches/performance/` and register it in `main.rs`. Reuse fixtures and public APIs, validate behavior before timing, and keep setup outside the timed closure. Separate cold initialization from cached work. Create groups for expensive cases with `build::flat_group`.

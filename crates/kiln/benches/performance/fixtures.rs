@@ -1,9 +1,16 @@
-use std::fmt::Write;
+use std::fmt::Write as _;
 use std::fs;
 use std::path::Path;
 
 use indoc::{formatdoc, indoc};
 use tempfile::TempDir;
+
+use kiln::config::Config;
+use kiln::i18n::{I18n, Language};
+use kiln::render::PageResources;
+use kiln::render::lqip::ImageResolver;
+use kiln::static_assets::StaticAssetManifest;
+use kiln::template::TemplateEngine;
 
 use super::test_fixtures::{git, git_commit};
 
@@ -99,6 +106,52 @@ impl Site {
     }
 }
 
+/// Owns an empty site with the template engine, assets and image resolver that rendering borrows.
+pub(super) struct RenderFixture {
+    _site: Site,
+    manifest: StaticAssetManifest,
+    engine: TemplateEngine,
+    resolver: ImageResolver,
+}
+
+impl RenderFixture {
+    pub(super) fn new() -> Self {
+        let site = Site::new(0, PROSE, 0);
+        let config = Config::load(site.root()).unwrap();
+        let i18n = I18n::load(site.root(), None, &Language::default()).unwrap();
+        let manifest = StaticAssetManifest::default();
+        let engine = TemplateEngine::new(
+            Some(&site.root().join("templates")),
+            None,
+            &config,
+            &i18n,
+            &manifest,
+        )
+        .unwrap();
+        let resolver = ImageResolver::new(&site.root().join("static"), config.image);
+        Self {
+            _site: site,
+            manifest,
+            engine,
+            resolver,
+        }
+    }
+
+    pub(super) fn engine(&self) -> &TemplateEngine {
+        &self.engine
+    }
+
+    /// Returns resources for a page at the site root without a bundle directory.
+    pub(super) fn resources(&self) -> PageResources<'_> {
+        PageResources {
+            source_dir: None,
+            images: &self.resolver,
+            assets: &self.manifest,
+            page_url: "/",
+        }
+    }
+}
+
 /// Generates string settings outside the supported rendering options.
 pub(super) fn extra_params(count: usize) -> impl Iterator<Item = (String, toml::Value)> {
     (0..count).map(|index| {
@@ -130,7 +183,7 @@ fn write_templates(root: &Path) {
         (
             "archive",
             indoc! {r#"
-                <!DOCTYPE html><html><body><h1>{{ name }}</h1>
+                <!DOCTYPE html><html><body><h1>{{ title }}</h1>
                 {% for group in page_groups %}{% for page in group.pages %}
                 <a href="{{ page.url }}">{{ page.title }}</a>
                 {% endfor %}{% endfor %}
