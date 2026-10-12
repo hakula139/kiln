@@ -1,51 +1,11 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:recommended"],
-  "timezone": "Asia/Shanghai",
-  "nix": {
-    "enabled": true
-  },
-  "lockFileMaintenance": {
-    "enabled": true,
-    "automerge": true,
-    "schedule": ["* * * * 1"]
-  },
-  "prConcurrentLimit": 1,
-  "dependencyDashboard": false,
-  "dependencyDashboardApproval": false,
-  "assignees": ["hakula139"],
-  "assignAutomerge": true,
-  "automergeStrategy": "squash",
-  "labels": ["dependencies"],
-  "semanticCommits": "enabled",
+  "extends": ["github>hakula139/nixos-config//.github/renovate-preset"],
   "packageRules": [
-    {
-      "matchManagers": ["cargo"],
-      "matchIsBreaking": false,
-      "groupName": "Rust dependencies",
-      "automerge": true
-    },
-    {
-      "matchManagers": ["npm"],
-      "matchIsBreaking": false,
-      "groupName": "Node dependencies",
-      "automerge": true
-    },
-    {
-      "matchManagers": ["nix"],
-      "groupName": "flake inputs",
-      "semanticCommitScope": "flake",
-      "automerge": true
-    },
-    {
-      "matchManagers": ["github-actions"],
-      "groupName": "GitHub Actions"
-    },
     {
       "matchPackageNames": ["/^swc_/"],
       "groupName": "swc",
-      "separateMajorMinor": false,
-      "automerge": false
+      "separateMajorMinor": false
     }
   ]
 }
