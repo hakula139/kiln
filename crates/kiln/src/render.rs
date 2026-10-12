@@ -170,7 +170,7 @@ mod tests {
     }
 
     #[test]
-    fn type_mismatch_returns_error() {
+    fn rejects_invalid_option_values() {
         for (input, key, expected) in [
             (
                 r#"emojis = "yes""#,

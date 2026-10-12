@@ -878,7 +878,7 @@ mod tests {
     }
 
     #[test]
-    fn invalid_heading_numbering_start_returns_error() {
+    fn rejects_invalid_heading_numbering_start() {
         for attribute in [
             "numbering-start=-1",
             "numbering-start=1.5",
@@ -906,7 +906,7 @@ mod tests {
     }
 
     #[test]
-    fn heading_numbering_overflow_returns_error() {
+    fn rejects_heading_numbering_overflow() {
         let maximum = usize::MAX;
         let input = formatdoc! {"
             ## First {{numbering-start={maximum}}}
@@ -920,7 +920,7 @@ mod tests {
     }
 
     #[test]
-    fn duplicate_heading_number_returns_error() {
+    fn rejects_duplicate_heading_number() {
         let error = render_numbered(indoc! {"
             ## Section
             ### First
@@ -1121,32 +1121,6 @@ mod tests {
     // ── render_directive_block ──
 
     #[test]
-    fn callout_template_receives_validated_options() {
-        let dir = tempfile::tempdir().unwrap();
-        let directives = dir.path().join("directives");
-        fs::create_dir_all(&directives).unwrap();
-        fs::write(
-            directives.join("callout.html"),
-            "{{ type }}|{{ title }}|{{ open }}|{{ id }}|{{ classes | join(' ') }}|{{ body_html | safe }}",
-        )
-        .unwrap();
-
-        let engine = test_site_engine(dir.path());
-        let page = render_with(
-            indoc! {"
-                ::: callout {#my-note .wide type=Tip open=false}
-                Hello **world**.
-                :::
-            "},
-            &engine,
-        );
-        assert_eq!(
-            page.content_html,
-            "tip|None|False|my-note|wide|<p>Hello <strong>world</strong>.</p>\n"
-        );
-    }
-
-    #[test]
     fn uses_directive_template() {
         let (_dir, engine) = directive_engine(
             "my-widget",
@@ -1169,6 +1143,32 @@ mod tests {
             page.content_html.contains("<strong>content</strong>"),
             "body should be markdown-rendered, html:\n{}",
             page.content_html
+        );
+    }
+
+    #[test]
+    fn callout_template_receives_validated_options() {
+        let dir = tempfile::tempdir().unwrap();
+        let directives = dir.path().join("directives");
+        fs::create_dir_all(&directives).unwrap();
+        fs::write(
+            directives.join("callout.html"),
+            "{{ type }}|{{ title }}|{{ open }}|{{ id }}|{{ classes | join(' ') }}|{{ body_html | safe }}",
+        )
+        .unwrap();
+
+        let engine = test_site_engine(dir.path());
+        let page = render_with(
+            indoc! {"
+                ::: callout {#my-note .wide type=Tip open=false}
+                Hello **world**.
+                :::
+            "},
+            &engine,
+        );
+        assert_eq!(
+            page.content_html,
+            "tip|None|False|my-note|wide|<p>Hello <strong>world</strong>.</p>\n"
         );
     }
 
@@ -1266,7 +1266,7 @@ mod tests {
     }
 
     #[test]
-    fn invalid_callout_returns_error() {
+    fn rejects_invalid_callouts() {
         let callout = |name| {
             formatdoc! {"
                 ::: {name} {{type=warn}}

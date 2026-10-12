@@ -495,7 +495,7 @@ mod tests {
     }
 
     #[test]
-    fn heading_ids_and_titles() {
+    fn derives_heading_ids_and_toc_titles() {
         for (input, id, title) in [
             ("## Introduction {#custom-id}", "custom-id", "Introduction"),
             (
@@ -710,7 +710,7 @@ mod tests {
     }
 
     #[test]
-    fn footnotes_inline_markup_in_reference_paragraph() {
+    fn keeps_inline_markup_around_footnote_references() {
         let md = indoc! {"
             Math $x$[^1] and ![icon](https://example.com/a.png)[^1].
 
@@ -971,7 +971,7 @@ mod tests {
     }
 
     #[test]
-    fn block_image_with_title() {
+    fn block_image_keeps_title_and_captions_alt() {
         let md = "![alt text](https://example.com/img.png \"My Title\")\n";
         let out = render(md);
         assert!(
@@ -998,7 +998,7 @@ mod tests {
     }
 
     #[test]
-    fn block_image_with_formatted_alt() {
+    fn block_image_flattens_formatted_alt() {
         let md = "![*bold* alt](https://example.com/img.png)\n";
         let out = render(md);
         assert!(
@@ -1020,7 +1020,7 @@ mod tests {
     }
 
     #[test]
-    fn block_image_with_soft_break_in_alt() {
+    fn block_image_turns_alt_soft_breaks_into_spaces() {
         let md = indoc! {"
             ![line1
             line2](https://example.com/img.png)
@@ -1245,7 +1245,7 @@ mod tests {
     }
 
     #[test]
-    fn missing_or_undecodable_site_image_returns_error() {
+    fn rejects_missing_or_undecodable_site_images() {
         for (input, expected) in [
             (
                 indoc! {"

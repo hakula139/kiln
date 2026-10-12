@@ -137,7 +137,7 @@ mod tests {
     }
 
     #[test]
-    fn invalid_name_returns_error() {
+    fn rejects_invalid_names() {
         let root = tempfile::tempdir().unwrap();
         for name in [
             "",
@@ -159,7 +159,7 @@ mod tests {
     }
 
     #[test]
-    fn existing_dir_returns_error() {
+    fn rejects_existing_dir() {
         let root = tempfile::tempdir().unwrap();
         init_theme(root.path(), "my-theme").unwrap();
 
@@ -172,7 +172,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn unwritable_root_returns_error() {
+    fn reports_unwritable_root() {
         use crate::test_utils::PermissionGuard;
 
         let root = tempfile::tempdir().unwrap();
