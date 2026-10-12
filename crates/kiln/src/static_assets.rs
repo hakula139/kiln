@@ -335,6 +335,29 @@ mod tests {
         );
     }
 
+    // macOS APFS rejects non-UTF-8 filenames, while Linux ext4 and btrfs accept them.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn fingerprint_non_utf8_stem_returns_error() {
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = Path::new(OsStr::from_bytes(b"\xff\xfe.css"));
+        fs::write(dir.path().join(path), "abc").unwrap();
+
+        let err = StaticAssetManifest::default()
+            .fingerprint(dir.path(), path)
+            .unwrap_err()
+            .to_string();
+
+        assert!(
+            err.contains("static asset has no UTF-8 file stem"),
+            "got: {err}"
+        );
+        assert_eq!(fs::read(dir.path().join(path)).unwrap(), b"abc");
+    }
+
     #[cfg(unix)]
     #[test]
     fn fingerprint_read_only_parent_returns_error() {

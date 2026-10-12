@@ -315,7 +315,7 @@ fn sole_term(slug: &str, terms: SlugGroup) -> Result<(String, Vec<usize>)> {
 
 #[cfg(test)]
 mod tests {
-    use indoc::formatdoc;
+    use indoc::{formatdoc, indoc};
 
     use super::*;
     use crate::build::listing::prepared_page;
@@ -466,6 +466,39 @@ mod tests {
                 .map(|(_, slug, _, _)| *slug)
                 .collect::<Vec<_>>(),
             ["common", "alpha", "alpha++", "zebra"]
+        );
+    }
+
+    #[test]
+    fn collect_sorts_equally_named_tags_by_slug() {
+        let slugs = ["epsilon", "delta", "gamma", "beta", "alpha"];
+        let pages = [tagged("Post 1", &slugs)];
+        let taxonomy = collect(&pages, |content| {
+            for slug in slugs {
+                write_test_file(
+                    content,
+                    &format!("tags/{slug}/_index.md"),
+                    indoc! {r#"
+                        +++
+                        title = "Shared"
+                        +++
+                    "#},
+                );
+            }
+        });
+
+        assert_eq!(
+            summarize(&taxonomy)[1..]
+                .iter()
+                .map(|(_, slug, name, _)| (*slug, *name))
+                .collect::<Vec<_>>(),
+            [
+                ("alpha", "Shared"),
+                ("beta", "Shared"),
+                ("delta", "Shared"),
+                ("epsilon", "Shared"),
+                ("gamma", "Shared"),
+            ]
         );
     }
 

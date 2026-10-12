@@ -561,6 +561,11 @@ mod tests {
             let error = format!("{:#}", Config::load(root.path()).unwrap_err());
             assert!(error.contains(expected), "{contents}: {error}");
         }
+
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir(root.path().join("config.toml")).unwrap();
+        let error = format!("{:#}", Config::load(root.path()).unwrap_err());
+        assert!(error.contains("failed to read"), "{error}");
     }
 
     #[test]

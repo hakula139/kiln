@@ -303,6 +303,25 @@ mod tests {
     }
 
     #[test]
+    fn new_unreadable_site_template_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let site_dir = dir.path().join("site");
+        let theme_dir = dir.path().join("theme");
+        fs::create_dir_all(site_dir.join("post.html")).unwrap();
+        fs::create_dir_all(&theme_dir).unwrap();
+        fs::write(theme_dir.join("post.html"), "from theme").unwrap();
+
+        let engine = test_engine_with(Some(&site_dir), Some(&theme_dir), &Config::default());
+
+        let err = engine
+            .env
+            .get_template("post.html")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("could not read template"), "got: {err}");
+    }
+
+    #[test]
     fn new_without_directories_returns_error() {
         let err = new_engine(None, None).unwrap_err().to_string();
         assert!(

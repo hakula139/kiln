@@ -39,6 +39,45 @@ fn build_invalid_render_options_returns_error() {
 }
 
 #[test]
+fn build_invalid_content_returns_error() {
+    type BreakSite = fn(&TestSite);
+    let cases: &[(&str, BreakSite)] = &[
+        ("invalid frontmatter in", |site| {
+            site.page(
+                "posts/broken",
+                indoc! {"
+                    +++
+                    title = 1
+                    +++
+                "},
+            );
+        }),
+        (r#"tag slug collision on "alpha-beta""#, |site| {
+            for (slug, tag) in [("a", "Alpha Beta"), ("b", "Alpha & Beta")] {
+                site.page(
+                    &format!("posts/{slug}"),
+                    &formatdoc! {r#"
+                        +++
+                        title = "Post"
+                        tags = ["{tag}"]
+                        +++
+                    "#},
+                );
+            }
+        }),
+    ];
+    for &(expected, break_site) in cases {
+        let site = TestSite::new("");
+        break_site(&site);
+
+        let err = format!("{:#}", site.build().unwrap_err());
+
+        assert!(err.contains(expected), "{err}");
+        assert!(!site.path("public").exists(), "{expected}");
+    }
+}
+
+#[test]
 fn build_missing_templates_returns_error() {
     let site = TestSite::empty();
     site.write("config.toml", "");
