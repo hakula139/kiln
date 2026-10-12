@@ -559,7 +559,7 @@ mod tests {
     // ── minify_static_assets ──
 
     #[test]
-    fn minify_static_assets_skips_html() {
+    fn skips_html() {
         let dir = tempfile::tempdir().unwrap();
         let html = "<html>  <body>  text  </body>  </html>";
         let css = ".foo { color: #ff0000; margin: 0px; }\n";
@@ -582,7 +582,7 @@ mod tests {
     // ── minify_html ──
 
     #[test]
-    fn minify_html_skips_css_and_js() {
+    fn skips_css_and_js() {
         let dir = tempfile::tempdir().unwrap();
         let html = "<html>  <body>  text  </body>  </html>";
         let css = ".foo { color: #ff0000; margin: 0px; }\n";
@@ -605,7 +605,7 @@ mod tests {
     // ── minify_matching ──
 
     #[test]
-    fn minify_matching_processes_mixed_tree() {
+    fn processes_mixed_tree() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
 
@@ -678,7 +678,7 @@ mod tests {
     }
 
     #[test]
-    fn minify_matching_handles_deeply_nested_input() {
+    fn handles_deeply_nested_input() {
         let dir = tempfile::tempdir().unwrap();
         let chain = format!(
             "var a = 1;\nconsole.log({});\n",
@@ -706,7 +706,7 @@ mod tests {
     }
 
     #[test]
-    fn minify_matching_preserves_smaller_original() {
+    fn preserves_smaller_original() {
         let dir = tempfile::tempdir().unwrap();
         let original = "console.log(1)";
         fs::write(dir.path().join("app.js"), original).unwrap();
@@ -724,7 +724,7 @@ mod tests {
     }
 
     #[test]
-    fn minify_matching_tolerates_broken_asset() {
+    fn tolerates_broken_asset() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
 
@@ -747,7 +747,7 @@ mod tests {
     }
 
     #[test]
-    fn minify_matching_empty_directory_returns_zero_stats() {
+    fn empty_directory_yields_zero_stats() {
         let dir = tempfile::tempdir().unwrap();
         let stats = minify_matching(dir.path(), |_| true).unwrap();
         assert_eq!(stats.files_processed, 0);
@@ -759,7 +759,7 @@ mod tests {
     // ── classify ──
 
     #[test]
-    fn classify_maps_extensions_case_insensitively() {
+    fn maps_extensions_case_insensitively() {
         for (path, expected) in [
             ("a/index.html", Some(AssetKind::Html)),
             ("a/page.htm", Some(AssetKind::Html)),
@@ -784,7 +784,7 @@ mod tests {
     // ── minify_html_bytes ──
 
     #[test]
-    fn minify_html_bytes_strips_whitespace_and_comments() {
+    fn strips_whitespace_and_comments() {
         let input = indoc! {r"
             <!DOCTYPE html>
             <html>
@@ -804,7 +804,7 @@ mod tests {
     }
 
     #[test]
-    fn minify_html_bytes_keeps_significant_whitespace() {
+    fn keeps_significant_whitespace() {
         let input = indoc! {r#"
             <div>
               <a href="/a">One</a>
@@ -823,7 +823,7 @@ mod tests {
     }
 
     #[test]
-    fn minify_html_bytes_minifies_inline_scripts_by_type() {
+    fn minifies_inline_scripts_by_type() {
         let input = indoc! {r#"
             <script type="application/ld+json">
               { "@type": "Article", "headline": "A </b> B" }
@@ -847,7 +847,7 @@ mod tests {
     }
 
     #[test]
-    fn minify_html_bytes_minifies_inline_css_with_lightningcss() {
+    fn minifies_inline_css_with_lightningcss() {
         let input = indoc! {r#"
             <style>
               .a { color: #ff0000; margin: 0px 0px; }
@@ -867,7 +867,7 @@ mod tests {
     }
 
     #[test]
-    fn minify_html_bytes_escapes_only_closing_raw_text_end_tags() {
+    fn escapes_only_closing_raw_text_end_tags() {
         let input = indoc! {r#"
             <style>
               .a::before { content: "\3c /style>"; }
@@ -905,7 +905,7 @@ mod tests {
     }
 
     #[test]
-    fn minify_html_bytes_invalid_utf8_returns_none() {
+    fn skips_invalid_utf8_html() {
         assert_eq!(
             minify_html_bytes(&[0xff, 0xfe, 0xfd], Path::new("broken.html")),
             None
@@ -915,7 +915,7 @@ mod tests {
     // ── has_minified_raw_text ──
 
     #[test]
-    fn has_minified_raw_text_mirrors_swc_selection() {
+    fn mirrors_swc_raw_text_selection() {
         let cases = [
             ("<!doctype html><script></script>", true),
             (r#"<script type=" Module "></script>"#, true),
@@ -954,13 +954,13 @@ mod tests {
     // ── minify_css_bytes ──
 
     #[test]
-    fn minify_css_bytes_invalid_utf8_returns_none() {
+    fn skips_invalid_utf8_css() {
         let path = PathBuf::from("broken.css");
         assert_eq!(minify_css_bytes(&[0xff, 0xfe, 0xfd], &path), None);
     }
 
     #[test]
-    fn minify_css_bytes_parse_error_returns_none() {
+    fn skips_unparsable_css() {
         let path = PathBuf::from("broken.css");
         // `@@@` is lexically invalid, and lightningcss fails with an unexpected-end-of-input error.
         assert_eq!(minify_css_bytes(b"@@@", &path), None);
@@ -969,7 +969,7 @@ mod tests {
     // ── minify_js_bytes ──
 
     #[test]
-    fn minify_js_bytes_preserves_classic_globals() {
+    fn preserves_classic_globals() {
         let input = indoc! {r"
             var sharedValue = 1 + 2;
             function readSharedValue() {
@@ -984,14 +984,14 @@ mod tests {
     }
 
     #[test]
-    fn minify_js_bytes_detects_module_syntax_in_scripts() {
+    fn detects_module_syntax_in_scripts() {
         let output =
             minify_js_bytes(b"export const value = 1 + 2;", Path::new("app.js"), false).unwrap();
         assert_eq!(String::from_utf8(output).unwrap(), "export const value=3;");
     }
 
     #[test]
-    fn minify_js_bytes_parses_modules_in_strict_mode() {
+    fn parses_modules_in_strict_mode() {
         let source = b"with (scope) { run(); }";
         let output = minify_js_bytes(source, Path::new("app.js"), false).unwrap();
         assert_eq!(String::from_utf8(output).unwrap(), "with(scope)run();");
@@ -999,7 +999,7 @@ mod tests {
     }
 
     #[test]
-    fn minify_js_bytes_keeps_module_functions_block_scoped() {
+    fn keeps_module_functions_block_scoped() {
         let input = indoc! {"
             export const marker = 1;
             { function blockScoped() { return 2; } }
@@ -1013,13 +1013,13 @@ mod tests {
     }
 
     #[test]
-    fn minify_js_bytes_invalid_utf8_returns_none() {
+    fn skips_invalid_utf8_js() {
         let path = PathBuf::from("broken.js");
         assert_eq!(minify_js_bytes(&[0xff, 0xfe, 0xfd], &path, false), None);
     }
 
     #[test]
-    fn minify_js_bytes_parse_error_returns_none() {
+    fn skips_unparsable_js() {
         let path = PathBuf::from("broken.js");
         assert_eq!(minify_js_bytes(b"function () { ]]]", &path, false), None);
     }
@@ -1027,7 +1027,7 @@ mod tests {
     // ── format_bytes ──
 
     #[test]
-    fn format_bytes_picks_human_unit() {
+    fn picks_human_unit() {
         assert_eq!(format_bytes(0), "0 B");
         assert_eq!(format_bytes(512), "512 B");
         assert_eq!(format_bytes(1024), "1.0 KB");

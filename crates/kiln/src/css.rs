@@ -388,7 +388,7 @@ mod tests {
     // ── Stylesheets::page_css_url ──
 
     #[test]
-    fn page_css_url_preserves_base_path_and_encoded_output() {
+    fn preserves_base_path_and_encoded_output() {
         let root = tempfile::tempdir().unwrap();
         write_test_file(
             root.path(),
@@ -438,7 +438,7 @@ mod tests {
     // ── compile_plain ──
 
     #[test]
-    fn compile_plain_preserves_external_imports_and_urls() {
+    fn preserves_external_imports_and_urls() {
         let root = tempfile::tempdir().unwrap();
         write_test_file(
             root.path(),
@@ -470,7 +470,7 @@ mod tests {
     }
 
     #[test]
-    fn compile_plain_encodes_published_paths_and_preserves_url_suffixes() {
+    fn encodes_published_paths_and_preserves_url_suffixes() {
         let root = tempfile::tempdir().unwrap();
         write_test_file(
             root.path(),
@@ -497,7 +497,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn compile_plain_preserves_static_symlink_paths() {
+    fn preserves_static_symlink_paths() {
         let root = tempfile::tempdir().unwrap();
         write_test_file(
             root.path(),
@@ -536,7 +536,7 @@ mod tests {
     // ── run_in_order ──
 
     #[test]
-    fn run_in_order_limits_running_items_and_preserves_order() {
+    fn limits_running_items_and_preserves_order() {
         let events = RefCell::new(Vec::new());
         let finished = run_in_order(
             0..4,
@@ -564,7 +564,7 @@ mod tests {
     // ── published_url ──
 
     #[test]
-    fn published_url_private_and_unpublished_assets_returns_error() {
+    fn rejects_private_and_unpublished_assets() {
         let root = tempfile::tempdir().unwrap();
         write_test_file(root.path(), "content/example/assets/css/_src/style.css", "");
         write_test_file(root.path(), "content/example/_secret.svg", "private");

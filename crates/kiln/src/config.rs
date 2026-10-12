@@ -363,7 +363,7 @@ mod tests {
     // ── Config::load ──
 
     #[test]
-    fn load_missing_file_uses_defaults() {
+    fn missing_file_uses_defaults() {
         let root = tempfile::tempdir().unwrap();
         let config = Config::load(root.path()).unwrap();
         assert_eq!(
@@ -382,7 +382,7 @@ mod tests {
     }
 
     #[test]
-    fn load_reads_tables_and_sorts_menu_groups() {
+    fn reads_tables_and_sorts_menu_groups() {
         let root = tempfile::tempdir().unwrap();
         write_test_file(
             root.path(),
@@ -490,7 +490,7 @@ mod tests {
     }
 
     #[test]
-    fn load_accepts_offset_and_posix_time_zones() {
+    fn accepts_offset_and_posix_time_zones() {
         let date: jiff::Timestamp = "2026-07-01T00:00:00Z".parse().unwrap();
         for (time_zone, offset) in [("+08:00", "+08"), ("EST5EDT,M3.2.0,M11.1.0", "-04")] {
             let root = tempfile::tempdir().unwrap();
@@ -505,7 +505,7 @@ mod tests {
     }
 
     #[test]
-    fn load_invalid_config_returns_error() {
+    fn rejects_invalid_config() {
         for (contents, expected) in [
             ("{{invalid toml", "failed to parse config.toml"),
             ("enable_gitinfo = true", "unknown field `enable_gitinfo`"),
@@ -569,7 +569,7 @@ mod tests {
     }
 
     #[test]
-    fn load_resolves_pagination_overrides() {
+    fn resolves_pagination_overrides() {
         for (params, expected) in [
             ("", (10, 10, 10)),
             ("paginate = 6", (6, 6, 6)),
@@ -597,7 +597,7 @@ mod tests {
     }
 
     #[test]
-    fn load_theme_merges_scalar_and_nested_params() {
+    fn merges_theme_scalar_and_nested_params() {
         let root = tempfile::tempdir().unwrap();
         write_test_file(
             root.path(),
@@ -656,7 +656,7 @@ mod tests {
     }
 
     #[test]
-    fn load_css_inherits_theme_and_accepts_explicit_site_override() {
+    fn css_inherits_theme_and_accepts_explicit_site_override() {
         let root = tempfile::tempdir().unwrap();
         write_test_file(
             root.path(),
@@ -686,7 +686,7 @@ mod tests {
     }
 
     #[test]
-    fn load_invalid_theme_returns_error() {
+    fn rejects_invalid_theme() {
         for (theme, theme_toml, expected) in [
             ("../outside", None, "single directory name"),
             ("C:theme", None, "single directory name"),
@@ -718,7 +718,7 @@ mod tests {
     }
 
     #[test]
-    fn load_param_type_mismatch_returns_error() {
+    fn rejects_param_type_mismatch() {
         for (site, theme, expected) in [
             (
                 r#"key = "site""#,
@@ -750,7 +750,7 @@ mod tests {
     // ── Config::theme_dir ──
 
     #[test]
-    fn theme_dir_resolves_configured_theme() {
+    fn resolves_configured_theme() {
         let root = Path::new("/project");
         let mut config = Config::default();
         assert_eq!(config.theme_dir(root), None);

@@ -545,7 +545,7 @@ mod tests {
     // ── watch_paths ──
 
     #[test]
-    fn watch_paths_lists_existing_site_and_theme_inputs() {
+    fn lists_existing_site_and_theme_inputs() {
         for (theme, created, expected) in [
             (
                 None,
@@ -612,7 +612,7 @@ mod tests {
     // ── is_input_change ──
 
     #[test]
-    fn is_input_change_matches_inputs_and_their_descendants() {
+    fn matches_inputs_and_their_descendants() {
         let root = Path::new("/site");
         let inputs = [root.join("config.toml"), root.join("content")];
         let modify = EventKind::Modify(ModifyKind::Any);
@@ -726,7 +726,7 @@ mod tests {
     // ── rebuild ──
 
     #[test]
-    fn rebuild_recovers_after_css_import_failure() {
+    fn recovers_after_css_import_failure() {
         let root = tempfile::tempdir().unwrap();
         setup_site(root.path());
         let css_dir = root.path().join("assets/css/_src");
@@ -755,7 +755,7 @@ mod tests {
     }
 
     #[test]
-    fn rebuild_resolves_subpath_references_under_localhost() {
+    fn resolves_subpath_references_under_localhost() {
         let root = tempfile::tempdir().unwrap();
         setup_site(root.path());
         fs::write(
@@ -1078,7 +1078,7 @@ mod tests {
     // ── inject_script ──
 
     #[test]
-    fn inject_script_places_script_before_body_close_or_appends() {
+    fn places_script_before_body_close_or_appends() {
         for (html, expected) in [
             (
                 "<html><body>Hello</body></html>",

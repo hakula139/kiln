@@ -324,7 +324,7 @@ mod tests {
     // ── Bucket::url ──
 
     #[test]
-    fn url_encodes_slug_under_base_path() {
+    fn encodes_slug_under_base_path() {
         let base_url = "https://example.com/blog".parse().unwrap();
         for (kind, slug, expected) in [
             (
@@ -356,7 +356,7 @@ mod tests {
     // ── Taxonomy::collect ──
 
     #[test]
-    fn collect_groups_posts_sections_and_tags() {
+    fn groups_posts_sections_and_tags() {
         let pages = [
             post("Post 1", Some("note"), &["rust", "web"]),
             post("Post 2", Some("essay"), &["", "  ", "rust"]),
@@ -396,7 +396,7 @@ mod tests {
     }
 
     #[test]
-    fn collect_names_buckets_from_index_titles() {
+    fn names_buckets_from_index_titles() {
         let pages = [post("Post 1", Some("hello-world"), &["ml", "rust"])];
         let taxonomy = collect(&pages, |content| {
             for (dir, title) in [
@@ -431,7 +431,7 @@ mod tests {
     }
 
     #[test]
-    fn collect_deduplicates_tag_membership_and_keeps_first_spelling() {
+    fn deduplicates_tag_membership_and_keeps_first_spelling() {
         let pages = [
             tagged(
                 "Post A",
@@ -452,7 +452,7 @@ mod tests {
     }
 
     #[test]
-    fn collect_sorts_tags_by_count_then_name_and_keeps_punctuation_distinct() {
+    fn sorts_tags_by_count_then_name_and_keeps_punctuation_distinct() {
         let pages = [
             tagged("Post 1", &["zebra", "alpha++"]),
             tagged("Post 2", &["common", "alpha"]),
@@ -470,7 +470,7 @@ mod tests {
     }
 
     #[test]
-    fn collect_sorts_equally_named_tags_by_slug() {
+    fn sorts_equally_named_tags_by_slug() {
         let slugs = ["epsilon", "delta", "gamma", "beta", "alpha"];
         let pages = [tagged("Post 1", &slugs)];
         let taxonomy = collect(&pages, |content| {
@@ -503,7 +503,7 @@ mod tests {
     }
 
     #[test]
-    fn collect_invalid_index_returns_error() {
+    fn rejects_invalid_index() {
         for (pages, dir) in [
             (vec![post("Post 1", None, &[])], "posts"),
             (vec![post("Post 1", Some("note"), &[])], "posts/note"),
@@ -521,7 +521,7 @@ mod tests {
     }
 
     #[test]
-    fn collect_empty_tag_slug_returns_error() {
+    fn rejects_empty_tag_slug() {
         for tag in ["!!!", " +++ ", "..."] {
             let pages = [tagged("Post A", &[tag])];
             let error = try_collect(&pages, |_| {}).unwrap_err();
@@ -536,7 +536,7 @@ mod tests {
     }
 
     #[test]
-    fn collect_colliding_tags_returns_error() {
+    fn rejects_colliding_tags() {
         let pages = [
             tagged("Post 1", &["Alpha Beta"]),
             tagged("Post 2", &["Alpha & Beta"]),
@@ -553,7 +553,7 @@ mod tests {
     // ── Taxonomy::resolve ──
 
     #[test]
-    fn resolve_orders_pages_newest_first_with_url_tiebreak() {
+    fn orders_pages_newest_first_with_url_tiebreak() {
         let pages = [
             prepared_page("B", Some("2026-01-01T00:00:00Z"), None),
             prepared_page("D", None, None),

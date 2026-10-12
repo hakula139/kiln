@@ -188,7 +188,7 @@ mod tests {
     // ── tpl_now ──
 
     #[test]
-    fn tpl_now_returns_current_timestamp() {
+    fn returns_current_timestamp() {
         let before = jiff::Timestamp::now();
         let result = render("{{ now() }}", ()).unwrap();
         let after = jiff::Timestamp::now();
@@ -200,7 +200,7 @@ mod tests {
     // ── tpl_read_file ──
 
     #[test]
-    fn tpl_read_file_reads_relative_to_source_dir() {
+    fn reads_relative_to_source_dir() {
         let source = tempfile::tempdir().unwrap();
         let contents = indoc! {"
             A,B
@@ -215,7 +215,7 @@ mod tests {
     }
 
     #[test]
-    fn tpl_read_file_rejects_parent_and_absolute_paths() {
+    fn rejects_parent_and_absolute_paths() {
         let source = tempfile::tempdir().unwrap();
         let source_dir = source.path().join("subdir");
         fs::create_dir(&source_dir).unwrap();
@@ -233,7 +233,7 @@ mod tests {
     }
 
     #[test]
-    fn tpl_read_file_missing_or_invalid_source_dir_or_file_returns_error() {
+    fn rejects_missing_or_invalid_source_dir_or_file() {
         let source = tempfile::tempdir().unwrap();
         let source_dir = source.path().to_string_lossy();
         for (ctx, expected) in [
@@ -254,7 +254,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn tpl_read_file_follows_external_symlink() {
+    fn follows_external_symlink() {
         let source = tempfile::tempdir().unwrap();
         let external = tempfile::tempdir().unwrap();
         fs::write(external.path().join("data.txt"), "external <data>").unwrap();
@@ -273,7 +273,7 @@ mod tests {
     // ── tpl_parse_csv ──
 
     #[test]
-    fn tpl_parse_csv_basic() {
+    fn parses_basic_csv() {
         let rows = tpl_parse_csv(indoc! {"
             A,B
             1,2
@@ -288,7 +288,7 @@ mod tests {
     }
 
     #[test]
-    fn tpl_parse_csv_quoted_fields() {
+    fn parses_quoted_fields() {
         let rows = tpl_parse_csv(indoc! {r#"
             name,value
             "field with, comma","has ""quotes"""
@@ -302,12 +302,12 @@ mod tests {
     }
 
     #[test]
-    fn tpl_parse_csv_empty_input() {
+    fn empty_csv_yields_no_rows() {
         assert_eq!(tpl_parse_csv("").unwrap(), Value::from(Vec::<Value>::new()));
     }
 
     #[test]
-    fn tpl_parse_csv_unequal_lengths_returns_error() {
+    fn rejects_unequal_row_lengths() {
         let error = tpl_parse_csv(indoc! {"
             a,b
             only-one
@@ -321,7 +321,7 @@ mod tests {
     // ── tpl_t ──
 
     #[test]
-    fn tpl_t_looks_up_key_or_returns_key_literal() {
+    fn looks_up_key_or_returns_key_literal() {
         assert_eq!(render(r#"{{ t("all_posts") }}"#, ()).unwrap(), "All Posts");
         assert_eq!(
             render(r#"{{ t("not_defined_anywhere") }}"#, ()).unwrap(),
@@ -330,7 +330,7 @@ mod tests {
     }
 
     #[test]
-    fn tpl_t_interpolates_only_with_keyword_arguments() {
+    fn interpolates_only_with_keyword_arguments() {
         let dir = tempfile::tempdir().unwrap();
         fs::create_dir_all(dir.path().join("i18n")).unwrap();
         fs::write(
@@ -370,7 +370,7 @@ mod tests {
     // ── tpl_asset_url ──
 
     #[test]
-    fn tpl_asset_url_renders_prefixed_encoded_and_escaped_urls() {
+    fn renders_prefixed_encoded_and_escaped_urls() {
         let (_dir, mut engine) = asset_engine();
         engine
             .env
@@ -403,7 +403,7 @@ mod tests {
     }
 
     #[test]
-    fn tpl_asset_url_missing_file_or_page_context_returns_error() {
+    fn rejects_missing_file_or_page_context() {
         for (template, expected) in [
             (
                 r"{{ asset_url('/missing.png') }}",
@@ -440,7 +440,7 @@ mod tests {
     // ── tpl_register_script ──
 
     #[test]
-    fn tpl_register_script_records_and_deduplicates_default_deferred_tag() {
+    fn records_and_deduplicates_default_deferred_tag() {
         let assets = AssetsHandle::default();
         for _ in 0..2 {
             assert_eq!(
@@ -460,7 +460,7 @@ mod tests {
     }
 
     #[test]
-    fn tpl_register_script_honors_load_async_kwarg() {
+    fn honors_load_async_kwarg() {
         let assets = AssetsHandle::default();
         register(
             r#"{{ register_script("https://example.org/widget.js", load="async") }}"#,
@@ -479,7 +479,7 @@ mod tests {
     }
 
     #[test]
-    fn tpl_register_script_invalid_declaration_returns_error() {
+    fn rejects_invalid_script_declaration() {
         for (template, message) in [
             (
                 r#"{{ register_script("/missing.js") }}"#,
@@ -514,7 +514,7 @@ mod tests {
     }
 
     #[test]
-    fn tpl_register_script_without_asset_handle_returns_error() {
+    fn rejects_missing_asset_handle() {
         for (ctx, message) in [
             (Value::UNDEFINED, "only callable from directive templates"),
             (

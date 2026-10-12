@@ -138,7 +138,7 @@ mod tests {
     // ── fingerprint_scripts ──
 
     #[test]
-    fn fingerprint_scripts_renames_only_unlinked_bundled_scripts() {
+    fn renames_only_unlinked_bundled_scripts() {
         let dir = tempfile::tempdir().unwrap();
         let mut scripts = BTreeMap::new();
         for (path, source, naming) in [
@@ -204,7 +204,7 @@ mod tests {
     }
 
     #[test]
-    fn fingerprint_scripts_computed_import_keeps_source_names() {
+    fn computed_import_keeps_source_names() {
         let dir = tempfile::tempdir().unwrap();
         let mut scripts = BTreeMap::new();
         for (path, source) in [
@@ -231,7 +231,7 @@ mod tests {
     // ── parse_imports ──
 
     #[test]
-    fn parse_imports_collects_static_and_literal_dynamic_specifiers() {
+    fn collects_static_and_literal_dynamic_specifiers() {
         let source = indoc! {r#"
             import { a } from "./a.js";
             export { b } from '../b.js';
@@ -261,7 +261,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_imports_computed_or_non_utf8_specifier_returns_computed() {
+    fn computed_or_non_utf8_specifier_is_computed() {
         for source in [
             "import(name);",
             "import(`./${name}.js`);",
@@ -276,7 +276,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_imports_parse_error_or_strict_module_violation_returns_none() {
+    fn unparsable_or_strict_module_violation_yields_none() {
         assert_eq!(parse_imports("function () {", Path::new("app.js")), None);
         assert_eq!(parse_imports("with (scope) {}", Path::new("lib.MJS")), None);
         assert_eq!(

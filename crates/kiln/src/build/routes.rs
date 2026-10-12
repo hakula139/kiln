@@ -293,7 +293,7 @@ mod tests {
     // ── RoutePlan::insert ──
 
     #[test]
-    fn insert_conflicting_files_returns_error() {
+    fn rejects_conflicting_files() {
         let posts = Bucket {
             kind: BucketKind::Posts,
             slug: "posts".into(),
@@ -315,7 +315,7 @@ mod tests {
     // ── RoutePlan::reserve_on_disk ──
 
     #[test]
-    fn reserve_on_disk_removes_reservations_before_rendering() {
+    fn removes_reservations_before_rendering() {
         let directory = tempfile::tempdir().unwrap();
         let mut plan = RoutePlan::default();
         plan.insert("posts/index.html".into(), Route::NotFound)
@@ -325,7 +325,7 @@ mod tests {
     }
 
     #[test]
-    fn reserve_on_disk_conflicting_destinations_returns_error() {
+    fn rejects_conflicting_destinations() {
         let directory = tempfile::tempdir().unwrap();
         fs::write(directory.path().join("posts"), "asset").unwrap();
         let mut plan = RoutePlan::default();
@@ -340,7 +340,7 @@ mod tests {
     }
 
     #[test]
-    fn reserve_on_disk_file_directory_collision_returns_error() {
+    fn rejects_file_directory_collision() {
         let directory = tempfile::tempdir().unwrap();
         let mut plan = RoutePlan::default();
         plan.insert("sitemap.xml/index.html".into(), Route::NotFound)
@@ -352,7 +352,7 @@ mod tests {
     }
 
     #[test]
-    fn reserve_on_disk_reserved_directory_descendant_returns_error() {
+    fn rejects_reserved_directory_descendant() {
         let directory = tempfile::tempdir().unwrap();
         let mut plan = RoutePlan::default();
         plan.insert("pagefind".into(), Route::SearchIndex).unwrap();
@@ -366,7 +366,7 @@ mod tests {
     }
 
     #[test]
-    fn reserve_on_disk_native_alias_returns_error() {
+    fn rejects_native_alias() {
         let directory = tempfile::tempdir().unwrap();
         let probe = directory.path().join("CaseProbe");
         fs::write(&probe, "probe").unwrap();

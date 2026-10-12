@@ -279,7 +279,7 @@ mod tests {
     // ── StaticAssetManifest::fingerprint ──
 
     #[test]
-    fn fingerprint_renames_in_place_and_records_encoded_urls() {
+    fn renames_in_place_and_records_encoded_urls() {
         let dir = tempfile::tempdir().unwrap();
         let mut manifest = StaticAssetManifest::default();
         for (name, encoded) in [
@@ -311,7 +311,7 @@ mod tests {
     }
 
     #[test]
-    fn fingerprint_existing_target_returns_error() {
+    fn rejects_existing_target() {
         let dir = tempfile::tempdir().unwrap();
         fs::write(dir.path().join("style.css"), "abc").unwrap();
         fs::write(dir.path().join("style.ba7816bf8f01.css"), "occupied").unwrap();
@@ -338,7 +338,7 @@ mod tests {
     // macOS APFS rejects non-UTF-8 filenames, while Linux ext4 and btrfs accept them.
     #[cfg(target_os = "linux")]
     #[test]
-    fn fingerprint_non_utf8_stem_returns_error() {
+    fn rejects_non_utf8_stem() {
         use std::ffi::OsStr;
         use std::os::unix::ffi::OsStrExt;
 
@@ -360,7 +360,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn fingerprint_read_only_parent_returns_error() {
+    fn reports_read_only_parent() {
         let dir = tempfile::tempdir().unwrap();
         let css = dir.path().join("css");
         fs::create_dir(&css).unwrap();
@@ -386,7 +386,7 @@ mod tests {
     // ── StaticAssetManifest::asset_url ──
 
     #[test]
-    fn asset_url_missing_asset_returns_error() {
+    fn rejects_missing_asset() {
         let err = StaticAssetManifest::default()
             .asset_url("/js/missing.js")
             .unwrap_err()
@@ -401,7 +401,7 @@ mod tests {
     // ── StaticAssetManifest::resolve_local ──
 
     #[test]
-    fn resolve_local_publishes_authored_urls_under_the_deployment_prefix() {
+    fn publishes_authored_urls_under_the_deployment_prefix() {
         for (deployment, page_url) in [
             ("/blog/", "https://example.com/blog/posts/a/"),
             ("/", "http://localhost:5456/posts/a/"),
@@ -425,7 +425,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_local_external_empty_and_outside_prefix_urls_return_none() {
+    fn ignores_external_empty_and_outside_prefix_urls() {
         let manifest = photo_manifest("/blog/", "/");
         for src in [
             "https://cdn.example.com/a.avif",
@@ -444,7 +444,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_local_missing_site_asset_returns_error() {
+    fn rejects_missing_site_asset() {
         let err = StaticAssetManifest::default()
             .with_prefixes("/blog/", "/blog/")
             .resolve_local("missing.png?q=1", "/blog/posts/a/")
@@ -461,7 +461,7 @@ mod tests {
     // ── StaticAssetManifest::resolve_template_url ──
 
     #[test]
-    fn resolve_template_url_treats_root_paths_as_site_paths() {
+    fn treats_root_paths_as_site_paths() {
         let manifest = photo_manifest("/blog/", "/preview/");
 
         for (src, expected) in [
@@ -489,7 +489,7 @@ mod tests {
     // ── StaticAssetManifest::published_path ──
 
     #[test]
-    fn published_path_strips_the_authored_prefix() {
+    fn strips_the_authored_prefix() {
         let manifest = photo_manifest("/blog/", "/");
 
         assert_eq!(

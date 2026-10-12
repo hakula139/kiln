@@ -260,7 +260,7 @@ mod tests {
     // ── new ──
 
     #[test]
-    fn new_with_site_dir_only() {
+    fn loads_site_dir_only() {
         let dir = tempfile::tempdir().unwrap();
         fs::write(dir.path().join("test.html"), "hello").unwrap();
         let engine = test_site_engine(dir.path());
@@ -269,7 +269,7 @@ mod tests {
     }
 
     #[test]
-    fn new_site_overrides_theme() {
+    fn site_overrides_theme() {
         let dir = tempfile::tempdir().unwrap();
         let site_dir = dir.path().join("site");
         let theme_dir = dir.path().join("theme");
@@ -290,7 +290,7 @@ mod tests {
     }
 
     #[test]
-    fn new_ignores_nonexistent_site_dir() {
+    fn ignores_nonexistent_site_dir() {
         let dir = tempfile::tempdir().unwrap();
         let theme_dir = dir.path().join("theme");
         fs::create_dir(&theme_dir).unwrap();
@@ -303,7 +303,7 @@ mod tests {
     }
 
     #[test]
-    fn new_unreadable_site_template_returns_error() {
+    fn reports_unreadable_site_template() {
         let dir = tempfile::tempdir().unwrap();
         let site_dir = dir.path().join("site");
         let theme_dir = dir.path().join("theme");
@@ -322,7 +322,7 @@ mod tests {
     }
 
     #[test]
-    fn new_without_directories_returns_error() {
+    fn rejects_missing_directories() {
         let err = new_engine(None, None).unwrap_err().to_string();
         assert!(
             err.contains("no valid template directory found"),
@@ -331,7 +331,7 @@ mod tests {
     }
 
     #[test]
-    fn new_nonexistent_theme_directory_returns_error() {
+    fn rejects_nonexistent_theme_directory() {
         let err = new_engine(None, Some(Path::new("/nonexistent/path")))
             .unwrap_err()
             .to_string();
@@ -344,7 +344,7 @@ mod tests {
     // ── render_post ──
 
     #[test]
-    fn render_post_exposes_context() {
+    fn post_exposes_context() {
         let engine = engine_with_template(
             "post.html",
             "{{ title }}|{{ description }}|{{ url }}|{{ date }}|{{ updated }}|{{ featured_image.src }}|{{ page_css }}|{{ config.title }}|{{ t('all_posts') }}|{{ 'math' in assets.features }}|{{ assets.scripts[0].url }}|{{ license }}|{{ tags[0].name }}|{{ section.name }}",
@@ -386,7 +386,7 @@ mod tests {
     }
 
     #[test]
-    fn render_post_escapes_text_and_preserves_explicit_safe_html() {
+    fn escapes_text_and_preserves_explicit_safe_html() {
         let engine = engine_with_template(
             "post.html",
             "{{ title }}|{{ content }}|{{ content | safe }}|{{ toc | safe }}",
@@ -405,7 +405,7 @@ mod tests {
     // ── render_home ──
 
     #[test]
-    fn render_home_exposes_pages_and_pagination() {
+    fn home_exposes_pages_and_pagination() {
         let engine = engine_with_template(
             "home.html",
             "{{ title }}|{{ description }}|{{ url }}|{% for page in pages %}{{ page.title }}:{{ page.url }}{% endfor %}|{{ pagination.current_page }}/{{ pagination.total_pages }}|{{ assets.features | length }}",
@@ -430,7 +430,7 @@ mod tests {
     // ── render_archive ──
 
     #[test]
-    fn render_archive_exposes_groups_and_pagination() {
+    fn archive_exposes_groups_and_pagination() {
         let engine = engine_with_template(
             "archive.html",
             "{{ title }}|{{ description }}|{{ url }}|{{ kind }}|{% for group in page_groups %}{{ group.key }}:{% for page in group.pages %}{{ page.title }}:{{ page.url }}{% endfor %}{% endfor %}|{{ pagination.current_page }}/{{ pagination.total_pages }}|{{ assets.features | length }}",
@@ -459,7 +459,7 @@ mod tests {
     // ── render_overview ──
 
     #[test]
-    fn render_overview_exposes_buckets() {
+    fn overview_exposes_buckets() {
         let engine = engine_with_template(
             "overview.html",
             "{{ title }}|{{ description }}|{{ url }}|{{ kind }}|{% for bucket in buckets %}{{ bucket.name }}:{{ bucket.url }}:{% for page in bucket.pages %}{{ page.title }}:{{ page.url }}{% endfor %}|{% endfor %}{{ assets.features | length }}",
@@ -495,7 +495,7 @@ mod tests {
     // ── render_404 ──
 
     #[test]
-    fn render_404_exposes_metadata_and_resolves_relative_assets() {
+    fn not_found_exposes_metadata_and_resolves_relative_assets() {
         let dir = tempfile::tempdir().unwrap();
         let static_dir = dir.path().join("public");
         let templates = dir.path().join("templates");
@@ -530,7 +530,7 @@ mod tests {
     // ── render_directive ──
 
     #[test]
-    fn render_directive_renders_template_with_context() {
+    fn renders_directive_template_with_context() {
         let dir = tempfile::tempdir().unwrap();
         let directives = dir.path().join("directives");
         fs::create_dir_all(&directives).unwrap();
@@ -570,7 +570,7 @@ mod tests {
     }
 
     #[test]
-    fn render_directive_missing_template_returns_none() {
+    fn missing_directive_template_yields_none() {
         let dir = tempfile::tempdir().unwrap();
         fs::create_dir_all(dir.path().join("directives")).unwrap();
         // A traversal would reach this file through "directives/../secret.html".
@@ -592,7 +592,7 @@ mod tests {
     }
 
     #[test]
-    fn render_directive_template_failure_returns_error() {
+    fn reports_directive_template_failure() {
         for (source, kind) in [
             ("{% invalid %}", minijinja::ErrorKind::SyntaxError),
             (
@@ -623,7 +623,7 @@ mod tests {
     // ── has_template ──
 
     #[test]
-    fn has_template_existing() {
+    fn finds_existing_template() {
         let engine = test_engine();
         assert!(engine.has_template("post.html"));
         assert!(engine.has_template("home.html"));
@@ -633,7 +633,7 @@ mod tests {
     }
 
     #[test]
-    fn has_template_broken_returns_true() {
+    fn counts_broken_template_as_present() {
         let dir = tempfile::tempdir().unwrap();
         fs::write(dir.path().join("broken.html"), "{% invalid %}").unwrap();
         let engine = test_site_engine(dir.path());
@@ -644,7 +644,7 @@ mod tests {
     }
 
     #[test]
-    fn has_template_missing_returns_false() {
+    fn misses_absent_template() {
         let engine = test_engine();
         assert!(!engine.has_template("nonexistent.html"));
     }
@@ -652,7 +652,7 @@ mod tests {
     // ── render_page_template ──
 
     #[test]
-    fn render_page_template_keeps_internal_values_over_vars() {
+    fn keeps_internal_values_over_vars() {
         let engine = engine_with_template(
             "post.html",
             "{{ __page_url }}|{{ assets.features | length }}",
@@ -669,7 +669,7 @@ mod tests {
     }
 
     #[test]
-    fn render_page_template_failure_returns_error() {
+    fn reports_page_template_failure() {
         let name = "post.html";
         for (source, kind, phase) in [
             (None, minijinja::ErrorKind::TemplateNotFound, "load"),
@@ -706,7 +706,7 @@ mod tests {
     // ── format_value ──
 
     #[test]
-    fn format_value_escapes_markup_but_keeps_slashes() {
+    fn escapes_markup_but_keeps_slashes() {
         let mut engine = test_engine();
         for (name, source) in [
             (

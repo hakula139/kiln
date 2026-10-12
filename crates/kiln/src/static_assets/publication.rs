@@ -343,7 +343,7 @@ mod tests {
     // ── PublishedAssets::publish ──
 
     #[test]
-    fn publish_preserves_site_static_and_page_precedence() {
+    fn preserves_site_static_and_page_precedence() {
         let root = tempfile::tempdir().unwrap();
         let theme = root.path().join("themes/example");
         let content = root.path().join("content");
@@ -394,7 +394,7 @@ mod tests {
     }
 
     #[test]
-    fn publish_content_addresses_asset_and_bundle_media_only() {
+    fn content_addresses_asset_and_bundle_media_only() {
         let root = tempfile::tempdir().unwrap();
         let theme = root.path().join("themes/example");
         let content = root.path().join("content");
@@ -497,7 +497,7 @@ mod tests {
     }
 
     #[test]
-    fn publish_case_variant_outputs_returns_error() {
+    fn rejects_case_variant_outputs() {
         let root = tempfile::tempdir().unwrap();
         let probe = root.path().join("CaseProbe");
         fs::write(&probe, "probe").unwrap();
@@ -533,7 +533,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn resolve_respects_filesystem_parent_traversal_through_symlinks() {
+    fn respects_filesystem_parent_traversal_through_symlinks() {
         let root = tempfile::tempdir().unwrap();
         let static_dir = root.path().join("static");
         let physical = root.path().join("external/nested");
@@ -571,7 +571,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn resolve_preserves_aliases_and_owning_page_scope() {
+    fn preserves_aliases_and_owning_page_scope() {
         let root = tempfile::tempdir().unwrap();
         let theme = root.path().join("themes/example");
         let content = root.path().join("content");
@@ -651,7 +651,7 @@ mod tests {
     // ── PublishedAssets::scripts ──
 
     #[test]
-    fn scripts_marks_assets_and_bundle_scripts_addressable() {
+    fn marks_assets_and_bundle_scripts_addressable() {
         let root = tempfile::tempdir().unwrap();
         let assets = publish_files(
             root.path(),
@@ -676,7 +676,7 @@ mod tests {
     // ── PublishedAssets::ensure_unaddressed_names ──
 
     #[test]
-    fn ensure_unaddressed_names_accepts_hashed_and_unreserved_names() {
+    fn accepts_hashed_and_unreserved_names() {
         let root = tempfile::tempdir().unwrap();
         let assets = publish_files(
             root.path(),
@@ -697,7 +697,7 @@ mod tests {
     }
 
     #[test]
-    fn ensure_unaddressed_names_reserved_source_names_returns_error() {
+    fn rejects_reserved_source_names() {
         for (file, output, hint) in [
             (
                 "static/logo.dark.png",
@@ -747,7 +747,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn record_outputs_naming_one_file_returns_error() {
+    fn rejects_outputs_naming_one_file() {
         let root = tempfile::tempdir().unwrap();
         let output = root.path().join("public");
         fs::create_dir_all(output.join("assets/real")).unwrap();
