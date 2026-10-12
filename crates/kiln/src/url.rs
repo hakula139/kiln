@@ -5,9 +5,15 @@ use anyhow::{Context, ensure};
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use serde::{Deserialize, Serialize, Serializer};
 
+// Keeps exactly what `encodeURIComponent` keeps, since Workers Static Assets redirects other forms.
 const COMPONENT_ENCODE_SET: &AsciiSet = &NON_ALPHANUMERIC
-    .remove(b'.')
+    .remove(b'!')
+    .remove(b'\'')
+    .remove(b'(')
+    .remove(b')')
+    .remove(b'*')
     .remove(b'-')
+    .remove(b'.')
     .remove(b'_')
     .remove(b'~');
 
@@ -182,6 +188,7 @@ mod tests {
             "%E4%B8%AD%E6%96%87/hash%23query%3F%20100%25.html"
         );
         assert_eq!(path_url(Path::new("../image.webp")), "../image.webp");
+        assert_eq!(path_url(Path::new("it's (1)!*.webp")), "it's%20(1)!*.webp");
     }
 
     // ── page_url ──
