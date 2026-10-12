@@ -185,20 +185,27 @@ fn convert_source_symlinks_copy_contents() {
 #[cfg(unix)]
 #[test]
 fn convert_invalid_source_links_return_error() {
-    for (target, expected) in [
-        ("destination/content", "overlaps destination"),
-        ("missing", "failed to read entry in"),
+    for (link, target, expected) in [
+        (
+            "content/link",
+            "destination/content",
+            "overlaps destination",
+        ),
+        ("content/link", "missing", "failed to read entry in"),
+        ("static/link", "destination/static", "overlaps destination"),
     ] {
         let site = TestSite::empty();
         let (source, destination) = (site.path("source"), site.path("destination"));
-        site.write("destination/content/existing.txt", "existing");
+        site.write("destination/content/existing.txt", "existing")
+            .write("destination/static/existing.txt", "existing");
         fs::create_dir_all(source.join("content")).unwrap();
-        symlink(site.path(target), source.join("content/link")).unwrap();
+        fs::create_dir_all(source.join("static")).unwrap();
+        symlink(site.path(target), source.join(link)).unwrap();
 
         let error = convert(&source, &destination).unwrap_err();
 
-        assert!(error.to_string().contains(expected), "{target}: {error}");
-        assert!(!destination.join("content/link").exists(), "{target}");
+        assert!(error.to_string().contains(expected), "{link}: {error}");
+        assert!(!destination.join(link).exists(), "{link}");
     }
 }
 

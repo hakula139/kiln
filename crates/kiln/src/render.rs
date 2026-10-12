@@ -137,7 +137,7 @@ mod tests {
     // ── RenderOptions::from_params ──
 
     #[test]
-    fn from_params_defaults() {
+    fn defaults_disable_every_option() {
         let options = RenderOptions::from_params(&toml::Table::new()).unwrap();
         assert!(options.code_max_lines.is_none());
         assert!(!options.emojis);
@@ -146,7 +146,7 @@ mod tests {
     }
 
     #[test]
-    fn from_params_reads_known_options_and_ignores_other_params() {
+    fn reads_known_options_and_ignores_other_params() {
         let params: toml::Table = toml::from_str(indoc! {r#"
             code_max_lines = 40
             emojis = true
@@ -164,18 +164,37 @@ mod tests {
     }
 
     #[test]
-    fn from_params_zero_code_max_lines_disables_limit() {
+    fn zero_code_max_lines_disables_limit() {
         let params: toml::Table = toml::from_str("code_max_lines = 0").unwrap();
         let options = RenderOptions::from_params(&params).unwrap();
         assert!(options.code_max_lines.is_none());
     }
 
     #[test]
-    fn from_params_type_mismatch_returns_error() {
-        let params: toml::Table = toml::from_str(indoc! {r#"
-            emojis = "yes"
-        "#})
-        .unwrap();
-        assert!(RenderOptions::from_params(&params).is_err());
+    fn type_mismatch_returns_error() {
+        for (input, key, expected) in [
+            (
+                r#"emojis = "yes""#,
+                "emojis",
+                r#"invalid type: string "yes", expected a boolean"#,
+            ),
+            (
+                r#"code_max_lines = "x""#,
+                "code_max_lines",
+                r#"invalid type: string "x", expected usize"#,
+            ),
+            (
+                "code_max_lines = -1",
+                "code_max_lines",
+                "invalid value: integer `-1`, expected usize",
+            ),
+        ] {
+            let params: toml::Table = toml::from_str(input).unwrap();
+            let error = RenderOptions::from_params(&params).unwrap_err();
+            assert_eq!(
+                format!("{error:#}"),
+                format!("failed to parse render options from [params]: {expected}\nin `{key}`\n")
+            );
+        }
     }
 }

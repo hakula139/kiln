@@ -89,22 +89,6 @@ mod tests {
     // ── convert_frontmatter ──
 
     #[test]
-    fn omits_null_dates() {
-        let yaml = indoc! {"
-            title: Minimal
-            date: ~
-            updated: null
-        "};
-        let (toml, _) = convert_frontmatter(yaml).unwrap();
-        assert_eq!(
-            toml,
-            indoc! {r#"
-                title = "Minimal"
-            "#}
-        );
-    }
-
-    #[test]
     fn converts_every_supported_field() {
         let yaml = indoc! {"
             title: Full Post
@@ -155,6 +139,22 @@ mod tests {
             "#}
         );
         assert_eq!(unsupported, ["categories"]);
+    }
+
+    #[test]
+    fn omits_null_dates() {
+        let yaml = indoc! {"
+            title: Minimal
+            date: ~
+            updated: null
+        "};
+        let (toml, _) = convert_frontmatter(yaml).unwrap();
+        assert_eq!(
+            toml,
+            indoc! {r#"
+                title = "Minimal"
+            "#}
+        );
     }
 
     #[test]

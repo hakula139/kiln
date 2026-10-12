@@ -65,11 +65,12 @@ pub(crate) struct DirectiveContext<'a> {
 mod tests {
     use super::*;
     use crate::attrs::parse_pandoc_attrs;
+    use crate::test_utils::named_args;
 
     // ── DirectiveArgs::from ──
 
     #[test]
-    fn directive_args_from_pandoc_attrs_owns_all_values() {
+    fn owns_all_values() {
         let args = DirectiveArgs::from(parse_pandoc_attrs(
             r#"#my-id .wide "He said \"hi\"" bare server="example" type=song"#,
         ));
@@ -77,10 +78,7 @@ mod tests {
             args,
             DirectiveArgs {
                 positional: vec![r#"He said "hi""#.into(), "bare".into()],
-                named: BTreeMap::from([
-                    ("server".into(), "example".into()),
-                    ("type".into(), "song".into()),
-                ]),
+                named: named_args(&[("server", "example"), ("type", "song")]),
                 identity: Identity {
                     id: Some("my-id".into()),
                     classes: vec!["wide".into()],
@@ -90,11 +88,8 @@ mod tests {
     }
 
     #[test]
-    fn directive_args_from_pandoc_attrs_duplicate_named_last_wins() {
+    fn duplicate_named_keeps_last_value() {
         let args = DirectiveArgs::from(parse_pandoc_attrs(r#"key="first" key="second""#));
-        assert_eq!(
-            args.named,
-            BTreeMap::from([("key".into(), "second".into())])
-        );
+        assert_eq!(args.named, named_args(&[("key", "second")]));
     }
 }

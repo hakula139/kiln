@@ -482,6 +482,58 @@ mod tests {
         );
     }
 
+    #[test]
+    fn reports_shortcode_failures_with_destination() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = fs::canonicalize(dir.path()).unwrap();
+        let source = root.join("source");
+        let dest = root.join("dest");
+        fs::create_dir_all(source.join("content")).unwrap();
+        fs::write(
+            source.join("content/styled.md"),
+            indoc! {"
+                ---
+                title: Styled
+                ---
+                {{< style >}}body{{< /style >}}
+            "},
+        )
+        .unwrap();
+
+        let error = convert(&source, &dest).unwrap_err();
+        assert_eq!(
+            format!("{error:#}"),
+            format!(
+                "failed to convert shortcodes for {}: style shortcode requires manual conversion to page CSS",
+                dest.join("content/styled.md").display()
+            )
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn reports_unreadable_assets() {
+        use crate::test_utils::PermissionGuard;
+
+        let dir = tempfile::tempdir().unwrap();
+        let root = fs::canonicalize(dir.path()).unwrap();
+        let source = root.join("source");
+        let image = source.join("content/image.webp");
+        fs::create_dir_all(image.parent().unwrap()).unwrap();
+        fs::write(&image, "image").unwrap();
+        let _guard = PermissionGuard::restrict(&image, 0o000);
+
+        let error = convert(&source, &root.join("dest")).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "failed to copy {} to {}",
+                image.display(),
+                root.join("dest/content/image.webp").display()
+            )
+        );
+    }
+
     // ── convert_or_copy_markdown ──
 
     #[test]

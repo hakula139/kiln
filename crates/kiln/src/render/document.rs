@@ -450,39 +450,10 @@ mod tests {
         fingerprinted_manifest, render_test_page, test_engine, test_resources,
     };
 
-    fn render(content: &str) -> RenderedPage {
-        render_test_page(content, &RenderOptions::default())
-    }
-
-    fn render_with_resolver(
-        content: &str,
-        resolver: &ImageResolver,
-        output_dir: &Path,
-    ) -> RenderedPage {
-        render_page(
-            content,
-            &test_engine(),
-            &RenderOptions::default(),
-            &PageResources {
-                images: resolver,
-                assets: &fingerprinted_manifest(output_dir, |_| true),
-                ..test_resources()
-            },
-            false,
-        )
-        .unwrap()
-    }
-
-    fn write_tiny_png(path: &Path) {
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        let img = image::RgbaImage::from_pixel(8, 4, image::Rgba([200, 100, 50, 255]));
-        img.save_with_format(path, image::ImageFormat::Png).unwrap();
-    }
-
     // ── render_document: basic ──
 
     #[test]
-    fn render_document_paragraph() {
+    fn renders_paragraph() {
         let out = render("Hello, world!");
         assert_eq!(out.content_html, "<p>Hello, world!</p>\n");
         assert_eq!(out.toc_html, "");
@@ -491,7 +462,7 @@ mod tests {
     // ── render_document: headings ──
 
     #[test]
-    fn render_document_headings_build_toc() {
+    fn headings_build_toc() {
         let out = render(indoc! {"
             ## First
 
@@ -524,7 +495,7 @@ mod tests {
     }
 
     #[test]
-    fn render_document_heading_ids_and_titles() {
+    fn heading_ids_and_titles() {
         for (input, id, title) in [
             ("## Introduction {#custom-id}", "custom-id", "Introduction"),
             (
@@ -566,7 +537,7 @@ mod tests {
     }
 
     #[test]
-    fn render_document_heading_keeps_inline_markup() {
+    fn heading_keeps_inline_markup() {
         let out = render("## The `foo` function and $x^2$ [link](https://example.com)");
         for expected in [
             "<code>foo</code>",
@@ -591,7 +562,7 @@ mod tests {
     // ── render_document: shortcodes ──
 
     #[test]
-    fn render_document_expands_shortcodes_only_in_text() {
+    fn expands_shortcodes_only_in_text() {
         let out = render_test_page(
             indoc! {r#"
                 ## :(fas fa-star): Hi :smile:
@@ -634,7 +605,7 @@ mod tests {
     // ── render_document: GFM extensions ──
 
     #[test]
-    fn render_document_gfm_table() {
+    fn renders_gfm_table() {
         let md = indoc! {"
             | Name | City |
             |------|------|
@@ -658,7 +629,7 @@ mod tests {
     }
 
     #[test]
-    fn render_document_strikethrough() {
+    fn renders_strikethrough() {
         let out = render("~~deleted~~");
         assert!(
             out.content_html.contains("<del>deleted</del>"),
@@ -668,7 +639,7 @@ mod tests {
     }
 
     #[test]
-    fn render_document_tasklist() {
+    fn renders_tasklist() {
         let md = indoc! {"
             - [x] Done
             - [ ] Todo
@@ -701,7 +672,7 @@ mod tests {
     // ── render_document: footnotes ──
 
     #[test]
-    fn render_document_footnotes_relocated_after_body() {
+    fn footnotes_relocated_after_body() {
         let md = indoc! {"
             ## Before
 
@@ -739,7 +710,7 @@ mod tests {
     }
 
     #[test]
-    fn render_document_footnotes_inline_markup_in_reference_paragraph() {
+    fn footnotes_inline_markup_in_reference_paragraph() {
         let md = indoc! {"
             Math $x$[^1] and ![icon](https://example.com/a.png)[^1].
 
@@ -760,7 +731,7 @@ mod tests {
     }
 
     #[test]
-    fn render_document_footnotes_preserves_images_math_and_code_in_notes() {
+    fn footnotes_preserve_images_math_and_code_in_notes() {
         let out = render(indoc! {r"
             Body[^a].
 
@@ -802,7 +773,7 @@ mod tests {
     }
 
     #[test]
-    fn render_document_footnote_syntax_interrupts_image_parsing() {
+    fn footnote_syntax_interrupts_image_parsing() {
         let out = render(indoc! {"
             ![Alt[^a]](https://example.com/image.png)
 
@@ -817,7 +788,7 @@ mod tests {
     // ── render_document: math ──
 
     #[test]
-    fn render_document_inline_math() {
+    fn renders_inline_math() {
         for (input, expected) in [
             (
                 "$x^2$",
@@ -834,7 +805,7 @@ mod tests {
     }
 
     #[test]
-    fn render_document_display_math() {
+    fn renders_display_math() {
         for (input, expected) in [
             (
                 "$$E=mc^2$$",
@@ -851,7 +822,7 @@ mod tests {
     }
 
     #[test]
-    fn render_document_math_with_html_chars() {
+    fn escapes_html_chars_in_math() {
         let out = render("$x < y$");
         assert!(
             out.content_html.contains(r"\(x &lt; y\)"),
@@ -863,7 +834,7 @@ mod tests {
     // ── render_document: code blocks ──
 
     #[test]
-    fn render_document_plaintext_code_blocks() {
+    fn renders_plaintext_code_blocks() {
         for md in [
             indoc! {"
                 ```
@@ -896,7 +867,7 @@ mod tests {
     }
 
     #[test]
-    fn render_document_code_block_extracts_language_and_highlights_source() {
+    fn code_block_extracts_language_and_highlights_source() {
         for md in [
             indoc! {"
                 ```rust
@@ -931,7 +902,7 @@ mod tests {
     }
 
     #[test]
-    fn render_document_code_block_mermaid_emits_bare_pre() {
+    fn mermaid_code_block_emits_bare_pre() {
         let md = indoc! {"
             ```mermaid
             graph TD
@@ -961,7 +932,7 @@ mod tests {
     }
 
     #[test]
-    fn render_document_code_block_mermaid_case_insensitive() {
+    fn mermaid_code_block_matches_case_insensitively() {
         let md = indoc! {"
             ```Mermaid
             graph TD
@@ -978,7 +949,7 @@ mod tests {
     // ── render_document: images ──
 
     #[test]
-    fn render_document_block_image() {
+    fn renders_block_image() {
         let md = "![A photo](https://example.com/img.png)\n";
         let out = render(md);
         assert!(
@@ -1000,7 +971,7 @@ mod tests {
     }
 
     #[test]
-    fn render_document_block_image_with_title() {
+    fn block_image_with_title() {
         let md = "![alt text](https://example.com/img.png \"My Title\")\n";
         let out = render(md);
         assert!(
@@ -1027,7 +998,7 @@ mod tests {
     }
 
     #[test]
-    fn render_document_block_image_with_formatted_alt() {
+    fn block_image_with_formatted_alt() {
         let md = "![*bold* alt](https://example.com/img.png)\n";
         let out = render(md);
         assert!(
@@ -1049,7 +1020,7 @@ mod tests {
     }
 
     #[test]
-    fn render_document_block_image_with_soft_break_in_alt() {
+    fn block_image_with_soft_break_in_alt() {
         let md = indoc! {"
             ![line1
             line2](https://example.com/img.png)
@@ -1074,7 +1045,7 @@ mod tests {
     }
 
     #[test]
-    fn render_document_inline_image() {
+    fn renders_inline_image() {
         let md = "Text ![icon](https://example.com/icon.png) more text\n";
         let out = render(md);
         assert!(
@@ -1095,7 +1066,7 @@ mod tests {
     }
 
     #[test]
-    fn render_document_inline_image_with_nested_alt_preserves_surrounding_text() {
+    fn inline_image_with_nested_alt_preserves_surrounding_text() {
         let out = render(
             "Before ![outer ![inner](https://example.com/inner.png)](https://example.com/outer.png) after.",
         );
@@ -1109,7 +1080,7 @@ mod tests {
     }
 
     #[test]
-    fn render_document_image_with_trailing_text_stays_inline() {
+    fn image_with_trailing_text_stays_inline() {
         let md = "![icon](https://example.com/icon.png) followed by text\n";
         let out = render(md);
         assert!(
@@ -1125,7 +1096,7 @@ mod tests {
     }
 
     #[test]
-    fn render_document_multiple_images_stay_inline() {
+    fn multiple_images_stay_inline() {
         let md = "![a](https://example.com/a.png) ![b](https://example.com/b.png)\n";
         let out = render(md);
         assert!(
@@ -1148,7 +1119,7 @@ mod tests {
     // ── render_document: image resolution ──
 
     #[test]
-    fn render_document_resolver_stamps_dimensions_and_lqip_on_block_image() {
+    fn resolver_stamps_dimensions_and_lqip_on_block_image() {
         let dir = tempfile::tempdir().unwrap();
         write_tiny_png(&dir.path().join("img.png"));
 
@@ -1187,7 +1158,7 @@ mod tests {
     }
 
     #[test]
-    fn render_document_resolver_merges_with_authored_attrs_on_inline_image() {
+    fn resolver_merges_with_authored_attrs_on_inline_image() {
         let dir = tempfile::tempdir().unwrap();
         write_tiny_png(&dir.path().join("img.png"));
 
@@ -1227,7 +1198,7 @@ mod tests {
     }
 
     #[test]
-    fn render_document_skips_images_nested_in_alt_text() {
+    fn skips_images_nested_in_alt_text() {
         let html =
             render("![Outer ![Inner](missing.png)](https://example.com/outer.png)").content_html;
 
@@ -1240,7 +1211,7 @@ mod tests {
     }
 
     #[test]
-    fn render_document_keeps_images_without_a_path() {
+    fn keeps_images_without_a_path() {
         let html = render("![Empty]() ![Query](?v=1)").content_html;
 
         assert!(html.contains(r#"src="""#), "{html}");
@@ -1248,7 +1219,33 @@ mod tests {
     }
 
     #[test]
-    fn render_document_missing_or_undecodable_site_image_returns_error() {
+    fn resolver_miss_emits_remote_image_without_dimensions() {
+        let dir = tempfile::tempdir().unwrap();
+        let resolver = ImageResolver::new(dir.path(), ImageConfig::default());
+        let out = render_with_resolver(
+            "![remote](https://cdn.example.com/x.png)\n",
+            &resolver,
+            dir.path(),
+        );
+
+        assert!(
+            out.content_html
+                .contains(r#"src="https://cdn.example.com/x.png""#)
+        );
+        assert!(
+            !out.content_html.contains("width="),
+            "html:\n{}",
+            out.content_html
+        );
+        assert!(
+            !out.content_html.contains(r#"class="lqip""#),
+            "html:\n{}",
+            out.content_html
+        );
+    }
+
+    #[test]
+    fn missing_or_undecodable_site_image_returns_error() {
         for (input, expected) in [
             (
                 indoc! {"
@@ -1277,29 +1274,32 @@ mod tests {
         }
     }
 
-    #[test]
-    fn render_document_resolver_miss_emits_remote_image_without_dimensions() {
-        let dir = tempfile::tempdir().unwrap();
-        let resolver = ImageResolver::new(dir.path(), ImageConfig::default());
-        let out = render_with_resolver(
-            "![remote](https://cdn.example.com/x.png)\n",
-            &resolver,
-            dir.path(),
-        );
+    fn render(content: &str) -> RenderedPage {
+        render_test_page(content, &RenderOptions::default())
+    }
 
-        assert!(
-            out.content_html
-                .contains(r#"src="https://cdn.example.com/x.png""#)
-        );
-        assert!(
-            !out.content_html.contains("width="),
-            "html:\n{}",
-            out.content_html
-        );
-        assert!(
-            !out.content_html.contains(r#"class="lqip""#),
-            "html:\n{}",
-            out.content_html
-        );
+    fn render_with_resolver(
+        content: &str,
+        resolver: &ImageResolver,
+        output_dir: &Path,
+    ) -> RenderedPage {
+        render_page(
+            content,
+            &test_engine(),
+            &RenderOptions::default(),
+            &PageResources {
+                images: resolver,
+                assets: &fingerprinted_manifest(output_dir, |_| true),
+                ..test_resources()
+            },
+            false,
+        )
+        .unwrap()
+    }
+
+    fn write_tiny_png(path: &Path) {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let img = image::RgbaImage::from_pixel(8, 4, image::Rgba([200, 100, 50, 255]));
+        img.save_with_format(path, image::ImageFormat::Png).unwrap();
     }
 }

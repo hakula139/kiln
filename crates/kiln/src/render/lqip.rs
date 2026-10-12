@@ -257,14 +257,20 @@ mod tests {
     }
 
     #[test]
-    fn none_for_missing_or_unrecognized_images() {
+    fn none_for_missing_unrecognized_or_empty_images() {
         let dir = tempdir().unwrap();
         let bundle = dir.path().join("bundle");
         fs::create_dir_all(&bundle).unwrap();
         fs::write(bundle.join("garbage.png"), b"not actually an image").unwrap();
+        // A GIF header declaring a 0 × 1 canvas.
+        fs::write(bundle.join("empty.gif"), b"GIF89a\0\0\x01\0\0\0\0").unwrap();
 
         let r = ImageResolver::new(dir.path(), ImageConfig::default());
-        for path in ["bundle/missing.png", "bundle/garbage.png"] {
+        for path in [
+            "bundle/missing.png",
+            "bundle/garbage.png",
+            "bundle/empty.gif",
+        ] {
             assert!(r.resolve_published(Path::new(path)).is_none(), "{path}");
         }
     }

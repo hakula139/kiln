@@ -335,45 +335,10 @@ mod tests {
     use crate::render::assets::Feature;
     use crate::test_utils::{render_test_page, test_engine, test_resources, test_site_engine};
 
-    fn render(input: &str) -> RenderedPage {
-        render_test_page(input, &RenderOptions::default())
-    }
-
-    fn render_with(input: &str, engine: &TemplateEngine) -> RenderedPage {
-        render_page(
-            input,
-            engine,
-            &RenderOptions::default(),
-            &test_resources(),
-            false,
-        )
-        .unwrap()
-    }
-
-    fn render_numbered(input: &str) -> Result<RenderedPage> {
-        render_page(
-            input,
-            &test_engine(),
-            &RenderOptions::default(),
-            &test_resources(),
-            true,
-        )
-    }
-
-    /// Creates an engine whose only template is `directives/<name>.html`.
-    fn directive_engine(name: &str, template: &str) -> (TempDir, TemplateEngine) {
-        let dir = tempfile::tempdir().unwrap();
-        let directives = dir.path().join("directives");
-        fs::create_dir_all(&directives).unwrap();
-        fs::write(directives.join(format!("{name}.html")), template).unwrap();
-        let engine = test_site_engine(dir.path());
-        (dir, engine)
-    }
-
     // ── render_page ──
 
     #[test]
-    fn render_page_no_directives() {
+    fn renders_without_directives() {
         let page = render(indoc! {"
             # Hello
 
@@ -389,7 +354,7 @@ mod tests {
     }
 
     #[test]
-    fn render_page_code_max_lines_reaches_code_blocks() {
+    fn code_max_lines_reaches_code_blocks() {
         let page = render_test_page(
             indoc! {"
                 ```
@@ -424,7 +389,7 @@ mod tests {
     }
 
     #[test]
-    fn render_page_enriches_images_in_inline_containers() {
+    fn enriches_images_in_inline_containers() {
         for input in [
             "- ![Alt](https://example.com/photo.png){width=80 #photo}",
             "## ![Alt](https://example.com/photo.png){width=80 #photo}",
@@ -443,7 +408,7 @@ mod tests {
     }
 
     #[test]
-    fn render_page_replaces_shortcodes_in_body_and_directive_bodies() {
+    fn replaces_shortcodes_in_body_and_directive_bodies() {
         let page = render_test_page(
             indoc! {"
                 Hello :smile: and :(fas fa-link):
@@ -475,7 +440,7 @@ mod tests {
     }
 
     #[test]
-    fn render_page_table_nowrap_reaches_directive_bodies() {
+    fn table_nowrap_reaches_directive_bodies() {
         // The image's alt text and URL contribute nothing to the measured width.
         let page = render_test_page(
             indoc! {"
@@ -515,7 +480,7 @@ mod tests {
     // ── render_page: headings and IDs ──
 
     #[test]
-    fn render_page_preserves_heading_attributes() {
+    fn preserves_heading_attributes() {
         let html = render("## Title {.wide data-x=yes numbering-start=3}").content_html;
         assert!(html.contains(r#"class="wide""#), "{html}");
         assert!(html.contains(r#"data-x="yes""#), "{html}");
@@ -523,7 +488,7 @@ mod tests {
     }
 
     #[test]
-    fn render_page_reserves_fence_ids_across_directive_scopes() {
+    fn reserves_fence_ids_across_directive_scopes() {
         let fence = indoc! {"
             ::: wrapper
             ```rust {#sample}
@@ -551,7 +516,7 @@ mod tests {
     }
 
     #[test]
-    fn render_page_heading_ids_follow_document_order_around_authored_ids() {
+    fn heading_ids_follow_document_order_around_authored_ids() {
         let page = render(indoc! {"
             ## Shared
 
@@ -588,7 +553,7 @@ mod tests {
     }
 
     #[test]
-    fn render_page_duplicate_explicit_heading_ids_keep_first() {
+    fn duplicate_explicit_heading_ids_keep_first() {
         let page = render(indoc! {"
             ## First {#dup}
 
@@ -623,7 +588,7 @@ mod tests {
     }
 
     #[test]
-    fn render_page_explicit_heading_ids_yield_to_other_authored_ids() {
+    fn explicit_heading_ids_yield_to_other_authored_ids() {
         let page = render(indoc! {r#"
             <div id="y"></div>
 
@@ -649,7 +614,7 @@ mod tests {
     }
 
     #[test]
-    fn render_page_footnote_ids_are_scoped_and_avoid_authored_ids() {
+    fn footnote_ids_are_scoped_and_avoid_authored_ids() {
         let page = render(indoc! {"
             ## Heading {#fn-a}
 
@@ -689,7 +654,7 @@ mod tests {
     }
 
     #[test]
-    fn render_page_reserves_visible_authored_ids() {
+    fn reserves_visible_authored_ids() {
         let page = render(indoc! {r#"
             ![<script>](https://example.com/script.png)
 
@@ -747,7 +712,7 @@ mod tests {
     // ── render_page: heading numbering ──
 
     #[test]
-    fn render_page_heading_numbering_preserves_titles_and_ids() {
+    fn heading_numbering_preserves_titles_and_ids() {
         for (attribute, expected) in [
             ("", ["1", "1.1", "1.2", "2", "2.1"]),
             (" numbering-start=2", ["2", "2.1", "2.2", "3", "3.1"]),
@@ -791,7 +756,7 @@ mod tests {
     }
 
     #[test]
-    fn render_page_heading_numbering_attributes_reset_local_counters() {
+    fn heading_numbering_attributes_reset_local_counters() {
         let page = render_numbered(indoc! {"
             ## First {#custom numbering-start=2}
             ### Overview
@@ -819,7 +784,7 @@ mod tests {
     }
 
     #[test]
-    fn render_page_heading_numbering_follows_document_order_across_scopes() {
+    fn heading_numbering_follows_document_order_across_scopes() {
         let page = render_numbered(indoc! {"
             #### First {numbering-start=2}
 
@@ -865,7 +830,7 @@ mod tests {
     }
 
     #[test]
-    fn render_page_heading_numbering_disabled_ignores_attributes() {
+    fn heading_numbering_disabled_ignores_attributes() {
         let input = indoc! {"
             ## First {numbering-start=bad}
             ### Child {numbering-start}
@@ -887,7 +852,7 @@ mod tests {
     }
 
     #[test]
-    fn render_page_heading_numbering_maximum_can_be_reset_or_discarded() {
+    fn heading_numbering_maximum_can_be_reset_or_discarded() {
         let maximum = usize::MAX;
         let input = formatdoc! {"
             ## First {{numbering-start=2}}
@@ -913,7 +878,7 @@ mod tests {
     }
 
     #[test]
-    fn render_page_invalid_heading_numbering_start_returns_error() {
+    fn invalid_heading_numbering_start_returns_error() {
         for attribute in [
             "numbering-start=-1",
             "numbering-start=1.5",
@@ -922,19 +887,26 @@ mod tests {
             "numbering-start=",
             "numbering-start",
         ] {
-            let input = format!("## Section {{{attribute}}}");
-            let error = render_numbered(&input).unwrap_err();
-            assert!(
-                error
-                    .to_string()
-                    .contains("heading ID section: numbering-start must be a non-negative integer"),
-                "{attribute}: {error}"
-            );
+            let heading = format!("## Section {{{attribute}}}");
+            let nested = formatdoc! {"
+                ::: note
+                {heading}
+                :::
+            "};
+            for input in [heading, nested] {
+                let error = render_numbered(&input).unwrap_err();
+                assert!(
+                    error.to_string().contains(
+                        "heading ID section: numbering-start must be a non-negative integer"
+                    ),
+                    "{input}: {error}"
+                );
+            }
         }
     }
 
     #[test]
-    fn render_page_heading_numbering_overflow_returns_error() {
+    fn heading_numbering_overflow_returns_error() {
         let maximum = usize::MAX;
         let input = formatdoc! {"
             ## First {{numbering-start={maximum}}}
@@ -948,7 +920,7 @@ mod tests {
     }
 
     #[test]
-    fn render_page_duplicate_heading_number_returns_error() {
+    fn duplicate_heading_number_returns_error() {
         let error = render_numbered(indoc! {"
             ## Section
             ### First
@@ -964,7 +936,7 @@ mod tests {
     // ── render_page: directives ──
 
     #[test]
-    fn render_page_directives_sequential() {
+    fn renders_sequential_directives() {
         let page = render(indoc! {"
             ::: first
             First.
@@ -989,7 +961,7 @@ mod tests {
     }
 
     #[test]
-    fn render_page_directives_with_image_attrs() {
+    fn renders_directives_with_image_attrs() {
         let page = render(indoc! {"
             ::: callout
             ![A photo](https://example.com/img.png){width=240}
@@ -1008,7 +980,7 @@ mod tests {
     }
 
     #[test]
-    fn render_page_directives_nested() {
+    fn renders_nested_directives() {
         let page = render(indoc! {"
             :::: outer
             Outer text.
@@ -1030,7 +1002,7 @@ mod tests {
     }
 
     #[test]
-    fn render_page_directives_body_html_survives_outer_render() {
+    fn directives_body_html_survives_outer_render() {
         let page = render(indoc! {"
             ::: callout
             ```text
@@ -1056,7 +1028,7 @@ mod tests {
     }
 
     #[test]
-    fn render_page_directive_template_output_keeps_own_line() {
+    fn directive_template_output_keeps_own_line() {
         let (_dir, engine) = directive_engine("widget", "<widget></widget>\n");
         let page = render_with(
             indoc! {"
@@ -1071,7 +1043,7 @@ mod tests {
     }
 
     #[test]
-    fn render_page_preserves_authored_placeholder_comments() {
+    fn preserves_authored_placeholder_comments() {
         let page = render(indoc! {"
             <!--kiln-directive-99-->
 
@@ -1097,7 +1069,7 @@ mod tests {
     // ── render_page: asset auto-detection ──
 
     #[test]
-    fn render_page_detects_math_feature_at_body_level() {
+    fn detects_math_feature_at_body_level() {
         let page = render(indoc! {r"
             Plain text with $a + b$ inline math.
         "});
@@ -1105,7 +1077,7 @@ mod tests {
     }
 
     #[test]
-    fn render_page_detects_mermaid_feature_from_fence() {
+    fn detects_mermaid_feature_from_fence() {
         for info in ["mermaid", "Mermaid", "mermaid no_run"] {
             let input = formatdoc! {"
                 ```{info}
@@ -1123,7 +1095,7 @@ mod tests {
     }
 
     #[test]
-    fn render_page_directive_with_code_and_math() {
+    fn detects_features_inside_directives() {
         let page = render(indoc! {"
             ::: callout
             Inline $x^2$ math.
@@ -1146,29 +1118,10 @@ mod tests {
         assert_eq!(page.assets.features(), &BTreeSet::from([Feature::Math]));
     }
 
-    // ── restore_directives ──
-
-    #[test]
-    fn restore_directives_keeps_unmatched_placeholder_text() {
-        let html = indoc! {"
-            a <!--p-x-->
-            <!--p-1-->
-            <!--p-0-->
-            b"};
-        assert_eq!(
-            restore_directives(html, "<!--p-", &["F\n".to_owned()]),
-            indoc! {"
-                a <!--p-x-->
-                <!--p-1-->
-                F
-                b"}
-        );
-    }
-
     // ── render_directive_block ──
 
     #[test]
-    fn render_directive_block_callout_template_receives_validated_options() {
+    fn callout_template_receives_validated_options() {
         let dir = tempfile::tempdir().unwrap();
         let directives = dir.path().join("directives");
         fs::create_dir_all(&directives).unwrap();
@@ -1194,31 +1147,7 @@ mod tests {
     }
 
     #[test]
-    fn render_directive_block_invalid_callout_returns_error() {
-        for name in ["callout", "Callout"] {
-            let error = render_page(
-                &formatdoc! {"
-                    ::: {name} {{type=warn}}
-                    Body
-                    :::
-                "},
-                &test_engine(),
-                &RenderOptions::default(),
-                &test_resources(),
-                false,
-            )
-            .unwrap_err();
-            assert!(
-                error
-                    .to_string()
-                    .starts_with(r#"unknown callout type "warn""#),
-                "{name}: {error}"
-            );
-        }
-    }
-
-    #[test]
-    fn render_directive_block_uses_template() {
+    fn uses_directive_template() {
         let (_dir, engine) = directive_engine(
             "my-widget",
             "<widget>{{ name }}: {{ body_html | safe }}</widget>",
@@ -1244,7 +1173,7 @@ mod tests {
     }
 
     #[test]
-    fn render_directive_block_template_accesses_parsed_args() {
+    fn template_accesses_parsed_args() {
         let (_dir, engine) = directive_engine(
             "widget",
             "my-pos={{ positional_args[0] }} my-key={{ named_args.key }}",
@@ -1270,7 +1199,7 @@ mod tests {
     }
 
     #[test]
-    fn render_directive_block_template_accesses_source_dir() {
+    fn template_accesses_source_dir() {
         let (_dir, engine) = directive_engine(
             "reader",
             "{% set data = read_file(positional_args[0]) %}DATA:{{ data }}",
@@ -1300,7 +1229,7 @@ mod tests {
     }
 
     #[test]
-    fn render_directive_block_fallback_to_div() {
+    fn falls_back_to_div() {
         let page = render(indoc! {"
             ::: callout {#my-note .highlight type=tip}
             Some body.
@@ -1316,7 +1245,7 @@ mod tests {
     }
 
     #[test]
-    fn render_directive_block_anonymous_div() {
+    fn renders_anonymous_div() {
         let page = render(indoc! {"
             ::: {.compact-table}
             | A | B |
@@ -1334,5 +1263,93 @@ mod tests {
             "table should be rendered inside div, html:\n{}",
             page.content_html
         );
+    }
+
+    #[test]
+    fn invalid_callout_returns_error() {
+        let callout = |name| {
+            formatdoc! {"
+                ::: {name} {{type=warn}}
+                Body
+                :::
+            "}
+        };
+        let nested = indoc! {"
+            :::: outer
+            ::: callout {type=warn}
+            Body
+            :::
+            ::::
+        "};
+        for input in [callout("callout"), callout("Callout"), nested.to_owned()] {
+            let error = render_page(
+                &input,
+                &test_engine(),
+                &RenderOptions::default(),
+                &test_resources(),
+                false,
+            )
+            .unwrap_err();
+            assert!(
+                error
+                    .to_string()
+                    .starts_with(r#"unknown callout type "warn""#),
+                "{input}: {error}"
+            );
+        }
+    }
+
+    // ── restore_directives ──
+
+    #[test]
+    fn keeps_unmatched_placeholder_text() {
+        let html = indoc! {"
+            a <!--p-x-->
+            <!--p-1-->
+            <!--p-0-->
+            b"};
+        assert_eq!(
+            restore_directives(html, "<!--p-", &["F\n".to_owned()]),
+            indoc! {"
+                a <!--p-x-->
+                <!--p-1-->
+                F
+                b"}
+        );
+    }
+
+    fn render(input: &str) -> RenderedPage {
+        render_test_page(input, &RenderOptions::default())
+    }
+
+    fn render_with(input: &str, engine: &TemplateEngine) -> RenderedPage {
+        render_page(
+            input,
+            engine,
+            &RenderOptions::default(),
+            &test_resources(),
+            false,
+        )
+        .unwrap()
+    }
+
+    fn render_numbered(input: &str) -> Result<RenderedPage> {
+        render_page(
+            input,
+            &test_engine(),
+            &RenderOptions::default(),
+            &test_resources(),
+            true,
+        )
+    }
+
+    /// Creates an engine whose only template is `directives/<name>.html`.
+    fn directive_engine(name: &str, template: &str) -> (TempDir, TemplateEngine) {
+        let dir = tempfile::tempdir().unwrap();
+        let directives = dir.path().join("directives");
+        fs::create_dir_all(&directives).unwrap();
+        fs::write(directives.join(format!("{name}.html")), template).unwrap();
+        let engine = test_site_engine(dir.path());
+        (dir, engine)
     }
 }
