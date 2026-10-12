@@ -163,16 +163,16 @@ fn convert_or_copy_markdown(src: &Path, dest: &Path) -> Result<()> {
     if has_delimited_frontmatter(&content, YAML_DELIMITER) {
         let (yaml_fm, body) = split_delimited_frontmatter(&content, YAML_DELIMITER)
             .with_context(|| format!("malformed YAML frontmatter in {}", src.display()))?;
-        convert_markdown_file(yaml_fm, body, dest)
+        convert_markdown_file(src, yaml_fm, body, dest)
     } else {
         copy_file(src, dest)
     }
 }
 
-fn convert_markdown_file(yaml_fm: &str, body: &str, dest: &Path) -> Result<()> {
+fn convert_markdown_file(src: &Path, yaml_fm: &str, body: &str, dest: &Path) -> Result<()> {
     let _span = tracing::warn_span!("convert", path = %dest.display()).entered();
     let (toml_fm, unsupported) = frontmatter::convert_frontmatter(yaml_fm)
-        .with_context(|| format!("failed to convert frontmatter for {}", dest.display()))?;
+        .with_context(|| format!("failed to convert frontmatter for {}", src.display()))?;
 
     for field in unsupported {
         tracing::warn!(
@@ -182,7 +182,7 @@ fn convert_markdown_file(yaml_fm: &str, body: &str, dest: &Path) -> Result<()> {
     }
 
     let converted_body = shortcode::convert_shortcodes(body)
-        .with_context(|| format!("failed to convert shortcodes for {}", dest.display()))?;
+        .with_context(|| format!("failed to convert shortcodes for {}", src.display()))?;
 
     write_output(
         dest,
@@ -486,7 +486,7 @@ mod tests {
     }
 
     #[test]
-    fn reports_shortcode_failures_with_destination() {
+    fn reports_shortcode_failures_with_source() {
         let dir = tempfile::tempdir().unwrap();
         let root = fs::canonicalize(dir.path()).unwrap();
         let source = root.join("source");
@@ -508,7 +508,7 @@ mod tests {
             format!("{error:#}"),
             format!(
                 "failed to convert shortcodes for {}: style shortcode requires manual conversion to page CSS",
-                dest.join("content").join("styled.md").display()
+                source.join("content").join("styled.md").display()
             )
         );
     }
@@ -631,9 +631,9 @@ mod tests {
         .unwrap();
 
         let err = convert_or_copy_markdown(&src, &dest).unwrap_err();
-        assert!(
-            err.to_string().contains("failed to convert frontmatter"),
-            "got: {err}"
+        assert_eq!(
+            err.to_string(),
+            format!("failed to convert frontmatter for {}", src.display())
         );
     }
 }
