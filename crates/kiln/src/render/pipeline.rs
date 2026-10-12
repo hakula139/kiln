@@ -102,7 +102,7 @@ impl PreparedDocument {
                         .markdown
                         .image_attrs
                         .get(&range.start)
-                        .and_then(|attrs| attrs.id.as_deref())
+                        .and_then(|attrs| attrs.identity.id.as_deref())
                     {
                         ids.reserve(id);
                     }
