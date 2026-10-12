@@ -6,6 +6,26 @@ use std::process::Command;
 use icu_normalizer::ComposingNormalizerBorrowed;
 use jiff::Timestamp;
 
+/// Repository-local variables listed by `git rev-parse --local-env-vars`, which git itself clears
+/// when it switches repositories.
+const LOCAL_ENV_VARS: [&str; 15] = [
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_COMMON_DIR",
+    "GIT_CONFIG",
+    "GIT_CONFIG_COUNT",
+    "GIT_CONFIG_PARAMETERS",
+    "GIT_DIR",
+    "GIT_GRAFT_FILE",
+    "GIT_IMPLICIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_NO_REPLACE_OBJECTS",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_PREFIX",
+    "GIT_REPLACE_REF_BASE",
+    "GIT_SHALLOW_FILE",
+    "GIT_WORK_TREE",
+];
+
 pub(super) struct GitInfo {
     root: PathBuf,
     timestamps: HashMap<PathBuf, Timestamp>,
@@ -15,9 +35,8 @@ impl GitInfo {
     /// Returns `None` when Git history is unavailable or shallow.
     pub(super) fn new(root: &Path, content_dir: &Path) -> Option<Self> {
         let root = fs::canonicalize(root).ok()?;
-        let output = Command::new("git")
+        let output = git_command(&root)
             .args(["rev-parse", "--show-toplevel", "--is-shallow-repository"])
-            .current_dir(&root)
             .output()
             .ok()?;
         if !output.status.success() {
@@ -32,7 +51,7 @@ impl GitInfo {
         }
 
         let content_dir = fs::canonicalize(content_dir).ok()?;
-        let output = Command::new("git")
+        let output = git_command(&git_root)
             .args([
                 "--literal-pathspecs",
                 "log",
@@ -43,7 +62,6 @@ impl GitInfo {
                 "--",
             ])
             .arg(content_dir.strip_prefix(&git_root).ok()?)
-            .current_dir(&git_root)
             .output()
             .ok()?;
         if !output.status.success() {
@@ -62,6 +80,17 @@ impl GitInfo {
         let relative = source.strip_prefix(&self.root).ok()?.to_str()?;
         self.timestamps.get(&normalized_path(relative)).copied()
     }
+}
+
+/// Returns a `git` command that discovers its repository from `dir`, ignoring the
+/// [`LOCAL_ENV_VARS`] that hooks and `git rebase -x` export.
+fn git_command(dir: &Path) -> Command {
+    let mut command = Command::new("git");
+    command.current_dir(dir);
+    for var in LOCAL_ENV_VARS {
+        command.env_remove(var);
+    }
+    command
 }
 
 /// Maps each path in `git log -z --format=%x00%cI --name-only` output to its newest commit time.
