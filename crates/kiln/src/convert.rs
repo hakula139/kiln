@@ -508,7 +508,7 @@ mod tests {
             format!("{error:#}"),
             format!(
                 "failed to convert shortcodes for {}: style shortcode requires manual conversion to page CSS",
-                dest.join("content/styled.md").display()
+                dest.join("content").join("styled.md").display()
             )
         );
     }
