@@ -35,14 +35,15 @@ pub(crate) struct DirectiveArgs {
 
 impl From<PandocAttrs<'_>> for DirectiveArgs {
     fn from(attrs: PandocAttrs<'_>) -> Self {
+        let identity = attrs.identity();
         Self {
-            identity: attrs.identity(),
             positional: attrs.positional.into_iter().map(Cow::into_owned).collect(),
             named: attrs
                 .named
                 .into_iter()
                 .map(|(key, value)| (key.to_owned(), value.into_owned()))
                 .collect(),
+            identity,
         }
     }
 }

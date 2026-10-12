@@ -4,13 +4,13 @@ use serde_yaml::{Mapping, Value};
 use crate::content::frontmatter::{FeaturedImage, Frontmatter, ImageCredit};
 
 /// Delimiter around Hugo YAML frontmatter.
-pub(crate) const YAML_DELIMITER: &str = "---";
+pub(super) const YAML_DELIMITER: &str = "---";
 
 /// Converts supported YAML metadata and reports the sorted fields that need manual migration.
 ///
 /// Hugo's `lastmod` becomes `updated`, and its `featuredImage` key and bare-string image sources
 /// become a `featured_image` table.
-pub(crate) fn convert_frontmatter(yaml_str: &str) -> Result<(String, Vec<String>)> {
+pub(super) fn convert_frontmatter(yaml_str: &str) -> Result<(String, Vec<String>)> {
     let mut value: Value =
         serde_yaml::from_str(yaml_str).context("failed to parse YAML frontmatter")?;
     let mut unsupported = Vec::new();

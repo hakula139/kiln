@@ -119,7 +119,6 @@ pub struct CopyButton {
 
 impl CopyButton {
     /// Resolves the `copy` and `copy_code` translation keys.
-    #[must_use]
     pub(crate) fn new(i18n: &I18n) -> Self {
         Self {
             text: i18n.t("copy").into_owned(),

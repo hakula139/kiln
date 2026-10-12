@@ -7,7 +7,7 @@ use indoc::indoc;
 use crate::config::validate_theme_name;
 use crate::css::ENTRY;
 
-/// Scaffolds a new theme directory under `themes/<name>/`. Fails if the directory already exists.
+/// Scaffolds a new theme directory under `themes/<name>/`.
 ///
 /// # Errors
 ///
@@ -81,6 +81,7 @@ pub fn init_theme(root: &Path, name: &str) -> Result<()> {
         "#},
     )
     .context("failed to write i18n/en.toml")?;
+
     fs::write(
         i18n_dir.join("zh-Hans.toml"),
         indoc! {r#"

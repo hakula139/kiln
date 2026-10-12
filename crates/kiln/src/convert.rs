@@ -116,7 +116,10 @@ fn plan_tree(
             && relative.file_stem().is_some_and(|stem| stem == "_index")
         {
             let Some(index) = index_destination(relative) else {
-                tracing::warn!(path = %entry.path().display(), "section index requires manual migration and was omitted");
+                tracing::warn!(
+                    path = %entry.path().display(),
+                    "section index requires manual migration and was omitted"
+                );
                 continue;
             };
             if let Some(previous) = index_sources.insert(index.clone(), relative.to_owned()) {

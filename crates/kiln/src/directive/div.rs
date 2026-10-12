@@ -3,7 +3,6 @@ use crate::attrs::Identity;
 /// Renders a directive without a template as a `<div>`, with a non-empty name as its first class.
 ///
 /// A block without a name, id or classes passes its body through unchanged.
-#[must_use]
 pub(crate) fn render_div(name: &str, identity: &Identity, body_html: &str) -> String {
     let base: &[&str] = if name.is_empty() { &[] } else { &[name] };
     let attrs = identity.html_attrs(base);

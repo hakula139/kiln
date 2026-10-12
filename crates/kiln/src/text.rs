@@ -11,7 +11,6 @@ const PRESERVED_CHARS: [char; 4] = ['+', '.', '_', '~'];
 /// [`PRESERVED_CHARS`] are kept as-is. Every other character becomes a single `-`, collapsing runs
 /// and stripping leading / trailing `-`. Returns an empty string when no alphanumeric character
 /// survives the pass.
-#[must_use]
 pub(crate) fn slugify(text: &str) -> String {
     let mut result = String::with_capacity(text.len());
     let mut prev_dash = true; // strip leading dashes
@@ -44,7 +43,6 @@ pub(crate) fn slugify(text: &str) -> String {
 }
 
 /// Returns the slug of `text`, or `fallback` when no alphanumeric character survives.
-#[must_use]
 pub(crate) fn slugify_or(text: &str, fallback: &str) -> String {
     let slug = slugify(text);
     if slug.is_empty() {
@@ -55,13 +53,11 @@ pub(crate) fn slugify_or(text: &str, fallback: &str) -> String {
 }
 
 /// Converts a hyphenated slug to titlecase (e.g., "hello-world" → "Hello World").
-#[must_use]
 pub(crate) fn titlecase(s: &str) -> String {
     s.split('-').map(capitalize).join(" ")
 }
 
 /// Uppercases the first character of `word`.
-#[must_use]
 pub(crate) fn capitalize(word: &str) -> String {
     let mut chars = word.chars();
     chars.next().map_or_else(String::new, |first| {

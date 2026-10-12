@@ -24,7 +24,7 @@ impl ShortcodeArgs<'_> {
 }
 
 /// Converts supported Hugo shortcodes while preserving prose and literal code.
-pub(crate) fn convert_shortcodes(content: &str) -> Result<String> {
+pub(super) fn convert_shortcodes(content: &str) -> Result<String> {
     let mut output = String::with_capacity(content.len());
     let mut stack = Vec::new();
     convert_body(content, &mut output, &mut stack)?;

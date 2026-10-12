@@ -20,7 +20,7 @@ pub struct ImageMeta {
 }
 
 /// Reads dimensions of published images and (per [`ImageConfig`]) encodes a small WebP LQIP.
-/// Memoised per canonical path for the build's lifetime.
+/// Memoized per canonical path for the build's lifetime.
 pub struct ImageResolver {
     output_root: PathBuf,
     config: ImageConfig,
@@ -39,7 +39,7 @@ impl ImageResolver {
     }
 
     /// Returns metadata for a file published at an output-relative path, or `None` when it is
-    /// missing or its format isn't recognised.
+    /// missing or its format isn't recognized.
     ///
     /// # Panics
     ///
