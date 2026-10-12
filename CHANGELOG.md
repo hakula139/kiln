@@ -4,6 +4,47 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0-alpha.2] - 2026-10-12
+
+### Breaking changes
+
+- _(serve)_ Detect atomic config saves and simplify the dev server (#130)
+- _(directive)_ Render callouts through theme templates and unify attribute parsing (#132)
+- _(render)_ Parse each fragment once and flatten the document model (#134)
+- _(render)_ Unify code block highlighting and fence parsing (#141)
+- _(content)_ Build pages once with kind and output directory (#139)
+- _(config)_ Validate configuration once at load (#140)
+- _(nix)_ Bundle Pagefind with the kiln package and simplify CI wiring (#142)
+- _(build)_ Fold feed and sitemap into build and validate page sizes (#148)
+- _(deps)_ Replace minify-html and Oxc with swc and declare the MSRV (#135)
+- _(build)_ Plan and render every output through one route table (#150)
+- _(template)_ Give every template one context contract (#152)
+- _(template)_ Autoescape HTML without encoding slashes (#155)
+- _(kiln)_ Follow convert source symlinks, ignore summary separators in code and make text crate-private (#159)
+- _(render)_ Localize the code-block copy button and keep it out of search (#156)
+- _(assets)_ Publish assets under content-hashed filenames in place (#151)
+- _(kiln)_ Remove crate-root re-exports and finish the core final review (#162)
+
+### Added
+
+- _(release)_ Make npm publication resumable (#157)
+
+### Fixed
+
+- _(npm)_ Include the root README in launcher packages (#129)
+- _(npm)_ Report musl Linux as an unsupported platform (#136)
+- _(convert)_ Keep post and section indexes that kiln reads (#133)
+- _(content)_ Match render options in summaries and follow content symlinks (#138)
+- _(convert)_ Accept null YAML dates (#143)
+- _(cli)_ Write logs to stderr (#160)
+- _(kiln)_ Match encodeURIComponent in URLs, ignore ambient GIT_DIR and finish the final review refactors (#161)
+- _(kiln)_ Count display math toward table nowrap widths and finish the final render review (#163)
+
+### Changed
+
+- _(build)_ Read content commit timestamps in one git pass (#146)
+- _(css)_ Run Tailwind compilations concurrently (#147)
+
 ## [0.5.0-alpha.1] - 2026-10-10
 
 ### Breaking changes
@@ -252,6 +293,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - _(deps)_ Bump rand from 0.9.2 to 0.9.4 (#29)
 
+[0.5.0-alpha.2]: https://github.com/hakula139/kiln/compare/v0.5.0-alpha.1..v0.5.0-alpha.2
 [0.5.0-alpha.1]: https://github.com/hakula139/kiln/compare/v0.4.0..v0.5.0-alpha.1
 [0.4.0]: https://github.com/hakula139/kiln/compare/v0.3.0..v0.4.0
 [0.4.0-rc.4]: https://github.com/hakula139/kiln/compare/v0.4.0-rc.3..v0.4.0-rc.4
