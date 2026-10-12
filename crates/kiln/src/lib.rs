@@ -4,7 +4,7 @@ pub mod config;
 pub mod content;
 pub mod convert;
 mod css;
-pub mod directive;
+mod directive;
 mod html;
 pub mod i18n;
 pub mod init;
