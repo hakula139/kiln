@@ -406,7 +406,7 @@ mod tests {
     // ── serve_until ──
 
     #[tokio::test]
-    async fn serve_until_serves_pages_assets_and_websocket() {
+    async fn serves_pages_assets_and_websocket() {
         let root = tempfile::tempdir().unwrap();
         setup_site(root.path());
         fs::create_dir(root.path().join("static")).unwrap();
@@ -490,7 +490,7 @@ mod tests {
     // ── setup_watcher ──
 
     #[tokio::test]
-    async fn setup_watcher_sends_event_on_atomic_input_save() {
+    async fn sends_event_on_atomic_input_save() {
         for (input, original) in [
             ("content/test.md", None),
             ("i18n/en.toml", Some(r#"greeting = "Hello""#)),
@@ -652,7 +652,7 @@ mod tests {
     // ── watch_loop ──
 
     #[tokio::test]
-    async fn watch_loop_triggers_reload_on_success() {
+    async fn triggers_reload_on_success() {
         let root = tempfile::tempdir().unwrap();
         setup_site(root.path());
         let (event_tx, mut reload_rx, _) = spawn_watch_loop(root.path());
@@ -666,7 +666,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn watch_loop_stops_when_sender_dropped() {
+    async fn stops_when_sender_dropped() {
         let root = tempfile::tempdir().unwrap();
         setup_site(root.path());
         let (event_tx, _, handle) = spawn_watch_loop(root.path());
@@ -680,7 +680,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn watch_loop_no_reload_on_failure() {
+    async fn skips_reload_on_failure() {
         let root = tempfile::tempdir().unwrap();
         setup_site(root.path());
         fs::write(
@@ -812,7 +812,7 @@ mod tests {
     // ── build_router ──
 
     #[tokio::test]
-    async fn build_router_serves_html_with_live_reload() {
+    async fn serves_html_with_live_reload() {
         let dir = tempfile::tempdir().unwrap();
         fs::create_dir(dir.path().join("about")).unwrap();
         for (path, content) in [
@@ -846,7 +846,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn build_router_redirects_directory_without_trailing_slash() {
+    async fn redirects_directory_without_trailing_slash() {
         let dir = tempfile::tempdir().unwrap();
         for name in ["about", "about us"] {
             let sub = dir.path().join(name);
@@ -881,7 +881,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn build_router_no_inject_for_non_html() {
+    async fn skips_injection_for_non_html() {
         let dir = tempfile::tempdir().unwrap();
         fs::write(dir.path().join("style.css"), "body { color: red; }").unwrap();
 
@@ -898,7 +898,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn build_router_preserves_head_and_range_responses() {
+    async fn preserves_head_and_range_responses() {
         let dir = tempfile::tempdir().unwrap();
         let html = "<html><body>Hello</body></html>";
         fs::write(dir.path().join("page.html"), html).unwrap();
@@ -940,7 +940,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn build_router_ws_relays_reload() {
+    async fn relays_reload_over_websocket() {
         use futures_util::StreamExt;
 
         let dir = tempfile::tempdir().unwrap();
@@ -990,7 +990,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn build_router_ws_rejects_plain_http() {
+    async fn rejects_plain_http_websocket_request() {
         let dir = tempfile::tempdir().unwrap();
 
         let response = setup_router(dir.path())
@@ -1006,7 +1006,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn build_router_not_found_serves_empty_or_full_custom_page() {
+    async fn serves_empty_or_full_custom_not_found_page() {
         let dir = tempfile::tempdir().unwrap();
         let app = setup_router(dir.path());
         let request = || Request::get("/nonexistent");
