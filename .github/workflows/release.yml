@@ -249,10 +249,10 @@ jobs:
             npm publish "$1" --tag "$tag"
           }
 
-          for package in npm-packages/*-{darwin-arm64,linux-x64-gnu,win32-x64-msvc}-*.tgz; do
+          for package in ./npm-packages/*-{darwin-arm64,linux-x64-gnu,win32-x64-msvc}-*.tgz; do
             publish "$package"
           done
 
           for variant in kiln kiln-extended; do
-            publish "npm-packages/kiln-ssg-$variant-$version.tgz"
+            publish "./npm-packages/kiln-ssg-$variant-$version.tgz"
           done
