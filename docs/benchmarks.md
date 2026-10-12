@@ -18,21 +18,21 @@ Each revision has a separate Criterion report with raw samples, logs, revision S
 
 ## Workloads
 
-| Group            | Measurement                                                                                                          |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `shortcodes`     | Page rendering with emoji / icon expansion in ordinary text and unmatched colon prefixes                             |
-| `render_options` | Option extraction from small and large params tables                                                                 |
-| `render`         | Prose and code fences with preloaded templates, syntax, and image resolver                                           |
-| `syntax/load`    | Loading and destroying a fresh syntax set                                                                            |
-| `images`         | Generated PNG processing with a fresh cache, or lookup in a primed cache                                             |
-| `build`          | CLI startup, prior-output cleanup, and complete builds with default, large-params, Git-timestamp, or minified output |
-| `stylesheets`    | Shared and page Tailwind stylesheets built through the CLI, which needs `kiln-tailwindcss`                           |
+| Group            | Measurement                                                                                                        |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `shortcodes`     | Page rendering with emoji / icon expansion in ordinary text and unmatched colon prefixes                           |
+| `render_options` | Option extraction from small and large params tables                                                               |
+| `render`         | Prose and code fences with preloaded templates, syntax and image resolver                                          |
+| `syntax/load`    | Loading and destroying a fresh syntax set                                                                          |
+| `images`         | Generated PNG processing with a fresh cache, or lookup in a primed cache                                           |
+| `build`          | CLI startup, prior-output cleanup and complete builds with default, large-params, Git-timestamp or minified output |
+| `stylesheets`    | Shared and page Tailwind stylesheets built through the CLI, which needs `kiln-tailwindcss`                         |
 
 Cold-image samples exclude image creation and resolver construction, but include processing and cache release. Build fixtures use minimal templates and warm filesystem caches, with search disabled. Only the Git-timestamp variant commits its site and enables `enable_git_info`. The `stylesheets` group is separate because it needs page bundles that own stylesheets. Measure representative sites separately when evaluating theme or Pagefind costs.
 
 ## Comparing revisions
 
-Keep measured inputs, timing boundaries, and the toolchain consistent. Run sequentially on an idle host and repeat noisy comparisons. For a local change that preserves these contracts:
+Keep measured inputs, timing boundaries and the toolchain consistent. Run sequentially on an idle host and repeat noisy comparisons. For a local change that preserves these contracts:
 
 ```bash
 cargo bench --bench performance -- --save-baseline before
@@ -40,8 +40,8 @@ cargo bench --bench performance -- --save-baseline before
 cargo bench --bench performance -- --baseline before
 ```
 
-For API changes or separate worktrees, use the `Benchmarks` workflow so each revision compiles its own harness. Review the benchmark changes to establish which workloads remain comparable. Include the revisions, command, compiler, profile, fixture parameters, host conditions, and Criterion confidence intervals in performance PRs.
+For API changes or separate worktrees, use the `Benchmarks` workflow so each revision compiles its own harness. Review the benchmark changes to establish which workloads remain comparable. Include the revisions, command, compiler, profile, fixture parameters, host conditions and Criterion confidence intervals in performance PRs.
 
 ## Adding workloads
 
-Add a module under `crates/kiln/benches/performance/` and register it in `main.rs`. Reuse fixtures and public APIs, validate behavior before timing, and keep setup outside the timed closure. Separate cold initialization from cached work. Use the build group's flat sampling for expensive cases.
+Add a module under `crates/kiln/benches/performance/` and register it in `main.rs`. Reuse fixtures and public APIs, validate behavior before timing, and keep setup outside the timed closure. Separate cold initialization from cached work. Create groups for expensive cases with `build::flat_group`.

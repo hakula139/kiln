@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::fmt::Write;
+use std::fmt::Write as _;
 
 use super::image_attrs::ImageAttrs;
 use super::lqip::ImageMeta;

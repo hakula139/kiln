@@ -116,7 +116,10 @@ fn plan_tree(
             && relative.file_stem().is_some_and(|stem| stem == "_index")
         {
             let Some(index) = index_destination(relative) else {
-                tracing::warn!(path = %entry.path().display(), "section index requires manual migration and was omitted");
+                tracing::warn!(
+                    path = %entry.path().display(),
+                    "section index requires manual migration and was omitted"
+                );
                 continue;
             };
             if let Some(previous) = index_sources.insert(index.clone(), relative.to_owned()) {
@@ -160,16 +163,16 @@ fn convert_or_copy_markdown(src: &Path, dest: &Path) -> Result<()> {
     if has_delimited_frontmatter(&content, YAML_DELIMITER) {
         let (yaml_fm, body) = split_delimited_frontmatter(&content, YAML_DELIMITER)
             .with_context(|| format!("malformed YAML frontmatter in {}", src.display()))?;
-        convert_markdown_file(yaml_fm, body, dest)
+        convert_markdown_file(src, yaml_fm, body, dest)
     } else {
         copy_file(src, dest)
     }
 }
 
-fn convert_markdown_file(yaml_fm: &str, body: &str, dest: &Path) -> Result<()> {
+fn convert_markdown_file(src: &Path, yaml_fm: &str, body: &str, dest: &Path) -> Result<()> {
     let _span = tracing::warn_span!("convert", path = %dest.display()).entered();
     let (toml_fm, unsupported) = frontmatter::convert_frontmatter(yaml_fm)
-        .with_context(|| format!("failed to convert frontmatter for {}", dest.display()))?;
+        .with_context(|| format!("failed to convert frontmatter for {}", src.display()))?;
 
     for field in unsupported {
         tracing::warn!(
@@ -179,7 +182,7 @@ fn convert_markdown_file(yaml_fm: &str, body: &str, dest: &Path) -> Result<()> {
     }
 
     let converted_body = shortcode::convert_shortcodes(body)
-        .with_context(|| format!("failed to convert shortcodes for {}", dest.display()))?;
+        .with_context(|| format!("failed to convert shortcodes for {}", src.display()))?;
 
     write_output(
         dest,
@@ -482,6 +485,58 @@ mod tests {
         );
     }
 
+    #[test]
+    fn reports_shortcode_failures_with_source() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = fs::canonicalize(dir.path()).unwrap();
+        let source = root.join("source");
+        let dest = root.join("dest");
+        fs::create_dir_all(source.join("content")).unwrap();
+        fs::write(
+            source.join("content/styled.md"),
+            indoc! {"
+                ---
+                title: Styled
+                ---
+                {{< style >}}body{{< /style >}}
+            "},
+        )
+        .unwrap();
+
+        let error = convert(&source, &dest).unwrap_err();
+        assert_eq!(
+            format!("{error:#}"),
+            format!(
+                "failed to convert shortcodes for {}: style shortcode requires manual conversion to page CSS",
+                source.join("content").join("styled.md").display()
+            )
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn reports_unreadable_assets() {
+        use crate::test_utils::PermissionGuard;
+
+        let dir = tempfile::tempdir().unwrap();
+        let root = fs::canonicalize(dir.path()).unwrap();
+        let source = root.join("source");
+        let image = source.join("content/image.webp");
+        fs::create_dir_all(image.parent().unwrap()).unwrap();
+        fs::write(&image, "image").unwrap();
+        let _guard = PermissionGuard::restrict(&image, 0o000);
+
+        let error = convert(&source, &root.join("dest")).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "failed to copy {} to {}",
+                image.display(),
+                root.join("dest/content/image.webp").display()
+            )
+        );
+    }
+
     // ── convert_or_copy_markdown ──
 
     #[test]
@@ -576,9 +631,9 @@ mod tests {
         .unwrap();
 
         let err = convert_or_copy_markdown(&src, &dest).unwrap_err();
-        assert!(
-            err.to_string().contains("failed to convert frontmatter"),
-            "got: {err}"
+        assert_eq!(
+            err.to_string(),
+            format!("failed to convert frontmatter for {}", src.display())
         );
     }
 }

@@ -48,5 +48,5 @@
     "MD050": { "style": "asterisk" },
   },
 
-  "ignores": [".claude/plans/", "node_modules/"],
+  "ignores": [".agents/plans/", "node_modules/"],
 }

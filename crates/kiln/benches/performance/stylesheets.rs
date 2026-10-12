@@ -1,11 +1,10 @@
 use std::fs;
 use std::path::Path;
-use std::time::Duration;
 
-use criterion::{Criterion, SamplingMode};
+use criterion::Criterion;
 use indoc::formatdoc;
 
-use super::build::{build_command, run_build};
+use super::build::{build_command, flat_group, run_build};
 use super::fixtures::{PROSE, Site};
 
 /// Number of page bundles that each own a Tailwind stylesheet beside the shared one.
@@ -54,11 +53,7 @@ pub(super) fn benchmarks(criterion: &mut Criterion) {
     }
     verify_build(&site);
 
-    let mut group = criterion.benchmark_group("stylesheets");
-    group.sample_size(10);
-    group.sampling_mode(SamplingMode::Flat);
-    group.warm_up_time(Duration::from_secs(1));
-    group.measurement_time(Duration::from_secs(5));
+    let mut group = flat_group(criterion, "stylesheets");
     group.bench_function("tailwind", |bencher| {
         bencher.iter(|| run_build(&site, false));
     });

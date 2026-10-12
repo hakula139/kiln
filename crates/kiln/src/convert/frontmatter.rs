@@ -4,13 +4,13 @@ use serde_yaml::{Mapping, Value};
 use crate::content::frontmatter::{FeaturedImage, Frontmatter, ImageCredit};
 
 /// Delimiter around Hugo YAML frontmatter.
-pub(crate) const YAML_DELIMITER: &str = "---";
+pub(super) const YAML_DELIMITER: &str = "---";
 
 /// Converts supported YAML metadata and reports the sorted fields that need manual migration.
 ///
 /// Hugo's `lastmod` becomes `updated`, and its `featuredImage` key and bare-string image sources
 /// become a `featured_image` table.
-pub(crate) fn convert_frontmatter(yaml_str: &str) -> Result<(String, Vec<String>)> {
+pub(super) fn convert_frontmatter(yaml_str: &str) -> Result<(String, Vec<String>)> {
     let mut value: Value =
         serde_yaml::from_str(yaml_str).context("failed to parse YAML frontmatter")?;
     let mut unsupported = Vec::new();
@@ -89,22 +89,6 @@ mod tests {
     // ── convert_frontmatter ──
 
     #[test]
-    fn omits_null_dates() {
-        let yaml = indoc! {"
-            title: Minimal
-            date: ~
-            updated: null
-        "};
-        let (toml, _) = convert_frontmatter(yaml).unwrap();
-        assert_eq!(
-            toml,
-            indoc! {r#"
-                title = "Minimal"
-            "#}
-        );
-    }
-
-    #[test]
     fn converts_every_supported_field() {
         let yaml = indoc! {"
             title: Full Post
@@ -155,6 +139,22 @@ mod tests {
             "#}
         );
         assert_eq!(unsupported, ["categories"]);
+    }
+
+    #[test]
+    fn omits_null_dates() {
+        let yaml = indoc! {"
+            title: Minimal
+            date: ~
+            updated: null
+        "};
+        let (toml, _) = convert_frontmatter(yaml).unwrap();
+        assert_eq!(
+            toml,
+            indoc! {r#"
+                title = "Minimal"
+            "#}
+        );
     }
 
     #[test]

@@ -64,30 +64,6 @@ pub(crate) fn test_i18n() -> I18n {
     .unwrap()
 }
 
-/// Collects `(key, value)` pairs into owned named directive arguments.
-pub(crate) fn named_args(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
-    pairs
-        .iter()
-        .map(|&(key, value)| (key.to_owned(), value.to_owned()))
-        .collect()
-}
-
-/// Creates a minimal standalone `Page` with the given title and an empty body.
-pub(crate) fn test_page(title: &str) -> Page {
-    Page {
-        frontmatter: Frontmatter {
-            title: title.to_owned(),
-            ..Frontmatter::default()
-        },
-        body: String::new(),
-        kind: PageKind::Page,
-        summary: None,
-        source_path: PathBuf::from(format!("content/{title}/index.md")),
-        output_dir: PathBuf::from(title),
-        assets: Vec::new(),
-    }
-}
-
 /// Creates `PageResources` for `/` with no published assets and no resolvable images.
 pub(crate) fn test_resources() -> PageResources<'static> {
     static IMAGES: LazyLock<ImageResolver> =
@@ -99,6 +75,11 @@ pub(crate) fn test_resources() -> PageResources<'static> {
         assets: &ASSETS,
         page_url: "/",
     }
+}
+
+/// Renders Markdown through the page pipeline with test templates and resources.
+pub(crate) fn render_test_page(input: &str, options: &RenderOptions) -> RenderedPage {
+    render_page(input, &test_engine(), options, &test_resources(), false).unwrap()
 }
 
 /// Records every file in `output_dir` under its source name, then renames the files `hash`
@@ -121,7 +102,26 @@ pub(crate) fn fingerprinted_manifest(
     manifest
 }
 
-/// Renders Markdown through the page pipeline with test templates and resources.
-pub(crate) fn render_test_page(input: &str, options: &RenderOptions) -> RenderedPage {
-    render_page(input, &test_engine(), options, &test_resources(), false).unwrap()
+/// Creates a minimal standalone `Page` with the given title and an empty body.
+pub(crate) fn test_page(title: &str) -> Page {
+    Page {
+        frontmatter: Frontmatter {
+            title: title.to_owned(),
+            ..Frontmatter::default()
+        },
+        body: String::new(),
+        kind: PageKind::Page,
+        summary: None,
+        source_path: PathBuf::from(format!("content/{title}/index.md")),
+        output_dir: PathBuf::from(title),
+        assets: Vec::new(),
+    }
+}
+
+/// Collects `(key, value)` pairs into owned named directive arguments.
+pub(crate) fn named_args(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
+    pairs
+        .iter()
+        .map(|&(key, value)| (key.to_owned(), value.to_owned()))
+        .collect()
 }

@@ -3,7 +3,8 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
-use criterion::{BenchmarkId, Criterion, SamplingMode, Throughput};
+use criterion::measurement::WallTime;
+use criterion::{BenchmarkGroup, BenchmarkId, Criterion, SamplingMode, Throughput};
 use scraper::{Html, Selector};
 use walkdir::WalkDir;
 
@@ -11,11 +12,7 @@ use super::fixtures::{COMMITTED, INDEX_TAGS, PAGINATE, PROSE, Site};
 
 /// Includes CLI startup and prior-output cleanup, with fixture validation outside sampling.
 pub(super) fn benchmarks(criterion: &mut Criterion) {
-    let mut group = criterion.benchmark_group("build");
-    group.sample_size(10);
-    group.sampling_mode(SamplingMode::Flat);
-    group.warm_up_time(Duration::from_secs(1));
-    group.measurement_time(Duration::from_secs(5));
+    let mut group = flat_group(criterion, "build");
     for (mode, pages, minify, extra_params, git) in [
         ("default", 20_usize, false, 0, false),
         ("default", 200, false, 0, false),
@@ -34,6 +31,19 @@ pub(super) fn benchmarks(criterion: &mut Criterion) {
         });
     }
     group.finish();
+}
+
+/// Creates a group with few flat samples for workloads that take far longer than a millisecond.
+pub(super) fn flat_group<'a>(
+    criterion: &'a mut Criterion,
+    name: &str,
+) -> BenchmarkGroup<'a, WallTime> {
+    let mut group = criterion.benchmark_group(name);
+    group.sample_size(10);
+    group.sampling_mode(SamplingMode::Flat);
+    group.warm_up_time(Duration::from_secs(1));
+    group.measurement_time(Duration::from_secs(5));
+    group
 }
 
 fn verify_build(site: &Site, pages: usize, minify: bool, git: bool) {
@@ -103,14 +113,22 @@ fn verify_listings(output: &Path, pages: usize) {
     expected_posts.truncate(PAGINATE);
 
     let selector = Selector::parse("a").unwrap();
-    for path in [
-        "index.html",
-        "posts/index.html",
-        "posts/notes/index.html",
-        "tags/common/index.html",
+    let heading_selector = Selector::parse("h1").unwrap();
+    for (path, heading) in [
+        ("index.html", None),
+        ("posts/index.html", None),
+        ("posts/notes/index.html", Some("Notes")),
+        ("tags/common/index.html", Some("Common")),
     ] {
         let html = fs::read_to_string(output.join(path)).unwrap();
         let document = Html::parse_document(&html);
+        if let Some(heading) = heading {
+            let headings: Vec<String> = document
+                .select(&heading_selector)
+                .map(|item| item.text().collect())
+                .collect();
+            assert_eq!(headings, [heading], "{path}");
+        }
         let posts: Vec<_> = document
             .select(&selector)
             .map(|post| {

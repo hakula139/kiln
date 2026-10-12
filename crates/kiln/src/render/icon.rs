@@ -10,9 +10,9 @@ static ICON_RE: LazyLock<Regex> =
 /// Returns an `<i>` element for an icon shortcode at the start of `text`, with the shortcode's
 /// byte length.
 pub(super) fn match_icon(text: &str) -> Option<(String, usize)> {
-    let caps = ICON_RE.captures(text)?;
-    let html = format!(r#"<i class="{}" aria-hidden="true"></i>"#, &caps[1]);
-    Some((html, caps[0].len()))
+    let (shortcode, [class]) = ICON_RE.captures(text)?.extract();
+    let html = format!(r#"<i class="{class}" aria-hidden="true"></i>"#);
+    Some((html, shortcode.len()))
 }
 
 #[cfg(test)]

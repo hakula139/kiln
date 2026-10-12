@@ -97,9 +97,9 @@ All fields are optional, and an unknown key, including one inside `[featured_ima
 | `updated`           | none                         |
 | `featured_image`    | none (table)                 |
 | `tags`              | `[]`                         |
-| `license`           | none                         |
 | `draft`             | `false`                      |
 | `weight`            | none                         |
+| `license`           | none                         |
 | `heading_numbering` | `false`                      |
 
 When `description` is absent, text before `<!--more-->` supplies a plain-text description for page and listing templates. Without either, the description is empty.
@@ -173,7 +173,7 @@ Templates and listings receive a prepared absolute URL with the deployment prefi
 
 ### Per-Page CSS
 
-Put the page stylesheet at `assets/css/_src/style.css` within its bundle. See [Assets and Stylesheets](assets.md#stylesheet-sources) for compilation, processor setup, asset URLs, and template loading.
+Put the page stylesheet at `assets/css/_src/style.css` within its bundle. See [Assets and Stylesheets](assets.md#stylesheet-sources) for compilation, processor setup, asset URLs and template loading.
 
 The `:::` directive can provide a wrapper class for page-specific selectors:
 

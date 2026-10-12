@@ -121,8 +121,9 @@ impl I18n {
 
     /// Looks up a string by key and interpolates Python-style `{name}` placeholders from `args`.
     ///
-    /// `{{` and `}}` render as literal braces. Missing placeholders substitute an empty string and
-    /// emit a warning. An unclosed `{` emits a warning and renders the partial literal as-is.
+    /// `{{`, `}}` and a stray `}` each render as one literal brace. Missing placeholders substitute
+    /// an empty string and emit a warning. An unclosed `{` emits a warning and renders the partial
+    /// literal as-is.
     #[must_use]
     pub fn t_interp(&self, key: &str, args: &BTreeMap<&str, impl AsRef<str>>) -> String {
         let template = self.t(key);
@@ -220,19 +221,18 @@ fn interpolate(
     mut warn: impl FnMut(Warning<&str>),
 ) -> String {
     let mut out = String::with_capacity(template.len());
-    let mut chars = template.char_indices().peekable();
+    let mut chars = template.chars().peekable();
 
-    while let Some((_, ch)) = chars.next() {
+    while let Some(ch) = chars.next() {
         match ch {
             '{' => {
-                if let Some(&(_, '{')) = chars.peek() {
-                    chars.next();
+                if chars.next_if_eq(&'{').is_some() {
                     out.push('{');
                     continue;
                 }
                 let mut name = String::new();
                 let mut closed = false;
-                for (_, c) in chars.by_ref() {
+                for c in chars.by_ref() {
                     if c == '}' {
                         closed = true;
                         break;
@@ -252,11 +252,7 @@ fn interpolate(
                 }
             }
             '}' => {
-                // `}}` is the escape for a literal `}`, and a stray `}` renders literally too.
-                // Either way we emit one `}`, consuming the second brace only when present.
-                if let Some(&(_, '}')) = chars.peek() {
-                    chars.next();
-                }
+                chars.next_if_eq(&'}');
                 out.push('}');
             }
             _ => out.push(ch),

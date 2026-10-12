@@ -7,7 +7,7 @@ use indoc::indoc;
 use crate::config::validate_theme_name;
 use crate::css::ENTRY;
 
-/// Scaffolds a new theme directory under `themes/<name>/`. Fails if the directory already exists.
+/// Scaffolds a new theme directory under `themes/<name>/`.
 ///
 /// # Errors
 ///
@@ -81,6 +81,7 @@ pub fn init_theme(root: &Path, name: &str) -> Result<()> {
         "#},
     )
     .context("failed to write i18n/en.toml")?;
+
     fs::write(
         i18n_dir.join("zh-Hans.toml"),
         indoc! {r#"
@@ -106,7 +107,7 @@ mod tests {
     // ── init_theme ──
 
     #[test]
-    fn init_theme_creates_structure() {
+    fn creates_theme_structure() {
         let root = tempfile::tempdir().unwrap();
         init_theme(root.path(), "my-theme").unwrap();
 
@@ -136,7 +137,7 @@ mod tests {
     }
 
     #[test]
-    fn init_theme_invalid_name_returns_error() {
+    fn rejects_invalid_names() {
         let root = tempfile::tempdir().unwrap();
         for name in [
             "",
@@ -158,7 +159,7 @@ mod tests {
     }
 
     #[test]
-    fn init_theme_existing_dir_returns_error() {
+    fn rejects_existing_dir() {
         let root = tempfile::tempdir().unwrap();
         init_theme(root.path(), "my-theme").unwrap();
 
@@ -171,7 +172,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn init_theme_unwritable_root_returns_error() {
+    fn reports_unwritable_root() {
         use crate::test_utils::PermissionGuard;
 
         let root = tempfile::tempdir().unwrap();

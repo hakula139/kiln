@@ -29,7 +29,6 @@ impl PandocAttrs<'_> {
 /// Parses attribute tokens up to the first unquoted `}` or the end of `input`.
 ///
 /// Quoted values support `\"` / `\\` escapes. An unclosed quote consumes the rest of the input.
-#[must_use]
 pub(crate) fn parse_pandoc_attrs(input: &str) -> PandocAttrs<'_> {
     let mut result = PandocAttrs::default();
     for token in AttrTokens::new(input) {

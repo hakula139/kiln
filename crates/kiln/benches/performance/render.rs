@@ -4,38 +4,17 @@ use criterion::{BenchmarkId, Criterion, Throughput};
 use indoc::indoc;
 use scraper::{Html, Selector};
 
-use kiln::config::Config;
-use kiln::i18n::{I18n, Language};
-use kiln::render::lqip::ImageResolver;
+use kiln::render::RenderOptions;
 use kiln::render::pipeline::render_page;
-use kiln::render::{PageResources, RenderOptions};
-use kiln::static_assets::StaticAssetManifest;
-use kiln::template::TemplateEngine;
 
-use super::fixtures::{PROSE, Site};
+use super::fixtures::{PROSE, RenderFixture};
 
 /// Measures rendering with preloaded dependencies and separately times fresh syntax loading.
 pub(super) fn benchmarks(criterion: &mut Criterion) {
-    let site = Site::new(0, PROSE, 0);
-    let config = Config::load(site.root()).unwrap();
-    let i18n = I18n::load(site.root(), None, &Language::default()).unwrap();
-    let manifest = StaticAssetManifest::default();
-    let engine = TemplateEngine::new(
-        Some(&site.root().join("templates")),
-        None,
-        &config,
-        &i18n,
-        &manifest,
-    )
-    .unwrap();
+    let fixture = RenderFixture::new();
+    let engine = fixture.engine();
     let options = RenderOptions::default();
-    let resolver = ImageResolver::new(&site.root().join("static"), config.image.clone());
-    let resources = PageResources {
-        source_dir: None,
-        images: &resolver,
-        assets: &manifest,
-        page_url: "/",
-    };
+    let resources = fixture.resources();
     let code = indoc! {r#"
         ```rust
         fn main() {
@@ -46,7 +25,7 @@ pub(super) fn benchmarks(criterion: &mut Criterion) {
     .repeat(20);
     let mut group = criterion.benchmark_group("render");
     for (name, input) in [("prose", PROSE.repeat(20)), ("highlighted_code", code)] {
-        let expected = render_page(&input, &engine, &options, &resources, false).unwrap();
+        let expected = render_page(&input, engine, &options, &resources, false).unwrap();
         verify_render(name, &expected.content_html);
         group.throughput(Throughput::Bytes(input.len().try_into().unwrap()));
         group.bench_with_input(
@@ -54,7 +33,7 @@ pub(super) fn benchmarks(criterion: &mut Criterion) {
             &input,
             |bencher, input| {
                 bencher.iter(|| {
-                    render_page(black_box(input), &engine, &options, &resources, false).unwrap()
+                    render_page(black_box(input), engine, &options, &resources, false).unwrap()
                 });
             },
         );

@@ -1,14 +1,14 @@
 # Assets and Stylesheets
 
-`kiln build` and `kiln serve` publish assets and compile stylesheets automatically. Keep handwritten sources in the site, theme, or page that owns them. Generated files belong in the build output.
+`kiln build` and `kiln serve` publish assets and compile stylesheets automatically. Keep handwritten sources in the site, theme or page that owns them. Generated files belong in the build output.
 
 ## Public Files
 
-| Source              | Output           | Use                                                                              |
-| ------------------- | ---------------- | -------------------------------------------------------------------------------- |
-| `assets/`           | `public/assets/` | Shared images, fonts, JavaScript, and other assets                               |
-| `static/`           | `public/`        | Files with fixed URLs, such as favicons, manifests, `_headers`, and `_redirects` |
-| `content/<bundle>/` | `public/<page>/` | Co-located page assets, retaining their relative paths                           |
+| Source              | Output           | Use                                                                             |
+| ------------------- | ---------------- | ------------------------------------------------------------------------------- |
+| `assets/`           | `public/assets/` | Shared images, fonts, JavaScript and other assets                               |
+| `static/`           | `public/`        | Files with fixed URLs, such as favicons, manifests, `_headers` and `_redirects` |
+| `content/<bundle>/` | `public/<page>/` | Co-located page assets, retaining their relative paths                          |
 
 Images and fonts from `assets/` and page bundles are published only under [content-hashed names](#fingerprints-and-minification). `static/` files always keep their names.
 
@@ -128,6 +128,6 @@ Repeat the immutable block for each pattern.
 
 ## Live Reload
 
-`kiln serve` watches the site `config.toml` and existing `assets/`, `content/`, `i18n/`, `static/`, and `templates/` directories, plus the active theme's `theme.toml` and corresponding source directories. Imported files within those trees trigger rebuilds. The startup log lists the watched paths.
+`kiln serve` watches the site `config.toml` and existing `assets/`, `content/`, `i18n/`, `static/` and `templates/` directories, plus the active theme's `theme.toml` and corresponding source directories. Imported files within those trees trigger rebuilds. The startup log lists the watched paths.
 
-Restart after changing `output_dir`, creating a top-level input that was absent at startup, switching themes, or changing an imported file outside the watched trees.
+Restart after changing `output_dir`, creating a top-level input that was absent at startup, switching themes or changing an imported file outside the watched trees.

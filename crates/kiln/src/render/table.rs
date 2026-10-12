@@ -76,7 +76,9 @@ impl TableLayout {
                 self.column_widths[self.column] = self.column_widths[self.column].max(width);
                 self.column += 1;
             }
-            Event::Text(t) | Event::Code(t) | Event::InlineMath(t) => self.cell_text.push_str(t),
+            Event::Text(t) | Event::Code(t) | Event::InlineMath(t) | Event::DisplayMath(t) => {
+                self.cell_text.push_str(t);
+            }
             _ => {}
         }
     }
@@ -136,22 +138,27 @@ mod tests {
 
     #[test]
     fn measures_visible_text_and_math_source() {
-        // Visible text is `ab 🎮 cd x2`: the link target, code backticks, math delimiters, and
-        // footnote label contribute nothing, and the emoji counts as 2.
+        // Both columns are 11 wide. The first shows `ab 🎮 cd x2`: the link target, code backticks,
+        // math delimiters, and footnote label contribute nothing, and the emoji counts as 2. The
+        // second counts its display math source `a + b = cde`.
         let md = indoc! {"
-            | Name |
-            | ---- |
-            | [ab](https://example.com/a-very-long-url) 🎮 `cd` $x2$[^note] |
+            | Name | Formula |
+            | ---- | ------- |
+            | [ab](https://example.com/a-very-long-url) 🎮 `cd` $x2$[^note] | $$a + b = cde$$ |
 
             [^note]: A footnote.
         "};
+        let at_threshold = render(md, 11);
         assert!(
-            render(md, 11).contains(r#"<td class="nowrap"><a href="#),
-            "cell at the threshold should be nowrap"
+            at_threshold.contains(r#"<td class="nowrap"><a href="#)
+                && at_threshold.contains(r#"<td class="nowrap"><span class="math math-display">"#),
+            "cells at the threshold should be nowrap, html:\n{at_threshold}"
         );
+        let over_threshold = render(md, 10);
         assert!(
-            render(md, 10).contains("<td><a href="),
-            "cell one column over the threshold should wrap"
+            over_threshold.contains("<td><a href=")
+                && over_threshold.contains(r#"<td><span class="math math-display">"#),
+            "cells one column over the threshold should wrap, html:\n{over_threshold}"
         );
     }
 

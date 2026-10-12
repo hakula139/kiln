@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::fmt::Write;
+use std::fmt::Write as _;
 
 use pulldown_cmark::{Event, Tag, TagEnd};
 use unicase::UniCase;

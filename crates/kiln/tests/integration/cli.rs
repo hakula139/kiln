@@ -363,6 +363,14 @@ fn convert_relative_paths_and_warns_with_file_path() {
             {{< image src="a.webp" alt="Alt" caption="Caption" >}}
         "#},
     )
+    .write(
+        "source/content/other/_index.md",
+        indoc! {"
+            ---
+            title: Other
+            ---
+        "},
+    )
     .write("source/static/asset.txt", "Static asset");
 
     let output = kiln()
@@ -406,6 +414,13 @@ fn convert_relative_paths_and_warns_with_file_path() {
             "{warning}: {logs}"
         );
     }
+    let index = fs::canonicalize(site.path("source/content/other/_index.md")).unwrap();
+    let index_field = format!("path={}", index.display());
+    assert!(
+        logs.lines().any(|line| line.contains(&index_field)
+            && line.contains("section index requires manual migration")),
+        "{logs}"
+    );
 }
 
 // ── init_theme ──

@@ -79,7 +79,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 ├── output/              # Output safety submodules
 │   └── guard.rs         # Output directory resolution and source / Git / output overlap guards
 ├── pagination.rs        # Listing page splitting, page directories and template pagination metadata
-├── render.rs            # RenderOptions struct + render submodule declarations
+├── render.rs            # RenderOptions, CopyButton, PageResources (page image / asset resolution) + render submodule declarations
 ├── render/              # Markdown rendering pipeline submodules
 │   ├── assets.rs        # PageAssets registry: scripts + auto-detected Feature flags (Math, Mermaid)
 │   ├── code_block.rs    # Fence info-string parsing → CodeBlockSpec (lang, title, highlights, collapse / expand)
