@@ -29,7 +29,7 @@ use crate::minify::{self, MinifyStats};
 use crate::output::OutputTransaction;
 use crate::output::guard::resolve_output_dir;
 use crate::render::lqip::ImageResolver;
-use crate::render::{CopyButton, RenderOptions};
+use crate::render::{CopyButton, PageResources, RenderOptions};
 use crate::search;
 use crate::static_assets::StaticAssetManifest;
 use crate::static_assets::publication::PublishedAssets;
@@ -46,6 +46,18 @@ struct BuildContext {
     template_engine: TemplateEngine,
     image_resolver: ImageResolver,
     git_info: Option<GitInfo>,
+}
+
+impl BuildContext {
+    /// Source context and published assets for rendering `page` at `page_url`.
+    fn page_resources<'a>(&'a self, page: &'a Page, page_url: &'a str) -> PageResources<'a> {
+        PageResources {
+            source_dir: page.source_path.parent(),
+            images: &self.image_resolver,
+            assets: &self.static_assets,
+            page_url,
+        }
+    }
 }
 
 /// Options controlling a single `build()` invocation.
@@ -163,10 +175,17 @@ fn publish_assets(
     minify: bool,
 ) -> Result<(Stylesheets, StaticAssetManifest, Option<MinifyStats>)> {
     let assets = PublishedAssets::publish(root, theme_dir, pages, output_dir)?;
-    let stylesheets = Stylesheets::discover(root, config, pages);
+    let stylesheets = Stylesheets::discover(root, theme_dir, pages);
     let mut static_assets = StaticAssetManifest::new(assets.outputs())
         .with_prefixes(authored_prefix, config.base_url.prefix());
-    stylesheets.compile(root, config, &assets, &static_assets, output_dir)?;
+    stylesheets.compile(
+        root,
+        theme_dir,
+        config.css.processor.unwrap_or_default(),
+        &assets,
+        &static_assets,
+        output_dir,
+    )?;
 
     let minify_stats = if minify {
         eprintln!("Minifying...");

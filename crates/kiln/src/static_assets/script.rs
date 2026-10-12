@@ -81,7 +81,6 @@ fn parse_imports(source: &str, path: &Path) -> Option<ScriptImports> {
     if collector.computed {
         return Some(ScriptImports::Computed);
     }
-    collector.specifiers.sort_unstable();
     Some(ScriptImports::Literal(collector.specifiers))
 }
 
@@ -246,12 +245,12 @@ mod tests {
         assert_eq!(
             parse_imports(source, Path::new("app.js")),
             Some(ScriptImports::Literal(vec![
-                "../b.js".to_owned(),
                 "./a.js".to_owned(),
+                "../b.js".to_owned(),
+                "/c.js".to_owned(),
+                "./side-effect.js".to_owned(),
                 "./d.js".to_owned(),
                 "./e.js".to_owned(),
-                "./side-effect.js".to_owned(),
-                "/c.js".to_owned(),
             ]))
         );
         assert_eq!(

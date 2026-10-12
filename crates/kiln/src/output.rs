@@ -87,13 +87,10 @@ pub(crate) fn copy_directory(
         if entry.path_is_symlink() {
             validate_source_link(entry.path(), &destination)?;
         }
-        let relative = entry.path().strip_prefix(src).with_context(|| {
-            format!(
-                "path {} is not under {}",
-                entry.path().display(),
-                src.display()
-            )
-        })?;
+        let relative = entry
+            .path()
+            .strip_prefix(src)
+            .expect("walkdir yields paths under its root");
         let target = dest.join(relative);
         if entry.file_type().is_dir() {
             fs::create_dir_all(&target)

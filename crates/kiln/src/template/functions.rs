@@ -21,9 +21,7 @@ pub(super) fn tpl_now() -> String {
 /// Reads a file relative to the directive page's source directory. Rejects `..`, absolute, and
 /// rooted path components. Symlinks may refer to files outside the source directory.
 pub(super) fn tpl_read_file(state: &State, filename: &str) -> Result<String, Error> {
-    let source_dir = state
-        .lookup("__source_dir")
-        .filter(|v| !v.is_none() && !v.is_undefined())
+    let source_dir = lookup_defined(state, "__source_dir")
         .ok_or_else(|| invalid("read_file is only callable from directive templates"))?;
     let source_dir = source_dir
         .as_str()
@@ -125,25 +123,22 @@ pub(super) fn tpl_register_script(
     url: &str,
     kwargs: &Kwargs,
 ) -> Result<&'static str, Error> {
-    let assets_value = state
-        .lookup("__assets")
-        .filter(|v| !v.is_undefined() && !v.is_none())
-        .ok_or_else(|| {
-            invalid(
-                "register_script requires page asset context: \
-                 only callable from directive templates",
-            )
-        })?;
+    let assets_value = lookup_defined(state, "__assets").ok_or_else(|| {
+        invalid(
+            "register_script requires page asset context: \
+             only callable from directive templates",
+        )
+    })?;
 
     let handle = assets_value
         .downcast_object::<AssetsHandle>()
         .ok_or_else(|| invalid("__assets is not a recognized asset handle"))?;
 
-    let load_str: Option<String> = kwargs.get("load")?;
+    let load_str: Option<&str> = kwargs.get("load")?;
     let module: bool = kwargs.get::<Option<bool>>("module")?.unwrap_or(false);
     kwargs.assert_all_used()?;
 
-    let load = match load_str.as_deref() {
+    let load = match load_str {
         None => LoadStrategy::Defer,
         Some(s) => s.parse::<LoadStrategy>().map_err(|_| {
             invalid(format!(
@@ -159,6 +154,15 @@ pub(super) fn tpl_register_script(
         .map_err(|e| invalid(e.to_string()))?;
 
     Ok("")
+}
+
+// ── Context Lookup ──
+
+/// Returns the render context value bound to `name`, or `None` when it is unset or `none`.
+fn lookup_defined(state: &State, name: &str) -> Option<Value> {
+    state
+        .lookup(name)
+        .filter(|value| !value.is_none() && !value.is_undefined())
 }
 
 // ── Errors ──
@@ -493,6 +497,10 @@ mod tests {
             (
                 r#"{{ register_script("/x.js", load="eager") }}"#,
                 r#"load must be one of "defer", "async", "sync"; got "eager""#,
+            ),
+            (
+                r#"{{ register_script("/x.js", load=1) }}"#,
+                "value is not a string",
             ),
             (
                 r#"{{ register_script("/x.js", module="yes") }}"#,

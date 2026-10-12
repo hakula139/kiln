@@ -3,7 +3,7 @@ use std::path::{Component, Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 
-use super::{StaticAssetManifest, has_extension, is_media, rename_fingerprinted, site_path};
+use super::{StaticAssetManifest, is_media, rename_fingerprinted, site_path};
 use crate::content::is_private;
 use crate::content::page::Page;
 use crate::minify::{AssetKind, asset_kind};
@@ -196,7 +196,7 @@ fn reserved_name_hint(path: &Path, naming: Naming) -> Option<&'static str> {
         Some(
             "Remove the dots from its stem, since scripts that import or are imported keep their source names.",
         )
-    } else if has_extension(path, &["css"])
+    } else if asset_kind(path) == Some(AssetKind::Css)
         && path.parent().is_some_and(|parent| match name {
             "site" => parent == Path::new("assets/css"),
             "page" => parent.ends_with("assets/css"),

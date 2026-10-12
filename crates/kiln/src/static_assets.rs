@@ -5,14 +5,20 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::str::Utf8Error;
+use std::sync::LazyLock;
 
 use anyhow::{Context, Result, bail};
 use percent_encoding::percent_decode_str;
 use sha2::{Digest, Sha256};
+use url::Url;
 
 use crate::url::{join_site_url, path_url};
 
 const FINGERPRINT_LENGTH: usize = 12;
+
+/// Origin that relative page URLs resolve against, since URL joining needs an absolute base.
+static PLACEHOLDER_BASE: LazyLock<Url> =
+    LazyLock::new(|| Url::parse("https://kiln.invalid/").expect("placeholder base URL is valid"));
 
 /// Published files keyed by the source-named site paths that reference them.
 #[derive(Clone, Debug)]
@@ -135,8 +141,7 @@ impl StaticAssetManifest {
         if is_passthrough(url) {
             return Ok(None);
         }
-        let end = url.find(['?', '#']).unwrap_or(url.len());
-        let (path, suffix) = url.split_at(end);
+        let (path, suffix) = split_suffix(url);
         if path.is_empty() {
             return Ok(None);
         }
@@ -172,8 +177,8 @@ impl StaticAssetManifest {
 /// Returns the manifest key of a URL path resolved against `page_url`, `None` when it falls
 /// outside the deployment prefix, or an error when it does not decode to a UTF-8 file path.
 fn site_key(path: &str, page_url: &str, prefix: &str) -> Result<Option<String>, Utf8Error> {
-    let Some(resolved) = url::Url::parse(page_url)
-        .or_else(|_| url::Url::parse("https://kiln.invalid/")?.join(page_url))
+    let Some(resolved) = Url::parse(page_url)
+        .or_else(|_| PLACEHOLDER_BASE.join(page_url))
         .and_then(|base| base.join(path))
         .ok()
     else {
@@ -196,7 +201,12 @@ fn site_path(path: &Path) -> String {
 
 /// Whether a reference leaves the site or stays within the current document.
 pub(crate) fn is_passthrough(url: &str) -> bool {
-    url.starts_with("//") || url.starts_with('#') || url::Url::parse(url).is_ok()
+    url.starts_with("//") || url.starts_with('#') || Url::parse(url).is_ok()
+}
+
+/// Splits a URL before its query or fragment.
+pub(crate) fn split_suffix(url: &str) -> (&str, &str) {
+    url.split_at(url.find(['?', '#']).unwrap_or(url.len()))
 }
 
 /// Whether a file is a raster image or font, which references no other files.

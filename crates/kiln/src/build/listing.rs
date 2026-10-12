@@ -79,12 +79,7 @@ fn prepare_page<'a>(
         .or_else(|| ctx.git_info.as_ref()?.last_modified(&page.source_path));
     let featured_image = resolve_featured_image(
         page.frontmatter.featured_image.as_ref(),
-        &PageResources {
-            source_dir: page.source_path.parent(),
-            images: &ctx.image_resolver,
-            assets: &ctx.static_assets,
-            page_url: &url,
-        },
+        &ctx.page_resources(page, &url),
     )?;
     Ok(PreparedPage {
         page,

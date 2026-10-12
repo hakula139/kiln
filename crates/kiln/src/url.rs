@@ -73,17 +73,17 @@ impl Serialize for BaseUrl {
     }
 }
 
-/// Encodes a filesystem name as one URL path component.
-pub(crate) fn encode_component(component: &str) -> String {
-    utf8_percent_encode(component, COMPONENT_ENCODE_SET).to_string()
-}
-
 /// Converts a relative filesystem path to an encoded URL path using forward slashes.
 pub(crate) fn path_url(path: &Path) -> String {
     path.components()
         .map(|component| encode_component(&component.as_os_str().to_string_lossy()))
         .collect::<Vec<_>>()
         .join("/")
+}
+
+/// Encodes a filesystem name as one URL path component.
+fn encode_component(component: &str) -> String {
+    utf8_percent_encode(component, COMPONENT_ENCODE_SET).to_string()
 }
 
 /// Converts a relative directory path to an encoded URL path ending in `/`, or an empty string

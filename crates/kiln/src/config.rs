@@ -282,7 +282,7 @@ impl Paginate {
         }
 
         #[derive(Default, Deserialize)]
-        #[serde(default)]
+        #[serde(default, expecting = "a table with an optional `paginate` key")]
         struct ListingParams {
             paginate: Option<NonZeroUsize>,
         }
@@ -551,7 +551,10 @@ mod tests {
                 r#"params.home.paginate = "8""#,
                 "invalid pagination in [params]",
             ),
-            (r#"params.home = "wide""#, "expected struct ListingParams"),
+            (
+                r#"params.home = "wide""#,
+                "expected a table with an optional `paginate` key",
+            ),
         ] {
             let root = tempfile::tempdir().unwrap();
             write_test_file(root.path(), "config.toml", contents);

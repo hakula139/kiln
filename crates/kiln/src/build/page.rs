@@ -2,7 +2,6 @@ use anyhow::{Context, Result};
 
 use super::BuildContext;
 use super::listing::{PreparedPage, format_page_date};
-use crate::render::PageResources;
 use crate::render::pipeline::render_page;
 use crate::template::vars::{PageMetadata, PostTemplateVars};
 
@@ -13,17 +12,12 @@ pub(super) fn render(ctx: &BuildContext, prepared: &PreparedPage) -> Result<Stri
         &page.body,
         &ctx.template_engine,
         &ctx.render_options,
-        &PageResources {
-            source_dir: page.source_path.parent(),
-            images: &ctx.image_resolver,
-            assets: &ctx.static_assets,
-            page_url: &prepared.summary.url,
-        },
+        &ctx.page_resources(page, &prepared.summary.url),
         page.frontmatter.heading_numbering,
     )
     .with_context(|| format!("failed to render {}", page.source_path.display()))?;
 
-    let page_css = ctx.stylesheets.page_url(&ctx.static_assets, page)?;
+    let page_css = ctx.stylesheets.page_css_url(&ctx.static_assets, page)?;
     let vars = PostTemplateVars {
         metadata: PageMetadata {
             title: &prepared.summary.title,
