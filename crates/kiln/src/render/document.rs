@@ -23,7 +23,7 @@ use super::table::stamp_nowrap;
 use super::toc::TocEntry;
 use super::{PageResources, RenderOptions, Spanned};
 use crate::html::escape;
-use crate::markdown::markdown_options;
+use crate::markdown::{markdown_options, push_plain_text};
 use crate::text::slugify_or;
 
 /// One parsed Markdown fragment, the page body or a directive body.
@@ -411,17 +411,6 @@ fn collect_headings<'a>(events: impl Iterator<Item = &'a Spanned>) -> Vec<TocEnt
     }
 
     headings
-}
-
-/// Accumulates plain-text content from an event into `buf`.
-fn push_plain_text(buf: &mut String, event: &Event) {
-    match event {
-        Event::Text(t) | Event::Code(t) | Event::InlineMath(t) | Event::DisplayMath(t) => {
-            buf.push_str(t);
-        }
-        Event::SoftBreak | Event::HardBreak => buf.push(' '),
-        _ => {}
-    }
 }
 
 /// Converts math events into KaTeX-compatible HTML and passes other events through.
