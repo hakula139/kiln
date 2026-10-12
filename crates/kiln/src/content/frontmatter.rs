@@ -76,8 +76,7 @@ impl Frontmatter {
 pub struct FeaturedImage {
     pub src: String,
 
-    /// CSS `background-position` (e.g., `"top"`, `"30% 20%"`).
-    /// Defaults to `center` in templates when unset.
+    /// CSS `background-position` (e.g., `"top"`, `"30% 20%"`), which templates default to `center`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub position: Option<String>,
 

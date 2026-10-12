@@ -10,6 +10,8 @@ use super::{is_markdown, is_public, is_single_component};
 use crate::markdown::{code_ranges, markdown_options, push_plain_text};
 use crate::output::walk_directory;
 
+const SUMMARY_SEPARATOR: &str = "<!--more-->";
+
 /// Distinguishes blog posts (under `content/posts/`) from standalone pages.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PageKind {
@@ -33,8 +35,6 @@ pub struct Page {
     /// Public co-located non-markdown files for page bundles. Empty for standalone pages.
     pub assets: Vec<PathBuf>,
 }
-
-const SUMMARY_SEPARATOR: &str = "<!--more-->";
 
 impl Page {
     /// Loads the page whose source at `path` under `content_dir` holds `content`, deriving its

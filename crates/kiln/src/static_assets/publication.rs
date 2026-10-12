@@ -340,11 +340,6 @@ mod tests {
     use crate::content::discovery::discover_content;
     use crate::static_assets::content_fingerprint;
 
-    /// Converts a `/`-separated relative path to the platform's separators, as errors display it.
-    fn native_path(path: &str) -> String {
-        path.replace('/', std::path::MAIN_SEPARATOR_STR)
-    }
-
     // ── PublishedAssets::publish ──
 
     #[test]
@@ -655,15 +650,6 @@ mod tests {
 
     // ── PublishedAssets::scripts ──
 
-    fn publish_files(root: &Path, files: &[&str]) -> PublishedAssets {
-        for file in files {
-            let path = root.join(file);
-            fs::create_dir_all(path.parent().unwrap()).unwrap();
-            fs::write(path, "body").unwrap();
-        }
-        PublishedAssets::publish(root, None, &[], &root.join("public")).unwrap()
-    }
-
     #[test]
     fn scripts_marks_assets_and_bundle_scripts_addressable() {
         let root = tempfile::tempdir().unwrap();
@@ -805,5 +791,19 @@ mod tests {
             ),
             "got: {err}"
         );
+    }
+
+    /// Converts a `/`-separated relative path to the platform's separators, as errors display it.
+    fn native_path(path: &str) -> String {
+        path.replace('/', std::path::MAIN_SEPARATOR_STR)
+    }
+
+    fn publish_files(root: &Path, files: &[&str]) -> PublishedAssets {
+        for file in files {
+            let path = root.join(file);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, "body").unwrap();
+        }
+        PublishedAssets::publish(root, None, &[], &root.join("public")).unwrap()
     }
 }

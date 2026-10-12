@@ -285,52 +285,6 @@ fn build_updates_managed_image_urls_and_retires_previous_fingerprints() {
     }
 }
 
-fn write_image_lifecycle_templates(site: &TestSite) {
-    site.write(
-        "templates/post.html",
-        indoc! {r#"
-            <img id="featured" src="{{ featured_image.src }}">
-            <img id="template" src="{{ asset_url('photo%20%25.avif?quality=1#view') }}">
-            <img id="external" src="{{ asset_url('//example.org/logo.svg') }}">
-            <link rel="stylesheet" href="{{ asset_url('/assets/css/site.css') }}">
-            {{ content | safe }}
-        "#},
-    )
-    .write(
-        "templates/directives/link.html",
-        indoc! {r#"
-            {% set url = named_args.url %}
-            <a href="{{ url }}"><img src="{{ asset_url(named_args.logo) }}"></a>
-        "#},
-    )
-    .write(
-        "assets/css/_src/style.css",
-        r#".cover { background: url("/blog/example/photo%20%25.avif?quality=1#view"); }"#,
-    );
-}
-
-fn write_image_lifecycle_page(site: &TestSite, featured: &str) {
-    site.page(
-        "example",
-        &formatdoc! {r#"
-            +++
-            title = "Example"
-            featured_image = {{ src = {featured:?} }}
-            +++
-            ![Block](./photo%20%25.avif?quality=1#view)
-
-            Inline ![Inline](../example/photo%20%25.avif?quality=1#view) image.
-
-            ![External](https://example.org/image.avif)
-
-            ::: box
-            ::: link {{url="https://example.org/target/" logo="photo%20%25.avif?quality=1#view"}}
-            :::
-            :::
-        "#},
-    );
-}
-
 #[test]
 fn build_reads_image_dimensions_from_published_theme_and_site_assets() {
     let site = TestSite::empty();
@@ -438,4 +392,50 @@ fn build_materializes_external_bundle_symlinks() {
         assert!(css.contains(".imported"), "{css}");
         assert!(css.contains("../../../../icon.svg"), "{css}");
     }
+}
+
+fn write_image_lifecycle_templates(site: &TestSite) {
+    site.write(
+        "templates/post.html",
+        indoc! {r#"
+            <img id="featured" src="{{ featured_image.src }}">
+            <img id="template" src="{{ asset_url('photo%20%25.avif?quality=1#view') }}">
+            <img id="external" src="{{ asset_url('//example.org/logo.svg') }}">
+            <link rel="stylesheet" href="{{ asset_url('/assets/css/site.css') }}">
+            {{ content | safe }}
+        "#},
+    )
+    .write(
+        "templates/directives/link.html",
+        indoc! {r#"
+            {% set url = named_args.url %}
+            <a href="{{ url }}"><img src="{{ asset_url(named_args.logo) }}"></a>
+        "#},
+    )
+    .write(
+        "assets/css/_src/style.css",
+        r#".cover { background: url("/blog/example/photo%20%25.avif?quality=1#view"); }"#,
+    );
+}
+
+fn write_image_lifecycle_page(site: &TestSite, featured: &str) {
+    site.page(
+        "example",
+        &formatdoc! {r#"
+            +++
+            title = "Example"
+            featured_image = {{ src = {featured:?} }}
+            +++
+            ![Block](./photo%20%25.avif?quality=1#view)
+
+            Inline ![Inline](../example/photo%20%25.avif?quality=1#view) image.
+
+            ![External](https://example.org/image.avif)
+
+            ::: box
+            ::: link {{url="https://example.org/target/" logo="photo%20%25.avif?quality=1#view"}}
+            :::
+            :::
+        "#},
+    );
 }

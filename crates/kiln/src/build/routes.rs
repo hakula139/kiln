@@ -31,27 +31,6 @@ pub(super) enum Route<'a> {
     SearchIndex,
 }
 
-pub(super) struct ListingPage<'a> {
-    /// Listing directory relative to the output root.
-    base: PathBuf,
-    number: usize,
-    total: usize,
-    pub(super) pages: &'a [&'a PreparedPage<'a>],
-    /// Newest modification across the whole listing, shared by every page.
-    lastmod: Option<Timestamp>,
-}
-
-impl ListingPage<'_> {
-    fn path(&self) -> PathBuf {
-        page_dir(&self.base, self.number).join("index.html")
-    }
-
-    pub(super) fn pagination(&self, prefix: &str) -> PaginationVars {
-        let listing_url = join_site_url(prefix, &directory_url(&self.base));
-        PaginationVars::new(&listing_url, self.number, self.total)
-    }
-}
-
 impl Route<'_> {
     /// Names what produced this output in collision errors.
     fn owner(&self) -> String {
@@ -78,6 +57,27 @@ impl Route<'_> {
                 | Self::Overview(..)
                 | Self::NotFound
         )
+    }
+}
+
+pub(super) struct ListingPage<'a> {
+    /// Listing directory relative to the output root.
+    base: PathBuf,
+    number: usize,
+    total: usize,
+    pub(super) pages: &'a [&'a PreparedPage<'a>],
+    /// Newest modification across the whole listing, shared by every page.
+    lastmod: Option<Timestamp>,
+}
+
+impl ListingPage<'_> {
+    fn path(&self) -> PathBuf {
+        page_dir(&self.base, self.number).join("index.html")
+    }
+
+    pub(super) fn pagination(&self, prefix: &str) -> PaginationVars {
+        let listing_url = join_site_url(prefix, &directory_url(&self.base));
+        PaginationVars::new(&listing_url, self.number, self.total)
     }
 }
 

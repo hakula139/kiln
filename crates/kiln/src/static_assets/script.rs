@@ -133,12 +133,7 @@ mod tests {
     use indoc::indoc;
 
     use super::*;
-
-    fn as_entries(scripts: &BTreeMap<PathBuf, Naming>) -> impl Iterator<Item = (&Path, Naming)> {
-        scripts
-            .iter()
-            .map(|(path, naming)| (path.as_path(), *naming))
-    }
+    use crate::static_assets::content_fingerprint;
 
     // ── fingerprint_scripts ──
 
@@ -187,7 +182,7 @@ mod tests {
 
         let classic = format!(
             "assets/js/classic.{}.js",
-            super::super::content_fingerprint(b"window.ready = true;")
+            content_fingerprint(b"window.ready = true;")
         );
         assert_eq!(
             manifest.asset_url("/assets/js/classic.js").unwrap(),
@@ -225,6 +220,12 @@ mod tests {
 
         assert_eq!(manifest.asset_url("/plugin.js").unwrap(), "/plugin.js");
         assert!(dir.path().join("plugin.js").exists());
+    }
+
+    fn as_entries(scripts: &BTreeMap<PathBuf, Naming>) -> impl Iterator<Item = (&Path, Naming)> {
+        scripts
+            .iter()
+            .map(|(path, naming)| (path.as_path(), *naming))
     }
 
     // ── parse_imports ──

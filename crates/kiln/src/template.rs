@@ -84,6 +84,11 @@ impl TemplateEngine {
         env.add_function("read_file", tpl_read_file);
         env.add_function("parse_csv", tpl_parse_csv);
 
+        let t_i18n = i18n.clone();
+        env.add_function("t", move |key: &str, kwargs: Kwargs| {
+            tpl_t(&t_i18n, key, &kwargs)
+        });
+
         let manifest = Arc::new(static_assets.clone());
         let asset_manifest = Arc::clone(&manifest);
         env.add_function("asset_url", move |state: &State, url: &str| {
@@ -95,11 +100,6 @@ impl TemplateEngine {
                 tpl_register_script(state, &manifest, url, &kwargs)
             },
         );
-
-        let t_i18n = i18n.clone();
-        env.add_function("t", move |key: &str, kwargs: Kwargs| {
-            tpl_t(&t_i18n, key, &kwargs)
-        });
 
         Ok(Self { env })
     }
@@ -241,7 +241,7 @@ fn format_value(out: &mut Output, state: &State, value: &Value) -> Result<(), mi
 
 #[cfg(test)]
 mod tests {
-    use std::fs as test_fs;
+    use std::fs;
 
     use indoc::indoc;
 
@@ -262,7 +262,7 @@ mod tests {
     #[test]
     fn new_with_site_dir_only() {
         let dir = tempfile::tempdir().unwrap();
-        test_fs::write(dir.path().join("test.html"), "hello").unwrap();
+        fs::write(dir.path().join("test.html"), "hello").unwrap();
         let engine = test_site_engine(dir.path());
         let tmpl = engine.env.get_template("test.html").unwrap();
         assert_eq!(tmpl.render(()).unwrap(), "hello");
@@ -273,14 +273,14 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let site_dir = dir.path().join("site");
         let theme_dir = dir.path().join("theme");
-        test_fs::create_dir_all(&site_dir).unwrap();
-        test_fs::create_dir_all(&theme_dir).unwrap();
+        fs::create_dir_all(&site_dir).unwrap();
+        fs::create_dir_all(&theme_dir).unwrap();
 
         // Same template in both, so site should win.
-        test_fs::write(site_dir.join("page.html"), "from site").unwrap();
-        test_fs::write(theme_dir.join("page.html"), "from theme").unwrap();
+        fs::write(site_dir.join("page.html"), "from site").unwrap();
+        fs::write(theme_dir.join("page.html"), "from theme").unwrap();
         // Template only in theme, so it should fall through.
-        test_fs::write(theme_dir.join("base.html"), "theme base").unwrap();
+        fs::write(theme_dir.join("base.html"), "theme base").unwrap();
 
         let engine = test_engine_with(Some(&site_dir), Some(&theme_dir), &Config::default());
         let page = engine.env.get_template("page.html").unwrap();
@@ -293,7 +293,7 @@ mod tests {
     fn new_ignores_nonexistent_site_dir() {
         let dir = tempfile::tempdir().unwrap();
         let theme_dir = dir.path().join("theme");
-        test_fs::create_dir(&theme_dir).unwrap();
+        fs::create_dir(&theme_dir).unwrap();
         let engine = test_engine_with(
             Some(Path::new("/nonexistent")),
             Some(&theme_dir),
@@ -480,10 +480,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let static_dir = dir.path().join("public");
         let templates = dir.path().join("templates");
-        test_fs::create_dir_all(&static_dir).unwrap();
-        test_fs::write(static_dir.join("bg.png"), "png").unwrap();
-        test_fs::create_dir_all(&templates).unwrap();
-        test_fs::write(
+        fs::create_dir_all(&static_dir).unwrap();
+        fs::write(static_dir.join("bg.png"), "png").unwrap();
+        fs::create_dir_all(&templates).unwrap();
+        fs::write(
             templates.join("404.html"),
             "{{ title }}|{{ description }}|{{ url }}|{{ asset_url('bg.png') }}|{{ assets.features | length }}",
         )
@@ -514,14 +514,14 @@ mod tests {
     fn render_directive_renders_template_with_context() {
         let dir = tempfile::tempdir().unwrap();
         let directives = dir.path().join("directives");
-        test_fs::create_dir_all(&directives).unwrap();
-        test_fs::write(
+        fs::create_dir_all(&directives).unwrap();
+        fs::write(
             directives.join("test.html"),
             "<div{% if id %} id={{ id }}{% endif %}>{{ name }}: {{ body_html | safe }} {{ config.title }} {{ read_file('data.txt') }}</div>",
         )
         .unwrap();
         let source = tempfile::tempdir().unwrap();
-        test_fs::write(source.path().join("data.txt"), "data").unwrap();
+        fs::write(source.path().join("data.txt"), "data").unwrap();
         let config: Config = toml::from_str(indoc! {r#"
             base_url = "https://example.com"
             title = "Probe"
@@ -553,9 +553,9 @@ mod tests {
     #[test]
     fn render_directive_missing_template_returns_none() {
         let dir = tempfile::tempdir().unwrap();
-        test_fs::create_dir_all(dir.path().join("directives")).unwrap();
+        fs::create_dir_all(dir.path().join("directives")).unwrap();
         // A traversal would reach this file through "directives/../secret.html".
-        test_fs::write(dir.path().join("secret.html"), "LEAKED").unwrap();
+        fs::write(dir.path().join("secret.html"), "LEAKED").unwrap();
         let engine = test_site_engine(dir.path());
         let args = DirectiveArgs::default();
         for name in ["nonexistent", "../secret"] {
@@ -616,7 +616,7 @@ mod tests {
     #[test]
     fn has_template_broken_returns_true() {
         let dir = tempfile::tempdir().unwrap();
-        test_fs::write(dir.path().join("broken.html"), "{% invalid %}").unwrap();
+        fs::write(dir.path().join("broken.html"), "{% invalid %}").unwrap();
         let engine = test_site_engine(dir.path());
         assert!(
             engine.has_template("broken.html"),
@@ -667,7 +667,7 @@ mod tests {
         ] {
             let dir = tempfile::tempdir().unwrap();
             if let Some(source) = source {
-                test_fs::write(dir.path().join(name), source).unwrap();
+                fs::write(dir.path().join(name), source).unwrap();
             }
             let engine = test_site_engine(dir.path());
             let error = engine
@@ -772,8 +772,8 @@ mod tests {
     fn engine_with_directive(name: &str, body: &str) -> (tempfile::TempDir, TemplateEngine) {
         let dir = tempfile::tempdir().unwrap();
         let directives_dir = dir.path().join("directives");
-        test_fs::create_dir_all(&directives_dir).unwrap();
-        test_fs::write(directives_dir.join(format!("{name}.html")), body).unwrap();
+        fs::create_dir_all(&directives_dir).unwrap();
+        fs::write(directives_dir.join(format!("{name}.html")), body).unwrap();
         let engine = test_site_engine(dir.path());
         (dir, engine)
     }

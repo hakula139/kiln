@@ -98,9 +98,8 @@ pub(crate) fn directory_url(path: &Path) -> String {
 
 /// Computes the canonical URL for a page from its output path.
 ///
-/// For `index.html` pages (page bundles), returns the directory path with a
-/// trailing slash. For other files, returns the file path as-is.
-#[must_use]
+/// For `index.html` pages (page bundles), returns the directory path with a trailing slash. For
+/// other files, returns the file path as-is.
 pub(crate) fn page_url(base_url: &BaseUrl, output_path: &Path) -> String {
     match output_path.parent() {
         Some(directory)
@@ -115,7 +114,6 @@ pub(crate) fn page_url(base_url: &BaseUrl, output_path: &Path) -> String {
 }
 
 /// Joins a site-relative or root-relative path to a base URL or path prefix ending in `/`.
-#[must_use]
 pub(crate) fn join_site_url(base: &str, path: &str) -> String {
     format!("{base}{}", path.trim_start_matches('/'))
 }

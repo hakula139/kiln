@@ -377,20 +377,6 @@ mod tests {
 
     // ── StaticAssetManifest::resolve_local ──
 
-    fn photo_manifest(authored: &str, deployment: &str) -> StaticAssetManifest {
-        let outputs = BTreeMap::from([
-            (
-                PathBuf::from("blog/posts/a/photo %.avif"),
-                PathBuf::from("blog/posts/a/photo %.ba7816bf8f01.avif"),
-            ),
-            (
-                PathBuf::from("posts/a/photo %.avif"),
-                PathBuf::from("posts/a/photo %.d9298a10d1b0.avif"),
-            ),
-        ]);
-        StaticAssetManifest::new(&outputs).with_prefixes(authored, deployment)
-    }
-
     #[test]
     fn resolve_local_publishes_authored_urls_under_the_deployment_prefix() {
         for (deployment, page_url) in [
@@ -495,5 +481,19 @@ mod tests {
                 .unwrap(),
             None
         );
+    }
+
+    fn photo_manifest(authored: &str, deployment: &str) -> StaticAssetManifest {
+        let outputs = BTreeMap::from([
+            (
+                PathBuf::from("blog/posts/a/photo %.avif"),
+                PathBuf::from("blog/posts/a/photo %.ba7816bf8f01.avif"),
+            ),
+            (
+                PathBuf::from("posts/a/photo %.avif"),
+                PathBuf::from("posts/a/photo %.d9298a10d1b0.avif"),
+            ),
+        ]);
+        StaticAssetManifest::new(&outputs).with_prefixes(authored, deployment)
     }
 }

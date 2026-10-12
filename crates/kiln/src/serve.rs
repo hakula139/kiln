@@ -372,8 +372,7 @@ async fn serve_request(
     Response::from_parts(parts, Body::from(html))
 }
 
-/// Injects the live reload script before `</body>` in HTML content.
-/// If no `</body>` is found, appends the script at the end.
+/// Injects the live reload script before `</body>`, or at the end of HTML without one.
 fn inject_script(html: &str) -> String {
     // to_ascii_lowercase preserves byte positions, so slicing the original at `pos` is safe.
     if let Some(pos) = html.to_ascii_lowercase().rfind("</body>") {

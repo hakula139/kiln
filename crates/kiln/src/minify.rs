@@ -398,8 +398,8 @@ fn minify_css_bytes(input: &[u8], path: &Path) -> Option<Vec<u8>> {
 }
 
 fn print_minified_stylesheet(mut stylesheet: StyleSheet) -> Option<String> {
-    // lightningcss's `minify` and `to_css` don't fail in practice with
-    // default options, so silently keep the original if they ever do.
+    // lightningcss's `minify` and `to_css` don't fail in practice with default options, so
+    // silently keep the original if they ever do.
     stylesheet.minify(MinifyOptions::default()).ok()?;
     Some(stylesheet.to_css(minified_printer()).ok()?.code)
 }
@@ -956,8 +956,6 @@ mod tests {
     #[test]
     fn minify_css_bytes_invalid_utf8_returns_none() {
         let path = PathBuf::from("broken.css");
-        // `0xff 0xfe 0xfd` is not a valid UTF-8 sequence and hits the early
-        // UTF-8 guard before lightningcss ever sees the bytes.
         assert_eq!(minify_css_bytes(&[0xff, 0xfe, 0xfd], &path), None);
     }
 
@@ -1015,15 +1013,15 @@ mod tests {
     }
 
     #[test]
-    fn minify_js_bytes_parse_error_returns_none() {
-        let path = PathBuf::from("broken.js");
-        assert_eq!(minify_js_bytes(b"function () { ]]]", &path, false), None);
-    }
-
-    #[test]
     fn minify_js_bytes_invalid_utf8_returns_none() {
         let path = PathBuf::from("broken.js");
         assert_eq!(minify_js_bytes(&[0xff, 0xfe, 0xfd], &path, false), None);
+    }
+
+    #[test]
+    fn minify_js_bytes_parse_error_returns_none() {
+        let path = PathBuf::from("broken.js");
+        assert_eq!(minify_js_bytes(b"function () { ]]]", &path, false), None);
     }
 
     // ── format_bytes ──

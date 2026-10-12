@@ -53,8 +53,8 @@ pub struct Config {
     /// Theme name, resolved to `themes/<name>/` under the site root.
     pub theme: Option<String>,
 
-    /// Free-form key-value bag for theme and site settings.
-    /// Theme defaults from `theme.toml` are merged in at load time.
+    /// Free-form key-value bag for theme and site settings. Theme defaults from `theme.toml` are
+    /// merged in at load time.
     pub params: toml::Table,
 
     /// Listing page sizes resolved from `params` at load time.
@@ -74,21 +74,13 @@ pub struct Config {
     pub image: ImageConfig,
 }
 
-/// Theme metadata loaded from `themes/<name>/theme.toml`.
-#[derive(Debug, Default, Deserialize)]
-#[serde(default)]
-struct ThemeMeta {
-    min_kiln_version: Option<semver::Version>,
-
-    css: Css,
-
-    params: toml::Table,
-}
-
-#[derive(Debug, Default, Deserialize, Serialize)]
-#[serde(default, deny_unknown_fields)]
-pub struct Author {
-    pub name: String,
+/// Posts per listing page.
+#[derive(Debug)]
+pub struct Paginate {
+    pub home: NonZeroUsize,
+    /// Applies to the all-posts archive and section archives.
+    pub section: NonZeroUsize,
+    pub tag: NonZeroUsize,
 }
 
 /// Full-text search configuration.
@@ -140,8 +132,14 @@ pub struct MenuItem {
     pub external: bool,
 }
 
+#[derive(Debug, Default, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Author {
+    pub name: String,
+}
+
 /// Image-pipeline configuration loaded from the `[image]` section of `config.toml`.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct ImageConfig {
     /// Maximum placeholder width and height, in pixels.
@@ -151,13 +149,15 @@ pub struct ImageConfig {
     pub lqip_quality: u8,
 }
 
-/// Posts per listing page.
-#[derive(Debug)]
-pub struct Paginate {
-    pub home: NonZeroUsize,
-    /// Applies to the all-posts archive and section archives.
-    pub section: NonZeroUsize,
-    pub tag: NonZeroUsize,
+/// Theme metadata loaded from `themes/<name>/theme.toml`.
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+struct ThemeMeta {
+    min_kiln_version: Option<semver::Version>,
+
+    css: Css,
+
+    params: toml::Table,
 }
 
 impl Default for Config {
@@ -184,21 +184,21 @@ impl Default for Config {
     }
 }
 
-impl Default for ImageConfig {
-    fn default() -> Self {
-        Self {
-            lqip_size: 16,
-            lqip_quality: 25,
-        }
-    }
-}
-
 impl Default for Paginate {
     fn default() -> Self {
         Self {
             home: DEFAULT_PAGE_SIZE,
             section: DEFAULT_PAGE_SIZE,
             tag: DEFAULT_PAGE_SIZE,
+        }
+    }
+}
+
+impl Default for ImageConfig {
+    fn default() -> Self {
+        Self {
+            lqip_size: 16,
+            lqip_quality: 25,
         }
     }
 }
@@ -330,8 +330,8 @@ impl ThemeMeta {
     }
 }
 
-/// Merges theme default params into site params. Site values take precedence.
-/// Nested tables are merged recursively. Returns an error on type mismatch.
+/// Merges theme default params into site params. Site values take precedence, and nested tables
+/// are merged recursively. Returns an error on type mismatch.
 fn merge_params(site: &mut toml::Table, theme_defaults: toml::Table, prefix: &str) -> Result<()> {
     for (key, theme_value) in theme_defaults {
         let Some(site_value) = site.get_mut(&key) else {
