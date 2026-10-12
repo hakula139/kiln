@@ -452,35 +452,22 @@ mod tests {
     }
 
     #[test]
-    fn sorts_tags_by_count_then_name_and_keeps_punctuation_distinct() {
+    fn sorts_tags_by_count_name_then_slug_and_keeps_punctuation_distinct() {
+        let shared = ["epsilon", "delta", "gamma", "beta", "eta"];
         let pages = [
             tagged("Post 1", &["zebra", "alpha++"]),
             tagged("Post 2", &["common", "alpha"]),
             tagged("Post 3", &["common"]),
+            tagged("Post 4", &shared),
         ];
-        let taxonomy = collect(&pages, |_| {});
-
-        assert_eq!(
-            summarize(&taxonomy)[1..]
-                .iter()
-                .map(|(_, slug, _, _)| *slug)
-                .collect::<Vec<_>>(),
-            ["common", "alpha", "alpha++", "zebra"]
-        );
-    }
-
-    #[test]
-    fn sorts_equally_named_tags_by_slug() {
-        let slugs = ["epsilon", "delta", "gamma", "beta", "alpha"];
-        let pages = [tagged("Post 1", &slugs)];
         let taxonomy = collect(&pages, |content| {
-            for slug in slugs {
+            for slug in shared {
                 write_test_file(
                     content,
                     &format!("tags/{slug}/_index.md"),
                     indoc! {r#"
                         +++
-                        title = "Shared"
+                        title = "shared"
                         +++
                     "#},
                 );
@@ -493,11 +480,15 @@ mod tests {
                 .map(|(_, slug, name, _)| (*slug, *name))
                 .collect::<Vec<_>>(),
             [
-                ("alpha", "Shared"),
-                ("beta", "Shared"),
-                ("delta", "Shared"),
-                ("epsilon", "Shared"),
-                ("gamma", "Shared"),
+                ("common", "common"),
+                ("alpha", "alpha"),
+                ("alpha++", "alpha++"),
+                ("beta", "shared"),
+                ("delta", "shared"),
+                ("epsilon", "shared"),
+                ("eta", "shared"),
+                ("gamma", "shared"),
+                ("zebra", "zebra"),
             ]
         );
     }
