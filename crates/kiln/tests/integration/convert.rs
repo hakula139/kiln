@@ -107,28 +107,6 @@ fn convert_build_preserves_callout_and_bundle_ownership() {
     assert!(!output.join("posts/parent/index.MD").exists());
 }
 
-fn assert_converted_callout(html: &str) {
-    let document = Html::parse_document(html);
-    let details = document
-        .select(&Selector::parse("details.callout.warning").unwrap())
-        .next()
-        .unwrap();
-    assert!(details.value().attr("open").is_none());
-    let title = details
-        .select(&Selector::parse("summary").unwrap())
-        .next()
-        .unwrap();
-    assert_eq!(title.text().collect::<String>(), "A \"quoted\" title");
-    let body = details
-        .select(&Selector::parse("strong").unwrap())
-        .next()
-        .unwrap();
-    assert_eq!(body.text().collect::<String>(), "this body");
-    let text = document.root_element().text().collect::<String>();
-    assert!(text.contains("Before"), "{text}");
-    assert!(text.contains("After"), "{text}");
-}
-
 #[test]
 fn convert_overlapping_roots_without_writes_returns_error() {
     let site = TestSite::empty();
@@ -242,4 +220,26 @@ fn convert_destination_symlink_escape_returns_error() {
         assert!(error.to_string().contains("escapes its root"), "{error}");
         assert!(!outside.join("new.txt").exists());
     }
+}
+
+fn assert_converted_callout(html: &str) {
+    let document = Html::parse_document(html);
+    let details = document
+        .select(&Selector::parse("details.callout.warning").unwrap())
+        .next()
+        .unwrap();
+    assert!(details.value().attr("open").is_none());
+    let title = details
+        .select(&Selector::parse("summary").unwrap())
+        .next()
+        .unwrap();
+    assert_eq!(title.text().collect::<String>(), "A \"quoted\" title");
+    let body = details
+        .select(&Selector::parse("strong").unwrap())
+        .next()
+        .unwrap();
+    assert_eq!(body.text().collect::<String>(), "this body");
+    let text = document.root_element().text().collect::<String>();
+    assert!(text.contains("Before"), "{text}");
+    assert!(text.contains("After"), "{text}");
 }

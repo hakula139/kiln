@@ -256,20 +256,6 @@ pub(crate) fn localhost_url(port: u16) -> String {
     format!("http://localhost:{port}")
 }
 
-impl ImageConfig {
-    fn validate(&self) -> Result<()> {
-        ensure!(
-            self.lqip_size > 0,
-            "image.lqip_size must be greater than zero"
-        );
-        ensure!(
-            (1..=100).contains(&self.lqip_quality),
-            "image.lqip_quality must be between 1 and 100"
-        );
-        Ok(())
-    }
-}
-
 impl Paginate {
     /// Reads `paginate`, with `home.paginate` and `section.paginate` overriding it per listing.
     fn from_params(params: &toml::Table) -> Result<Self> {
@@ -296,6 +282,20 @@ impl Paginate {
             section: params.section.paginate.unwrap_or(default),
             tag: default,
         })
+    }
+}
+
+impl ImageConfig {
+    fn validate(&self) -> Result<()> {
+        ensure!(
+            self.lqip_size > 0,
+            "image.lqip_size must be greater than zero"
+        );
+        ensure!(
+            (1..=100).contains(&self.lqip_quality),
+            "image.lqip_quality must be between 1 and 100"
+        );
+        Ok(())
     }
 }
 

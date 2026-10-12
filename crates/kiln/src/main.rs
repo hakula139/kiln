@@ -91,8 +91,8 @@ fn main() -> Result<()> {
             build(
                 &root,
                 &BuildOptions {
-                    minify,
                     base_url_override: base_url.as_deref(),
+                    minify,
                     ..Default::default()
                 },
             )?;
