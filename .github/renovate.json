@@ -5,8 +5,7 @@
     {
       "matchPackageNames": ["/^swc_/"],
       "groupName": "swc",
-      "separateMajorMinor": false,
-      "automerge": false
+      "separateMajorMinor": false
     }
   ]
 }
