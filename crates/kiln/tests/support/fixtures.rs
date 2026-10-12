@@ -4,6 +4,26 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+/// Repository-local variables listed by `git rev-parse --local-env-vars`, which git itself clears
+/// when it switches repositories.
+const LOCAL_ENV_VARS: [&str; 15] = [
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_COMMON_DIR",
+    "GIT_CONFIG",
+    "GIT_CONFIG_COUNT",
+    "GIT_CONFIG_PARAMETERS",
+    "GIT_DIR",
+    "GIT_GRAFT_FILE",
+    "GIT_IMPLICIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_NO_REPLACE_OBJECTS",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_PREFIX",
+    "GIT_REPLACE_REF_BASE",
+    "GIT_SHALLOW_FILE",
+    "GIT_WORK_TREE",
+];
+
 /// Writes a file at `dir.join(rel_path)`, creating parent directories as needed.
 pub fn write_test_file(dir: &Path, rel_path: &str, content: &str) {
     let path = dir.join(rel_path);
@@ -25,7 +45,8 @@ pub fn template_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/templates")
 }
 
-/// Runs `git` with `args` in `root`, isolated from user and system configuration.
+/// Runs `git` with `args` in `root`, isolated from any enclosing repository and from user and
+/// system configuration.
 pub fn git(root: &Path, args: &[&str]) {
     run_git(git_command(root).args(args));
 }
@@ -42,6 +63,9 @@ pub fn git_commit(root: &Path, date: &str) {
 
 fn git_command(root: &Path) -> Command {
     let mut command = Command::new("git");
+    for var in LOCAL_ENV_VARS {
+        command.env_remove(var);
+    }
     command
         .current_dir(root)
         .env("GIT_CONFIG_NOSYSTEM", "1")

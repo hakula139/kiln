@@ -1,13 +1,12 @@
 use std::ops::RangeInclusive;
 
-use crate::attrs::parse_pandoc_attrs;
+use crate::attrs::{Identity, parse_pandoc_attrs};
 
 /// Attributes extracted from a fenced code block's info string.
 #[derive(Debug, Default)]
 pub(super) struct CodeBlockSpec {
     pub(super) lang: Option<String>,
-    pub(super) id: Option<String>,
-    pub(super) classes: Vec<String>,
+    pub(super) identity: Identity,
     pub(super) title: Option<String>,
     pub(super) highlight: Vec<RangeInclusive<usize>>,
     pub(super) disclosure: Disclosure,
@@ -61,17 +60,19 @@ pub(super) fn parse_fence_info(info: &str) -> CodeBlockSpec {
         Disclosure::Auto
     };
 
-    let mut classes = attrs.classes.into_iter();
+    let mut identity = attrs.identity();
     let lang = if lang.is_empty() {
-        classes.next()
+        (!identity.classes.is_empty()).then(|| identity.classes.remove(0))
     } else {
-        Some(lang)
+        Some(lang.to_owned())
     };
 
     CodeBlockSpec {
-        lang: lang.map(str::to_ascii_lowercase),
-        id: attrs.id.map(str::to_owned),
-        classes: classes.map(str::to_owned).collect(),
+        lang: lang.map(|mut lang| {
+            lang.make_ascii_lowercase();
+            lang
+        }),
+        identity,
         title,
         highlight,
         disclosure,
@@ -122,8 +123,8 @@ mod tests {
     fn lang_only_has_default_attrs() {
         let spec = parse_fence_info("rust");
         assert_eq!(spec.lang.as_deref(), Some("rust"));
-        assert!(spec.id.is_none());
-        assert_eq!(spec.classes, Vec::<String>::new());
+        assert!(spec.identity.id.is_none());
+        assert_eq!(spec.identity.classes, Vec::<String>::new());
         assert!(spec.title.is_none());
         assert_eq!(spec.highlight, Vec::<RangeInclusive<usize>>::new());
         assert_eq!(spec.disclosure, Disclosure::Auto);
@@ -135,8 +136,8 @@ mod tests {
             r#"rust {#my-id .special .wide title="main.rs" highlight="1,3-5" collapse}"#,
         );
         assert_eq!(spec.lang.as_deref(), Some("rust"));
-        assert_eq!(spec.id.as_deref(), Some("my-id"));
-        assert_eq!(spec.classes, ["special", "wide"]);
+        assert_eq!(spec.identity.id.as_deref(), Some("my-id"));
+        assert_eq!(spec.identity.classes, ["special", "wide"]);
         assert_eq!(spec.title.as_deref(), Some("main.rs"));
         assert_eq!(spec.highlight, [1..=1, 3..=5]);
         assert_eq!(spec.disclosure, Disclosure::Collapse);
@@ -162,7 +163,7 @@ mod tests {
         ] {
             let spec = parse_fence_info(info);
             assert_eq!(spec.lang.as_deref(), lang, "{info}");
-            assert_eq!(spec.classes, classes, "{info}");
+            assert_eq!(spec.identity.classes, classes, "{info}");
             assert_eq!(spec.title.as_deref(), Some("T"), "{info}");
         }
     }
@@ -172,7 +173,7 @@ mod tests {
         let spec = parse_fence_info(r#"rust {title="a}b.rs" highlight="2"} ignored {.x}"#);
         assert_eq!(spec.title.as_deref(), Some("a}b.rs"));
         assert_eq!(spec.highlight, vec![2..=2]);
-        assert_eq!(spec.classes, Vec::<String>::new());
+        assert_eq!(spec.identity.classes, Vec::<String>::new());
     }
 
     #[test]

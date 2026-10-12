@@ -7,7 +7,7 @@ use pulldown_cmark::{Event, Parser, Tag, TagEnd};
 
 use super::frontmatter::{self, Frontmatter};
 use super::{is_markdown, is_public, is_single_component};
-use crate::markdown::{code_ranges, markdown_options};
+use crate::markdown::{code_ranges, markdown_options, push_plain_text};
 use crate::output::walk_directory;
 
 /// Distinguishes blog posts (under `content/posts/`) from standalone pages.
@@ -197,15 +197,10 @@ fn strip_markdown(full_text: &str, summary_end: usize) -> String {
         }
 
         match event {
-            Event::Text(t) | Event::Code(t) | Event::InlineMath(t) | Event::DisplayMath(t)
-                if !in_image =>
-            {
-                plain.push_str(&t);
-            }
-            Event::SoftBreak | Event::HardBreak if !in_image => plain.push(' '),
             Event::Start(Tag::Image { .. }) => in_image = true,
             Event::End(TagEnd::Image) => in_image = false,
             Event::Start(Tag::Paragraph) if !plain.is_empty() => plain.push('\n'),
+            _ if !in_image => push_plain_text(&mut plain, &event),
             _ => {}
         }
     }

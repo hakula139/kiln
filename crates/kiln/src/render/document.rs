@@ -1,6 +1,7 @@
 use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::ops::Range;
+use std::sync::Arc;
 use std::vec;
 
 use anyhow::Result;
@@ -22,7 +23,7 @@ use super::table::stamp_nowrap;
 use super::toc::TocEntry;
 use super::{PageResources, RenderOptions, Spanned};
 use crate::html::escape;
-use crate::markdown::markdown_options;
+use crate::markdown::{markdown_options, push_plain_text};
 use crate::text::slugify_or;
 
 /// One parsed Markdown fragment, the page body or a directive body.
@@ -57,8 +58,15 @@ impl MarkdownDocument {
     }
 }
 
-/// Image URLs and attributes, keyed by the image's offset in the parsed source.
-type ResolvedImages = HashMap<usize, (String, Option<ImageAttrs>)>;
+/// A rendered image's published URL, authored attributes and on-disk metadata.
+struct ResolvedImage {
+    url: String,
+    attrs: Option<ImageAttrs>,
+    meta: Option<Arc<ImageMeta>>,
+}
+
+/// Resolved images, keyed by the image's offset in the parsed source.
+type ResolvedImages = HashMap<usize, ResolvedImage>;
 
 /// Renders a document with allocated IDs to HTML, adding auto-detected features (math, mermaid)
 /// to `assets`.
@@ -72,13 +80,13 @@ pub(super) fn render_document(
     options: &RenderOptions,
     assets: &mut PageAssets,
 ) -> Result<String> {
-    let images = resolve_images(&document, resources)?;
     let MarkdownDocument {
         body,
         notes,
         headings,
-        ..
+        image_attrs,
     } = document;
+    let images = resolve_images(body.iter().chain(notes.events()), image_attrs, resources)?;
     let mut renderer = MarkdownRenderer {
         images,
         options,
@@ -90,17 +98,17 @@ pub(super) fn render_document(
     Ok(html)
 }
 
-/// Resolves every rendered image in the document, merging authored attributes with on-disk
+/// Resolves every rendered image in `events`, pairing its authored attributes with on-disk
 /// metadata.
 ///
 /// Images nested in another image's alt text render as plain text, so they are skipped.
-fn resolve_images(
-    document: &MarkdownDocument,
+fn resolve_images<'a>(
+    events: impl Iterator<Item = &'a Spanned>,
+    mut image_attrs: HashMap<usize, ImageAttrs>,
     resources: &PageResources<'_>,
 ) -> Result<ResolvedImages> {
     let mut depth = 0_usize;
-    document
-        .events()
+    events
         .filter_map(|(event, range)| match event {
             Event::Start(Tag::Image { dest_url, .. }) => {
                 depth += 1;
@@ -114,8 +122,8 @@ fn resolve_images(
         })
         .map(|(offset, src)| {
             let (url, meta) = resources.resolve_image(src)?;
-            let attrs = enrich_image_attrs(document.image_attrs.get(&offset), meta.as_deref());
-            Ok((offset, (url, attrs)))
+            let attrs = image_attrs.remove(&offset);
+            Ok((offset, ResolvedImage { url, attrs, meta }))
         })
         .collect()
 }
@@ -209,9 +217,16 @@ impl MarkdownRenderer<'_> {
 
                 Event::Start(Tag::Image { title, .. }) => {
                     let inner: Vec<_> = image_content(&mut events).collect();
-                    let (url, alt, attrs) = self.image_parts(range.start, &inner);
+                    let (image, alt) = self.image_parts(range.start, &inner);
                     output.push(Event::Html(
-                        render_inline_image(&url, &alt, &title, attrs.as_ref()).into(),
+                        render_inline_image(
+                            &image.url,
+                            &alt,
+                            &title,
+                            image.attrs.as_ref(),
+                            image.meta.as_deref(),
+                        )
+                        .into(),
                     ));
                 }
 
@@ -260,39 +275,28 @@ impl MarkdownRenderer<'_> {
         }) {
             return None;
         }
-        let (url, alt, attrs) = self.image_parts(range.start, inner);
-        Some(render_block_image(&url, &alt, title, attrs.as_ref()))
+        let (image, alt) = self.image_parts(range.start, inner);
+        Some(render_block_image(
+            &image.url,
+            &alt,
+            title,
+            image.attrs.as_ref(),
+            image.meta.as_deref(),
+        ))
     }
 
-    /// Takes an image's resolved URL and attributes, and collects its plain-text alt.
-    fn image_parts(
-        &mut self,
-        offset: usize,
-        inner: &[Spanned],
-    ) -> (String, String, Option<ImageAttrs>) {
+    /// Takes an image's resolved parts and collects its plain-text alt.
+    fn image_parts(&mut self, offset: usize, inner: &[Spanned]) -> (ResolvedImage, String) {
         let mut alt = String::new();
         for (event, _) in inner {
             push_plain_text(&mut alt, event);
         }
-        let (url, attrs) = self
+        let image = self
             .images
             .remove(&offset)
             .expect("resolve_images resolves every image");
-        (url, alt, attrs)
+        (image, alt)
     }
-}
-
-/// Merges authored `{...}` attrs with resolver-supplied on-disk metadata.
-/// Returns `None` only when neither side has anything to contribute.
-fn enrich_image_attrs(base: Option<&ImageAttrs>, meta: Option<&ImageMeta>) -> Option<ImageAttrs> {
-    if base.is_none() && meta.is_none() {
-        return None;
-    }
-    let mut attrs = base.cloned().unwrap_or_default();
-    if let Some(meta) = meta {
-        attrs.fill_from_meta(meta);
-    }
-    Some(attrs)
 }
 
 /// Expands shortcodes in text outside code blocks and autolinks.
@@ -407,17 +411,6 @@ fn collect_headings<'a>(events: impl Iterator<Item = &'a Spanned>) -> Vec<TocEnt
     }
 
     headings
-}
-
-/// Accumulates plain-text content from an event into `buf`.
-fn push_plain_text(buf: &mut String, event: &Event) {
-    match event {
-        Event::Text(t) | Event::Code(t) | Event::InlineMath(t) | Event::DisplayMath(t) => {
-            buf.push_str(t);
-        }
-        Event::SoftBreak | Event::HardBreak => buf.push(' '),
-        _ => {}
-    }
 }
 
 /// Converts math events into KaTeX-compatible HTML and passes other events through.

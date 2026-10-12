@@ -102,7 +102,7 @@ impl PreparedDocument {
                         .markdown
                         .image_attrs
                         .get(&range.start)
-                        .and_then(|attrs| attrs.id.as_deref())
+                        .and_then(|attrs| attrs.identity.id.as_deref())
                     {
                         ids.reserve(id);
                     }
@@ -111,7 +111,7 @@ impl PreparedDocument {
                 Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(info))) => {
                     let spec = parse_fence_info(info);
                     if !spec.is_mermaid()
-                        && let Some(id) = spec.id
+                        && let Some(id) = spec.identity.id
                     {
                         ids.reserve(&id);
                     }

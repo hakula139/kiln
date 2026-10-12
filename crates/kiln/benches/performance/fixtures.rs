@@ -1,10 +1,11 @@
 use std::fmt::Write;
 use std::fs;
 use std::path::Path;
-use std::process::Command;
 
 use indoc::{formatdoc, indoc};
 use tempfile::TempDir;
+
+use super::test_fixtures::{git, git_commit};
 
 pub(super) const PROSE: &str = indoc! {r"
     ## Benchmark heading
@@ -87,26 +88,9 @@ impl Site {
             format!("enable_git_info = true\n{config}"),
         )
         .unwrap();
-        for args in [
-            &["init", "-q"][..],
-            &["add", "."],
-            &["commit", "-qm", "Add benchmark site"],
-        ] {
-            let status = Command::new("git")
-                .args(args)
-                .current_dir(root)
-                .env("GIT_CONFIG_NOSYSTEM", "1")
-                .env("GIT_CONFIG_GLOBAL", "/dev/null")
-                .env("GIT_AUTHOR_NAME", "Example")
-                .env("GIT_AUTHOR_EMAIL", "example@example.com")
-                .env("GIT_COMMITTER_NAME", "Example")
-                .env("GIT_COMMITTER_EMAIL", "example@example.com")
-                .env("GIT_AUTHOR_DATE", COMMITTED)
-                .env("GIT_COMMITTER_DATE", COMMITTED)
-                .status()
-                .unwrap();
-            assert!(status.success(), "git {args:?} failed: {status}");
-        }
+        git(root, &["init", "-q"]);
+        git(root, &["add", "."]);
+        git_commit(root, COMMITTED);
     }
 
     /// Returns the site root accepted by the build CLI and configuration loader.

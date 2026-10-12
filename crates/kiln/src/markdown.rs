@@ -30,6 +30,17 @@ pub(crate) fn code_ranges(input: &str) -> Vec<Range<usize>> {
         .collect()
 }
 
+/// Accumulates plain-text content from an event into `buf`.
+pub(crate) fn push_plain_text(buf: &mut String, event: &Event) {
+    match event {
+        Event::Text(t) | Event::Code(t) | Event::InlineMath(t) | Event::DisplayMath(t) => {
+            buf.push_str(t);
+        }
+        Event::SoftBreak | Event::HardBreak => buf.push(' '),
+        _ => {}
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use indoc::{formatdoc, indoc};

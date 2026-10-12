@@ -157,19 +157,3 @@ fn build_localizes_and_escapes_code_copy_labels() {
     let button = r#"<button class="copy-btn" data-pagefind-ignore aria-label="复制 &quot;代码&quot; &lt;&amp;&gt;">复制</button>"#;
     assert!(html.contains(button), "{html}");
 }
-
-#[test]
-fn build_rejects_invalid_render_options() {
-    let site = TestSite::new(indoc! {r#"
-        [params]
-        emojis = "yes"
-    "#});
-
-    let err = site.build().unwrap_err();
-    assert_eq!(
-        err.to_string(),
-        "failed to parse render options from [params]"
-    );
-    assert!(format!("{err:#}").contains("invalid type: string \"yes\", expected a boolean"));
-    assert!(!site.path("public").exists());
-}

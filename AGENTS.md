@@ -73,7 +73,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 ├── init.rs              # Theme scaffolding (kiln init-theme)
 ├── lib.rs               # Library module declarations
 ├── main.rs              # CLI argument parsing and command dispatch
-├── markdown.rs          # Shared parser options and protected code ranges
+├── markdown.rs          # Shared parser options, protected code ranges and plain-text extraction
 ├── minify.rs            # CSS / JS minification before fingerprinting, HTML after rendering (lightningcss, swc)
 ├── output.rs            # Owned build transactions, file output and static file copying
 ├── output/              # Output safety submodules
