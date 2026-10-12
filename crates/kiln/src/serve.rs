@@ -22,7 +22,7 @@ use tower::util::MapRequest;
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::set_status::SetStatus;
 
-use crate::build::BuildOptions;
+use crate::build::{BuildOptions, build};
 use crate::config::{self, Config};
 use crate::output::guard::resolve_output_dir;
 
@@ -267,7 +267,7 @@ async fn watch_loop(
 
 /// Builds the site into the served directory with dev-server URLs and no minification.
 fn rebuild(root: &Path, base_url: &str, output_dir: &Path) -> Result<()> {
-    crate::build(
+    build(
         root,
         &BuildOptions {
             base_url_override: Some(base_url),

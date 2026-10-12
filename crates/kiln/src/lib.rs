@@ -1,29 +1,24 @@
-pub(crate) mod attrs;
+mod attrs;
 pub mod build;
 pub mod config;
 pub mod content;
 pub mod convert;
 mod css;
 pub mod directive;
-pub(crate) mod html;
+mod html;
 pub mod i18n;
 pub mod init;
 mod markdown;
-pub(crate) mod minify;
-pub(crate) mod output;
-pub(crate) mod pagination;
+mod minify;
+mod output;
+mod pagination;
 pub mod render;
-pub(crate) mod search;
+mod search;
 pub mod serve;
 pub mod static_assets;
 pub mod template;
-pub(crate) mod text;
-pub(crate) mod url;
-
-pub use build::{BuildOptions, build};
-pub use convert::convert;
-pub use init::init_theme;
-pub use serve::serve;
+mod text;
+mod url;
 
 #[cfg(test)]
-pub(crate) mod test_utils;
+mod test_utils;

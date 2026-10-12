@@ -2,7 +2,10 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use kiln::BuildOptions;
+use kiln::build::{BuildOptions, build};
+use kiln::convert::convert;
+use kiln::init::init_theme;
+use kiln::serve::serve;
 use tracing_subscriber::EnvFilter;
 
 #[derive(Parser)]
@@ -20,21 +23,22 @@ enum Command {
         #[arg(long, default_value = ".")]
         root: PathBuf,
 
-        /// Minify HTML, CSS, and JS in the output directory.
-        #[arg(long)]
-        minify: bool,
-
         /// Override `base_url` from `config.toml`. Useful for staging or per-deploy preview
         /// environments that share a single `config.toml` with prod. Falls back to the
         /// `KILN_BASE_URL` environment variable.
         #[arg(long, env = "KILN_BASE_URL")]
         base_url: Option<String>,
+
+        /// Minify HTML, CSS, and JS in the output directory.
+        #[arg(long)]
+        minify: bool,
     },
     /// Convert Hugo content to kiln format.
     Convert {
         /// Path to Hugo site root.
         #[arg(long)]
         source: PathBuf,
+
         /// Path to kiln site root.
         #[arg(long)]
         dest: PathBuf,
@@ -77,14 +81,14 @@ fn main() -> Result<()> {
     match cli.command {
         Command::Build {
             root,
-            minify,
             base_url,
+            minify,
         } => {
             let root = canonicalize(&root)?;
             // An empty `KILN_BASE_URL` env var (e.g., from a workflow input left unset) should fall
             // through to config.toml, not blank out every URL.
             let base_url = base_url.filter(|s| !s.is_empty());
-            kiln::build(
+            build(
                 &root,
                 &BuildOptions {
                     minify,
@@ -93,18 +97,14 @@ fn main() -> Result<()> {
                 },
             )?;
         }
-        Command::Convert { source, dest } => {
-            let source = canonicalize(&source)?;
-            let dest = dest.canonicalize().unwrap_or(dest);
-            kiln::convert(&source, &dest)?;
-        }
+        Command::Convert { source, dest } => convert(&source, &dest)?,
         Command::InitTheme { name, root } => {
             let root = canonicalize(&root)?;
-            kiln::init_theme(&root, &name)?;
+            init_theme(&root, &name)?;
         }
         Command::Serve { root, port, open } => {
             let root = canonicalize(&root)?;
-            kiln::serve(&root, port, open)?;
+            serve(&root, port, open)?;
         }
     }
 
