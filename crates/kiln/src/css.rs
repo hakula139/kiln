@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, VecDeque};
-use std::fmt::Write;
+use std::fmt::{Display, Write};
 use std::fs;
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
@@ -15,11 +15,11 @@ use lightningcss::values::string::CSSString;
 use percent_encoding::percent_decode_str;
 use tempfile::TempDir;
 
-use crate::config::{Config, CssProcessor};
+use crate::config::CssProcessor;
 use crate::content::page::Page;
 use crate::output::write_output;
 use crate::static_assets::publication::PublishedAssets;
-use crate::static_assets::{StaticAssetManifest, is_passthrough};
+use crate::static_assets::{StaticAssetManifest, is_passthrough, split_suffix};
 use crate::url::path_url;
 
 pub(crate) const ENTRY: &str = "assets/css/_src/style.css";
@@ -44,9 +44,9 @@ pub(crate) struct Stylesheets {
 
 impl Stylesheets {
     /// Resolves site overrides and page-owned entry points before compiling any sources.
-    pub(crate) fn discover(root: &Path, config: &Config, pages: &[Page]) -> Self {
-        let shared_source = std::iter::once(root.to_owned())
-            .chain(config.theme_dir(root))
+    pub(crate) fn discover(root: &Path, theme_dir: Option<&Path>, pages: &[Page]) -> Self {
+        let shared_source = std::iter::once(root)
+            .chain(theme_dir)
             .map(|dir| dir.join(ENTRY))
             .find(|path| path.is_file());
         let shared = shared_source.map(|source| Stylesheet {
@@ -85,13 +85,14 @@ impl Stylesheets {
     pub(crate) fn compile(
         &self,
         root: &Path,
-        config: &Config,
+        theme_dir: Option<&Path>,
+        processor: CssProcessor,
         assets: &PublishedAssets,
         manifest: &StaticAssetManifest,
         output_dir: &Path,
     ) -> Result<()> {
         let styles: Vec<_> = self.shared.iter().chain(self.pages.values()).collect();
-        let compiled: Vec<_> = match config.css.processor.unwrap_or_default() {
+        let compiled: Vec<_> = match processor {
             CssProcessor::Plain => styles
                 .iter()
                 .map(|style| compile_plain(assets, manifest, style))
@@ -102,7 +103,7 @@ impl Stylesheets {
                 |style| {
                     (
                         style,
-                        TailwindRun::spawn(root, config, self.shared.as_ref(), style),
+                        TailwindRun::spawn(root, theme_dir, self.shared.as_ref(), style),
                     )
                 },
                 |(style, run)| run?.finish(assets, manifest, style),
@@ -139,7 +140,7 @@ impl Stylesheets {
     /// # Errors
     ///
     /// Returns an error for a missing compiled stylesheet.
-    pub(crate) fn page_url(
+    pub(crate) fn page_css_url(
         &self,
         manifest: &StaticAssetManifest,
         page: &Page,
@@ -158,9 +159,7 @@ fn compile_plain(
 ) -> Result<String> {
     let provider = CssProvider(FileProvider::new());
     let mut bundler = Bundler::new(&provider, None, ParserOptions::default());
-    let stylesheet = bundler
-        .bundle(&style.source)
-        .map_err(|error| anyhow::anyhow!("{error}"))?;
+    let stylesheet = bundler.bundle(&style.source).map_err(css_error)?;
     publish_urls(assets, manifest, style, &stylesheet)
 }
 
@@ -195,7 +194,7 @@ struct TailwindRun {
 impl TailwindRun {
     fn spawn(
         root: &Path,
-        config: &Config,
+        theme_dir: Option<&Path>,
         shared: Option<&Stylesheet>,
         style: &Stylesheet,
     ) -> Result<Self> {
@@ -210,7 +209,7 @@ impl TailwindRun {
         _ = writeln!(source, "@import {};", tailwind_path(&style.source)?);
         for dir in std::iter::once(root.join("content"))
             .chain(std::iter::once(root.join("templates")))
-            .chain(config.theme_dir(root).map(|dir| dir.join("templates")))
+            .chain(theme_dir.map(|dir| dir.join("templates")))
             .filter(|dir| dir.is_dir())
         {
             _ = writeln!(source, "@source {};", tailwind_path(&dir)?);
@@ -257,7 +256,7 @@ impl TailwindRun {
                 ..ParserOptions::default()
             },
         )
-        .map_err(|error| anyhow::anyhow!("{error}"))?;
+        .map_err(css_error)?;
         publish_urls(assets, manifest, style, &stylesheet)
     }
 }
@@ -301,7 +300,7 @@ fn publish_urls(
             }),
             ..PrinterOptions::default()
         })
-        .map_err(|error| anyhow::anyhow!("{error}"))?;
+        .map_err(css_error)?;
     let mut css = result.code;
     for dependency in result.dependencies.unwrap_or_default() {
         let (placeholder, url, source) = match dependency {
@@ -324,8 +323,7 @@ fn published_url(
     if is_passthrough(url) {
         return Ok(url.to_owned());
     }
-    let split = url.find(['?', '#']).unwrap_or(url.len());
-    let (path, suffix) = url.split_at(split);
+    let (path, suffix) = split_suffix(url);
     let destination = if path.starts_with('/') {
         let published = manifest
             .published_path(path)
@@ -369,7 +367,12 @@ fn is_unbundled_import(url: &str) -> bool {
 fn css_string(value: &str) -> Result<String> {
     CSSString(value.into())
         .to_css_string(PrinterOptions::default())
-        .map_err(|error| anyhow::anyhow!("{error}"))
+        .map_err(css_error)
+}
+
+/// Converts a lightningcss error, which may borrow the parsed source, into an owned error.
+fn css_error(error: impl Display) -> anyhow::Error {
+    anyhow::anyhow!("{error}")
 }
 
 #[cfg(test)]
@@ -382,10 +385,10 @@ mod tests {
     use crate::content::discovery::discover_content;
     use crate::test_utils::write_test_file;
 
-    // ── Stylesheets::page_url ──
+    // ── Stylesheets::page_css_url ──
 
     #[test]
-    fn page_url_preserves_base_path_and_encoded_output() {
+    fn preserves_base_path_and_encoded_output() {
         let root = tempfile::tempdir().unwrap();
         write_test_file(
             root.path(),
@@ -402,14 +405,20 @@ mod tests {
             ".page { color: red; }",
         );
         let pages = discover_content(root.path()).unwrap().pages;
-        let config = Config::default();
-        let stylesheets = Stylesheets::discover(root.path(), &config, &pages);
+        let stylesheets = Stylesheets::discover(root.path(), None, &pages);
         let output = root.path().join("public");
         let assets = PublishedAssets::publish(root.path(), None, &pages, &output).unwrap();
         let mut manifest =
             StaticAssetManifest::new(assets.outputs()).with_prefixes("/blog/", "/blog/");
         stylesheets
-            .compile(root.path(), &config, &assets, &manifest, &output)
+            .compile(
+                root.path(),
+                None,
+                CssProcessor::Plain,
+                &assets,
+                &manifest,
+                &output,
+            )
             .unwrap();
         stylesheets.fingerprint(&mut manifest, &output).unwrap();
 
@@ -418,7 +427,7 @@ mod tests {
         assert!(css.contains(".page"), "{css}");
         assert!(!output.join("a % # 世界/assets/css/page.css").exists());
         assert_eq!(
-            stylesheets.page_url(&manifest, &pages[0]).unwrap(),
+            stylesheets.page_css_url(&manifest, &pages[0]).unwrap(),
             Some(
                 "/blog/a%20%25%20%23%20%E4%B8%96%E7%95%8C/assets/css/page.65f6d4d0a9a8.css"
                     .to_owned()
@@ -429,7 +438,7 @@ mod tests {
     // ── compile_plain ──
 
     #[test]
-    fn compile_plain_preserves_external_imports_and_urls() {
+    fn preserves_external_imports_and_urls() {
         let root = tempfile::tempdir().unwrap();
         write_test_file(
             root.path(),
@@ -461,7 +470,7 @@ mod tests {
     }
 
     #[test]
-    fn compile_plain_encodes_published_paths_and_preserves_url_suffixes() {
+    fn encodes_published_paths_and_preserves_url_suffixes() {
         let root = tempfile::tempdir().unwrap();
         write_test_file(
             root.path(),
@@ -488,7 +497,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn compile_plain_preserves_static_symlink_paths() {
+    fn preserves_static_symlink_paths() {
         let root = tempfile::tempdir().unwrap();
         write_test_file(
             root.path(),
@@ -527,7 +536,7 @@ mod tests {
     // ── run_in_order ──
 
     #[test]
-    fn run_in_order_limits_running_items_and_preserves_order() {
+    fn limits_running_items_and_preserves_order() {
         let events = RefCell::new(Vec::new());
         let finished = run_in_order(
             0..4,
@@ -555,7 +564,7 @@ mod tests {
     // ── published_url ──
 
     #[test]
-    fn published_url_private_and_unpublished_assets_returns_error() {
+    fn rejects_private_and_unpublished_assets() {
         let root = tempfile::tempdir().unwrap();
         write_test_file(root.path(), "content/example/assets/css/_src/style.css", "");
         write_test_file(root.path(), "content/example/_secret.svg", "private");

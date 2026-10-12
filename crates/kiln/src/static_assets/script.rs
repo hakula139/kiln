@@ -81,7 +81,6 @@ fn parse_imports(source: &str, path: &Path) -> Option<ScriptImports> {
     if collector.computed {
         return Some(ScriptImports::Computed);
     }
-    collector.specifiers.sort_unstable();
     Some(ScriptImports::Literal(collector.specifiers))
 }
 
@@ -134,17 +133,12 @@ mod tests {
     use indoc::indoc;
 
     use super::*;
-
-    fn as_entries(scripts: &BTreeMap<PathBuf, Naming>) -> impl Iterator<Item = (&Path, Naming)> {
-        scripts
-            .iter()
-            .map(|(path, naming)| (path.as_path(), *naming))
-    }
+    use crate::static_assets::content_fingerprint;
 
     // ── fingerprint_scripts ──
 
     #[test]
-    fn fingerprint_scripts_renames_only_unlinked_bundled_scripts() {
+    fn renames_only_unlinked_bundled_scripts() {
         let dir = tempfile::tempdir().unwrap();
         let mut scripts = BTreeMap::new();
         for (path, source, naming) in [
@@ -188,7 +182,7 @@ mod tests {
 
         let classic = format!(
             "assets/js/classic.{}.js",
-            super::super::content_fingerprint(b"window.ready = true;")
+            content_fingerprint(b"window.ready = true;")
         );
         assert_eq!(
             manifest.asset_url("/assets/js/classic.js").unwrap(),
@@ -210,7 +204,7 @@ mod tests {
     }
 
     #[test]
-    fn fingerprint_scripts_computed_import_keeps_source_names() {
+    fn computed_import_keeps_source_names() {
         let dir = tempfile::tempdir().unwrap();
         let mut scripts = BTreeMap::new();
         for (path, source) in [
@@ -228,10 +222,16 @@ mod tests {
         assert!(dir.path().join("plugin.js").exists());
     }
 
+    fn as_entries(scripts: &BTreeMap<PathBuf, Naming>) -> impl Iterator<Item = (&Path, Naming)> {
+        scripts
+            .iter()
+            .map(|(path, naming)| (path.as_path(), *naming))
+    }
+
     // ── parse_imports ──
 
     #[test]
-    fn parse_imports_collects_static_and_literal_dynamic_specifiers() {
+    fn collects_static_and_literal_dynamic_specifiers() {
         let source = indoc! {r#"
             import { a } from "./a.js";
             export { b } from '../b.js';
@@ -246,12 +246,12 @@ mod tests {
         assert_eq!(
             parse_imports(source, Path::new("app.js")),
             Some(ScriptImports::Literal(vec![
-                "../b.js".to_owned(),
                 "./a.js".to_owned(),
+                "../b.js".to_owned(),
+                "/c.js".to_owned(),
+                "./side-effect.js".to_owned(),
                 "./d.js".to_owned(),
                 "./e.js".to_owned(),
-                "./side-effect.js".to_owned(),
-                "/c.js".to_owned(),
             ]))
         );
         assert_eq!(
@@ -261,7 +261,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_imports_computed_or_non_utf8_specifier_returns_computed() {
+    fn computed_or_non_utf8_specifier_is_computed() {
         for source in [
             "import(name);",
             "import(`./${name}.js`);",
@@ -276,7 +276,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_imports_parse_error_or_strict_module_violation_returns_none() {
+    fn unparsable_or_strict_module_violation_yields_none() {
         assert_eq!(parse_imports("function () {", Path::new("app.js")), None);
         assert_eq!(parse_imports("with (scope) {}", Path::new("lib.MJS")), None);
         assert_eq!(

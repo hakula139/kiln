@@ -69,7 +69,7 @@ mod tests {
     // ── run_pagefind ──
 
     #[test]
-    fn run_pagefind_indexes_site() {
+    fn indexes_site() {
         let dir = tempfile::Builder::new()
             .prefix("pagefind site & (test) ")
             .tempdir()
@@ -91,7 +91,7 @@ mod tests {
     }
 
     #[test]
-    fn run_pagefind_missing_binary_returns_error() {
+    fn reports_missing_binary() {
         let dir = tempfile::tempdir().unwrap();
         let err = run_pagefind(dir.path(), Some("nonexistent-pagefind-binary-xyz"))
             .unwrap_err()
@@ -104,7 +104,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn run_pagefind_succeeds_with_and_without_output() {
+    fn succeeds_with_and_without_output() {
         let dir = tempfile::tempdir().unwrap();
         for binary in ["echo", "true"] {
             run_pagefind(dir.path(), Some(binary)).unwrap();
@@ -113,7 +113,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn run_pagefind_non_zero_exit_returns_error() {
+    fn reports_non_zero_exit() {
         let dir = tempfile::tempdir().unwrap();
         let err = run_pagefind(dir.path(), Some("false"))
             .unwrap_err()

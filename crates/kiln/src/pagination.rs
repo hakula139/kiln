@@ -107,7 +107,7 @@ mod tests {
     // ── paginate ──
 
     #[test]
-    fn paginate_chunks_items_and_keeps_one_empty_page() {
+    fn chunks_items_and_keeps_one_empty_page() {
         let per_page = NonZeroUsize::new(10).unwrap();
         let items: Vec<_> = (0..25).collect();
         assert_eq!(
@@ -123,7 +123,7 @@ mod tests {
     // ── page_dir ──
 
     #[test]
-    fn page_dir_nests_later_pages() {
+    fn nests_later_pages() {
         for (base, number, expected) in [
             ("", 1, ""),
             ("", 2, "page/2"),
@@ -137,7 +137,7 @@ mod tests {
     // ── PaginationVars::new ──
 
     #[test]
-    fn new_links_neighbors_and_strips_base_path() {
+    fn links_neighbors_and_strips_base_path() {
         for (listing_url, current, total, base_path, previous, next) in [
             ("/", 1, 1, "", None, None),
             ("/t/", 1, 3, "/t", None, Some("/t/page/2/")),
@@ -159,7 +159,7 @@ mod tests {
     }
 
     #[test]
-    fn new_windows_items_around_current_page() {
+    fn windows_items_around_current_page() {
         for (current, total, numbers) in [
             (1, 1, vec![Some(1)]),
             (2, 4, vec![Some(1), Some(2), Some(3), Some(4)]),

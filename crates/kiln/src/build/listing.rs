@@ -79,12 +79,7 @@ fn prepare_page<'a>(
         .or_else(|| ctx.git_info.as_ref()?.last_modified(&page.source_path));
     let featured_image = resolve_featured_image(
         page.frontmatter.featured_image.as_ref(),
-        &PageResources {
-            source_dir: page.source_path.parent(),
-            images: &ctx.image_resolver,
-            assets: &ctx.static_assets,
-            page_url: &url,
-        },
+        &ctx.page_resources(page, &url),
     )?;
     Ok(PreparedPage {
         page,
@@ -221,7 +216,7 @@ mod tests {
     // ── sort_pinned_first ──
 
     #[test]
-    fn sort_pinned_first_orders_weights_timestamps_and_tied_urls() {
+    fn orders_weights_timestamps_and_tied_urls() {
         let pages = [
             prepared_page("undated", None, None),
             prepared_page("old", Some("2024-01-01T00:00:00Z"), None),
@@ -245,7 +240,7 @@ mod tests {
     // ── group_by_year ──
 
     #[test]
-    fn group_by_year_preserves_members_and_separates_consecutive_groups() {
+    fn preserves_members_and_separates_consecutive_groups() {
         let pages = [
             prepared_page("a", Some("2025-01-01T00:00:00Z"), None),
             prepared_page("b", Some("2025-06-01T00:00:00Z"), None),
@@ -282,7 +277,7 @@ mod tests {
     // ── resolve_featured_image ──
 
     #[test]
-    fn resolve_featured_image_resolves_site_and_page_urls() {
+    fn resolves_site_and_page_featured_image_urls() {
         let outputs: BTreeMap<_, _> = [
             "images/cover.webp",
             "blog/cover.webp",
@@ -344,7 +339,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_featured_image_preserves_metadata() {
+    fn preserves_featured_image_metadata() {
         let fi = FeaturedImage {
             src: "https://cdn.example.com/cover.webp".into(),
             position: Some("top".into()),
@@ -375,7 +370,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_featured_image_stamps_dimensions_and_lqip() {
+    fn stamps_featured_image_dimensions_and_lqip() {
         use std::fs;
 
         let dir = tempfile::tempdir().unwrap();
@@ -411,7 +406,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_featured_image_absent_returns_none() {
+    fn absent_featured_image_yields_none() {
         assert!(
             resolve_featured_image(
                 None,
@@ -428,7 +423,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_featured_image_missing_site_image_returns_error() {
+    fn rejects_missing_featured_site_image() {
         let err = resolve_featured_image(
             Some(&make_featured_image("assets/missing.webp")),
             &PageResources {
@@ -457,7 +452,7 @@ mod tests {
     // ── page_year ──
 
     #[test]
-    fn page_year_uses_configured_timezone() {
+    fn uses_configured_timezone() {
         let date: Timestamp = "2025-12-31T16:30:00Z".parse().unwrap();
         let time_zone = TimeZone::get("Asia/Shanghai").unwrap();
         assert_eq!(page_year(date, &time_zone), "2026");

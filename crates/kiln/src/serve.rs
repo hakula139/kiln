@@ -22,7 +22,7 @@ use tower::util::MapRequest;
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::set_status::SetStatus;
 
-use crate::build::BuildOptions;
+use crate::build::{BuildOptions, build};
 use crate::config::{self, Config};
 use crate::output::guard::resolve_output_dir;
 
@@ -267,7 +267,7 @@ async fn watch_loop(
 
 /// Builds the site into the served directory with dev-server URLs and no minification.
 fn rebuild(root: &Path, base_url: &str, output_dir: &Path) -> Result<()> {
-    crate::build(
+    build(
         root,
         &BuildOptions {
             base_url_override: Some(base_url),
@@ -372,8 +372,7 @@ async fn serve_request(
     Response::from_parts(parts, Body::from(html))
 }
 
-/// Injects the live reload script before `</body>` in HTML content.
-/// If no `</body>` is found, appends the script at the end.
+/// Injects the live reload script before `</body>`, or at the end of HTML without one.
 fn inject_script(html: &str) -> String {
     // to_ascii_lowercase preserves byte positions, so slicing the original at `pos` is safe.
     if let Some(pos) = html.to_ascii_lowercase().rfind("</body>") {
@@ -407,7 +406,7 @@ mod tests {
     // ── serve_until ──
 
     #[tokio::test]
-    async fn serve_until_serves_pages_assets_and_websocket() {
+    async fn serves_pages_assets_and_websocket() {
         let root = tempfile::tempdir().unwrap();
         setup_site(root.path());
         fs::create_dir(root.path().join("static")).unwrap();
@@ -491,7 +490,7 @@ mod tests {
     // ── setup_watcher ──
 
     #[tokio::test]
-    async fn setup_watcher_sends_event_on_atomic_input_save() {
+    async fn sends_event_on_atomic_input_save() {
         for (input, original) in [
             ("content/test.md", None),
             ("i18n/en.toml", Some(r#"greeting = "Hello""#)),
@@ -546,7 +545,7 @@ mod tests {
     // ── watch_paths ──
 
     #[test]
-    fn watch_paths_lists_existing_site_and_theme_inputs() {
+    fn lists_existing_site_and_theme_inputs() {
         for (theme, created, expected) in [
             (
                 None,
@@ -613,7 +612,7 @@ mod tests {
     // ── is_input_change ──
 
     #[test]
-    fn is_input_change_matches_inputs_and_their_descendants() {
+    fn matches_inputs_and_their_descendants() {
         let root = Path::new("/site");
         let inputs = [root.join("config.toml"), root.join("content")];
         let modify = EventKind::Modify(ModifyKind::Any);
@@ -653,7 +652,7 @@ mod tests {
     // ── watch_loop ──
 
     #[tokio::test]
-    async fn watch_loop_triggers_reload_on_success() {
+    async fn triggers_reload_on_success() {
         let root = tempfile::tempdir().unwrap();
         setup_site(root.path());
         let (event_tx, mut reload_rx, _) = spawn_watch_loop(root.path());
@@ -667,7 +666,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn watch_loop_stops_when_sender_dropped() {
+    async fn stops_when_sender_dropped() {
         let root = tempfile::tempdir().unwrap();
         setup_site(root.path());
         let (event_tx, _, handle) = spawn_watch_loop(root.path());
@@ -681,7 +680,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn watch_loop_no_reload_on_failure() {
+    async fn skips_reload_on_failure() {
         let root = tempfile::tempdir().unwrap();
         setup_site(root.path());
         fs::write(
@@ -727,7 +726,7 @@ mod tests {
     // ── rebuild ──
 
     #[test]
-    fn rebuild_recovers_after_css_import_failure() {
+    fn recovers_after_css_import_failure() {
         let root = tempfile::tempdir().unwrap();
         setup_site(root.path());
         let css_dir = root.path().join("assets/css/_src");
@@ -756,7 +755,7 @@ mod tests {
     }
 
     #[test]
-    fn rebuild_resolves_subpath_references_under_localhost() {
+    fn resolves_subpath_references_under_localhost() {
         let root = tempfile::tempdir().unwrap();
         setup_site(root.path());
         fs::write(
@@ -813,7 +812,7 @@ mod tests {
     // ── build_router ──
 
     #[tokio::test]
-    async fn build_router_serves_html_with_live_reload() {
+    async fn serves_html_with_live_reload() {
         let dir = tempfile::tempdir().unwrap();
         fs::create_dir(dir.path().join("about")).unwrap();
         for (path, content) in [
@@ -847,7 +846,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn build_router_redirects_directory_without_trailing_slash() {
+    async fn redirects_directory_without_trailing_slash() {
         let dir = tempfile::tempdir().unwrap();
         for name in ["about", "about us"] {
             let sub = dir.path().join(name);
@@ -882,7 +881,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn build_router_no_inject_for_non_html() {
+    async fn skips_injection_for_non_html() {
         let dir = tempfile::tempdir().unwrap();
         fs::write(dir.path().join("style.css"), "body { color: red; }").unwrap();
 
@@ -899,7 +898,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn build_router_preserves_head_and_range_responses() {
+    async fn preserves_head_and_range_responses() {
         let dir = tempfile::tempdir().unwrap();
         let html = "<html><body>Hello</body></html>";
         fs::write(dir.path().join("page.html"), html).unwrap();
@@ -941,7 +940,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn build_router_ws_relays_reload() {
+    async fn relays_reload_over_websocket() {
         use futures_util::StreamExt;
 
         let dir = tempfile::tempdir().unwrap();
@@ -991,7 +990,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn build_router_ws_rejects_plain_http() {
+    async fn rejects_plain_http_websocket_request() {
         let dir = tempfile::tempdir().unwrap();
 
         let response = setup_router(dir.path())
@@ -1007,7 +1006,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn build_router_not_found_serves_empty_or_full_custom_page() {
+    async fn serves_empty_or_full_custom_not_found_page() {
         let dir = tempfile::tempdir().unwrap();
         let app = setup_router(dir.path());
         let request = || Request::get("/nonexistent");
@@ -1079,7 +1078,7 @@ mod tests {
     // ── inject_script ──
 
     #[test]
-    fn inject_script_places_script_before_body_close_or_appends() {
+    fn places_script_before_body_close_or_appends() {
         for (html, expected) in [
             (
                 "<html><body>Hello</body></html>",

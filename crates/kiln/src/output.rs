@@ -87,13 +87,10 @@ pub(crate) fn copy_directory(
         if entry.path_is_symlink() {
             validate_source_link(entry.path(), &destination)?;
         }
-        let relative = entry.path().strip_prefix(src).with_context(|| {
-            format!(
-                "path {} is not under {}",
-                entry.path().display(),
-                src.display()
-            )
-        })?;
+        let relative = entry
+            .path()
+            .strip_prefix(src)
+            .expect("walkdir yields paths under its root");
         let target = dest.join(relative);
         if entry.file_type().is_dir() {
             fs::create_dir_all(&target)
@@ -266,7 +263,7 @@ mod tests {
     // ── copy_directory ──
 
     #[test]
-    fn copy_directory_copies_recursively_and_preserves_underscore_names() {
+    fn copies_recursively_and_preserves_underscore_names() {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("static");
         let dest = dir.path().join("public");
@@ -292,7 +289,7 @@ mod tests {
     }
 
     #[test]
-    fn copy_directory_missing_src_is_noop() {
+    fn missing_source_is_noop() {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("static");
         let dest = dir.path().join("public");
@@ -304,7 +301,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn copy_directory_materializes_external_symlinks() {
+    fn materializes_external_symlinks() {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("static");
         let dest = dir.path().join("public");
@@ -347,7 +344,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn copy_directory_symlink_root() {
+    fn follows_symlinked_root() {
         let dir = tempfile::tempdir().unwrap();
         let external = tempfile::tempdir().unwrap();
         fs::write(external.path().join("data.txt"), "linked root").unwrap();
@@ -367,7 +364,7 @@ mod tests {
     // macOS APFS rejects non-UTF-8 filenames, while Linux ext4 and btrfs accept them.
     #[cfg(target_os = "linux")]
     #[test]
-    fn copy_directory_copies_files_with_non_utf8_names() {
+    fn copies_files_with_non_utf8_names() {
         use std::ffi::OsStr;
         use std::os::unix::ffi::OsStrExt;
 
@@ -385,7 +382,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn copy_directory_excludes_invalid_links_and_preserves_public_errors() {
+    fn excludes_invalid_links_and_preserves_public_errors() {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("assets");
         let dest = dir.path().join("public");
@@ -414,7 +411,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn copy_directory_unreadable_subdir_returns_error() {
+    fn reports_unreadable_subdir() {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("static");
         let dest = dir.path().join("public");
@@ -436,7 +433,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn copy_directory_broken_symlinks_returns_error() {
+    fn reports_broken_symlinks() {
         for root_link in [false, true] {
             let dir = tempfile::tempdir().unwrap();
             let src = dir.path().join("static");
@@ -457,7 +454,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn copy_directory_symlink_cycle_returns_error() {
+    fn reports_symlink_cycle() {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("static");
         fs::create_dir(&src).unwrap();
@@ -470,7 +467,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn copy_directory_symlink_overlaps_destination_returns_error() {
+    fn rejects_symlink_overlapping_destination() {
         for target_is_ancestor in [false, true] {
             let dir = tempfile::tempdir().unwrap();
             let src = dir.path().join("static");
@@ -498,7 +495,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn copy_directory_unwritable_dest_returns_error() {
+    fn reports_unwritable_destination() {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("static");
         let dest = dir.path().join("public");
@@ -521,7 +518,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn validate_source_link_broken_target_returns_error() {
+    fn reports_broken_link_target() {
         let dir = tempfile::tempdir().unwrap();
         let link = dir.path().join("broken");
         symlink(dir.path().join("missing"), &link).unwrap();
@@ -543,7 +540,7 @@ mod tests {
     // ── copy_file ──
 
     #[test]
-    fn copy_file_creates_parents_and_overwrites_existing_file() {
+    fn copies_into_new_parents_and_overwrites() {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("source.png");
         let dest = dir.path().join("a").join("b").join("dest.png");
@@ -561,7 +558,7 @@ mod tests {
     }
 
     #[test]
-    fn copy_file_invalid_src_returns_error() {
+    fn reports_missing_or_directory_copy_source() {
         let dir = tempfile::tempdir().unwrap();
         let dest = dir.path().join("dest.png");
         fs::write(&dest, "previous").unwrap();
@@ -579,7 +576,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn copy_file_preserves_permissions() {
+    fn preserves_permissions() {
         use std::os::unix::fs::PermissionsExt;
 
         let dir = tempfile::tempdir().unwrap();
@@ -602,7 +599,7 @@ mod tests {
     // ── write_output ──
 
     #[test]
-    fn write_output_creates_parents_and_overwrites_existing_file() {
+    fn writes_into_new_parents_and_overwrites() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("a/b/test.html");
 
@@ -615,7 +612,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn write_output_create_dir_permission_denied_returns_error() {
+    fn reports_denied_parent_creation() {
         let dir = tempfile::tempdir().unwrap();
         let readonly = dir.path().join("readonly");
         fs::create_dir(&readonly).unwrap();
@@ -632,7 +629,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn write_output_permission_denied_returns_error() {
+    fn reports_denied_write() {
         let dir = tempfile::tempdir().unwrap();
         let readonly = dir.path().join("readonly");
         fs::create_dir(&readonly).unwrap();

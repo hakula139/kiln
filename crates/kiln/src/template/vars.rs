@@ -38,7 +38,7 @@ pub struct LinkedTerm {
 }
 
 /// Lightweight page summary for list / taxonomy templates.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Serialize)]
 pub struct PageSummary {
     pub title: String,
     pub url: String,
@@ -52,7 +52,7 @@ pub struct PageSummary {
 }
 
 /// A group of pages sharing a common key (e.g., year).
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Serialize)]
 pub struct PageGroup<'a> {
     pub key: String,
     pub pages: Vec<&'a PageSummary>,
@@ -91,7 +91,7 @@ pub struct OverviewPageVars<'a> {
 /// A bucket entry for overview pages.
 ///
 /// Templates can use `bucket.pages | length` to get the page count.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Serialize)]
 pub struct BucketSummary<'a> {
     pub name: String,
     pub url: String,

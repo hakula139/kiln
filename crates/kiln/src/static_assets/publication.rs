@@ -3,7 +3,7 @@ use std::path::{Component, Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 
-use super::{StaticAssetManifest, has_extension, is_media, rename_fingerprinted, site_path};
+use super::{StaticAssetManifest, is_media, rename_fingerprinted, site_path};
 use crate::content::is_private;
 use crate::content::page::Page;
 use crate::minify::{AssetKind, asset_kind};
@@ -196,7 +196,7 @@ fn reserved_name_hint(path: &Path, naming: Naming) -> Option<&'static str> {
         Some(
             "Remove the dots from its stem, since scripts that import or are imported keep their source names.",
         )
-    } else if has_extension(path, &["css"])
+    } else if asset_kind(path) == Some(AssetKind::Css)
         && path.parent().is_some_and(|parent| match name {
             "site" => parent == Path::new("assets/css"),
             "page" => parent.ends_with("assets/css"),
@@ -340,15 +340,10 @@ mod tests {
     use crate::content::discovery::discover_content;
     use crate::static_assets::content_fingerprint;
 
-    /// Converts a `/`-separated relative path to the platform's separators, as errors display it.
-    fn native_path(path: &str) -> String {
-        path.replace('/', std::path::MAIN_SEPARATOR_STR)
-    }
-
     // ── PublishedAssets::publish ──
 
     #[test]
-    fn publish_preserves_site_static_and_page_precedence() {
+    fn preserves_site_static_and_page_precedence() {
         let root = tempfile::tempdir().unwrap();
         let theme = root.path().join("themes/example");
         let content = root.path().join("content");
@@ -399,7 +394,7 @@ mod tests {
     }
 
     #[test]
-    fn publish_content_addresses_asset_and_bundle_media_only() {
+    fn content_addresses_asset_and_bundle_media_only() {
         let root = tempfile::tempdir().unwrap();
         let theme = root.path().join("themes/example");
         let content = root.path().join("content");
@@ -502,7 +497,7 @@ mod tests {
     }
 
     #[test]
-    fn publish_case_variant_outputs_returns_error() {
+    fn rejects_case_variant_outputs() {
         let root = tempfile::tempdir().unwrap();
         let probe = root.path().join("CaseProbe");
         fs::write(&probe, "probe").unwrap();
@@ -538,7 +533,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn resolve_respects_filesystem_parent_traversal_through_symlinks() {
+    fn respects_filesystem_parent_traversal_through_symlinks() {
         let root = tempfile::tempdir().unwrap();
         let static_dir = root.path().join("static");
         let physical = root.path().join("external/nested");
@@ -576,7 +571,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn resolve_preserves_aliases_and_owning_page_scope() {
+    fn preserves_aliases_and_owning_page_scope() {
         let root = tempfile::tempdir().unwrap();
         let theme = root.path().join("themes/example");
         let content = root.path().join("content");
@@ -655,17 +650,8 @@ mod tests {
 
     // ── PublishedAssets::scripts ──
 
-    fn publish_files(root: &Path, files: &[&str]) -> PublishedAssets {
-        for file in files {
-            let path = root.join(file);
-            fs::create_dir_all(path.parent().unwrap()).unwrap();
-            fs::write(path, "body").unwrap();
-        }
-        PublishedAssets::publish(root, None, &[], &root.join("public")).unwrap()
-    }
-
     #[test]
-    fn scripts_marks_assets_and_bundle_scripts_addressable() {
+    fn marks_assets_and_bundle_scripts_addressable() {
         let root = tempfile::tempdir().unwrap();
         let assets = publish_files(
             root.path(),
@@ -690,7 +676,7 @@ mod tests {
     // ── PublishedAssets::ensure_unaddressed_names ──
 
     #[test]
-    fn ensure_unaddressed_names_accepts_hashed_and_unreserved_names() {
+    fn accepts_hashed_and_unreserved_names() {
         let root = tempfile::tempdir().unwrap();
         let assets = publish_files(
             root.path(),
@@ -711,7 +697,7 @@ mod tests {
     }
 
     #[test]
-    fn ensure_unaddressed_names_reserved_source_names_returns_error() {
+    fn rejects_reserved_source_names() {
         for (file, output, hint) in [
             (
                 "static/logo.dark.png",
@@ -761,7 +747,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn record_outputs_naming_one_file_returns_error() {
+    fn rejects_outputs_naming_one_file() {
         let root = tempfile::tempdir().unwrap();
         let output = root.path().join("public");
         fs::create_dir_all(output.join("assets/real")).unwrap();
@@ -805,5 +791,19 @@ mod tests {
             ),
             "got: {err}"
         );
+    }
+
+    /// Converts a `/`-separated relative path to the platform's separators, as errors display it.
+    fn native_path(path: &str) -> String {
+        path.replace('/', std::path::MAIN_SEPARATOR_STR)
+    }
+
+    fn publish_files(root: &Path, files: &[&str]) -> PublishedAssets {
+        for file in files {
+            let path = root.join(file);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, "body").unwrap();
+        }
+        PublishedAssets::publish(root, None, &[], &root.join("public")).unwrap()
     }
 }

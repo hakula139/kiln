@@ -50,7 +50,7 @@ mod tests {
     // ── render_sitemap ──
 
     #[test]
-    fn render_sitemap_renders_entries_and_optional_dates() {
+    fn renders_entries_and_optional_dates() {
         let entries = [
             SitemapEntry {
                 loc: "https://example.com/tags/c&c++/".into(),
@@ -80,7 +80,7 @@ mod tests {
     }
 
     #[test]
-    fn render_sitemap_empty() {
+    fn renders_empty_sitemap() {
         assert_eq!(
             render_sitemap(&[]),
             indoc! {r#"
@@ -94,7 +94,7 @@ mod tests {
     // ── render_robots ──
 
     #[test]
-    fn render_robots_points_to_sitemap() {
+    fn points_to_sitemap() {
         assert_eq!(
             render_robots(&"https://example.com/blog".parse().unwrap()),
             indoc! {"

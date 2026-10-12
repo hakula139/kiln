@@ -53,8 +53,8 @@ pub struct Config {
     /// Theme name, resolved to `themes/<name>/` under the site root.
     pub theme: Option<String>,
 
-    /// Free-form key-value bag for theme and site settings.
-    /// Theme defaults from `theme.toml` are merged in at load time.
+    /// Free-form key-value bag for theme and site settings. Theme defaults from `theme.toml` are
+    /// merged in at load time.
     pub params: toml::Table,
 
     /// Listing page sizes resolved from `params` at load time.
@@ -74,21 +74,13 @@ pub struct Config {
     pub image: ImageConfig,
 }
 
-/// Theme metadata loaded from `themes/<name>/theme.toml`.
-#[derive(Debug, Default, Deserialize)]
-#[serde(default)]
-struct ThemeMeta {
-    min_kiln_version: Option<semver::Version>,
-
-    css: Css,
-
-    params: toml::Table,
-}
-
-#[derive(Debug, Default, Deserialize, Serialize)]
-#[serde(default, deny_unknown_fields)]
-pub struct Author {
-    pub name: String,
+/// Posts per listing page.
+#[derive(Debug)]
+pub struct Paginate {
+    pub home: NonZeroUsize,
+    /// Applies to the all-posts archive and section archives.
+    pub section: NonZeroUsize,
+    pub tag: NonZeroUsize,
 }
 
 /// Full-text search configuration.
@@ -140,8 +132,14 @@ pub struct MenuItem {
     pub external: bool,
 }
 
+#[derive(Debug, Default, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Author {
+    pub name: String,
+}
+
 /// Image-pipeline configuration loaded from the `[image]` section of `config.toml`.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct ImageConfig {
     /// Maximum placeholder width and height, in pixels.
@@ -151,13 +149,15 @@ pub struct ImageConfig {
     pub lqip_quality: u8,
 }
 
-/// Posts per listing page.
-#[derive(Debug)]
-pub struct Paginate {
-    pub home: NonZeroUsize,
-    /// Applies to the all-posts archive and section archives.
-    pub section: NonZeroUsize,
-    pub tag: NonZeroUsize,
+/// Theme metadata loaded from `themes/<name>/theme.toml`.
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+struct ThemeMeta {
+    min_kiln_version: Option<semver::Version>,
+
+    css: Css,
+
+    params: toml::Table,
 }
 
 impl Default for Config {
@@ -184,21 +184,21 @@ impl Default for Config {
     }
 }
 
-impl Default for ImageConfig {
-    fn default() -> Self {
-        Self {
-            lqip_size: 16,
-            lqip_quality: 25,
-        }
-    }
-}
-
 impl Default for Paginate {
     fn default() -> Self {
         Self {
             home: DEFAULT_PAGE_SIZE,
             section: DEFAULT_PAGE_SIZE,
             tag: DEFAULT_PAGE_SIZE,
+        }
+    }
+}
+
+impl Default for ImageConfig {
+    fn default() -> Self {
+        Self {
+            lqip_size: 16,
+            lqip_quality: 25,
         }
     }
 }
@@ -256,20 +256,6 @@ pub(crate) fn localhost_url(port: u16) -> String {
     format!("http://localhost:{port}")
 }
 
-impl ImageConfig {
-    fn validate(&self) -> Result<()> {
-        ensure!(
-            self.lqip_size > 0,
-            "image.lqip_size must be greater than zero"
-        );
-        ensure!(
-            (1..=100).contains(&self.lqip_quality),
-            "image.lqip_quality must be between 1 and 100"
-        );
-        Ok(())
-    }
-}
-
 impl Paginate {
     /// Reads `paginate`, with `home.paginate` and `section.paginate` overriding it per listing.
     fn from_params(params: &toml::Table) -> Result<Self> {
@@ -282,7 +268,7 @@ impl Paginate {
         }
 
         #[derive(Default, Deserialize)]
-        #[serde(default)]
+        #[serde(default, expecting = "a table with an optional `paginate` key")]
         struct ListingParams {
             paginate: Option<NonZeroUsize>,
         }
@@ -296,6 +282,20 @@ impl Paginate {
             section: params.section.paginate.unwrap_or(default),
             tag: default,
         })
+    }
+}
+
+impl ImageConfig {
+    fn validate(&self) -> Result<()> {
+        ensure!(
+            self.lqip_size > 0,
+            "image.lqip_size must be greater than zero"
+        );
+        ensure!(
+            (1..=100).contains(&self.lqip_quality),
+            "image.lqip_quality must be between 1 and 100"
+        );
+        Ok(())
     }
 }
 
@@ -330,8 +330,8 @@ impl ThemeMeta {
     }
 }
 
-/// Merges theme default params into site params. Site values take precedence.
-/// Nested tables are merged recursively. Returns an error on type mismatch.
+/// Merges theme default params into site params. Site values take precedence, and nested tables
+/// are merged recursively. Returns an error on type mismatch.
 fn merge_params(site: &mut toml::Table, theme_defaults: toml::Table, prefix: &str) -> Result<()> {
     for (key, theme_value) in theme_defaults {
         let Some(site_value) = site.get_mut(&key) else {
@@ -363,7 +363,7 @@ mod tests {
     // ── Config::load ──
 
     #[test]
-    fn load_missing_file_uses_defaults() {
+    fn missing_file_uses_defaults() {
         let root = tempfile::tempdir().unwrap();
         let config = Config::load(root.path()).unwrap();
         assert_eq!(
@@ -382,7 +382,7 @@ mod tests {
     }
 
     #[test]
-    fn load_reads_tables_and_sorts_menu_groups() {
+    fn reads_tables_and_sorts_menu_groups() {
         let root = tempfile::tempdir().unwrap();
         write_test_file(
             root.path(),
@@ -490,7 +490,7 @@ mod tests {
     }
 
     #[test]
-    fn load_accepts_offset_and_posix_time_zones() {
+    fn accepts_offset_and_posix_time_zones() {
         let date: jiff::Timestamp = "2026-07-01T00:00:00Z".parse().unwrap();
         for (time_zone, offset) in [("+08:00", "+08"), ("EST5EDT,M3.2.0,M11.1.0", "-04")] {
             let root = tempfile::tempdir().unwrap();
@@ -505,7 +505,7 @@ mod tests {
     }
 
     #[test]
-    fn load_invalid_config_returns_error() {
+    fn rejects_invalid_config() {
         for (contents, expected) in [
             ("{{invalid toml", "failed to parse config.toml"),
             ("enable_gitinfo = true", "unknown field `enable_gitinfo`"),
@@ -551,17 +551,25 @@ mod tests {
                 r#"params.home.paginate = "8""#,
                 "invalid pagination in [params]",
             ),
-            (r#"params.home = "wide""#, "expected struct ListingParams"),
+            (
+                r#"params.home = "wide""#,
+                "expected a table with an optional `paginate` key",
+            ),
         ] {
             let root = tempfile::tempdir().unwrap();
             write_test_file(root.path(), "config.toml", contents);
             let error = format!("{:#}", Config::load(root.path()).unwrap_err());
             assert!(error.contains(expected), "{contents}: {error}");
         }
+
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir(root.path().join("config.toml")).unwrap();
+        let error = format!("{:#}", Config::load(root.path()).unwrap_err());
+        assert!(error.contains("failed to read"), "{error}");
     }
 
     #[test]
-    fn load_resolves_pagination_overrides() {
+    fn resolves_pagination_overrides() {
         for (params, expected) in [
             ("", (10, 10, 10)),
             ("paginate = 6", (6, 6, 6)),
@@ -589,7 +597,7 @@ mod tests {
     }
 
     #[test]
-    fn load_theme_merges_scalar_and_nested_params() {
+    fn merges_theme_scalar_and_nested_params() {
         let root = tempfile::tempdir().unwrap();
         write_test_file(
             root.path(),
@@ -648,7 +656,7 @@ mod tests {
     }
 
     #[test]
-    fn load_css_inherits_theme_and_accepts_explicit_site_override() {
+    fn css_inherits_theme_and_accepts_explicit_site_override() {
         let root = tempfile::tempdir().unwrap();
         write_test_file(
             root.path(),
@@ -678,7 +686,7 @@ mod tests {
     }
 
     #[test]
-    fn load_invalid_theme_returns_error() {
+    fn rejects_invalid_theme() {
         for (theme, theme_toml, expected) in [
             ("../outside", None, "single directory name"),
             ("C:theme", None, "single directory name"),
@@ -710,7 +718,7 @@ mod tests {
     }
 
     #[test]
-    fn load_param_type_mismatch_returns_error() {
+    fn rejects_param_type_mismatch() {
         for (site, theme, expected) in [
             (
                 r#"key = "site""#,
@@ -742,7 +750,7 @@ mod tests {
     // ── Config::theme_dir ──
 
     #[test]
-    fn theme_dir_resolves_configured_theme() {
+    fn resolves_configured_theme() {
         let root = Path::new("/project");
         let mut config = Config::default();
         assert_eq!(config.theme_dir(root), None);

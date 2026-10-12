@@ -114,7 +114,7 @@ mod tests {
     // ── generate_rss ──
 
     #[test]
-    fn generate_rss_renders_channel_and_optional_item_fields() {
+    fn renders_channel_and_optional_item_fields() {
         let mut dated = prepared_page("Post A & B", Some("2026-03-15T10:00:00Z"), None);
         dated.summary.description = "A <summary>".into();
         let undated = prepared_page("Post C", None, None);
@@ -156,7 +156,7 @@ mod tests {
     }
 
     #[test]
-    fn generate_rss_truncates_to_feed_limit() {
+    fn truncates_to_feed_limit() {
         let pages: Vec<_> = (1..=FEED_LIMIT + 1)
             .map(|number| prepared_page(&format!("Post {number}"), None, None))
             .collect();

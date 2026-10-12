@@ -84,6 +84,11 @@ impl TemplateEngine {
         env.add_function("read_file", tpl_read_file);
         env.add_function("parse_csv", tpl_parse_csv);
 
+        let t_i18n = i18n.clone();
+        env.add_function("t", move |key: &str, kwargs: Kwargs| {
+            tpl_t(&t_i18n, key, &kwargs)
+        });
+
         let manifest = Arc::new(static_assets.clone());
         let asset_manifest = Arc::clone(&manifest);
         env.add_function("asset_url", move |state: &State, url: &str| {
@@ -95,11 +100,6 @@ impl TemplateEngine {
                 tpl_register_script(state, &manifest, url, &kwargs)
             },
         );
-
-        let t_i18n = i18n.clone();
-        env.add_function("t", move |key: &str, kwargs: Kwargs| {
-            tpl_t(&t_i18n, key, &kwargs)
-        });
 
         Ok(Self { env })
     }
@@ -241,7 +241,7 @@ fn format_value(out: &mut Output, state: &State, value: &Value) -> Result<(), mi
 
 #[cfg(test)]
 mod tests {
-    use std::fs as test_fs;
+    use std::fs;
 
     use indoc::indoc;
 
@@ -260,27 +260,27 @@ mod tests {
     // ── new ──
 
     #[test]
-    fn new_with_site_dir_only() {
+    fn loads_site_dir_only() {
         let dir = tempfile::tempdir().unwrap();
-        test_fs::write(dir.path().join("test.html"), "hello").unwrap();
+        fs::write(dir.path().join("test.html"), "hello").unwrap();
         let engine = test_site_engine(dir.path());
         let tmpl = engine.env.get_template("test.html").unwrap();
         assert_eq!(tmpl.render(()).unwrap(), "hello");
     }
 
     #[test]
-    fn new_site_overrides_theme() {
+    fn site_overrides_theme() {
         let dir = tempfile::tempdir().unwrap();
         let site_dir = dir.path().join("site");
         let theme_dir = dir.path().join("theme");
-        test_fs::create_dir_all(&site_dir).unwrap();
-        test_fs::create_dir_all(&theme_dir).unwrap();
+        fs::create_dir_all(&site_dir).unwrap();
+        fs::create_dir_all(&theme_dir).unwrap();
 
         // Same template in both, so site should win.
-        test_fs::write(site_dir.join("page.html"), "from site").unwrap();
-        test_fs::write(theme_dir.join("page.html"), "from theme").unwrap();
+        fs::write(site_dir.join("page.html"), "from site").unwrap();
+        fs::write(theme_dir.join("page.html"), "from theme").unwrap();
         // Template only in theme, so it should fall through.
-        test_fs::write(theme_dir.join("base.html"), "theme base").unwrap();
+        fs::write(theme_dir.join("base.html"), "theme base").unwrap();
 
         let engine = test_engine_with(Some(&site_dir), Some(&theme_dir), &Config::default());
         let page = engine.env.get_template("page.html").unwrap();
@@ -290,10 +290,10 @@ mod tests {
     }
 
     #[test]
-    fn new_ignores_nonexistent_site_dir() {
+    fn ignores_nonexistent_site_dir() {
         let dir = tempfile::tempdir().unwrap();
         let theme_dir = dir.path().join("theme");
-        test_fs::create_dir(&theme_dir).unwrap();
+        fs::create_dir(&theme_dir).unwrap();
         let engine = test_engine_with(
             Some(Path::new("/nonexistent")),
             Some(&theme_dir),
@@ -303,7 +303,26 @@ mod tests {
     }
 
     #[test]
-    fn new_without_directories_returns_error() {
+    fn reports_unreadable_site_template() {
+        let dir = tempfile::tempdir().unwrap();
+        let site_dir = dir.path().join("site");
+        let theme_dir = dir.path().join("theme");
+        fs::create_dir_all(site_dir.join("post.html")).unwrap();
+        fs::create_dir_all(&theme_dir).unwrap();
+        fs::write(theme_dir.join("post.html"), "from theme").unwrap();
+
+        let engine = test_engine_with(Some(&site_dir), Some(&theme_dir), &Config::default());
+
+        let err = engine
+            .env
+            .get_template("post.html")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("could not read template"), "got: {err}");
+    }
+
+    #[test]
+    fn rejects_missing_directories() {
         let err = new_engine(None, None).unwrap_err().to_string();
         assert!(
             err.contains("no valid template directory found"),
@@ -312,7 +331,7 @@ mod tests {
     }
 
     #[test]
-    fn new_nonexistent_theme_directory_returns_error() {
+    fn rejects_nonexistent_theme_directory() {
         let err = new_engine(None, Some(Path::new("/nonexistent/path")))
             .unwrap_err()
             .to_string();
@@ -325,7 +344,7 @@ mod tests {
     // ── render_post ──
 
     #[test]
-    fn render_post_exposes_context() {
+    fn post_exposes_context() {
         let engine = engine_with_template(
             "post.html",
             "{{ title }}|{{ description }}|{{ url }}|{{ date }}|{{ updated }}|{{ featured_image.src }}|{{ page_css }}|{{ config.title }}|{{ t('all_posts') }}|{{ 'math' in assets.features }}|{{ assets.scripts[0].url }}|{{ license }}|{{ tags[0].name }}|{{ section.name }}",
@@ -367,7 +386,7 @@ mod tests {
     }
 
     #[test]
-    fn render_post_escapes_text_and_preserves_explicit_safe_html() {
+    fn escapes_text_and_preserves_explicit_safe_html() {
         let engine = engine_with_template(
             "post.html",
             "{{ title }}|{{ content }}|{{ content | safe }}|{{ toc | safe }}",
@@ -386,7 +405,7 @@ mod tests {
     // ── render_home ──
 
     #[test]
-    fn render_home_exposes_pages_and_pagination() {
+    fn home_exposes_pages_and_pagination() {
         let engine = engine_with_template(
             "home.html",
             "{{ title }}|{{ description }}|{{ url }}|{% for page in pages %}{{ page.title }}:{{ page.url }}{% endfor %}|{{ pagination.current_page }}/{{ pagination.total_pages }}|{{ assets.features | length }}",
@@ -411,7 +430,7 @@ mod tests {
     // ── render_archive ──
 
     #[test]
-    fn render_archive_exposes_groups_and_pagination() {
+    fn archive_exposes_groups_and_pagination() {
         let engine = engine_with_template(
             "archive.html",
             "{{ title }}|{{ description }}|{{ url }}|{{ kind }}|{% for group in page_groups %}{{ group.key }}:{% for page in group.pages %}{{ page.title }}:{{ page.url }}{% endfor %}{% endfor %}|{{ pagination.current_page }}/{{ pagination.total_pages }}|{{ assets.features | length }}",
@@ -440,7 +459,7 @@ mod tests {
     // ── render_overview ──
 
     #[test]
-    fn render_overview_exposes_buckets() {
+    fn overview_exposes_buckets() {
         let engine = engine_with_template(
             "overview.html",
             "{{ title }}|{{ description }}|{{ url }}|{{ kind }}|{% for bucket in buckets %}{{ bucket.name }}:{{ bucket.url }}:{% for page in bucket.pages %}{{ page.title }}:{{ page.url }}{% endfor %}|{% endfor %}{{ assets.features | length }}",
@@ -476,14 +495,14 @@ mod tests {
     // ── render_404 ──
 
     #[test]
-    fn render_404_exposes_metadata_and_resolves_relative_assets() {
+    fn not_found_exposes_metadata_and_resolves_relative_assets() {
         let dir = tempfile::tempdir().unwrap();
         let static_dir = dir.path().join("public");
         let templates = dir.path().join("templates");
-        test_fs::create_dir_all(&static_dir).unwrap();
-        test_fs::write(static_dir.join("bg.png"), "png").unwrap();
-        test_fs::create_dir_all(&templates).unwrap();
-        test_fs::write(
+        fs::create_dir_all(&static_dir).unwrap();
+        fs::write(static_dir.join("bg.png"), "png").unwrap();
+        fs::create_dir_all(&templates).unwrap();
+        fs::write(
             templates.join("404.html"),
             "{{ title }}|{{ description }}|{{ url }}|{{ asset_url('bg.png') }}|{{ assets.features | length }}",
         )
@@ -511,17 +530,17 @@ mod tests {
     // ── render_directive ──
 
     #[test]
-    fn render_directive_renders_template_with_context() {
+    fn renders_directive_template_with_context() {
         let dir = tempfile::tempdir().unwrap();
         let directives = dir.path().join("directives");
-        test_fs::create_dir_all(&directives).unwrap();
-        test_fs::write(
+        fs::create_dir_all(&directives).unwrap();
+        fs::write(
             directives.join("test.html"),
             "<div{% if id %} id={{ id }}{% endif %}>{{ name }}: {{ body_html | safe }} {{ config.title }} {{ read_file('data.txt') }}</div>",
         )
         .unwrap();
         let source = tempfile::tempdir().unwrap();
-        test_fs::write(source.path().join("data.txt"), "data").unwrap();
+        fs::write(source.path().join("data.txt"), "data").unwrap();
         let config: Config = toml::from_str(indoc! {r#"
             base_url = "https://example.com"
             title = "Probe"
@@ -551,11 +570,11 @@ mod tests {
     }
 
     #[test]
-    fn render_directive_missing_template_returns_none() {
+    fn missing_directive_template_yields_none() {
         let dir = tempfile::tempdir().unwrap();
-        test_fs::create_dir_all(dir.path().join("directives")).unwrap();
+        fs::create_dir_all(dir.path().join("directives")).unwrap();
         // A traversal would reach this file through "directives/../secret.html".
-        test_fs::write(dir.path().join("secret.html"), "LEAKED").unwrap();
+        fs::write(dir.path().join("secret.html"), "LEAKED").unwrap();
         let engine = test_site_engine(dir.path());
         let args = DirectiveArgs::default();
         for name in ["nonexistent", "../secret"] {
@@ -573,7 +592,7 @@ mod tests {
     }
 
     #[test]
-    fn render_directive_template_failure_returns_error() {
+    fn reports_directive_template_failure() {
         for (source, kind) in [
             ("{% invalid %}", minijinja::ErrorKind::SyntaxError),
             (
@@ -604,7 +623,7 @@ mod tests {
     // ── has_template ──
 
     #[test]
-    fn has_template_existing() {
+    fn finds_existing_template() {
         let engine = test_engine();
         assert!(engine.has_template("post.html"));
         assert!(engine.has_template("home.html"));
@@ -614,9 +633,9 @@ mod tests {
     }
 
     #[test]
-    fn has_template_broken_returns_true() {
+    fn counts_broken_template_as_present() {
         let dir = tempfile::tempdir().unwrap();
-        test_fs::write(dir.path().join("broken.html"), "{% invalid %}").unwrap();
+        fs::write(dir.path().join("broken.html"), "{% invalid %}").unwrap();
         let engine = test_site_engine(dir.path());
         assert!(
             engine.has_template("broken.html"),
@@ -625,7 +644,7 @@ mod tests {
     }
 
     #[test]
-    fn has_template_missing_returns_false() {
+    fn misses_absent_template() {
         let engine = test_engine();
         assert!(!engine.has_template("nonexistent.html"));
     }
@@ -633,7 +652,7 @@ mod tests {
     // ── render_page_template ──
 
     #[test]
-    fn render_page_template_keeps_internal_values_over_vars() {
+    fn keeps_internal_values_over_vars() {
         let engine = engine_with_template(
             "post.html",
             "{{ __page_url }}|{{ assets.features | length }}",
@@ -650,7 +669,7 @@ mod tests {
     }
 
     #[test]
-    fn render_page_template_failure_returns_error() {
+    fn reports_page_template_failure() {
         let name = "post.html";
         for (source, kind, phase) in [
             (None, minijinja::ErrorKind::TemplateNotFound, "load"),
@@ -667,7 +686,7 @@ mod tests {
         ] {
             let dir = tempfile::tempdir().unwrap();
             if let Some(source) = source {
-                test_fs::write(dir.path().join(name), source).unwrap();
+                fs::write(dir.path().join(name), source).unwrap();
             }
             let engine = test_site_engine(dir.path());
             let error = engine
@@ -687,7 +706,7 @@ mod tests {
     // ── format_value ──
 
     #[test]
-    fn format_value_escapes_markup_but_keeps_slashes() {
+    fn escapes_markup_but_keeps_slashes() {
         let mut engine = test_engine();
         for (name, source) in [
             (
@@ -772,8 +791,8 @@ mod tests {
     fn engine_with_directive(name: &str, body: &str) -> (tempfile::TempDir, TemplateEngine) {
         let dir = tempfile::tempdir().unwrap();
         let directives_dir = dir.path().join("directives");
-        test_fs::create_dir_all(&directives_dir).unwrap();
-        test_fs::write(directives_dir.join(format!("{name}.html")), body).unwrap();
+        fs::create_dir_all(&directives_dir).unwrap();
+        fs::write(directives_dir.join(format!("{name}.html")), body).unwrap();
         let engine = test_site_engine(dir.path());
         (dir, engine)
     }

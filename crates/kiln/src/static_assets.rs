@@ -5,14 +5,20 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::str::Utf8Error;
+use std::sync::LazyLock;
 
 use anyhow::{Context, Result, bail};
 use percent_encoding::percent_decode_str;
 use sha2::{Digest, Sha256};
+use url::Url;
 
 use crate::url::{join_site_url, path_url};
 
 const FINGERPRINT_LENGTH: usize = 12;
+
+/// Origin that relative page URLs resolve against, since URL joining needs an absolute base.
+static PLACEHOLDER_BASE: LazyLock<Url> =
+    LazyLock::new(|| Url::parse("https://kiln.invalid/").expect("placeholder base URL is valid"));
 
 /// Published files keyed by the source-named site paths that reference them.
 #[derive(Clone, Debug)]
@@ -135,8 +141,7 @@ impl StaticAssetManifest {
         if is_passthrough(url) {
             return Ok(None);
         }
-        let end = url.find(['?', '#']).unwrap_or(url.len());
-        let (path, suffix) = url.split_at(end);
+        let (path, suffix) = split_suffix(url);
         if path.is_empty() {
             return Ok(None);
         }
@@ -172,8 +177,8 @@ impl StaticAssetManifest {
 /// Returns the manifest key of a URL path resolved against `page_url`, `None` when it falls
 /// outside the deployment prefix, or an error when it does not decode to a UTF-8 file path.
 fn site_key(path: &str, page_url: &str, prefix: &str) -> Result<Option<String>, Utf8Error> {
-    let Some(resolved) = url::Url::parse(page_url)
-        .or_else(|_| url::Url::parse("https://kiln.invalid/")?.join(page_url))
+    let Some(resolved) = Url::parse(page_url)
+        .or_else(|_| PLACEHOLDER_BASE.join(page_url))
         .and_then(|base| base.join(path))
         .ok()
     else {
@@ -196,7 +201,12 @@ fn site_path(path: &Path) -> String {
 
 /// Whether a reference leaves the site or stays within the current document.
 pub(crate) fn is_passthrough(url: &str) -> bool {
-    url.starts_with("//") || url.starts_with('#') || url::Url::parse(url).is_ok()
+    url.starts_with("//") || url.starts_with('#') || Url::parse(url).is_ok()
+}
+
+/// Splits a URL before its query or fragment.
+pub(crate) fn split_suffix(url: &str) -> (&str, &str) {
+    url.split_at(url.find(['?', '#']).unwrap_or(url.len()))
 }
 
 /// Whether a file is a raster image or font, which references no other files.
@@ -269,7 +279,7 @@ mod tests {
     // ── StaticAssetManifest::fingerprint ──
 
     #[test]
-    fn fingerprint_renames_in_place_and_records_encoded_urls() {
+    fn renames_in_place_and_records_encoded_urls() {
         let dir = tempfile::tempdir().unwrap();
         let mut manifest = StaticAssetManifest::default();
         for (name, encoded) in [
@@ -301,7 +311,7 @@ mod tests {
     }
 
     #[test]
-    fn fingerprint_existing_target_returns_error() {
+    fn rejects_existing_target() {
         let dir = tempfile::tempdir().unwrap();
         fs::write(dir.path().join("style.css"), "abc").unwrap();
         fs::write(dir.path().join("style.ba7816bf8f01.css"), "occupied").unwrap();
@@ -325,9 +335,32 @@ mod tests {
         );
     }
 
+    // macOS APFS rejects non-UTF-8 filenames, while Linux ext4 and btrfs accept them.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn rejects_non_utf8_stem() {
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = Path::new(OsStr::from_bytes(b"\xff\xfe.css"));
+        fs::write(dir.path().join(path), "abc").unwrap();
+
+        let err = StaticAssetManifest::default()
+            .fingerprint(dir.path(), path)
+            .unwrap_err()
+            .to_string();
+
+        assert!(
+            err.contains("static asset has no UTF-8 file stem"),
+            "got: {err}"
+        );
+        assert_eq!(fs::read(dir.path().join(path)).unwrap(), b"abc");
+    }
+
     #[cfg(unix)]
     #[test]
-    fn fingerprint_read_only_parent_returns_error() {
+    fn reports_read_only_parent() {
         let dir = tempfile::tempdir().unwrap();
         let css = dir.path().join("css");
         fs::create_dir(&css).unwrap();
@@ -353,7 +386,7 @@ mod tests {
     // ── StaticAssetManifest::asset_url ──
 
     #[test]
-    fn asset_url_missing_asset_returns_error() {
+    fn rejects_missing_asset() {
         let err = StaticAssetManifest::default()
             .asset_url("/js/missing.js")
             .unwrap_err()
@@ -367,22 +400,8 @@ mod tests {
 
     // ── StaticAssetManifest::resolve_local ──
 
-    fn photo_manifest(authored: &str, deployment: &str) -> StaticAssetManifest {
-        let outputs = BTreeMap::from([
-            (
-                PathBuf::from("blog/posts/a/photo %.avif"),
-                PathBuf::from("blog/posts/a/photo %.ba7816bf8f01.avif"),
-            ),
-            (
-                PathBuf::from("posts/a/photo %.avif"),
-                PathBuf::from("posts/a/photo %.d9298a10d1b0.avif"),
-            ),
-        ]);
-        StaticAssetManifest::new(&outputs).with_prefixes(authored, deployment)
-    }
-
     #[test]
-    fn resolve_local_publishes_authored_urls_under_the_deployment_prefix() {
+    fn publishes_authored_urls_under_the_deployment_prefix() {
         for (deployment, page_url) in [
             ("/blog/", "https://example.com/blog/posts/a/"),
             ("/", "http://localhost:5456/posts/a/"),
@@ -406,7 +425,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_local_external_empty_and_outside_prefix_urls_return_none() {
+    fn ignores_external_empty_and_outside_prefix_urls() {
         let manifest = photo_manifest("/blog/", "/");
         for src in [
             "https://cdn.example.com/a.avif",
@@ -425,7 +444,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_local_missing_site_asset_returns_error() {
+    fn rejects_missing_site_asset() {
         let err = StaticAssetManifest::default()
             .with_prefixes("/blog/", "/blog/")
             .resolve_local("missing.png?q=1", "/blog/posts/a/")
@@ -442,7 +461,7 @@ mod tests {
     // ── StaticAssetManifest::resolve_template_url ──
 
     #[test]
-    fn resolve_template_url_treats_root_paths_as_site_paths() {
+    fn treats_root_paths_as_site_paths() {
         let manifest = photo_manifest("/blog/", "/preview/");
 
         for (src, expected) in [
@@ -470,7 +489,7 @@ mod tests {
     // ── StaticAssetManifest::published_path ──
 
     #[test]
-    fn published_path_strips_the_authored_prefix() {
+    fn strips_the_authored_prefix() {
         let manifest = photo_manifest("/blog/", "/");
 
         assert_eq!(
@@ -485,5 +504,19 @@ mod tests {
                 .unwrap(),
             None
         );
+    }
+
+    fn photo_manifest(authored: &str, deployment: &str) -> StaticAssetManifest {
+        let outputs = BTreeMap::from([
+            (
+                PathBuf::from("blog/posts/a/photo %.avif"),
+                PathBuf::from("blog/posts/a/photo %.ba7816bf8f01.avif"),
+            ),
+            (
+                PathBuf::from("posts/a/photo %.avif"),
+                PathBuf::from("posts/a/photo %.d9298a10d1b0.avif"),
+            ),
+        ]);
+        StaticAssetManifest::new(&outputs).with_prefixes(authored, deployment)
     }
 }

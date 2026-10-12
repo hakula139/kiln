@@ -73,17 +73,17 @@ impl Serialize for BaseUrl {
     }
 }
 
-/// Encodes a filesystem name as one URL path component.
-pub(crate) fn encode_component(component: &str) -> String {
-    utf8_percent_encode(component, COMPONENT_ENCODE_SET).to_string()
-}
-
 /// Converts a relative filesystem path to an encoded URL path using forward slashes.
 pub(crate) fn path_url(path: &Path) -> String {
     path.components()
         .map(|component| encode_component(&component.as_os_str().to_string_lossy()))
         .collect::<Vec<_>>()
         .join("/")
+}
+
+/// Encodes a filesystem name as one URL path component.
+fn encode_component(component: &str) -> String {
+    utf8_percent_encode(component, COMPONENT_ENCODE_SET).to_string()
 }
 
 /// Converts a relative directory path to an encoded URL path ending in `/`, or an empty string
@@ -98,9 +98,8 @@ pub(crate) fn directory_url(path: &Path) -> String {
 
 /// Computes the canonical URL for a page from its output path.
 ///
-/// For `index.html` pages (page bundles), returns the directory path with a
-/// trailing slash. For other files, returns the file path as-is.
-#[must_use]
+/// For `index.html` pages (page bundles), returns the directory path with a trailing slash. For
+/// other files, returns the file path as-is.
 pub(crate) fn page_url(base_url: &BaseUrl, output_path: &Path) -> String {
     match output_path.parent() {
         Some(directory)
@@ -115,7 +114,6 @@ pub(crate) fn page_url(base_url: &BaseUrl, output_path: &Path) -> String {
 }
 
 /// Joins a site-relative or root-relative path to a base URL or path prefix ending in `/`.
-#[must_use]
 pub(crate) fn join_site_url(base: &str, path: &str) -> String {
     format!("{base}{}", path.trim_start_matches('/'))
 }
