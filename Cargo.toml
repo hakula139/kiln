@@ -43,7 +43,7 @@ indoc = "2"
 itertools = "0.15"
 jiff = { version = "0.2", features = ["serde"] }
 lightningcss = "1.0.0-alpha.72"
-minijinja = { version = "2", features = ["loader"] }
+minijinja = { version = "3", features = ["loader"] }
 notify = "8"
 open = "5"
 pathdiff = "0.2"
