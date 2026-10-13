@@ -107,7 +107,7 @@ jobs:
           node-version: 24
 
       - name: Download archives
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           pattern: kiln-*
           path: release-assets
@@ -156,7 +156,7 @@ jobs:
         uses: ./.github/actions/setup-avif
 
       - name: Download npm packages
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: npm-packages
           path: npm-packages
@@ -188,7 +188,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Download archives
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           pattern: kiln-*
           path: release-assets
@@ -224,7 +224,7 @@ jobs:
           node-version: 24
 
       - name: Download npm packages
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: npm-packages
           path: npm-packages
