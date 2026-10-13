@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0-alpha.4] - 2026-10-13
+
+### Breaking changes
+
+- _(deps)_ Migrate to minijinja 3 (#177)
+
+### Dependencies
+
+- _(deps)_ Update dependency prettier to v3.9.10 (#167)
+- _(deps)_ Update rust dependencies (#169)
+- _(deps)_ Update dependency dprint to ^0.61.0 (#172)
+- _(deps)_ Update rust crate base64 to 0.23 (#173)
+- _(deps)_ Update rust crate sha2 to v0.11.1 (#174)
+- _(deps)_ Update actions/download-artifact action to v8 (#175)
+
 ## [0.5.0-alpha.3] - 2026-10-12
 
 ### Fixed
@@ -299,6 +314,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - _(deps)_ Bump rand from 0.9.2 to 0.9.4 (#29)
 
+[0.5.0-alpha.4]: https://github.com/hakula139/kiln/compare/v0.5.0-alpha.3..v0.5.0-alpha.4
 [0.5.0-alpha.3]: https://github.com/hakula139/kiln/compare/v0.5.0-alpha.2..v0.5.0-alpha.3
 [0.5.0-alpha.2]: https://github.com/hakula139/kiln/compare/v0.5.0-alpha.1..v0.5.0-alpha.2
 [0.5.0-alpha.1]: https://github.com/hakula139/kiln/compare/v0.4.0..v0.5.0-alpha.1
