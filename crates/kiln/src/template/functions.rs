@@ -145,7 +145,7 @@ pub(super) fn tpl_register_script(
             .and_then(|s| s.parse::<LoadStrategy>().ok())
             .ok_or_else(|| {
                 invalid(format!(
-                    r#"register_script: load must be one of "defer", "async", "sync"; got {value:?}"#,
+                    "register_script: load must be one of 'defer', 'async', 'sync'; got {value:?}",
                 ))
             })?,
     };
@@ -238,7 +238,7 @@ mod tests {
     #[test]
     fn rejects_missing_or_invalid_source_dir_or_file() {
         let source = tempfile::tempdir().unwrap();
-        let source_dir = source.path().to_string_lossy();
+        let source_dir = source.path().to_str().unwrap();
         for (ctx, expected) in [
             (
                 context! { source_dir },
@@ -284,10 +284,7 @@ mod tests {
         "})
         .unwrap();
 
-        assert_eq!(
-            rows,
-            Value::from_serialize([["A", "B"], ["1", "2"], ["3", "4"]])
-        );
+        assert_eq!(rows, Value::from([["A", "B"], ["1", "2"], ["3", "4"]]));
     }
 
     #[test]
@@ -300,7 +297,7 @@ mod tests {
 
         assert_eq!(
             rows,
-            Value::from_serialize([["name", "value"], ["field with, comma", r#"has "quotes""#],])
+            Value::from([["name", "value"], ["field with, comma", r#"has "quotes""#]])
         );
     }
 
@@ -499,11 +496,11 @@ mod tests {
             (r#"{{ register_script("/x.js", bogus=true) }}"#, "bogus"),
             (
                 r#"{{ register_script("/x.js", load="eager") }}"#,
-                r#"load must be one of "defer", "async", "sync"; got "eager""#,
+                "load must be one of 'defer', 'async', 'sync'; got 'eager'",
             ),
             (
                 r#"{{ register_script("/x.js", load=1) }}"#,
-                r#"register_script: load must be one of "defer", "async", "sync"; got 1"#,
+                "register_script: load must be one of 'defer', 'async', 'sync'; got 1",
             ),
             (
                 r#"{{ register_script("/x.js", module="yes") }}"#,
@@ -530,7 +527,7 @@ mod tests {
         }
     }
 
-    fn render(template: &str, ctx: impl serde::Serialize) -> Result<String, Error> {
+    fn render(template: &str, ctx: impl Into<Value>) -> Result<String, Error> {
         test_engine().env.render_str(template, ctx)
     }
 

@@ -6,7 +6,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::{Context, Result, ensure};
-use minijinja::value::{Kwargs, Value, merge_maps};
+use minijinja::value::{Kwargs, Serde, Value, merge_maps};
 use minijinja::{
     AutoEscape, Output, State, default_auto_escape_callback, escape_formatter, path_loader,
 };
@@ -69,6 +69,8 @@ impl TemplateEngine {
             .collect();
 
         let mut env = minijinja::Environment::new();
+        // Each build creates a fresh engine, so per-lookup freshness checks would only add stats.
+        env.set_auto_reload(false);
         env.set_loader(move |name| {
             for loader in &loaders {
                 if let Some(content) = loader(name)? {
@@ -79,7 +81,7 @@ impl TemplateEngine {
         });
         env.set_auto_escape_callback(auto_escape);
         env.set_formatter(format_value);
-        env.add_global("config", Value::from_serialize(config));
+        env.add_global("config", Value::from(Serde(config)));
         env.add_function("now", tpl_now);
         env.add_function("read_file", tpl_read_file);
         env.add_function("parse_csv", tpl_parse_csv);
@@ -164,7 +166,7 @@ impl TemplateEngine {
             template => template,
         };
         let context = merge_maps([
-            Value::from_serialize(ctx),
+            Value::from(Serde(ctx)),
             minijinja::context! {
                 __page_url => resources.page_url,
                 __source_dir => resources.source_dir.map(Path::to_string_lossy),
@@ -204,8 +206,8 @@ impl TemplateEngine {
         assets: &PageAssets,
     ) -> Result<String> {
         let context = merge_maps([
-            Value::from_serialize(vars),
-            minijinja::context! { __page_url => page_url, assets },
+            Value::from(Serde(vars)),
+            minijinja::context! { __page_url => page_url, assets => Serde(assets) },
         ]);
         self.env
             .get_template(name)
@@ -217,7 +219,7 @@ impl TemplateEngine {
 
 /// Autoescape mode of HTML templates. Being custom, it also sends the `escape` filter through
 /// [`format_value`].
-const HTML: AutoEscape = AutoEscape::Custom("html");
+const HTML: AutoEscape = AutoEscape::Custom(Cow::Borrowed("html"));
 
 /// Selects [`HTML`] wherever the default callback selects [`AutoEscape::Html`].
 fn auto_escape(name: &str) -> AutoEscape {
@@ -228,8 +230,12 @@ fn auto_escape(name: &str) -> AutoEscape {
 }
 
 /// Formats values like [`escape_formatter`], but escapes HTML with [`html::escape`].
-fn format_value(out: &mut Output, state: &State, value: &Value) -> Result<(), minijinja::Error> {
-    if !matches!(state.auto_escape(), HTML | AutoEscape::Html) || value.is_safe() {
+fn format_value(
+    out: &mut Output,
+    state: &mut State,
+    value: &Value,
+) -> Result<(), minijinja::Error> {
+    if ![HTML, AutoEscape::Html].contains(state.auto_escape()) || value.is_safe() {
         return escape_formatter(out, state, value);
     }
     let text = value
@@ -732,7 +738,7 @@ mod tests {
 
         assert_eq!(
             render("page.html"),
-            r#"<a href="https://example.com/a?b=1&amp;c=2" title="Say &quot;hi&quot; &amp; &#39;bye&#39;">&lt;b&gt;/x&lt;/b&gt;</a>|&lt;b&gt;/x&lt;/b&gt;|<i>/y</i>|[&quot;a/b&quot;]|3"#
+            r#"<a href="https://example.com/a?b=1&amp;c=2" title="Say &quot;hi&quot; &amp; &#39;bye&#39;">&lt;b&gt;/x&lt;/b&gt;</a>|&lt;b&gt;/x&lt;/b&gt;|<i>/y</i>|[&#39;a/b&#39;]|3"#
         );
         assert_eq!(
             render("page.txt"),
