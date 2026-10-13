@@ -204,6 +204,6 @@ mod tests {
 
     #[test]
     fn pagination_item_gap_serializes_as_none() {
-        assert!(minijinja::Value::from_serialize(PaginationItem::Gap).is_none());
+        assert!(minijinja::Value::from(minijinja::value::Serde(PaginationItem::Gap)).is_none());
     }
 }
