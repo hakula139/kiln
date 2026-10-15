@@ -145,6 +145,9 @@ jobs:
 
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ hashFiles('flake.nix', 'flake.lock') }}
+          cmd-format: nix develop -c {0}
 
       - name: Generate coverage
         run: nix develop -c cargo llvm-cov --locked --all-features --ignore-filename-regex 'main\.rs' --lcov --output-path lcov.info
