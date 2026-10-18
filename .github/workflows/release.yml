@@ -21,6 +21,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
+  CACHIX_NAME: hakula
   CARGO_TERM_COLOR: always
 
 jobs:
@@ -288,5 +289,5 @@ jobs:
         run: |
           store_path=$(nix path-info .#kiln)
           # `cachix pin` needs the path cached, and the setup action pushes only after the job ends.
-          cachix push hakula "$store_path"
-          cachix pin hakula "$CACHIX_PIN" "$store_path" --keep-revisions 2
+          cachix push "$CACHIX_NAME" "$store_path"
+          cachix pin "$CACHIX_NAME" "$CACHIX_PIN" "$store_path" --keep-revisions 2

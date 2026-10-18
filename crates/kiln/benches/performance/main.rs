@@ -1,4 +1,4 @@
-#![expect(clippy::unwrap_used, reason = "benchmark setup panics on failure")]
+#![expect(clippy::unwrap_used, reason = "benchmark failures invalidate the run")]
 
 mod build;
 mod fixtures;

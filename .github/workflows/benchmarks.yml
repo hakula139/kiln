@@ -26,6 +26,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  CACHIX_NAME: hakula
   CARGO_TERM_COLOR: never
 
 defaults:

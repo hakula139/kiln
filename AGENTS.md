@@ -30,8 +30,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 ├── .github/       # CI, release and benchmark workflows, plus shared setup actions
 ├── crates/kiln/   # SSG engine: library (lib.rs) + CLI binary (main.rs), tests and benches
 ├── docs/          # User guides, benchmarks and roadmap
-├── npm/           # npm launcher and release packaging script
-└── scripts/       # Pre-commit checks
+└── npm/           # npm launcher and release packaging script
 ```
 
 ### Crate Structure (`crates/kiln/src/`)
@@ -174,7 +173,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 
 - Prefer raw strings (`r"..."`) when the string contains characters that would need escaping. Always use the minimum delimiter level needed (`r"..."` → `r#"..."#` → `r##"..."##`).
 - Use `indoc!` / `formatdoc!` for multiline string content so the literal can be indented with surrounding code. Inline at the call site when the string is used once. Use a named constant only when it is shared or very large. Avoid `\n` escapes and `\x20` workarounds for multiline content.
-- Ellipsis: always `...` (three ASCII dots), never U+2026. The `ascii-ellipsis` pre-commit hook rejects it in every text file.
+- Ellipsis: always `...` (three ASCII dots), never U+2026.
 
 ### Enum String Mappings
 

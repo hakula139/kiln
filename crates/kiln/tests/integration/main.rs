@@ -1,4 +1,4 @@
-#![expect(clippy::unwrap_used, reason = "test helpers panic on setup failure")]
+#![expect(clippy::unwrap_used, reason = "test failures should panic")]
 
 mod assets;
 mod cli;

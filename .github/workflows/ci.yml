@@ -14,6 +14,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  CACHIX_NAME: hakula
   CARGO_TERM_COLOR: always
 
 jobs:
@@ -211,4 +212,4 @@ jobs:
             exit 0
           fi
 
-          cachix pin hakula "$CACHIX_PIN" "$(nix path-info .#kiln)" --keep-revisions 2
+          cachix pin "$CACHIX_NAME" "$CACHIX_PIN" "$(nix path-info .#kiln)" --keep-revisions 2
