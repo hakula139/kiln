@@ -1,5 +1,5 @@
 name: Set up Nix
-description: Install Nix and configure the Cachix substituter
+description: Install Nix and configure the hakula Cachix substituter
 
 inputs:
   cachix_auth_token:
@@ -11,9 +11,8 @@ runs:
     - name: Install Nix
       uses: cachix/install-nix-action@v31
       with:
-        # A single-user install cannot create the kernel namespaces the sandbox
-        # needs, and `sandbox-fallback` would otherwise hide that by retrying a
-        # failed sandbox setup without one.
+        # `sandbox-fallback = false` fails a build that cannot get a sandbox, which Nix would
+        # otherwise run without one.
         extra_nix_config: |
           sandbox = true
           sandbox-fallback = false
@@ -21,6 +20,6 @@ runs:
     - name: Set up Cachix
       uses: cachix/cachix-action@v17
       with:
-        name: ${{ env.CACHIX_NAME }}
+        name: hakula
         authToken: ${{ inputs.cachix_auth_token }}
         skipPush: ${{ !inputs.cachix_auth_token || !(github.ref == 'refs/heads/main' || github.actor == 'hakula139') }}
