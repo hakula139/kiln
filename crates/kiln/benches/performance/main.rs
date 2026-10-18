@@ -1,3 +1,5 @@
+#![expect(clippy::unwrap_used, reason = "benchmark setup panics on failure")]
+
 mod build;
 mod fixtures;
 mod images;

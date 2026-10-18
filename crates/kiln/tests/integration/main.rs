@@ -1,3 +1,5 @@
+#![expect(clippy::unwrap_used, reason = "test helpers panic on setup failure")]
+
 mod assets;
 mod cli;
 mod convert;
