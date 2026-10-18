@@ -1,9 +1,9 @@
 {
+  lib,
   avifSupport ? true,
   cssCompiler,
   dav1d,
   git,
-  lib,
   makeWrapper,
   pagefind,
   pkg-config,
@@ -11,16 +11,13 @@
   tzdata,
 }:
 
-let
-  fs = lib.fileset;
-in
 rustPlatform.buildRustPackage {
-  pname = "kiln";
   inherit ((lib.importTOML ./Cargo.toml).workspace.package) version;
+  pname = "kiln";
 
-  src = fs.toSource {
+  src = lib.fileset.toSource {
     root = ./.;
-    fileset = fs.unions [
+    fileset = lib.fileset.unions [
       ./Cargo.toml
       ./Cargo.lock
       ./crates
@@ -36,8 +33,8 @@ rustPlatform.buildRustPackage {
   # The dev server tests bind 127.0.0.1, which the darwin sandbox denies by default.
   __darwinAllowLocalNetworking = true;
 
-  # The build sandbox exposes no system zoneinfo, so jiff needs an explicit TZDIR
-  # to resolve IANA zone names in the time zone tests.
+  # The build sandbox exposes no system zoneinfo, so jiff needs an explicit TZDIR to resolve IANA
+  # zone names in the time zone tests.
   nativeCheckInputs = [
     cssCompiler
     git
