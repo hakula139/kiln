@@ -14,11 +14,15 @@ runs:
       shell: bash
       run: brew install dav1d
 
+    - name: Install pkg-config (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: choco install --no-progress pkgconfiglite
+
     - name: Install dav1d (Windows)
       if: runner.os == 'Windows'
       shell: pwsh
       run: |
-        choco install --no-progress pkgconfiglite
         vcpkg install dav1d:x64-windows-static-md
 
         $vcpkgInstalled = "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows-static-md"
