@@ -288,6 +288,6 @@ jobs:
           CACHIX_PIN: ${{ matrix.platform.cachix_pin }}
         run: |
           store_path=$(nix path-info .#kiln)
-          # `cachix pin` needs the path cached, and the setup action pushes only after the job ends.
+          # Finish uploading the output before pinning it.
           cachix push "$CACHIX_NAME" "$store_path"
-          cachix pin "$CACHIX_NAME" "$CACHIX_PIN" "$store_path" --keep-revisions 2
+          cachix pin "$CACHIX_NAME" "$CACHIX_PIN-$GITHUB_REF_NAME" "$store_path" --keep-revisions 1
