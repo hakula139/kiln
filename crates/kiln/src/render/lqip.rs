@@ -51,7 +51,7 @@ impl ImageResolver {
         // Single-lock entry pattern so concurrent callers don't double-decode.
         self.cache
             .lock()
-            .unwrap()
+            .expect("ImageResolver cache poisoned")
             .entry(canonical.clone())
             .or_insert_with(|| self.compute(&canonical).map(Arc::new))
             .clone()

@@ -21,6 +21,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
+  CACHIX_NAME: hakula
   CARGO_TERM_COLOR: always
 
 jobs:
@@ -256,3 +257,37 @@ jobs:
           for variant in kiln kiln-extended; do
             publish "./npm-packages/kiln-ssg-$variant-$version.tgz"
           done
+
+  pin:
+    name: Pin Release Builds (${{ matrix.platform.runner }})
+    needs: publish
+    runs-on: ${{ matrix.platform.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - runner: ubuntu-latest
+            cachix_pin: kiln-release-x86_64-linux
+          - runner: macos-latest
+            cachix_pin: kiln-release-aarch64-darwin
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Nix
+        uses: ./.github/actions/setup-nix
+        with:
+          cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+      - name: Build package
+        run: nix build .#kiln --no-link --print-build-logs
+
+      - name: Pin release build
+        env:
+          CACHIX_PIN: ${{ matrix.platform.cachix_pin }}
+        run: |
+          store_path=$(nix path-info .#kiln)
+          # Finish uploading the output before pinning it.
+          cachix push "$CACHIX_NAME" "$store_path"
+          cachix pin "$CACHIX_NAME" "$CACHIX_PIN-$GITHUB_REF_NAME" "$store_path" --keep-revisions 1

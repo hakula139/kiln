@@ -119,8 +119,6 @@ jobs:
 
       - name: Set up AVIF
         uses: ./.github/actions/setup-avif
-        with:
-          enabled: true
 
       - name: Install cargo-hack
         uses: taiki-e/install-action@cargo-hack

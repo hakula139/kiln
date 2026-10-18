@@ -173,7 +173,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 
 - Prefer raw strings (`r"..."`) when the string contains characters that would need escaping. Always use the minimum delimiter level needed (`r"..."` → `r#"..."#` → `r##"..."##`).
 - Use `indoc!` / `formatdoc!` for multiline string content so the literal can be indented with surrounding code. Inline at the call site when the string is used once. Use a named constant only when it is shared or very large. Avoid `\n` escapes and `\x20` workarounds for multiline content.
-- Ellipsis: always `...` (three ASCII dots), never `…` (U+2026). Applies everywhere: prose, comments, doc comments, and strings.
+- Ellipsis: always `...` (three ASCII dots), never U+2026.
 
 ### Enum String Mappings
 
@@ -191,7 +191,6 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 Follows global CLAUDE.md commit / branch / PR conventions, plus:
 
 - **Scope**: the most specific area changed, such as a module (e.g., `config`, `render`, `directive`), doc target (e.g., `CLAUDE`, `roadmap`), or crate name only for cross-module changes.
-- **`ci(release)` is special**: `cliff.toml` routes `ci(release)` commits to the changelog's `Added` section, while bare `ci:` is skipped. Use `ci(release)` for user-facing release-pipeline changes (new target platforms, archive layout, asset naming) that should appear in release notes. Use plain `ci:` for everything else (concurrency gates, runner pinning, internal job restructuring). Squash merge takes the **PR title**, not branch commits, so the PR title must carry the `(release)` scope for it to land in the changelog.
 - **PRs**: assign to `hakula139`. Label `enhancement` for `feat`, `bug` for `fix`. Do not request review from the PR author (GitHub rejects it).
 
 ### Testing
@@ -218,13 +217,13 @@ See [Building from Source](README.md#building-from-source) for toolchain require
 
 ```bash
 nix develop                            # interactive shell (for hacking on kiln)
-nix flake check                        # run pre-commit hooks
+nix flake check                        # run the non-Node pre-commit hooks
 nix build '.#kiln'                     # build kiln from source
 ```
 
 ### Pre-commit hooks
 
-Run `pnpm format`, `pnpm lint`, and `pnpm spellcheck` directly when changing Node sources or documentation.
+In each new checkout or worktree, run `nix develop -c true` and `pnpm install` once to provide the generated config and Node tools the hooks need. `nix flake check` skips the Node-based hooks, so run `pnpm format`, `pnpm lint`, and `pnpm spellcheck` directly when changing Node sources or documentation.
 
 ### Adding native dependencies
 

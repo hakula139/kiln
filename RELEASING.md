@@ -1,5 +1,13 @@
 # Releasing
 
+## Changelog
+
+[git-cliff](https://git-cliff.org) drafts each release's `CHANGELOG.md` section from `cliff.toml`.
+
+- Each squash-merged PR title becomes one entry, so write titles for users.
+- `feat`, `fix`, `perf`, and `revert` titles appear under Added, Fixed, Changed, and Removed, respectively. Titles with `!` appear under Breaking changes. All other types are skipped, including routine `chore(deps)` and `chore(flake)` bumps. Use `fix(deps): ...` for a Cargo bump that fixes an advisory or changes behavior in the shipped `kiln`. The root `package.json` holds only development tools, so their bumps remain `chore`, including advisory fixes.
+- Within each group, unscoped entries come first, then the rest sorted by scope, so related entries sit together. Each `(#N)` links to its PR.
+
 ## Prepare a release
 
 1. Update `workspace.package.version` in `Cargo.toml` and run `cargo build` to refresh `Cargo.lock`.

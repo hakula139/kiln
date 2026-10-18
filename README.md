@@ -197,7 +197,7 @@ The Nix package enables AVIF support by default. Its development shell provides 
 
 ```bash
 nix develop      # interactive shell
-nix flake check  # run pre-commit hooks
+nix flake check  # run the pre-commit hooks that don't use Node
 ```
 
 `direnv` auto-activates the shell via `.envrc`.
