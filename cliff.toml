@@ -1,6 +1,3 @@
-# git-cliff configuration
-# Reference: https://git-cliff.org/docs/configuration
-
 [changelog]
 header = """
 # Changelog
@@ -10,6 +7,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 """
 
+# Tera's `sort` rejects a null key, so unscoped entries render first in their own loop.
 body = """
 
 {% if version -%}
@@ -21,21 +19,18 @@ body = """
     ### {{ group | split(pat="-->") | last | trim | upper_first }}
 
     {% for commit in commits -%}
-        - {% if commit.scope %}_({{ commit.scope }})_ {% endif -%}
-          {{ commit.message | upper_first | trim }}
+        {% if not commit.scope -%}
+            - {{ commit.message | upper_first | trim }}
+        {% endif -%}
+    {% endfor -%}
+    {% for commit in commits | filter(attribute="scope") | sort(attribute="scope") -%}
+        - _({{ commit.scope }})_ {{ commit.message | upper_first | trim }}
     {% endfor %}
 {%- endfor -%}
 """
 
-# Strip per-line indentation from templates so layout above doesn't leak into output.
 trim = true
-
-postprocessors = [
-  # Collapse the blank-line runs that template control tags leave behind.
-  { pattern = '\n{3,}', replace = "\n\n" },
-  # Trim Dependabot / Renovate verbose phrasing for `chore(deps)` commits.
-  { pattern = ' in the [a-z]+ group(?: across \d+ director(?:y|ies))?', replace = "" },
-]
+postprocessors = [{ pattern = '\n{3,}', replace = "\n\n" }]
 
 [git]
 conventional_commits = true
@@ -47,13 +42,15 @@ use_branch_tags = true
 sort_commits = "oldest"
 
 commit_preprocessors = [
-  # Backtick inline HTML in subjects so markdown renders it as code. `(^|[^`])`
-  # is a lookbehind stand-in (Rust regex lacks one) skipping already-fenced spans.
+  # Backtick inline HTML so Markdown renders it as code. `(^|[^`])` stands in for the lookbehind
+  # that Rust regex lacks, so already-fenced spans stay as they are.
   { pattern = '(^|[^`])(<\/?[a-zA-Z][^>]*>)', replace = '$1`$2`' },
+  # GitHub autolinks `#N` in release notes but not in rendered files.
+  { pattern = '\(#([0-9]+)\)', replace = '([#$1](https://github.com/hakula139/kiln/pull/$1))' },
 ]
 
-# `<!-- N -->` prefixes (stripped in the body template) order sections by priority.
-# First match wins: catch-all `!:` → type prefixes → scope overrides → skips.
+# `<!-- N -->` prefixes, which the body template strips, order the sections. The first match wins,
+# so the catch-all `!:` parser precedes the type prefixes and the skips.
 commit_parsers = [
   { message = '^[a-z]+(\([^)]+\))?!:', group = "<!-- 0 -->Breaking changes" },
 
@@ -61,10 +58,6 @@ commit_parsers = [
   { message = "^fix", group = "<!-- 2 -->Fixed" },
   { message = "^perf", group = "<!-- 3 -->Changed" },
   { message = "^revert", group = "<!-- 4 -->Removed" },
-
-  # Scope-specific overrides for types that would otherwise hit the skip rules below.
-  { message = '^chore\(deps\)', group = "<!-- 5 -->Dependencies" },
-  { message = '^ci\(release\)', group = "<!-- 1 -->Added" },
 
   { message = "^build", skip = true },
   { message = "^chore", skip = true },
