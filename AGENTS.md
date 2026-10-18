@@ -218,13 +218,13 @@ See [Building from Source](README.md#building-from-source) for toolchain require
 
 ```bash
 nix develop                            # interactive shell (for hacking on kiln)
-nix flake check                        # run pre-commit hooks
+nix flake check                        # run the non-Node pre-commit hooks
 nix build '.#kiln'                     # build kiln from source
 ```
 
 ### Pre-commit hooks
 
-Run `pnpm format`, `pnpm lint`, and `pnpm spellcheck` directly when changing Node sources or documentation.
+In each new checkout or worktree, run `nix develop -c true` and `pnpm install` once to provide the generated config and Node tools the hooks need. `nix flake check` skips the Node-based hooks, so run `pnpm format`, `pnpm lint`, and `pnpm spellcheck` directly when changing Node sources or documentation.
 
 ### Adding native dependencies
 
