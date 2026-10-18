@@ -4,6 +4,45 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-10-18
+
+### Breaking changes
+
+- _(assets)_ Publish fingerprinted images, fonts, compiled stylesheets and eligible scripts only under their content-hashed filenames. Resolve template links with `asset_url()` and keep files requiring fixed URLs in `static/`. See the [asset publication rules](docs/assets.md#fingerprints-and-minification). ([#127](https://github.com/hakula139/kiln/pull/127), [#151](https://github.com/hakula139/kiln/pull/151))
+- _(config)_ Reject unknown configuration and frontmatter fields, invalid pagination sizes and slugs containing `:`. Remove `[author] email` and `link`, convert Hugo frontmatter with `kiln convert`, and write `featured_image` as a table with `src`. UTC template date values now render with `+00:00`. ([#139](https://github.com/hakula139/kiln/pull/139), [#140](https://github.com/hakula139/kiln/pull/140), [#148](https://github.com/hakula139/kiln/pull/148))
+- _(deps)_ Require Rust 1.89 or newer when building from source. HTML and JavaScript minification now use SWC. MiniJinja 3 changes collection formatting, rounding and arithmetic to follow Python semantics, including errors on division by zero. ([#135](https://github.com/hakula139/kiln/pull/135), [#177](https://github.com/hakula139/kiln/pull/177))
+- _(directive)_ Themes must supply `templates/directives/callout.html` and `callout_<type>` translations for styled, localized callouts. Directive templates receive `body_html`, `id` and `classes`, and must apply the authored identity themselves. `body_raw` is removed and directive template filenames must be lowercase. Invalid callout types or `open` values fail the build. ([#132](https://github.com/hakula139/kiln/pull/132))
+- _(kiln)_ Rust callers must use module paths such as `kiln::build::{build, BuildOptions}`, `kiln::convert::convert`, `kiln::init::init_theme` and `kiln::serve::serve`. `build` now borrows `BuildOptions`, and the port constant is `kiln::config::DEFAULT_PORT`. Previously public parsing, feed, sitemap and output helpers are no longer exposed. ([#115](https://github.com/hakula139/kiln/pull/115), [#130](https://github.com/hakula139/kiln/pull/130), [#148](https://github.com/hakula139/kiln/pull/148), [#159](https://github.com/hakula139/kiln/pull/159), [#162](https://github.com/hakula139/kiln/pull/162))
+- _(kiln)_ Rust integrations must adapt to typed configuration values, obtain pages through `kiln::content::discovery::discover_content` after removal of the public page constructors, and use `Page.body` in place of `raw_content`. `render_page` now takes `PageResources` and a separate `heading_numbering` argument, replacing its separate syntax-set, configuration, source-directory and image-resolver arguments. `TemplateEngine::new` requires configuration, translations and an asset manifest. `RenderOptions::code_max_lines` is optional and nonzero, and page asset features are accessed through methods. ([#134](https://github.com/hakula139/kiln/pull/134), [#139](https://github.com/hakula139/kiln/pull/139), [#140](https://github.com/hakula139/kiln/pull/140), [#141](https://github.com/hakula139/kiln/pull/141), [#151](https://github.com/hakula139/kiln/pull/151), [#152](https://github.com/hakula139/kiln/pull/152))
+- _(nix)_ Remove the exported `packages.${system}.pagefind` and `packages.${system}.kiln-tailwindcss` flake outputs. Use `packages.${system}.kiln` or `packages.${system}.default`, whose kiln executable bundles Pagefind and the Tailwind compiler on its runtime path. ([#142](https://github.com/hakula139/kiln/pull/142))
+- _(render)_ Native AVIF decoding is optional. Use the extended binary or enable the `avif` Cargo feature for AVIF loading placeholders. AVIF publication and dimension detection work in both variants. ([#116](https://github.com/hakula139/kiln/pull/116))
+- _(render)_ Themes or sites must define `copy` and `copy_code` translations for code-block button text and accessible labels. These labels and the language label are excluded from Pagefind indexing, while authored code titles remain searchable. ([#156](https://github.com/hakula139/kiln/pull/156))
+- _(render)_ Code-block `data-lang` now uses the lowercase fence language on the wrapper. The nested `<code>` element no longer repeats language attributes. Shortcodes remain literal in code, math, raw HTML and link destinations. ([#134](https://github.com/hakula139/kiln/pull/134), [#141](https://github.com/hakula139/kiln/pull/141))
+- _(template)_ Update themes to use the shared `title`, singular `kind` and `pagination.base_path` variables. Define the `all_posts`, `all_sections`, `all_tags` and `error_404_title` translations, render standalone pages with `post.html`, and pass source paths to `register_script()`. Pagination gaps are `none`. See the [template variables](docs/themes.md#template-variables). ([#150](https://github.com/hakula139/kiln/pull/150), [#152](https://github.com/hakula139/kiln/pull/152))
+- _(template)_ HTML templates escape URLs automatically while preserving `/`. Remove URL `| safe` filters and retain them for generated HTML such as `content`, `toc` and `body_html`. `asset_url()` returns a plain URL. ([#155](https://github.com/hakula139/kiln/pull/155))
+
+### Added
+
+- _(release)_ Install base or AVIF-enabled extended binaries through the `@kiln-ssg/kiln` and `@kiln-ssg/kiln-extended` npm packages, or download archives for Linux x86_64, Apple Silicon and Windows x86_64. ([#118](https://github.com/hakula139/kiln/pull/118), [#121](https://github.com/hakula139/kiln/pull/121))
+
+### Fixed
+
+- _(build)_ Publish builds transactionally and reject output paths that overlap source trees. ([#114](https://github.com/hakula139/kiln/pull/114))
+- _(cli)_ Send logs to stderr, preserving stdout for command output. ([#160](https://github.com/hakula139/kiln/pull/160))
+- _(config)_ Allow output directories inside linked theme repositories. ([#126](https://github.com/hakula139/kiln/pull/126))
+- _(content)_ Apply render options to summaries, ignore summary separators inside code, and follow content symlinks. ([#138](https://github.com/hakula139/kiln/pull/138), [#159](https://github.com/hakula139/kiln/pull/159))
+- _(convert)_ Preserve post and section indexes, accept null YAML dates, follow symlinked source bundles, and map Hugo `lastmod` to `updated`. ([#133](https://github.com/hakula139/kiln/pull/133), [#143](https://github.com/hakula139/kiln/pull/143), [#159](https://github.com/hakula139/kiln/pull/159))
+- _(kiln)_ Encode URL components consistently with JavaScript's `encodeURIComponent` and isolate site Git metadata reads from ambient `GIT_DIR`. ([#161](https://github.com/hakula139/kiln/pull/161))
+- _(npm)_ Include installation guidance in launcher packages and report musl Linux as unsupported. ([#129](https://github.com/hakula139/kiln/pull/129), [#136](https://github.com/hakula139/kiln/pull/136))
+- _(render)_ Preserve brace-only and adjacent code-fence attributes, apply code-line limits inside directives, reserve authored heading IDs, and count display math when deciding table column widths. ([#134](https://github.com/hakula139/kiln/pull/134), [#141](https://github.com/hakula139/kiln/pull/141), [#163](https://github.com/hakula139/kiln/pull/163))
+- _(search)_ Run npm-installed Pagefind on Windows. ([#119](https://github.com/hakula139/kiln/pull/119))
+- _(serve)_ Detect atomic configuration saves and serve complete custom 404 pages with live reload. ([#130](https://github.com/hakula139/kiln/pull/130))
+
+### Changed
+
+- _(build)_ Read content commit timestamps in one Git pass. ([#146](https://github.com/hakula139/kiln/pull/146))
+- _(css)_ Compile Tailwind stylesheets concurrently. ([#147](https://github.com/hakula139/kiln/pull/147))
+
 ## [0.5.0-alpha.4] - 2026-10-13
 
 ### Breaking changes
@@ -314,6 +353,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - _(deps)_ Bump rand from 0.9.2 to 0.9.4 (#29)
 
+[0.5.0]: https://github.com/hakula139/kiln/compare/v0.4.0..v0.5.0
 [0.5.0-alpha.4]: https://github.com/hakula139/kiln/compare/v0.5.0-alpha.3..v0.5.0-alpha.4
 [0.5.0-alpha.3]: https://github.com/hakula139/kiln/compare/v0.5.0-alpha.2..v0.5.0-alpha.3
 [0.5.0-alpha.2]: https://github.com/hakula139/kiln/compare/v0.5.0-alpha.1..v0.5.0-alpha.2
