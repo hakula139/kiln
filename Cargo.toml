@@ -20,17 +20,13 @@ anyhow = "1"
 axum = { version = "0.8", features = ["ws"] }
 base64 = "0.23"
 clap = { version = "4", features = ["derive", "env"] }
-criterion = { version = "0.8", default-features = false, features = [
-  "cargo_bench_support",
-] }
+criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support"] }
 csv = "1"
 dunce = "1"
 futures-util = { version = "0.3", default-features = false }
 gh-emoji = "1"
 hex = "0.4"
-icu_normalizer = { version = "2", default-features = false, features = [
-  "compiled_data",
-] }
+icu_normalizer = { version = "2", default-features = false, features = ["compiled_data"] }
 image = { version = "0.25", default-features = false, features = [
   "bmp",
   "gif",
@@ -67,23 +63,11 @@ swc_ecma_transforms_base = "50"
 swc_ecma_visit = "29"
 swc_html_ast = "26"
 swc_html_codegen = "27"
-swc_html_minifier = { version = "63", default-features = false, features = [
-  "custom-css-minifier",
-] }
+swc_html_minifier = { version = "63", default-features = false, features = ["custom-css-minifier"] }
 swc_html_parser = "26"
-syntect = { version = "5", default-features = false, features = [
-  "html",
-  "regex-onig",
-] }
+syntect = { version = "5", default-features = false, features = ["html", "regex-onig"] }
 tempfile = "3"
-tokio = { version = "1", features = [
-  "fs",
-  "macros",
-  "rt-multi-thread",
-  "signal",
-  "sync",
-  "time",
-] }
+tokio = { version = "1", features = ["fs", "macros", "rt-multi-thread", "signal", "sync", "time"] }
 tokio-tungstenite = "0.30"
 toml = "1"
 tower = { version = "0.5", features = ["util"] }
