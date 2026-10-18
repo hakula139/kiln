@@ -45,6 +45,7 @@ pname
 println
 pulldown
 raii
+résumé
 rfind
 rsplit
 rustc
@@ -61,12 +62,15 @@ strftime
 substituters
 swatinem
 syntect
+taiki
 taplo
 tmpl
 tracing
 tungstenite
 tzdata
 TZDIR
+unwritable
+waka
 walkdir
 webp
 writeln
