@@ -2,7 +2,7 @@
   "private": true,
   "scripts": {
     "format": "pnpm format:prettier && pnpm format:markdown && pnpm format:toml",
-    "format:prettier": "prettier --check \"**/*.{cjs,js,json,jsonc,mjs,yaml,yml}\"",
+    "format:prettier": "prettier --check .",
     "format:markdown": "dprint check",
     "format:toml": "taplo format --check",
     "lint": "markdownlint-cli2 \"**/*.md\"",
@@ -12,7 +12,7 @@
     "@taplo/cli": "^0.7.0",
     "cspell": "^10.3.6",
     "dprint": "^0.64.0",
-    "markdownlint-cli2": "^0.23.3",
+    "markdownlint-cli2": "^0.24.0",
     "prettier": "^3.9.9"
   }
 }
