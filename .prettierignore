@@ -1,1 +1,3 @@
 pnpm-lock.yaml
+*.md
+crates/kiln/tests/fixtures/templates/
