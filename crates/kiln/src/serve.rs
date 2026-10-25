@@ -111,9 +111,6 @@ pub async fn serve(root: &Path, port: u16, open: bool) -> Result<()> {
 }
 
 /// Builds the site, starts file watching, and serves until `shutdown` completes.
-///
-/// Separated from [`serve`] so tests can supply a pre-bound listener (port 0) and a controlled
-/// shutdown signal.
 async fn serve_until(
     root: &Path,
     listener: tokio::net::TcpListener,
@@ -397,8 +394,11 @@ mod tests {
     use std::fs;
 
     use axum::http::Request;
+    use futures_util::{SinkExt, StreamExt};
     use indoc::indoc;
     use notify::event::{CreateKind, ModifyKind, RenameMode};
+    use tokio::task::JoinHandle;
+    use tokio_tungstenite::tungstenite::Message as WsMessage;
 
     use super::*;
     use crate::test_utils::copy_templates;
@@ -412,8 +412,8 @@ mod tests {
         fs::create_dir(root.path().join("static")).unwrap();
         fs::write(root.path().join("static/style.css"), "body { color: red; }").unwrap();
 
-        let (addr, shutdown_tx) = spawn_server(root.path()).await;
-        wait_for_server(addr).await;
+        let (addr, shutdown_tx, mut server) = spawn_server(root.path()).await;
+        wait_for_server(addr, &mut server).await.unwrap();
 
         let resp = reqwest::get(format!("http://{addr}/posts/hello/"))
             .await
@@ -432,12 +432,56 @@ mod tests {
         assert_eq!(css.status(), 200);
         assert_eq!(css.text().await.unwrap(), "body { color: red; }");
 
-        let (ws, _) = tokio_tungstenite::connect_async(format!("ws://{addr}{LIVE_RELOAD_PATH}"))
+        let (mut ws, _) =
+            tokio_tungstenite::connect_async(format!("ws://{addr}{LIVE_RELOAD_PATH}"))
+                .await
+                .unwrap();
+        ws.send(WsMessage::Ping("ready".into())).await.unwrap();
+        let message = tokio::time::timeout(Duration::from_secs(5), ws.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert_eq!(message, WsMessage::Pong("ready".into()));
+
+        let page = root.path().join("content/posts/hello/index.md");
+        let content = fs::read_to_string(&page).unwrap();
+        fs::write(&page, content.replace("Body", "Updated content")).unwrap();
+
+        let message = tokio::time::timeout(Duration::from_secs(5), ws.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert_eq!(message, WsMessage::Text("reload".into()));
+
+        let body = reqwest::get(format!("http://{addr}/posts/hello/"))
+            .await
+            .unwrap()
+            .text()
             .await
             .unwrap();
+        assert!(body.contains("Updated content"));
+        assert!(!body.contains("Body"));
         drop(ws);
 
-        _ = shutdown_tx.send(());
+        shutdown_tx.send(()).unwrap();
+        tokio::time::timeout(Duration::from_secs(5), server)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn reports_server_startup_errors() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("config.toml"), "invalid = [").unwrap();
+
+        let (addr, _shutdown_tx, mut server) = spawn_server(root.path()).await;
+        let error = wait_for_server(addr, &mut server).await.unwrap_err();
+
+        assert!(format!("{error:#}").contains("failed to load config"));
     }
 
     fn setup_site(root: &Path) {
@@ -457,34 +501,45 @@ mod tests {
         .unwrap();
     }
 
-    /// Starts `serve_until` in a background task and returns the address and a shutdown sender.
-    async fn spawn_server(root: &Path) -> (SocketAddr, tokio::sync::oneshot::Sender<()>) {
+    async fn spawn_server(
+        root: &Path,
+    ) -> (
+        SocketAddr,
+        tokio::sync::oneshot::Sender<()>,
+        JoinHandle<Result<()>>,
+    ) {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
         let root = root.to_owned();
-        tokio::spawn(async move {
-            _ = serve_until(&root, listener, false, async {
+        let server = tokio::spawn(async move {
+            serve_until(&root, listener, false, async {
                 _ = shutdown_rx.await;
             })
-            .await;
+            .await
         });
-        (addr, shutdown_tx)
+        (addr, shutdown_tx, server)
     }
 
-    /// Polls until the server responds to an HTTP request.
-    async fn wait_for_server(addr: SocketAddr) {
+    async fn wait_for_server(addr: SocketAddr, server: &mut JoinHandle<Result<()>>) -> Result<()> {
         let client = reqwest::Client::builder()
             .timeout(Duration::from_millis(200))
             .build()
             .unwrap();
-        for _ in 0..50 {
-            if client.get(format!("http://{addr}/")).send().await.is_ok() {
-                return;
+        tokio::select! {
+            result = server => {
+                result.context("server task panicked")??;
+                anyhow::bail!("server stopped before responding");
             }
-            tokio::time::sleep(Duration::from_millis(100)).await;
+            result = tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    if client.get(format!("http://{addr}/")).send().await.is_ok() {
+                        return;
+                    }
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                }
+            }) => result.context("server did not start within 5 seconds"),
         }
-        panic!("server did not start within 5 seconds");
     }
 
     // ── setup_watcher ──
@@ -941,8 +996,6 @@ mod tests {
 
     #[tokio::test]
     async fn relays_reload_over_websocket() {
-        use futures_util::StreamExt;
-
         let dir = tempfile::tempdir().unwrap();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
