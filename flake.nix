@@ -100,8 +100,7 @@
           };
         };
 
-        # These hooks run the tools pinned in node_modules, which the Nix sandbox lacks. The flake
-        # check leaves them to CI's Node Check job.
+        # The flake source omits node_modules, so CI's Node Check job runs these hooks.
         nodeHook =
           name: cmd:
           pkgs.lib.getExe (

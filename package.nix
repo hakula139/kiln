@@ -30,11 +30,6 @@ rustPlatform.buildRustPackage {
   nativeBuildInputs = [ makeWrapper ] ++ lib.optional avifSupport pkg-config;
   buildInputs = lib.optional avifSupport dav1d;
 
-  # The dev server tests bind 127.0.0.1, which the darwin sandbox denies by default.
-  __darwinAllowLocalNetworking = true;
-
-  # The build sandbox exposes no system zoneinfo, so jiff needs an explicit TZDIR to resolve IANA
-  # zone names in the time zone tests.
   nativeCheckInputs = [
     cssCompiler
     git
