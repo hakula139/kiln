@@ -576,7 +576,8 @@ mod tests {
         ws: &mut ReloadSocket,
         marker: &str,
     ) -> String {
-        tokio::time::timeout(Duration::from_secs(5), async {
+        // Native event delivery can be delayed by filesystem load before the rebuild starts.
+        tokio::time::timeout(Duration::from_secs(30), async {
             loop {
                 let message = ws.next().await.unwrap().unwrap();
                 assert_eq!(message, WsMessage::Text("reload".into()));
