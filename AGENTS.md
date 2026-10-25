@@ -246,11 +246,11 @@ Review the complete change and affected callers against these criteria:
 
 - Correctness and edge cases
 - Adherence to project conventions (this file)
-- Conciseness — prefer the simplest idiomatic solution
-- DRY — flag duplicate logic across modules and look for extraction opportunities
-- Cross-file consistency — parallel types should use the same structure, naming, ordering, and derive traits
-- Comment hygiene — verbose multi-line docs that should be one-liners, missing WHY comments where non-obvious
+- Conciseness: prefer the simplest idiomatic solution
+- DRY: flag duplicate logic across modules and look for extraction opportunities
+- Cross-file consistency: parallel types should use the same structure, naming, ordering, and derive traits
+- Comment hygiene: verbose multi-line docs that should be one-liners, missing WHY comments where non-obvious
 - Visibility: use the smallest scope needed by callers
-- Idiomatic Rust — iterators, pattern matching, type system, ownership, standard library
-- Existing crates — flag hand-written logic that an established crate already handles
+- Idiomatic Rust: iterators, pattern matching, type system, ownership, standard library
+- Existing crates: flag hand-written logic that an established crate already handles
 - Test coverage gaps
