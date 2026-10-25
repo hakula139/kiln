@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-10-25
+
+### Fixed
+
+- _(markdown)_ Fix parsing panics and excessive processing time for pathological emphasis and deeply nested lists. ([#203](https://github.com/hakula139/kiln/pull/203))
+- _(serve)_ Report macOS file-watcher startup failures and fix native watcher cleanup for deleted paths. ([#216](https://github.com/hakula139/kiln/pull/216))
+
 ## [0.5.0] - 2026-10-18
 
 ### Breaking changes
@@ -353,6 +360,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - _(deps)_ Bump rand from 0.9.2 to 0.9.4 (#29)
 
+[0.5.1]: https://github.com/hakula139/kiln/compare/v0.5.0..v0.5.1
 [0.5.0]: https://github.com/hakula139/kiln/compare/v0.4.0..v0.5.0
 [0.5.0-alpha.4]: https://github.com/hakula139/kiln/compare/v0.5.0-alpha.3..v0.5.0-alpha.4
 [0.5.0-alpha.3]: https://github.com/hakula139/kiln/compare/v0.5.0-alpha.2..v0.5.0-alpha.3
