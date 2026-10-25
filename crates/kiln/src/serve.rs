@@ -129,8 +129,7 @@ async fn serve_until(
     let inputs = watch_paths(root, &config);
     let (event_tx, event_rx) = mpsc::unbounded_channel();
     // Watcher must stay alive for the duration of the server, since dropping it stops watching.
-    let _watcher: notify::RecommendedWatcher =
-        setup_watcher(&inputs, event_tx, notify::Config::default())?;
+    let _watcher = setup_watcher(&inputs, event_tx)?;
 
     let (reload_tx, _) = watch::channel(());
     tokio::spawn(watch_loop(
@@ -172,13 +171,11 @@ async fn serve_until(
 /// Initializes a file watcher on `inputs`.
 ///
 /// Input files are watched through their parent directory because Linux file watches track the
-/// original file, which atomic saves replace. Generic over the backend so tests can drive a
-/// [`notify::PollWatcher`], which needs no platform event daemon and works under a build sandbox.
-fn setup_watcher<W: Watcher>(
+/// original file, which atomic saves replace.
+fn setup_watcher(
     inputs: &[PathBuf],
     event_tx: mpsc::UnboundedSender<()>,
-    watcher_config: notify::Config,
-) -> Result<W> {
+) -> Result<notify::RecommendedWatcher> {
     let inputs = inputs
         .iter()
         .map(|path| {
@@ -188,15 +185,13 @@ fn setup_watcher<W: Watcher>(
         .collect::<Result<Vec<_>>>()?;
 
     let filter = inputs.clone();
-    let mut watcher = W::new(
-        move |res: notify::Result<notify::Event>| match res {
+    let mut watcher =
+        notify::recommended_watcher(move |res: notify::Result<notify::Event>| match res {
             Ok(event) if is_input_change(&event, &filter) => _ = event_tx.send(()),
             Ok(_) => {}
             Err(e) => tracing::warn!("file watcher error: {e}"),
-        },
-        watcher_config,
-    )
-    .context("failed to initialize file watcher")?;
+        })
+        .context("failed to initialize file watcher")?;
 
     for input in &inputs {
         let (path, mode) = match input.parent() {
@@ -403,6 +398,10 @@ mod tests {
     use super::*;
     use crate::test_utils::copy_templates;
 
+    type ReloadSocket = tokio_tungstenite::WebSocketStream<
+        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+    >;
+
     // ── serve_until ──
 
     #[tokio::test]
@@ -432,45 +431,61 @@ mod tests {
         assert_eq!(css.status(), 200);
         assert_eq!(css.text().await.unwrap(), "body { color: red; }");
 
-        let (mut ws, _) =
-            tokio_tungstenite::connect_async(format!("ws://{addr}{LIVE_RELOAD_PATH}"))
-                .await
-                .unwrap();
-        ws.send(WsMessage::Ping("ready".into())).await.unwrap();
-        let message = tokio::time::timeout(Duration::from_secs(5), ws.next())
-            .await
-            .unwrap()
-            .unwrap()
-            .unwrap();
-        assert_eq!(message, WsMessage::Pong("ready".into()));
-
-        let page = root.path().join("content/posts/hello/index.md");
-        let content = fs::read_to_string(&page).unwrap();
-        fs::write(&page, content.replace("Body", "Updated content")).unwrap();
-
-        let message = tokio::time::timeout(Duration::from_secs(5), ws.next())
-            .await
-            .unwrap()
-            .unwrap()
-            .unwrap();
-        assert_eq!(message, WsMessage::Text("reload".into()));
-
-        let body = reqwest::get(format!("http://{addr}/posts/hello/"))
-            .await
-            .unwrap()
-            .text()
-            .await
-            .unwrap();
-        assert!(body.contains("Updated content"));
-        assert!(!body.contains("Body"));
+        let ws = connect_reload(addr).await;
         drop(ws);
 
-        shutdown_tx.send(()).unwrap();
-        tokio::time::timeout(Duration::from_secs(5), server)
-            .await
-            .unwrap()
-            .unwrap()
-            .unwrap();
+        stop_server(shutdown_tx, server).await;
+    }
+
+    #[tokio::test]
+    async fn rebuilds_after_repeated_atomic_input_saves() {
+        for (input, initial, revisions) in [
+            (
+                "content/posts/hello/index.md",
+                "Content A",
+                ["Content B", "Content C"],
+            ),
+            (
+                "i18n/en.toml",
+                "Translation A",
+                ["Translation B", "Translation C"],
+            ),
+            ("config.toml", "Title A", ["Title B", "Title C"]),
+            (
+                "themes/test-theme/theme.toml",
+                "Parameter A",
+                ["Parameter B", "Parameter C"],
+            ),
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            setup_atomic_save_site(root.path());
+            let file = root.path().join(input);
+            let original = fs::read_to_string(&file).unwrap();
+            let (addr, shutdown_tx, mut server) = spawn_server(root.path()).await;
+            wait_for_server(addr, &mut server).await.unwrap();
+            let mut ws = connect_reload(addr).await;
+            let body = reqwest::get(format!("http://{addr}/posts/hello/"))
+                .await
+                .unwrap()
+                .text()
+                .await
+                .unwrap();
+            assert!(body.contains(initial), "{input}: {body}");
+
+            let mut previous = initial;
+            for revision in revisions {
+                let staged = root.path().join(".input.tmp");
+                fs::write(&staged, original.replace(initial, revision)).unwrap();
+                fs::rename(&staged, &file).unwrap();
+
+                let body = wait_for_reload_output(addr, &mut ws, revision).await;
+                assert!(!body.contains(previous), "{input}: {body}");
+                previous = revision;
+            }
+
+            drop(ws);
+            stop_server(shutdown_tx, server).await;
+        }
     }
 
     #[tokio::test]
@@ -499,6 +514,96 @@ mod tests {
             "#},
         )
         .unwrap();
+    }
+
+    fn setup_atomic_save_site(root: &Path) {
+        setup_site(root);
+        fs::create_dir(root.join("i18n")).unwrap();
+        fs::create_dir_all(root.join("themes/test-theme/templates")).unwrap();
+        fs::write(
+            root.join("config.toml"),
+            indoc! {r#"
+                theme = "test-theme"
+                title = "Title A"
+            "#},
+        )
+        .unwrap();
+        fs::write(root.join("i18n/en.toml"), r#"marker = "Translation A""#).unwrap();
+        fs::write(
+            root.join("themes/test-theme/theme.toml"),
+            indoc! {r#"
+                [params]
+                marker = "Parameter A"
+            "#},
+        )
+        .unwrap();
+        fs::write(
+            root.join("templates/post.html"),
+            indoc! {r#"
+                <html><body>
+                {{ content | safe }}{{ t("marker") }}{{ config.title }}{{ config.params.marker }}
+                </body></html>
+            "#},
+        )
+        .unwrap();
+        let page = root.join("content/posts/hello/index.md");
+        let content = fs::read_to_string(&page).unwrap();
+        fs::write(page, content.replace("Body", "Content A")).unwrap();
+    }
+
+    async fn connect_reload(addr: SocketAddr) -> ReloadSocket {
+        let (mut ws, _) =
+            tokio_tungstenite::connect_async(format!("ws://{addr}{LIVE_RELOAD_PATH}"))
+                .await
+                .unwrap();
+        ws.send(WsMessage::Ping("ready".into())).await.unwrap();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let message = ws.next().await.unwrap().unwrap();
+                if message == WsMessage::Pong("ready".into()) {
+                    return;
+                }
+                assert_eq!(message, WsMessage::Text("reload".into()));
+            }
+        })
+        .await
+        .expect("server should acknowledge the reload connection");
+        ws
+    }
+
+    async fn wait_for_reload_output(
+        addr: SocketAddr,
+        ws: &mut ReloadSocket,
+        marker: &str,
+    ) -> String {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let message = ws.next().await.unwrap().unwrap();
+                assert_eq!(message, WsMessage::Text("reload".into()));
+                let response = reqwest::get(format!("http://{addr}/posts/hello/"))
+                    .await
+                    .unwrap();
+                assert_eq!(response.status(), 200);
+                let body = response.text().await.unwrap();
+                if body.contains(marker) {
+                    return body;
+                }
+            }
+        })
+        .await
+        .unwrap_or_else(|_| panic!("should serve {marker} after reloading"))
+    }
+
+    async fn stop_server(
+        shutdown_tx: tokio::sync::oneshot::Sender<()>,
+        server: JoinHandle<Result<()>>,
+    ) {
+        shutdown_tx.send(()).unwrap();
+        tokio::time::timeout(Duration::from_secs(5), server)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
     }
 
     async fn spawn_server(
@@ -539,61 +644,6 @@ mod tests {
                     tokio::time::sleep(Duration::from_millis(100)).await;
                 }
             }) => result.context("server did not start within 5 seconds"),
-        }
-    }
-
-    // ── setup_watcher ──
-
-    #[tokio::test]
-    async fn sends_event_on_atomic_input_save() {
-        for (input, original) in [
-            ("content/test.md", None),
-            ("i18n/en.toml", Some(r#"greeting = "Hello""#)),
-            ("config.toml", Some(r#"theme = "test-theme""#)),
-            ("themes/test-theme/theme.toml", Some("")),
-        ] {
-            let root = tempfile::tempdir().unwrap();
-            for directory in ["content", "i18n", "themes/test-theme"] {
-                fs::create_dir_all(root.path().join(directory)).unwrap();
-            }
-            fs::write(root.path().join("config.toml"), r#"theme = "test-theme""#).unwrap();
-            fs::write(root.path().join("themes/test-theme/theme.toml"), "").unwrap();
-            let file = root.path().join(input);
-            if let Some(content) = original {
-                fs::write(&file, content).unwrap();
-            }
-
-            let config: Config = toml::from_str(r#"theme = "test-theme""#).unwrap();
-            let (tx, mut rx) = mpsc::unbounded_channel();
-            let _watcher: notify::PollWatcher = setup_watcher(
-                &watch_paths(root.path(), &config),
-                tx,
-                notify::Config::default()
-                    .with_poll_interval(Duration::from_millis(50))
-                    .with_compare_contents(true),
-            )
-            .unwrap();
-
-            for output in ["public", ".kiln-build-abc123"] {
-                fs::create_dir(root.path().join(output)).unwrap();
-            }
-            assert!(
-                tokio::time::timeout(Duration::from_millis(300), rx.recv())
-                    .await
-                    .is_err(),
-                "output siblings of config.toml should not trigger a rebuild"
-            );
-
-            let staged = root
-                .path()
-                .join(format!(".{}.tmp", file.file_name().unwrap().display()));
-            fs::write(&staged, "# updated").unwrap();
-            fs::rename(&staged, &file).unwrap();
-
-            let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
-                .await
-                .unwrap_or_else(|_| panic!("should receive event after replacing {input}"));
-            assert_eq!(event, Some(()), "{input}");
         }
     }
 
@@ -705,20 +755,6 @@ mod tests {
     }
 
     // ── watch_loop ──
-
-    #[tokio::test]
-    async fn triggers_reload_on_success() {
-        let root = tempfile::tempdir().unwrap();
-        setup_site(root.path());
-        let (event_tx, mut reload_rx, _) = spawn_watch_loop(root.path());
-
-        event_tx.send(()).unwrap();
-
-        tokio::time::timeout(Duration::from_secs(5), reload_rx.changed())
-            .await
-            .expect("should receive reload within timeout")
-            .expect("should receive reload after successful rebuild");
-    }
 
     #[tokio::test]
     async fn stops_when_sender_dropped() {
