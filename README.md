@@ -35,17 +35,17 @@ Install Node.js 20 or newer, for example with [fnm](https://github.com/Schniz/fn
 
 ```bash
 fnm install --latest --use
-npm install -g @kiln-ssg/kiln@next
+npm install -g @kiln-ssg/kiln@latest
 ```
 
-Choose `@kiln-ssg/kiln-extended@next` for AVIF loading placeholders. It has the same [dav1d requirements](#prebuilt-binary) as the extended archive. Both variants install `kiln`, so uninstall the current variant before switching.
+Choose `@kiln-ssg/kiln-extended@latest` for AVIF loading placeholders. It has the same [dav1d requirements](#prebuilt-binary) as the extended archive. Both variants install `kiln`, so uninstall the current variant before switching.
 
 Prereleases use the `next` npm tag. Supported platforms are Linux x86_64 (glibc), Apple Silicon and Windows x86_64.
 
 Add optional tools to the same installation command when your site needs them:
 
 ```bash
-npm install -g @kiln-ssg/kiln@next @kiln-ssg/tailwindcss@0.1.2 pagefind@1.5.2
+npm install -g @kiln-ssg/kiln@latest @kiln-ssg/tailwindcss@0.1.2 pagefind@1.5.2
 ```
 
 - `@kiln-ssg/tailwindcss`: required when the site or theme compiles Tailwind CSS.
