@@ -132,11 +132,10 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 
 ### Comments
 
-- Comment the **why**, not the **what**. Comments earn their place by explaining intent, trade-offs, invariants, or constraints the code can't convey on its own. Skip comments that restate the code or narrate the change.
-- Keep `//` comments to one line per thought. Multi-line only when the rationale genuinely needs it.
-- Doc comments (`///`) state the **contract**, not **mechanics**. One-line doc is the default. Go multi-line only when the contract genuinely warrants it.
+- Keep `//` comments to one line per thought. Use multiple lines when the rationale needs more space.
+- Use one-line doc comments (`///`) by default, expanding when the contract needs more detail.
 - Wrap comments at **100 columns** (matching `rustfmt` max_width).
-- Write `//` comments as prose. Promote to `///` if list structure is genuinely useful.
+- Write `//` comments as prose. Promote to `///` if list structure is useful.
 
 ### Section Dividers
 
@@ -188,7 +187,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 
 ### Git Conventions
 
-Follows global CLAUDE.md commit / branch / PR conventions, plus:
+Use the `git-workflow` skill for Git authorization and conventions, with these repository-specific rules:
 
 - **Scope**: the most specific area changed, such as a module (e.g., `config`, `render`, `directive`), doc target (e.g., `CLAUDE`, `roadmap`), or crate name only for cross-module changes.
 - **PRs**: assign to `hakula139`. Label `enhancement` for `feat`, `bug` for `fix`. Do not request review from the PR author (GitHub rejects it).
@@ -251,7 +250,7 @@ Review the complete change and affected callers against these criteria:
 - DRY — flag duplicate logic across modules and look for extraction opportunities
 - Cross-file consistency — parallel types should use the same structure, naming, ordering, and derive traits
 - Comment hygiene — verbose multi-line docs that should be one-liners, missing WHY comments where non-obvious
-- Visibility — `pub(crate)` where `pub(super)` or private suffices
+- Visibility: use the smallest scope needed by callers
 - Idiomatic Rust — iterators, pattern matching, type system, ownership, standard library
 - Existing crates — flag hand-written logic that an established crate already handles
 - Test coverage gaps

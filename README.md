@@ -113,7 +113,7 @@ The Nix package puts the Tailwind compiler and Pagefind on kiln's `PATH`, so sty
 
 ## First Site
 
-After installing kiln, create a site with [IgnIt](https://github.com/hakula139/IgnIt). Use a kiln version meeting the theme's `min_kiln_version`.
+Create a site with [IgnIt](https://github.com/hakula139/IgnIt), using a kiln version meeting the theme's `min_kiln_version`. IgnIt requires the [Tailwind processor](#via-npm), which is included in kiln's Nix package.
 
 ```bash
 git init my-site

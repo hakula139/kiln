@@ -141,11 +141,11 @@ content/posts/note/my-post/
 └── index.md                 # Page content
 ```
 
-Public non-Markdown files owned by a bundle are copied beside its rendered HTML, retaining their relative paths:
+Public non-Markdown files owned by a bundle are published beside its rendered HTML. Their directory layout is retained, with [content-hashed filenames](assets.md#fingerprints-and-minification) for raster images, fonts and eligible scripts:
 
 | Source                                          | Output URL                               |
 | ----------------------------------------------- | ---------------------------------------- |
-| `content/posts/note/my-post/cover.webp`         | `/posts/note/my-post/cover.webp`         |
+| `content/posts/note/my-post/cover.webp`         | `/posts/note/my-post/cover.<hash>.webp`  |
 | `content/posts/note/my-post/assets/diagram.svg` | `/posts/note/my-post/assets/diagram.svg` |
 
 Underscore-prefixed files and directories are private. Nested bundles own their own files, and excluded bundles do not publish their assets.
