@@ -218,16 +218,16 @@ fn watch_paths(root: &Path, config: &Config) -> Vec<PathBuf> {
     site.chain(theme).filter(|path| path.exists()).collect()
 }
 
-/// Reports whether `event` changes a watched input, ignoring siblings such as the output and
-/// staging directories that share an input file's parent.
+/// Requests a rebuild for lost events or changes to watched inputs, ignoring ordinary sibling events.
 fn is_input_change(event: &notify::Event, inputs: &[PathBuf]) -> bool {
-    matches!(
-        event.kind,
-        EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_)
-    ) && event
-        .paths
-        .iter()
-        .any(|path| inputs.iter().any(|input| path.starts_with(input)))
+    event.need_rescan()
+        || (matches!(
+            event.kind,
+            EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_)
+        ) && event
+            .paths
+            .iter()
+            .any(|path| inputs.iter().any(|input| path.starts_with(input))))
 }
 
 /// Debounced rebuild loop: waits for watcher events, rebuilds, and notifies WebSocket clients.
@@ -391,7 +391,7 @@ mod tests {
     use axum::http::Request;
     use futures_util::{SinkExt, StreamExt};
     use indoc::indoc;
-    use notify::event::{CreateKind, ModifyKind, RenameMode};
+    use notify::event::{CreateKind, Flag, ModifyKind, RenameMode};
     use tokio::task::JoinHandle;
     use tokio_tungstenite::tungstenite::Message as WsMessage;
 
@@ -747,11 +747,32 @@ mod tests {
                 &["config.toml"],
                 false,
             ),
+            (EventKind::Other, &[], false),
+            (EventKind::Other, &["config.toml"], false),
+            (modify, &[], false),
+            (modify, &["../outside.md"], false),
         ] {
             let event = paths.iter().fold(notify::Event::new(kind), |event, path| {
                 event.add_path(root.join(path))
             });
-            assert_eq!(is_input_change(&event, &inputs), expected, "{event:?}");
+            let changed = is_input_change(&event, &inputs);
+
+            assert_eq!(changed, expected, "{event:?}");
+        }
+    }
+
+    #[test]
+    fn accepts_rescan_regardless_of_paths() {
+        let inputs = [PathBuf::from("/site/content")];
+        for paths in [&[][..], &["/site/public/output.html"], &["/outside.md"]] {
+            let event = paths.iter().fold(
+                notify::Event::new(EventKind::Other).set_flag(Flag::Rescan),
+                |event, path| event.add_path(PathBuf::from(path)),
+            );
+
+            let changed = is_input_change(&event, &inputs);
+
+            assert!(changed, "{event:?}");
         }
     }
 
