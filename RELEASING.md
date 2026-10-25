@@ -50,6 +50,6 @@ Watch the [Release workflow](https://github.com/hakula139/kiln/actions/workflows
 
 - GitHub release notes, base / extended archives and their checksums.
 - npm packages and the version installed by each entry package. Stable releases use `latest`, and prereleases use `next`. The workflow publishes to npm only when the repository variable `NPM_PUBLISH_ENABLED` is `true`.
-- npm provenance, with `npm view @kiln-ssg/kiln@X.Y.Z dist.attestations`. A package published without trusted publishing has no attestation.
+- npm provenance, starting with `npm view @kiln-ssg/kiln@X.Y.Z dist.attestations`. Verify that the attestation identifies this repository's `.github/workflows/release.yml` workflow and the release tag.
 
 npm versions are immutable, so rerunning a failed Publish npm job skips the packages that are already published and publishes the rest.

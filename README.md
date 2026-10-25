@@ -35,17 +35,17 @@ Install Node.js 20 or newer, for example with [fnm](https://github.com/Schniz/fn
 
 ```bash
 fnm install --latest --use
-npm install -g @kiln-ssg/kiln@next
+npm install -g @kiln-ssg/kiln@latest
 ```
 
-Choose `@kiln-ssg/kiln-extended@next` for AVIF loading placeholders. It has the same [dav1d requirements](#prebuilt-binary) as the extended archive. Both variants install `kiln`, so uninstall the current variant before switching.
+Choose `@kiln-ssg/kiln-extended@latest` for AVIF loading placeholders. It has the same [dav1d requirements](#prebuilt-binary) as the extended archive. Both variants install `kiln`, so uninstall the current variant before switching.
 
 Prereleases use the `next` npm tag. Supported platforms are Linux x86_64 (glibc), Apple Silicon and Windows x86_64.
 
 Add optional tools to the same installation command when your site needs them:
 
 ```bash
-npm install -g @kiln-ssg/kiln@next @kiln-ssg/tailwindcss@0.1.2 pagefind@1.5.2
+npm install -g @kiln-ssg/kiln@latest @kiln-ssg/tailwindcss@0.1.2 pagefind@1.5.2
 ```
 
 - `@kiln-ssg/tailwindcss`: required when the site or theme compiles Tailwind CSS.
@@ -113,7 +113,7 @@ The Nix package puts the Tailwind compiler and Pagefind on kiln's `PATH`, so sty
 
 ## First Site
 
-After installing kiln, create a site with [IgnIt](https://github.com/hakula139/IgnIt). Use a kiln version meeting the theme's `min_kiln_version`.
+Create a site with [IgnIt](https://github.com/hakula139/IgnIt), using a kiln version meeting the theme's `min_kiln_version`. IgnIt requires the [Tailwind processor](#via-npm), which is included in kiln's Nix package.
 
 ```bash
 git init my-site

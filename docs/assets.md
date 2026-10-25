@@ -8,9 +8,9 @@
 | ------------------- | ---------------- | ------------------------------------------------------------------------------- |
 | `assets/`           | `public/assets/` | Shared images, fonts, JavaScript and other assets                               |
 | `static/`           | `public/`        | Files with fixed URLs, such as favicons, manifests, `_headers` and `_redirects` |
-| `content/<bundle>/` | `public/<page>/` | Co-located page assets, retaining their relative paths                          |
+| `content/<bundle>/` | `public/<page>/` | Co-located page assets                                                          |
 
-Images and fonts from `assets/` and page bundles are published only under [content-hashed names](#fingerprints-and-minification). `static/` files always keep their names.
+Raster images and fonts from `assets/` and page bundles are published only under [content-hashed names](#fingerprints-and-minification). `static/` files always keep their names.
 
 Files and directories beginning with `_` are private within `assets/` and content bundles. `static/` also publishes underscore-prefixed files.
 
@@ -40,10 +40,10 @@ Prepared `featured_image.src` is an absolute URL, ready for image elements and m
 
 Each site, theme or page bundle uses `assets/css/_src/style.css` as its private entry:
 
-| Owner         | Compiled output                     |
-| ------------- | ----------------------------------- |
-| Site or theme | `public/assets/css/site.css`        |
-| Page bundle   | `public/<page>/assets/css/page.css` |
+| Owner         | Compiled output                            |
+| ------------- | ------------------------------------------ |
+| Site or theme | `public/assets/css/site.<hash>.css`        |
+| Page bundle   | `public/<page>/assets/css/page.<hash>.css` |
 
 Page CSS also works for a page at the site root. Other CSS files are ordinary public assets and are not automatically loaded.
 
