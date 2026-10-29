@@ -107,7 +107,7 @@
             pkgs.writeShellApplication {
               inherit name;
               runtimeInputs = with pkgs; [
-                nodejs_24
+                nodejs_26
                 pnpm
               ];
               text = ''
@@ -184,7 +184,7 @@
               cargo-llvm-cov
               dav1d
               git-cliff
-              nodejs_24
+              nodejs_26
               pagefind
               pkg-config
               pnpm
