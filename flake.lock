@@ -104,16 +104,16 @@
         ]
       },
       "locked": {
-        "lastModified": 1791312539,
-        "narHash": "sha256-90NwluAPxCKQRK+otN+ZxWwc3g8vTE31+9/T2nDx0a4=",
+        "lastModified": 1793521006,
+        "narHash": "sha256-3cPf0WQBL1L35BsjrTHhIhxlsoYJlDqMnpaxWsk+8mM=",
         "owner": "hakula139",
         "repo": "kiln-tailwindcss",
-        "rev": "c1be99af1d4553139bf677daf12e2891d6e5f47e",
+        "rev": "9307f6e08f4e959b1d73e7262ca829cc9257f3f6",
         "type": "github"
       },
       "original": {
         "owner": "hakula139",
-        "ref": "v0.1.2",
+        "ref": "v0.1.3",
         "repo": "kiln-tailwindcss",
         "type": "github"
       }

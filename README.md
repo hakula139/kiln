@@ -45,7 +45,7 @@ Prereleases use the `next` npm tag. Supported platforms are Linux x86_64 (glibc)
 Add optional tools to the same installation command when your site needs them:
 
 ```bash
-npm install -g @kiln-ssg/kiln@latest @kiln-ssg/tailwindcss@0.1.2 pagefind@1.5.2
+npm install -g @kiln-ssg/kiln@latest @kiln-ssg/tailwindcss@0.1.3 pagefind@1.5.2
 ```
 
 - `@kiln-ssg/tailwindcss`: required when the site or theme compiles Tailwind CSS.
