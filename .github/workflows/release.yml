@@ -134,13 +134,15 @@ jobs:
           overwrite: true
 
   test-npm:
-    name: Test npm (${{ matrix.platform.runner }})
+    name: Test npm (${{ matrix.platform.runner }}, Node ${{ matrix.node }})
     needs: package-npm
     runs-on: ${{ matrix.platform.runner }}
     strategy:
       fail-fast: false
       matrix:
         platform: *release-platforms
+        # Keep the first entry at the `engines.node` minimum in npm/package.mjs.
+        node: [20, 26]
     env:
       VERSION: ${{ needs.package-npm.outputs.version }}
     steps:
@@ -150,7 +152,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 26
+          node-version: ${{ matrix.node }}
 
       - name: Set up AVIF
         if: runner.os != 'Windows'
