@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.2] - 2026-11-01
+
+### Fixed
+
+- _(deps)_ Override vulnerable re2js in markdownlint ([#249](https://github.com/hakula139/kiln/pull/249))
+- _(flake)_ Run the Tailwind processor on Node 26 ([#247](https://github.com/hakula139/kiln/pull/247))
+- _(flake)_ Update the Tailwind processor to v0.1.4 ([#252](https://github.com/hakula139/kiln/pull/252))
+- _(serve)_ Rebuild after watcher event overflow ([#224](https://github.com/hakula139/kiln/pull/224))
+- _(template)_ Expose the deployment base path ([#251](https://github.com/hakula139/kiln/pull/251))
+
 ## [0.5.1] - 2026-10-25
 
 ### Fixed
@@ -360,6 +370,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - _(deps)_ Bump rand from 0.9.2 to 0.9.4 (#29)
 
+[0.5.2]: https://github.com/hakula139/kiln/compare/v0.5.1..v0.5.2
 [0.5.1]: https://github.com/hakula139/kiln/compare/v0.5.0..v0.5.1
 [0.5.0]: https://github.com/hakula139/kiln/compare/v0.4.0..v0.5.0
 [0.5.0-alpha.4]: https://github.com/hakula139/kiln/compare/v0.5.0-alpha.3..v0.5.0-alpha.4
