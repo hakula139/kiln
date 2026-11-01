@@ -81,7 +81,13 @@ impl TemplateEngine {
         });
         env.set_auto_escape_callback(auto_escape);
         env.set_formatter(format_value);
-        env.add_global("config", Value::from(Serde(config)));
+        env.add_global(
+            "config",
+            merge_maps([
+                Value::from(Serde(config)),
+                minijinja::context! { base_path => config.base_url.prefix() },
+            ]),
+        );
         env.add_function("now", tpl_now);
         env.add_function("read_file", tpl_read_file);
         env.add_function("parse_csv", tpl_parse_csv);
@@ -272,6 +278,48 @@ mod tests {
         let engine = test_site_engine(dir.path());
         let tmpl = engine.env.get_template("test.html").unwrap();
         assert_eq!(tmpl.render(()).unwrap(), "hello");
+    }
+
+    #[test]
+    fn config_exposes_base_path_without_changing_site_values() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("config.txt"),
+            "{{ config.base_path }}|{{ config.base_url }}|{{ config.title }}|{{ config.params.marker }}",
+        )
+        .unwrap();
+
+        for (base_url, expected) in [
+            (
+                "https://example.com",
+                "/|https://example.com|Example|preserved",
+            ),
+            (
+                "https://example.com/docs/",
+                "/docs/|https://example.com/docs|Example|preserved",
+            ),
+            (
+                "https://example.com/guides%20and%20notes/",
+                "/guides%20and%20notes/|https://example.com/guides%20and%20notes|Example|preserved",
+            ),
+        ] {
+            let config = Config {
+                base_url: base_url.parse().unwrap(),
+                title: "Example".into(),
+                params: toml::from_str(r#"marker = "preserved""#).unwrap(),
+                ..Default::default()
+            };
+            let engine = test_engine_with(Some(dir.path()), None, &config);
+
+            let rendered = engine
+                .env
+                .get_template("config.txt")
+                .unwrap()
+                .render(())
+                .unwrap();
+
+            assert_eq!(rendered, expected, "{base_url}");
+        }
     }
 
     #[test]

@@ -175,7 +175,7 @@ emojis = true
 
 ### Template Variables
 
-Every page template receives `title`, `description`, canonical `url` and [`assets`](#page-assets). Every template, including partials and directives, can read the site configuration as `config`.
+Every page template receives `title`, `description`, canonical `url` and [`assets`](#page-assets). Every template, including partials and directives, can read the site configuration as `config`. The derived `config.base_path` exposes the deployment path with leading and trailing slashes (`/` or `/docs/`) for origin-relative URLs.
 
 kiln auto-escapes strings in `.html`, `.htm` and `.xml` templates, encoding `&`, `<`, `>`, `"` and `'` while leaving `/` intact, so URLs need no `| safe`. Apply `| safe` to generated HTML such as `content`, `toc` and `body_html`. Dates are ISO 8601 timestamps with an offset in the configured time zone. Templates may use `date[:10]` when only the date is wanted.
 
