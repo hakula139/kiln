@@ -108,7 +108,7 @@
               inherit name;
               runtimeInputs = with pkgs; [
                 nodejs_26
-                pnpm
+                pnpm_12
               ];
               text = ''
                 if [ ! -d node_modules ]; then
@@ -187,7 +187,7 @@
               nodejs_26
               pagefind
               pkg-config
-              pnpm
+              pnpm_12
               unzip
             ])
             # libiconv resolves onig_sys / libwebp-sys link errors on darwin.
