@@ -188,6 +188,39 @@ fn build_image_urls_and_metadata_share_published_paths() {
 }
 
 #[test]
+fn build_base_url_override_updates_template_base_path() {
+    for (base_url, expected) in [
+        (
+            "https://preview.example.com",
+            "/|https://preview.example.com",
+        ),
+        (
+            "https://preview.example.com/docs/",
+            "/docs/|https://preview.example.com/docs",
+        ),
+    ] {
+        let site = TestSite::new(r#"base_url = "https://example.com/original/""#);
+        site.titled_page("posts/example", "Post A");
+        for template in ["home.html", "post.html"] {
+            site.write(
+                &format!("templates/{template}"),
+                "{{ config.base_path }}|{{ config.base_url }}",
+            );
+        }
+
+        site.build_with(&BuildOptions {
+            base_url_override: Some(base_url),
+            ..Default::default()
+        })
+        .unwrap();
+
+        for output in ["index.html", "posts/example/index.html"] {
+            assert_eq!(site.read(output), expected, "{base_url}: {output}");
+        }
+    }
+}
+
+#[test]
 fn build_base_url_override_republishes_authored_root_paths() {
     let site = TestSite::new(r#"base_url = "https://example.com/blog/""#);
     site.page(
