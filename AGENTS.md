@@ -25,7 +25,6 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 
 ```text
 .
-├── .agents/       # Agent skills (release procedure)
 ├── .cspell/       # Project spelling dictionary
 ├── .github/       # CI, release and benchmark workflows, plus shared setup actions
 ├── crates/kiln/   # SSG engine: library (lib.rs) + CLI binary (main.rs), tests and benches
@@ -216,13 +215,13 @@ See [Building from Source](README.md#building-from-source) for toolchain require
 
 ```bash
 nix develop                            # interactive shell (for hacking on kiln)
-nix flake check                        # run the non-Node pre-commit hooks
+nix flake check                        # run shared development checks
 nix build '.#kiln'                     # build kiln from source
 ```
 
 ### Pre-commit hooks
 
-In each new checkout or worktree, run `nix develop -c true` and `pnpm install` once to provide the generated config and Node tools the hooks need. `nix flake check` skips the Node-based hooks, so run `pnpm format`, `pnpm lint`, and `pnpm spellcheck` directly when changing Node sources or documentation.
+In each new checkout or worktree, run `nix develop -c true` to install the shared devkit hooks. `nix flake check` runs the shared checks without requiring `node_modules`. Install dependencies with `pnpm install` before running the repository's Node commands.
 
 ### Adding native dependencies
 
