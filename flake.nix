@@ -23,8 +23,8 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    git-hooks-nix = {
-      url = "github:cachix/git-hooks.nix";
+    devkit = {
+      url = "github:hakula139/devkit/88f619538cc3a79bf223e538504251264e02b4e9";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
@@ -43,7 +43,7 @@
       nixpkgs,
       flake-utils,
       rust-overlay,
-      git-hooks-nix,
+      devkit,
       kiln-tailwindcss,
       ...
     }:
@@ -77,21 +77,10 @@
         # ------------------------------------------------------------------------------------------
         # Pre-commit Hooks
         # ------------------------------------------------------------------------------------------
-        hooks = {
-          end-of-file-fixer.enable = true;
-          # Preserve Markdown's two-trailing-space hard-break syntax.
-          trim-trailing-whitespace = {
-            enable = true;
-            args = [ "--markdown-linebreak-ext=md" ];
-          };
-          check-added-large-files.enable = true;
-          check-yaml.enable = true;
-
-          nixfmt.enable = true;
-          deadnix.enable = true;
-          statix.enable = true;
-
-          rustfmt = {
+        dk = devkit.lib.mkLib pkgs;
+        preCommit = dk.preCommit {
+          src = ./.;
+          hooks.rustfmt = {
             enable = true;
             packageOverrides = {
               cargo = rustToolchain;
@@ -100,72 +89,6 @@
           };
         };
 
-        # The flake source omits node_modules, so CI's Node Check job runs these hooks.
-        nodeHook =
-          name: cmd:
-          pkgs.lib.getExe (
-            pkgs.writeShellApplication {
-              inherit name;
-              runtimeInputs = with pkgs; [
-                nodejs_26
-                pnpm_12
-              ];
-              text = ''
-                if [ ! -d node_modules ]; then
-                  echo "node_modules is missing. Run pnpm install, then commit again." >&2
-                  exit 1
-                fi
-                pnpm exec ${cmd} "$@"
-              '';
-            }
-          );
-
-        nodeHooks = {
-          dprint-write = {
-            enable = true;
-            name = "dprint";
-            entry = nodeHook "dprint-write" "dprint fmt";
-            files = "\\.md$";
-          };
-          prettier-write = {
-            enable = true;
-            name = "prettier";
-            entry = nodeHook "prettier-write" "prettier --write --ignore-unknown";
-            types = [ "text" ];
-          };
-          taplo-write = {
-            enable = true;
-            name = "taplo";
-            entry = nodeHook "taplo-write" "taplo format";
-            files = "\\.toml$";
-          };
-
-          cspell = {
-            enable = true;
-            package = null;
-            entry = nodeHook "cspell" "cspell --no-must-find-files --no-progress";
-            types = [ "text" ];
-          };
-          markdownlint = {
-            enable = true;
-            package = null;
-            name = "markdownlint-cli2";
-            entry = nodeHook "markdownlint" "markdownlint-cli2 --fix";
-            files = "\\.md$";
-          };
-        };
-
-        preCommit = git-hooks-nix.lib.${system}.run {
-          src = ./.;
-          hooks = hooks // nodeHooks;
-        };
-
-        preCommitCheck = git-hooks-nix.lib.${system}.run {
-          inherit hooks;
-          src = ./.;
-        };
-
-        git = pkgs.lib.getExe pkgs.git;
       in
       {
         # ------------------------------------------------------------------------------------------
@@ -174,33 +97,24 @@
         devShells.default = pkgs.mkShell {
           name = "kiln-dev";
 
-          packages =
-            preCommit.enabledPackages
-            ++ [
-              rustToolchain
-              cssCompiler
-            ]
-            ++ (with pkgs; [
-              cargo-llvm-cov
-              dav1d
-              git-cliff
-              nodejs_26
-              pagefind
-              pkg-config
-              pnpm_12
-              unzip
-            ])
-            # libiconv resolves onig_sys / libwebp-sys link errors on darwin.
-            ++ pkgs.lib.optional pkgs.stdenv.isDarwin pkgs.libiconv;
+          packages = [
+            rustToolchain
+            cssCompiler
+          ]
+          ++ (with pkgs; [
+            cargo-llvm-cov
+            dav1d
+            git-cliff
+            nodejs_26
+            pagefind
+            pkg-config
+            pnpm_12
+            unzip
+          ])
+          # libiconv resolves onig_sys / libwebp-sys link errors on darwin.
+          ++ pkgs.lib.optional pkgs.stdenv.isDarwin pkgs.libiconv;
 
-          # git-hooks.nix stores a hooks path relative to the main checkout, which linked worktrees
-          # can't resolve (cachix/git-hooks.nix#688), so commits there would skip the hooks.
-          shellHook = ''
-            ${preCommit.shellHook}
-            if common=$(${git} rev-parse --path-format=absolute --git-common-dir 2>/dev/null); then
-              ${git} config --local core.hooksPath "$common/hooks"
-            fi
-          '';
+          inputsFrom = [ preCommit.shell ];
 
           env.RUST_BACKTRACE = "1";
         };
@@ -216,7 +130,7 @@
         # ------------------------------------------------------------------------------------------
         # Checks
         # ------------------------------------------------------------------------------------------
-        checks.pre-commit = preCommitCheck;
+        checks.pre-commit = preCommit.check;
 
         # ------------------------------------------------------------------------------------------
         # Formatter
