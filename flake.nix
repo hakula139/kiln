@@ -89,6 +89,7 @@
             markdownlint-cli2.enable = true;
             nixfmt.enable = true;
             prettier.enable = true;
+
             rustfmt = {
               enable = true;
               packageOverrides = {
@@ -96,6 +97,7 @@
                 rustfmt = rustToolchain;
               };
             };
+
             shellcheck.enable = true;
             shfmt.enable = true;
             sort-file-contents.enable = true;
