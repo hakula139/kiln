@@ -5,6 +5,7 @@ choco
 clippy
 cmark
 deque
+devkit
 direnv
 dtolnay
 envrc
@@ -45,10 +46,10 @@ pname
 println
 pulldown
 raii
-résumé
 rfind
 rsplit
 rustc
+résumé
 serde
 slugification
 slugified
