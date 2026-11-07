@@ -51,6 +51,7 @@ rsplit
 rustc
 résumé
 serde
+shfmt
 slugification
 slugified
 slugify
