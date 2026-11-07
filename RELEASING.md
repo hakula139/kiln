@@ -1,6 +1,6 @@
 # Releasing
 
-Follow the [shared release procedure](https://github.com/hakula139/devkit/blob/88f619538cc3a79bf223e538504251264e02b4e9/docs/releasing.md). Prepare a release PR, merge it after approval and passing checks, then separately obtain approval to tag its squash commit.
+Follow the [shared release procedure](https://github.com/hakula139/devkit/blob/b3c36cb40179dcc4c226b0fee6e474577accecfb/docs/releasing.md). Prepare a release PR, merge it after approval and passing checks, then separately obtain approval to tag its squash commit.
 
 ## Release preparation
 
