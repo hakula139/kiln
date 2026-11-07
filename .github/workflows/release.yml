@@ -209,21 +209,10 @@ jobs:
           path: release-assets
           merge-multiple: true
 
-      - name: Install changelog parser
-        uses: taiki-e/install-action@parse-changelog
-
       - name: Publish release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          parse-changelog CHANGELOG.md "${GITHUB_REF_NAME#v}" > release-notes.md
-
-          options=(--verify-tag --title "$GITHUB_REF_NAME" --notes-file release-notes.md)
-          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
-            options+=(--prerelease)
-          fi
-
-          gh release create "$GITHUB_REF_NAME" release-assets/* "${options[@]}"
+        uses: hakula139/devkit/actions/publish-release@88f619538cc3a79bf223e538504251264e02b4e9
+        with:
+          assets: release-assets/*
 
   publish-npm:
     name: Publish npm
