@@ -80,12 +80,25 @@
         dk = devkit.lib.mkLib pkgs;
         preCommit = dk.preCommit {
           src = ./.;
-          hooks.rustfmt = {
-            enable = true;
-            packageOverrides = {
-              cargo = rustToolchain;
-              rustfmt = rustToolchain;
+          hooks = {
+            actionlint.enable = true;
+            check-yaml.enable = true;
+            cspell.enable = true;
+            deadnix.enable = true;
+            dprint.enable = true;
+            markdownlint-cli2.enable = true;
+            nixfmt.enable = true;
+            prettier.enable = true;
+            rustfmt = {
+              enable = true;
+              packageOverrides = {
+                cargo = rustToolchain;
+                rustfmt = rustToolchain;
+              };
             };
+            sort-file-contents.enable = true;
+            statix.enable = true;
+            taplo.enable = true;
           };
         };
 
