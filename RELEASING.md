@@ -1,6 +1,6 @@
 # Releasing
 
-Follow the [shared release procedure](https://github.com/hakula139/devkit/blob/v1/docs/releasing.md). Prepare a release PR, merge it after approval and passing checks, then separately obtain approval to tag its squash commit.
+Use the [release skill][release-skill] for preparation, notes curation, the release PR, approved tagging, and recovery. This document defines kiln's release contract.
 
 ## Release preparation
 
@@ -37,3 +37,5 @@ npm view @kiln-ssg/kiln@X.Y.Z dist.attestations
 ```
 
 npm versions are immutable. Rerunning a failed Publish npm job skips packages already published and publishes the remainder.
+
+[release-skill]: https://github.com/hakula139/plugins/blob/main/plugins/hakula-workflow/skills/release/SKILL.md
