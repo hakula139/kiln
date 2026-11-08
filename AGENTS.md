@@ -221,7 +221,7 @@ nix build '.#kiln'                     # build kiln from source
 
 ### Pre-commit hooks
 
-In each new checkout or worktree, run `nix develop -c true` to install the shared devkit hooks. `nix flake check` runs the shared checks without requiring `node_modules`. Install dependencies with `pnpm install` before running the repository's Node commands.
+In each new checkout or worktree, run `nix develop -c true` to install the shared devkit hooks. `nix flake check` runs the shared checks without requiring `node_modules`.
 
 ### Adding native dependencies
 

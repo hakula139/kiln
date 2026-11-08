@@ -4,9 +4,9 @@ Follow the [shared release procedure](https://github.com/hakula139/devkit/blob/v
 
 ## Release preparation
 
-Update `workspace.package.version` in `Cargo.toml` and run `cargo build` to refresh `Cargo.lock`. Use this repository's `cliff.toml` for `CHANGELOG.md`. Add the new version's compare reference above the existing footer links, using the previous stable tag for stable releases and the previous tag for prereleases.
+Update `workspace.package.version` in `Cargo.toml` and run `cargo build` to refresh `Cargo.lock`. Draft `CHANGELOG.md` with the shared configuration.
 
-Cargo dependencies that fix an advisory or affect shipped behavior use `fix(deps)` in PR titles. The root `package.json` contains development tools, whose updates remain `chore`.
+Cargo dependencies that fix an advisory or affect shipped behavior use `fix(deps)` in PR titles.
 
 Confirm that all eight npm packages trust GitHub Actions for `hakula139/kiln` through `release.yml`. Checking or configuring npm trust requires a local npm login:
 

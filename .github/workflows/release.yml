@@ -280,7 +280,6 @@ jobs:
       - name: Set up Nix
         uses: hakula139/devkit/.github/actions/setup-nix@v1
         with:
-          extra_nix_config: sandbox = false
           cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
       - name: Build package

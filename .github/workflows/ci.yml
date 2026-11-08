@@ -18,46 +18,6 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  flake-check:
-    name: Nix Flake Check
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Set up Nix
-        uses: hakula139/devkit/.github/actions/setup-nix@v1
-        with:
-          extra_nix_config: sandbox = false
-
-      - name: Run flake check
-        run: nix flake check
-
-  node-check:
-    name: Node Check
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Set up Nix
-        uses: hakula139/devkit/.github/actions/setup-nix@v1
-        with:
-          extra_nix_config: sandbox = false
-          cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
-
-      - name: Install dependencies
-        run: nix develop -c pnpm install --frozen-lockfile
-
-      - name: Format
-        run: nix develop -c pnpm format
-
-      - name: Lint
-        run: nix develop -c pnpm lint
-
-      - name: Spell check
-        run: nix develop -c pnpm spellcheck
-
   rust-check:
     name: Rust Check (${{ matrix.runner }}, ${{ matrix.variant }})
     runs-on: ${{ matrix.runner }}
@@ -142,7 +102,6 @@ jobs:
       - name: Set up Nix
         uses: hakula139/devkit/.github/actions/setup-nix@v1
         with:
-          extra_nix_config: sandbox = false
           cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
       - name: Cache dependencies
@@ -178,8 +137,10 @@ jobs:
       - name: Set up Nix
         uses: hakula139/devkit/.github/actions/setup-nix@v1
         with:
-          extra_nix_config: sandbox = false
           cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+      - name: Run flake check
+        run: nix flake check
 
       - name: Build package
         run: nix build .#kiln --no-link --print-build-logs
@@ -187,7 +148,7 @@ jobs:
   pin-main:
     name: Pin Main Builds (${{ matrix.platform.runner }})
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [flake-check, nix-build, node-check, rust-check]
+    needs: [nix-build, rust-check]
     runs-on: ${{ matrix.platform.runner }}
     strategy: *nix-platforms
     concurrency:
@@ -199,9 +160,6 @@ jobs:
 
       - name: Set up Nix
         uses: hakula139/devkit/.github/actions/setup-nix@v1
-        with:
-          extra_nix_config: sandbox = false
-
       - name: Restore build from cache
         run: nix build .#kiln --no-link --max-jobs 0 --print-build-logs
 
@@ -224,7 +182,7 @@ jobs:
   result:
     name: CI Result
     if: ${{ !cancelled() }}
-    needs: [flake-check, node-check, rust-check, msrv-check, coverage, nix-build, pin-main]
+    needs: [rust-check, msrv-check, coverage, nix-build, pin-main]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

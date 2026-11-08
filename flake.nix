@@ -16,8 +16,6 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
 
-    flake-utils.url = "github:numtide/flake-utils";
-
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -31,7 +29,6 @@
     kiln-tailwindcss = {
       url = "github:hakula139/kiln-tailwindcss/v0.1.4";
       inputs.nixpkgs.follows = "nixpkgs";
-      inputs.flake-utils.follows = "flake-utils";
     };
   };
 
@@ -41,13 +38,12 @@
   outputs =
     {
       nixpkgs,
-      flake-utils,
       rust-overlay,
       devkit,
       kiln-tailwindcss,
       ...
     }:
-    flake-utils.lib.eachSystem [ "aarch64-darwin" "x86_64-linux" ] (
+    devkit.lib.eachSystem devkit.lib.systems (
       system:
       let
         pkgs = import nixpkgs {
@@ -125,7 +121,6 @@
             nodejs_26
             pagefind
             pkg-config
-            pnpm_12
             unzip
           ])
           # libiconv resolves onig_sys / libwebp-sys link errors on darwin.
