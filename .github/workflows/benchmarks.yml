@@ -61,7 +61,7 @@ jobs:
           git -C base checkout --detach FETCH_HEAD
 
       - name: Set up Nix
-        uses: hakula139/devkit/actions/setup-nix@e0d835ba91cf38c7f6d950c8a56c0d68e74366bd
+        uses: hakula139/devkit/.github/actions/setup-nix@v1
         with:
           extra_nix_config: sandbox = false
 
