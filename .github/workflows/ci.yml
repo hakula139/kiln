@@ -100,7 +100,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up Nix
-        uses: hakula139/devkit/.github/actions/setup-nix@v1
+        uses: hakula139/devkit/.github/actions/setup-nix@v2
         with:
           cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
@@ -135,7 +135,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up Nix
-        uses: hakula139/devkit/.github/actions/setup-nix@v1
+        uses: hakula139/devkit/.github/actions/setup-nix@v2
         with:
           cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
@@ -162,7 +162,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up Nix
-        uses: hakula139/devkit/.github/actions/setup-nix@v1
+        uses: hakula139/devkit/.github/actions/setup-nix@v2
 
       - name: Restore build from cache
         run: |
@@ -197,4 +197,4 @@ jobs:
       actions: read
     steps:
       - name: Check results
-        uses: hakula139/devkit/.github/actions/ci-result@v1
+        uses: hakula139/devkit/.github/actions/ci-result@v2
