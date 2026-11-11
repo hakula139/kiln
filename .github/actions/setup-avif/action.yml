@@ -17,7 +17,12 @@ runs:
     - name: Install pkg-config (Windows)
       if: runner.os == 'Windows'
       shell: pwsh
-      run: choco install --no-progress pkgconfiglite
+      run: |
+        choco install --no-progress pkgconfiglite
+        if ($LASTEXITCODE -ne 0) {
+          exit $LASTEXITCODE
+        }
+        Get-Command pkg-config -ErrorAction Stop | Out-Null
 
     - name: Install dav1d (Windows)
       if: runner.os == 'Windows'
