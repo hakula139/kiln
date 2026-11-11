@@ -196,8 +196,9 @@ On macOS and Linux, the resulting binary needs dav1d at runtime, like the [exten
 The Nix package enables AVIF support by default. Its development shell provides the build dependencies and pre-commit hooks:
 
 ```bash
-nix develop      # interactive shell
-nix flake check  # run the pre-commit hooks that don't use Node
+nix develop
+nix develop -c run-hooks  # run shared hooks
+nix flake check           # build the package check
 ```
 
 `direnv` auto-activates the shell via `.envrc`.

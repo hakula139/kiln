@@ -10,70 +10,87 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  group: ci-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 env:
   CACHIX_NAME: hakula
   CARGO_TERM_COLOR: always
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
-  flake-check:
-    name: Nix Flake Check
+  nix:
+    uses: hakula139/devkit/.github/workflows/nix.yml@v3
+    secrets:
+      CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+  rust:
+    permissions:
+      contents: read
+      id-token: write
+    uses: hakula139/devkit/.github/workflows/rust.yml@v3
+    with:
+      all_features: true
+      coverage: true
+      msrv: true
+    secrets:
+      CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+  variants:
+    name: Variant Check (Linux)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
       - name: Set up Nix
-        uses: ./.github/actions/setup-nix
-
-      - name: Run flake check
-        run: nix flake check
-
-  node-check:
-    name: Node Check
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Set up Nix
-        uses: ./.github/actions/setup-nix
+        uses: hakula139/devkit/.github/actions/setup-nix@v3
         with:
           cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
-      - name: Install dependencies
-        run: nix develop -c pnpm install --frozen-lockfile
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          cmd-format: nix develop -c {0}
 
-      - name: Format
-        run: nix develop -c pnpm format
+      - name: Run base clippy
+        run: |
+          nix develop -c cargo clippy \
+            --locked \
+            --all-targets \
+            -- -D warnings
 
-      - name: Lint
-        run: nix develop -c pnpm lint
+      - name: Run base tests
+        run: nix develop -c cargo test --locked
 
-      - name: Spell check
-        run: nix develop -c pnpm spellcheck
+      - name: Test benchmark workloads
+        run: |
+          nix develop -c cargo test \
+            --locked \
+            --bench performance
 
-  rust-check:
-    name: Rust Check (${{ matrix.runner }}, ${{ matrix.variant }})
-    runs-on: ${{ matrix.runner }}
+          nix develop -c cargo test \
+            --locked \
+            --bench performance \
+            --all-features
+
+  windows:
+    name: Windows Check (${{ matrix.variant }})
+    runs-on: windows-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          - runner: ubuntu-latest
-            variant: base
+          - variant: base
             features: ''
-          - runner: ubuntu-latest
-            variant: extended
+          - variant: extended
             features: avif
-          - runner: windows-latest
-            variant: base
-            features: ''
-          - runner: windows-latest
-            variant: extended
-            features: avif
+
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -91,75 +108,40 @@ jobs:
         run: npm install --global @kiln-ssg/tailwindcss@0.1.4 pagefind@1.5.2
 
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
+        run: rustup toolchain install
 
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.variant }}
 
-      - name: Format
-        run: cargo fmt --all --check
+      - name: Run clippy
+        run: |
+          cargo clippy \
+            --locked \
+            --all-targets \
+            --features "${{ matrix.features }}" \
+            -- -D warnings
 
-      - name: Clippy
-        run: cargo clippy --locked --all-targets --features "${{ matrix.features }}" -- -D warnings
-
-      - name: Test
-        run: cargo test --features "${{ matrix.features }}"
+      - name: Run tests
+        run: |
+          cargo test \
+            --locked \
+            --features "${{ matrix.features }}"
 
       - name: Test benchmark workloads
-        run: cargo test --bench performance --features "${{ matrix.features }}"
+        run: |
+          cargo test \
+            --locked \
+            --bench performance \
+            --features "${{ matrix.features }}"
 
-  msrv-check:
-    name: MSRV Check
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Set up AVIF
-        uses: ./.github/actions/setup-avif
-
-      - name: Install cargo-hack
-        uses: taiki-e/install-action@cargo-hack
-
-      - name: Cache dependencies
-        uses: Swatinem/rust-cache@v2
-
-      - name: Check
-        run: cargo hack check --rust-version --workspace --all-targets --all-features --locked
-
-  coverage:
-    name: Coverage
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Set up Nix
-        uses: ./.github/actions/setup-nix
-        with:
-          cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
-
-      - name: Cache dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: ${{ hashFiles('flake.nix', 'flake.lock') }}
-          cmd-format: nix develop -c {0}
-
-      - name: Generate coverage
-        run: nix develop -c cargo llvm-cov --locked --all-features --ignore-filename-regex 'main\.rs' --lcov --output-path lcov.info
-
-      - name: Upload to Codecov
-        uses: codecov/codecov-action@v7
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: lcov.info
-
-  nix-build:
-    name: Nix Build (${{ matrix.platform.runner }})
+  pin-main:
+    name: Pin Main Builds (${{ matrix.platform.runner }})
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [nix, rust, variants, windows]
     runs-on: ${{ matrix.platform.runner }}
-    strategy: &nix-platforms
+    strategy:
       fail-fast: false
       matrix:
         platform:
@@ -167,36 +149,23 @@ jobs:
             cachix_pin: kiln-main-x86_64-linux
           - runner: macos-latest
             cachix_pin: kiln-main-aarch64-darwin
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Set up Nix
-        uses: ./.github/actions/setup-nix
-        with:
-          cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
-
-      - name: Build package
-        run: nix build .#kiln --no-link --print-build-logs
-
-  pin-main:
-    name: Pin Main Builds (${{ matrix.platform.runner }})
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [flake-check, nix-build, node-check, rust-check]
-    runs-on: ${{ matrix.platform.runner }}
-    strategy: *nix-platforms
     concurrency:
       group: kiln-main-pin-${{ matrix.platform.runner }}
       queue: max
+
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
       - name: Set up Nix
-        uses: ./.github/actions/setup-nix
+        uses: hakula139/devkit/.github/actions/setup-nix@v3
 
       - name: Restore build from cache
-        run: nix build .#kiln --no-link --max-jobs 0 --print-build-logs
+        run: |
+          nix build .#kiln \
+            --no-link \
+            --max-jobs 0 \
+            --print-build-logs
 
       - name: Pin current main build
         env:
@@ -213,3 +182,16 @@ jobs:
           fi
 
           cachix pin "$CACHIX_NAME" "$CACHIX_PIN" "$(nix path-info .#kiln)" --keep-revisions 2
+
+  result:
+    name: CI Result
+    if: ${{ !cancelled() }}
+    needs: [nix, rust, variants, windows, pin-main]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+
+    steps:
+      - name: Check results
+        uses: hakula139/devkit/.github/actions/ci-result@v3
