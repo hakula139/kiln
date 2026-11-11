@@ -17,6 +17,10 @@ env:
   CACHIX_NAME: hakula
   CARGO_TERM_COLOR: always
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   nix:
     uses: hakula139/devkit/.github/workflows/nix.yml@v3
