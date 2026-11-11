@@ -21,8 +21,8 @@ itertools
 jscript
 kwarg
 kwargs
-libdav1d
 libc
+libdav1d
 libiconv
 libwebp
 lqip
