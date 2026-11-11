@@ -1,10 +1,10 @@
 # Releasing
 
-Use the [release skill][release-skill] for preparation, notes curation, the release PR, approved tagging, and recovery. This document defines kiln's release contract.
+Use the [release skill](https://github.com/hakula139/plugins/blob/main/plugins/hakula-workflow/skills/release/SKILL.md) for preparation, notes curation, the release PR, approved tagging, and recovery. This document defines kiln's release contract.
 
 ## Release preparation
 
-Update `workspace.package.version` in `Cargo.toml` and run `cargo build` to refresh `Cargo.lock`. Draft `CHANGELOG.md` with the shared configuration.
+Update `workspace.package.version` in `Cargo.toml` and run `cargo build` to refresh `Cargo.lock`. Draft `CHANGELOG.md` with [devkit's changelog procedure](https://github.com/hakula139/devkit/blob/v3/docs/releasing.md#draft-a-changelog).
 
 Cargo dependencies that fix an advisory or affect shipped behavior use `fix(deps)` in PR titles.
 
@@ -37,5 +37,3 @@ npm view @kiln-ssg/kiln@X.Y.Z dist.attestations
 ```
 
 npm versions are immutable. Rerunning a failed Publish npm job skips packages already published and publishes the remainder.
-
-[release-skill]: https://github.com/hakula139/plugins/blob/main/plugins/hakula-workflow/skills/release/SKILL.md

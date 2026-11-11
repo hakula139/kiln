@@ -22,7 +22,7 @@
     };
 
     devkit = {
-      url = "github:hakula139/devkit/v2";
+      url = "github:hakula139/devkit/v3";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
@@ -51,7 +51,9 @@
           overlays = [ rust-overlay.overlays.default ];
         };
 
-        rustToolchain = (pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml).override {
+        rustVersion = (pkgs.lib.importTOML ./Cargo.toml).workspace.package.rust-version;
+        rustBin = rust-overlay.lib.mkRustBin { } pkgs;
+        rustToolchain = (rustBin.fromRustupToolchainFile ./rust-toolchain.toml).override {
           extensions = [
             "llvm-tools-preview"
             "rust-analyzer"
@@ -61,7 +63,6 @@
 
         cssCompiler = kiln-tailwindcss.packages.${system}.default;
 
-        # Some workspace dependencies require a newer Rust version than nixpkgs provides.
         kiln = pkgs.callPackage ./package.nix {
           inherit cssCompiler;
           rustPlatform = pkgs.makeRustPlatform {
@@ -77,13 +78,15 @@
         preCommit = dk.preCommit {
           src = ./.;
           hooks = {
-            actionlint.enable = true;
-            check-yaml.enable = true;
-            cspell.enable = true;
-            deadnix.enable = true;
-            dprint.enable = true;
-            markdownlint-cli2.enable = true;
-            nixfmt.enable = true;
+            clippy = {
+              enable = true;
+              packageOverrides = {
+                cargo = rustToolchain;
+                clippy = rustToolchain;
+              };
+              settings.extraArgs = "--locked --all-targets --all-features";
+            };
+
             prettier.enable = true;
 
             rustfmt = {
@@ -96,8 +99,6 @@
 
             shellcheck.enable = true;
             shfmt.enable = true;
-            sort-file-contents.enable = true;
-            statix.enable = true;
             taplo.enable = true;
           };
         };
@@ -105,30 +106,43 @@
       in
       {
         # ------------------------------------------------------------------------------------------
-        # Dev Shell
+        # Dev Shells
         # ------------------------------------------------------------------------------------------
-        devShells.default = pkgs.mkShell {
-          name = "kiln-dev";
+        devShells = {
+          default = pkgs.mkShell {
+            name = "kiln-dev";
 
-          packages = [
-            rustToolchain
-            cssCompiler
-          ]
-          ++ (with pkgs; [
-            cargo-llvm-cov
-            dav1d
-            git-cliff
-            nodejs_26
-            pagefind
-            pkg-config
-            unzip
-          ])
-          # libiconv resolves onig_sys / libwebp-sys link errors on darwin.
-          ++ pkgs.lib.optional pkgs.stdenv.isDarwin pkgs.libiconv;
+            packages = [
+              rustToolchain
+              cssCompiler
+            ]
+            ++ builtins.attrValues dk.nodeToolchain
+            ++ (with pkgs; [
+              cargo-llvm-cov
+              dav1d
+              git-cliff
+              pagefind
+              pkg-config
+              unzip
+            ])
+            ++ pkgs.lib.optional pkgs.stdenv.isDarwin pkgs.libiconv;
 
-          inputsFrom = [ preCommit.shell ];
+            inputsFrom = [ preCommit ];
 
-          env.RUST_BACKTRACE = "1";
+            env.RUST_BACKTRACE = "1";
+          };
+
+          msrv = pkgs.mkShell {
+            name = "kiln-msrv";
+
+            packages = [
+              rustBin.stable.${pkgs.lib.versions.pad 3 rustVersion}.minimal
+            ]
+            ++ (with pkgs; [
+              dav1d
+              pkg-config
+            ]);
+          };
         };
 
         # ------------------------------------------------------------------------------------------
@@ -142,7 +156,7 @@
         # ------------------------------------------------------------------------------------------
         # Checks
         # ------------------------------------------------------------------------------------------
-        checks.pre-commit = preCommit.check;
+        checks.package = kiln;
 
         # ------------------------------------------------------------------------------------------
         # Formatter

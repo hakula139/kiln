@@ -18,13 +18,11 @@ indoc
 infty
 interp
 itertools
-jiff
 jscript
-katex
 kwarg
 kwargs
+libdav1d
 libc
-libdav
 libiconv
 libwebp
 lqip
@@ -35,7 +33,6 @@ msys
 nixfmt
 nixos
 nixpkgs
-numtide
 objc
 onclose
 onig
@@ -54,9 +51,6 @@ serde
 shfmt
 slugification
 slugified
-slugify
-smol
-statix
 stdenv
 strasse
 straße
@@ -70,9 +64,8 @@ tmpl
 tracing
 tungstenite
 tzdata
-TZDIR
+tzdir
 unwritable
-waka
-walkdir
+wakatime
 webp
 writeln
