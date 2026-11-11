@@ -261,34 +261,7 @@ jobs:
           done
 
   pin:
-    name: Pin Release Builds (${{ matrix.platform.runner }})
     needs: publish
-    runs-on: ${{ matrix.platform.runner }}
-    timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        platform:
-          - runner: ubuntu-latest
-            cachix_pin: kiln-release-x86_64-linux
-          - runner: macos-latest
-            cachix_pin: kiln-release-aarch64-darwin
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Set up Nix
-        uses: hakula139/devkit/.github/actions/setup-nix@v3
-        with:
-          cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
-
-      - name: Build package
-        run: nix build .#kiln --no-link --print-build-logs
-
-      - name: Pin release build
-        env:
-          CACHIX_PIN: ${{ matrix.platform.cachix_pin }}
-        run: |
-          store_path=$(nix path-info .#kiln)
-          cachix push "$CACHIX_NAME" "$store_path"
-          cachix pin "$CACHIX_NAME" "$CACHIX_PIN-$GITHUB_REF_NAME" "$store_path" --keep-revisions 1
+    uses: hakula139/devkit/.github/workflows/nix-cache.yml@v3
+    secrets:
+      CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
