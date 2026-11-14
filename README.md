@@ -29,6 +29,16 @@ A static site generator written in Rust for [hakula.xyz](https://hakula.xyz), wi
 
 ## Installation
 
+### Via Homebrew
+
+On Apple Silicon macOS and x86_64 Linux, install with Homebrew:
+
+```bash
+brew install hakula139/tap/kiln
+```
+
+The formula installs the base variant. For AVIF loading placeholders, use an [extended archive](#prebuilt-binary) or the [extended npm package](#via-npm).
+
 ### Via npm
 
 Install Node.js 20 or newer, for example with [fnm](https://github.com/Schniz/fnm), then choose one kiln variant:
