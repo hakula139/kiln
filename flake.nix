@@ -78,10 +78,7 @@
                 cargo = rustToolchain;
                 clippy = rustToolchain;
               };
-              settings = {
-                denyWarnings = false;
-                extraArgs = "--locked --all-targets --all-features";
-              };
+              settings.extraArgs = "--locked --all-targets --all-features";
             };
 
             prettier.enable = true;
