@@ -260,6 +260,35 @@ jobs:
             publish "./npm-packages/kiln-ssg-$variant-$version.tgz"
           done
 
+  homebrew:
+    name: Notify Homebrew Tap
+    needs: [publish, publish-npm]
+    if: >-
+      ${{ !cancelled() && needs.publish.result == 'success' &&
+          (needs.publish-npm.result == 'success' || needs.publish-npm.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: hakula139
+          repositories: homebrew-tap
+          permission-actions: write
+
+      - name: Notify tap workflow
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh workflow run update.yml \
+            --repo hakula139/homebrew-tap \
+            --ref main \
+            --field formula=kiln \
+            --field "tag=$RELEASE_TAG"
+
   pin:
     needs: publish
     uses: hakula139/devkit/.github/workflows/nix-cache.yml@v3

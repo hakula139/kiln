@@ -12,6 +12,8 @@ When npm publication is enabled with `NPM_PUBLISH_ENABLED=true`, confirm that bo
 npm trust github @kiln-ssg/<package> --repo hakula139/kiln --file release.yml
 ```
 
+For Homebrew notification credentials, follow the [tap's maintenance guide](https://github.com/hakula139/homebrew-tap).
+
 ## Verify publication
 
 The Release workflow builds and tests base and extended variants before publishing. Check the GitHub release notes, all six platform archives and their checksum sidecars, and the tagged Nix package's version.
@@ -24,6 +26,10 @@ Inspect npm provenance and confirm the attestation identifies this repository's 
 npm view @kiln-ssg/kiln@X.Y.Z dist.attestations
 ```
 
+Successful publication notifies the [shared Homebrew tap](https://github.com/hakula139/homebrew-tap). Check its update workflow and formula PR.
+
 ## Recovery
 
 Follow the release skill and devkit's recovery procedure. npm versions are immutable. Rerunning a failed Publish npm job skips packages already published and publishes the remainder.
+
+For Homebrew update failures, follow the [tap's recovery procedure](https://github.com/hakula139/homebrew-tap).
