@@ -67,9 +67,10 @@ sudo mv kiln /usr/local/bin/
 # Windows x86_64 (Git Bash / MSYS / WSL)
 curl -fsSLO https://github.com/hakula139/kiln/releases/latest/download/kiln-x86_64-pc-windows-msvc.zip
 unzip kiln-x86_64-pc-windows-msvc.zip
-
-kiln --version
+./kiln.exe --version
 ```
+
+On Windows, move `kiln.exe` into a directory on your `PATH` to run `kiln` from any directory.
 
 Choose the default `kiln-<target>` archive or `kiln-extended-<target>` for AVIF loading placeholders. Only extended binaries need dav1d:
 

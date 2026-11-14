@@ -53,13 +53,7 @@
 
         rustVersion = (pkgs.lib.importTOML ./Cargo.toml).workspace.package.rust-version;
         rustBin = rust-overlay.lib.mkRustBin { } pkgs;
-        rustToolchain = (rustBin.fromRustupToolchainFile ./rust-toolchain.toml).override {
-          extensions = [
-            "llvm-tools-preview"
-            "rust-analyzer"
-            "rust-src"
-          ];
-        };
+        rustToolchain = rustBin.fromRustupToolchainFile ./rust-toolchain.toml;
 
         cssCompiler = kiln-tailwindcss.packages.${system}.default;
 
@@ -115,8 +109,8 @@
             packages = [
               rustToolchain
               cssCompiler
+              dk.nodeToolchain.nodejs
             ]
-            ++ builtins.attrValues dk.nodeToolchain
             ++ (with pkgs; [
               cargo-llvm-cov
               dav1d

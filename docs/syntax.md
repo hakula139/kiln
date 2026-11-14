@@ -37,6 +37,17 @@ See the corresponding sections for the specific keys each consumer recognizes:
 
 ## Markdown
 
+### Tables
+
+Set `table_nowrap_width` under `[params]` in `config.toml` to mark short table columns:
+
+```toml
+[params]
+table_nowrap_width = 20
+```
+
+The option is disabled by default. A column receives the `nowrap` class on every cell when its widest cell is at most the configured terminal-column width. Width includes visible text, inline code and math source. The theme must style `.nowrap` with `white-space: nowrap`.
+
 ### Headings
 
 Headings automatically receive `id` attributes generated from their text, suitable for linking:
