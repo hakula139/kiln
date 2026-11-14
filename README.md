@@ -37,7 +37,7 @@ On Apple Silicon macOS and x86_64 Linux, install with Homebrew:
 brew install hakula139/tap/kiln
 ```
 
-The formula installs the base variant. For AVIF loading placeholders, use an [extended archive](#prebuilt-binary) or the [extended npm package](#via-npm).
+Homebrew installs the extended build with AVIF support.
 
 ### Via npm
 
