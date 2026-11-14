@@ -1015,7 +1015,7 @@ mod tests {
         tokio::spawn(async move { _ = axum::serve(listener, app).await });
 
         assert!(
-            LIVE_RELOAD_SCRIPT.contains(&format!("'{LIVE_RELOAD_PATH}'")),
+            LIVE_RELOAD_SCRIPT.contains(&format!("{LIVE_RELOAD_PATH}`")),
             "the injected client should connect to the live reload route"
         );
         let url = format!("ws://{addr}{LIVE_RELOAD_PATH}");

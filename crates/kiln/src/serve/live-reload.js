@@ -6,8 +6,7 @@
     if (!active || ws) {
       return;
     }
-    const url =
-      (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/__kiln_live_reload';
+    const url = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/__kiln_live_reload`;
     const socket = new WebSocket(url);
     ws = socket;
     socket.onmessage = (e) => {
