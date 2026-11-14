@@ -99,7 +99,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 ├── search.rs            # Pagefind search indexing (external binary invocation)
 ├── serve.rs             # Dev server with file watching, WebSocket live reload, script injection
 ├── serve/
-│   └── live-reload.js    # Browser client for dev-server reload notifications
+│   └── live-reload.js   # Browser client for dev-server reload notifications
 ├── static_assets.rs     # Published asset manifest + content-hashed asset URLs
 ├── static_assets/
 │   ├── publication.rs   # Static / bundle asset publication and source → output paths
