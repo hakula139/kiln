@@ -27,8 +27,11 @@
     };
 
     kiln-tailwindcss = {
-      url = "github:hakula139/kiln-tailwindcss/v0.1.4";
-      inputs.nixpkgs.follows = "nixpkgs";
+      url = "github:hakula139/kiln-tailwindcss/v0.1.6";
+      inputs = {
+        devkit.follows = "devkit";
+        nixpkgs.follows = "nixpkgs";
+      };
     };
   };
 
