@@ -13,7 +13,6 @@ use axum::extract::{Request, State};
 use axum::http::{Method, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
-use indoc::indoc;
 use itertools::Itertools;
 use notify::{EventKind, RecursiveMode, Watcher};
 use tokio::sync::{mpsc, watch};
@@ -38,57 +37,11 @@ const DEBOUNCE: Duration = Duration::from_millis(100);
 ///
 /// Uses a WebSocket because SSE connections count against Chrome's 6-connection-per-origin
 /// HTTP/1.1 limit and leave zombie sockets on navigation that stall later requests.
-const LIVE_RELOAD_SCRIPT: &str = indoc! {r#"
-
-    <script>
-    (function () {
-      let ws = null;
-      let retry = null;
-      let active = true;
-      const connect = () => {
-        if (!active || ws) {
-          return;
-        }
-        const url = (location.protocol === "https:" ? "wss://" : "ws://")
-          + location.host + "/__kiln_live_reload";
-        const socket = new WebSocket(url);
-        ws = socket;
-        socket.onmessage = (e) => {
-          if (e.data === "reload") {
-            window.location.reload();
-          }
-        };
-        socket.onclose = () => {
-          if (ws !== socket) {
-            return;
-          }
-          ws = null;
-          if (active) {
-            retry = setTimeout(() => {
-              retry = null;
-              connect();
-            }, 1000);
-          }
-        };
-      };
-      window.addEventListener("pagehide", () => {
-        active = false;
-        clearTimeout(retry);
-        retry = null;
-        const socket = ws;
-        ws = null;
-        if (socket) {
-          socket.close();
-        }
-      });
-      window.addEventListener("pageshow", () => {
-        active = true;
-        connect();
-      });
-      connect();
-    })();
-    </script>
-"#};
+const LIVE_RELOAD_SCRIPT: &str = concat!(
+    "\n<script>\n",
+    include_str!("serve/live-reload.js"),
+    "</script>\n"
+);
 
 /// Starts the dev server with file watching and live reload. Blocks until Ctrl+C.
 ///
@@ -1062,7 +1015,7 @@ mod tests {
         tokio::spawn(async move { _ = axum::serve(listener, app).await });
 
         assert!(
-            LIVE_RELOAD_SCRIPT.contains(&format!(r#""{LIVE_RELOAD_PATH}""#)),
+            LIVE_RELOAD_SCRIPT.contains(&format!("{LIVE_RELOAD_PATH}`")),
             "the injected client should connect to the live reload route"
         );
         let url = format!("ws://{addr}{LIVE_RELOAD_PATH}");

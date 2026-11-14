@@ -45,7 +45,7 @@ Prereleases use the `next` npm tag. Supported platforms are Linux x86_64 (glibc)
 Add optional tools to the same installation command when your site needs them:
 
 ```bash
-npm install -g @kiln-ssg/kiln@latest @kiln-ssg/tailwindcss@0.1.4 pagefind@1.5.2
+npm install -g @kiln-ssg/kiln@latest @kiln-ssg/tailwindcss@0.1.6 pagefind@1.5.2
 ```
 
 - `@kiln-ssg/tailwindcss`: required when the site or theme compiles Tailwind CSS.
@@ -67,9 +67,10 @@ sudo mv kiln /usr/local/bin/
 # Windows x86_64 (Git Bash / MSYS / WSL)
 curl -fsSLO https://github.com/hakula139/kiln/releases/latest/download/kiln-x86_64-pc-windows-msvc.zip
 unzip kiln-x86_64-pc-windows-msvc.zip
-
-kiln --version
+./kiln.exe --version
 ```
+
+On Windows, move `kiln.exe` into a directory on your `PATH` to run `kiln` from any directory.
 
 Choose the default `kiln-<target>` archive or `kiln-extended-<target>` for AVIF loading placeholders. Only extended binaries need dav1d:
 

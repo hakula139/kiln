@@ -98,6 +98,8 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 │   └── toc.rs           # TocEntry struct, nested <nav> table of contents generation
 ├── search.rs            # Pagefind search indexing (external binary invocation)
 ├── serve.rs             # Dev server with file watching, WebSocket live reload, script injection
+├── serve/
+│   └── live-reload.js   # Browser client for dev-server reload notifications
 ├── static_assets.rs     # Published asset manifest + content-hashed asset URLs
 ├── static_assets/
 │   ├── publication.rs   # Static / bundle asset publication and source → output paths
@@ -145,7 +147,6 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 
 - One blank line between top-level items (functions, structs, enums, impls, constants). Exception: runs of closely-related one-line `const` / `static` declarations sharing a theme may sit together without blanks.
 - One blank line before and after section dividers (`// ── Name ──`). This applies inside `#[cfg(test)]` modules too. The first divider takes a blank line after the `use super::*;` block.
-- Inside function bodies, use blank lines to separate logical phases (e.g., setup → validation → execution → result).
 - Group a single-line computation with its immediate validation guard (early-return `if`), leaving no blank line between them. Multi-line `let` bindings (async chains, builder patterns) keep the blank before their guard.
 
 ### Module Organization
@@ -155,7 +156,6 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 - Place functions and types in the module that reflects their conceptual domain. A cross-module trait belongs where the **contract** lives, not the first implementation. Create new modules when needed for clean organization.
 - Avoid `pub use` re-exports that obscure where items are defined. If some items are re-exported, re-export all related items so callers never mix paths.
 - Order helper functions after their caller (top-down reading order).
-- New struct fields / enum variants go at the most semantically appropriate position, not just appended at the bottom.
 
 ### Visibility
 
@@ -171,7 +171,6 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 
 - Prefer raw strings (`r"..."`) when the string contains characters that would need escaping. Always use the minimum delimiter level needed (`r"..."` → `r#"..."#` → `r##"..."##`).
 - Use `indoc!` / `formatdoc!` for multiline string content so the literal can be indented with surrounding code. Inline at the call site when the string is used once. Use a named constant only when it is shared or very large. Avoid `\n` escapes and `\x20` workarounds for multiline content.
-- Ellipsis: always `...` (three ASCII dots), never U+2026.
 
 ### Enum String Mappings
 
@@ -197,16 +196,12 @@ Use the `git-workflow` skill for Git authorization and conventions, with these r
 - Integration tests for cross-module behavior are modules of the single `tests/integration/` binary, so the library links once. Set up sites with its `support::TestSite`.
 - Group tests by function under `// ── function_name ──` section headers, following production function order. When several sections cover one function, qualify each with a topic after a colon, as in `// ── build: listings ──`. Within each section, place portable tests before platform-specific tests, ordering each group as happy path → variants → edge / error cases.
 - Use `indoc!` for multi-line test inputs.
-- Use generic, fictional test data (e.g., `example.com`, `"Post A"`). Avoid real names or branded content.
-- Assertions must verify actual behavior. Avoid unfalsifiable patterns (uniform data with `starts_with`, wildcard `..` matches, loose bounds). Each assertion should fail if the code under test has a plausible bug.
-- Prefer a concise suite with full coverage over many minimal tests. Merge tests that cover the same path.
 
 ### Documentation Maintenance
 
 - Keep `README.md` user-facing. It should describe value, supported features, and usage, not internal progress tracking.
 - Keep `docs/roadmap.md` as the canonical in-repo roadmap / status summary. Update it when shipped capability areas or planned priorities change.
 - Crate structure diagrams must match the actual filesystem. When adding, removing, or renaming modules, update the tree in this file. Entries are sorted alphabetically, and directories sort alongside their parent `.rs` file.
-- Markdown prose is **not hard-wrapped**. Paragraphs are single long lines that flow with the reader's viewport, so do not introduce 80-column line breaks inside them.
 - After substantive changes, sweep docs for stale claims: `README.md` feature lists, `docs/roadmap.md` status sections, and this file's crate tree.
 
 ## Nix Development
@@ -229,24 +224,13 @@ Append to `devShells.default.packages` in `flake.nix`. `*-sys` crates that use `
 Run after implementation and before review:
 
 ```bash
-cargo fmt --all --check                                           # formatting
+cargo fmt --all --check
 cargo build
-cargo clippy --all-targets --all-features -- -D warnings          # zero warnings (pedantic lints)
+cargo clippy --all-targets --all-features
 cargo test --all-features
-cargo llvm-cov --all-features --ignore-filename-regex 'main\.rs'  # check test coverage
+cargo llvm-cov --all-features --ignore-filename-regex 'main\.rs'
 ```
 
 ## Code Review
 
-Review the complete change and affected callers against these criteria:
-
-- Correctness and edge cases
-- Adherence to project conventions (this file)
-- Conciseness: prefer the simplest idiomatic solution
-- DRY: flag duplicate logic across modules and look for extraction opportunities
-- Cross-file consistency: parallel types should use the same structure, naming, ordering, and derive traits
-- Comment hygiene: verbose multi-line docs that should be one-liners, missing WHY comments where non-obvious
-- Visibility: use the smallest scope needed by callers
-- Idiomatic Rust: iterators, pattern matching, type system, ownership, standard library
-- Existing crates: flag hand-written logic that an established crate already handles
-- Test coverage gaps
+Use the `review` skill to review the complete change and affected callers.

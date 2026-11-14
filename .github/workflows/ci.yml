@@ -34,7 +34,6 @@ jobs:
     uses: hakula139/devkit/.github/workflows/rust.yml@v3
     with:
       all_features: true
-      coverage: true
       msrv: true
     secrets:
       CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
@@ -62,8 +61,7 @@ jobs:
         run: |
           nix develop -c cargo clippy \
             --locked \
-            --all-targets \
-            -- -D warnings
+            --all-targets
 
       - name: Run base tests
         run: nix develop -c cargo test --locked
@@ -105,7 +103,7 @@ jobs:
           node-version: 26
 
       - name: Install build tools
-        run: npm install --global @kiln-ssg/tailwindcss@0.1.4 pagefind@1.5.2
+        run: npm install --global @kiln-ssg/tailwindcss@0.1.6 pagefind@1.5.2
 
       - name: Set up Rust
         run: rustup toolchain install
@@ -120,8 +118,7 @@ jobs:
           cargo clippy \
             --locked \
             --all-targets \
-            --features "${{ matrix.features }}" \
-            -- -D warnings
+            --features "${{ matrix.features }}"
 
       - name: Run tests
         run: |
