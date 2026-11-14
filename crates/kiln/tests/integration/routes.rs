@@ -1,6 +1,6 @@
 use indoc::{formatdoc, indoc};
 
-use super::fixtures::{git, git_commit};
+use super::git::{git, git_commit};
 use super::support::{TestSite, xml_texts};
 
 // ── build: routes ──

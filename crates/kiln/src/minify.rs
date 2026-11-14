@@ -504,7 +504,7 @@ fn format_bytes(bytes: u64) -> String {
 
 #[expect(
     clippy::cast_precision_loss,
-    reason = "byte sizes in a build pass stay far below 2^52, where f64 starts losing integer precision"
+    reason = "one-decimal size and percentage displays permit rounding"
 )]
 fn u64_to_f64(value: u64) -> f64 {
     value as f64

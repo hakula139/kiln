@@ -177,12 +177,13 @@ Put the page stylesheet at `assets/css/_src/style.css` within its bundle. See [A
 
 The `:::` directive can provide a wrapper class for page-specific selectors:
 
-<!-- dprint-ignore -->
 ```markdown
 ::: {.rating-table}
+
 | Score | Title |
 | ----- | ----- |
 | 9.5   | Great |
+
 :::
 ```
 

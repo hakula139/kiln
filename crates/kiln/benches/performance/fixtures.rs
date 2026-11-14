@@ -12,7 +12,7 @@ use kiln::render::lqip::ImageResolver;
 use kiln::static_assets::StaticAssetManifest;
 use kiln::template::TemplateEngine;
 
-use super::test_fixtures::{git, git_commit};
+use super::git::{git, git_commit};
 
 pub(super) const PROSE: &str = indoc! {r"
     ## Benchmark heading

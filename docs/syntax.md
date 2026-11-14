@@ -293,12 +293,13 @@ Recognized keys:
 
 An unnamed directive applies authored IDs and classes to a div:
 
-<!-- dprint-ignore -->
 ```markdown
 ::: {.compact-table}
+
 | A | B |
-| --- | --- |
+| - | - |
 | 1 | 2 |
+
 :::
 ```
 

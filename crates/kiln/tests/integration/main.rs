@@ -7,6 +7,8 @@ mod errors;
 mod feeds;
 #[path = "../support/fixtures.rs"]
 mod fixtures;
+#[path = "../support/git.rs"]
+mod git;
 mod listings;
 mod options;
 mod pages;
