@@ -224,11 +224,10 @@ Append to `devShells.default.packages` in `flake.nix`. `*-sys` crates that use `
 Run after implementation and before review:
 
 ```bash
-cargo fmt --all --check
-cargo build
-cargo clippy --all-targets --all-features
-cargo test --all-features
-cargo llvm-cov --all-features --ignore-filename-regex 'main\.rs'
+nix develop -c run-hooks
+cargo build --locked
+cargo llvm-cov --locked --all-features --ignore-filename-regex 'main\.rs'
+cargo test --locked --doc
 ```
 
 ## Code Review

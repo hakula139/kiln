@@ -49,10 +49,7 @@
     devkit.lib.eachSystem devkit.lib.systems (
       system:
       let
-        pkgs = import nixpkgs {
-          inherit system;
-          overlays = [ rust-overlay.overlays.default ];
-        };
+        pkgs = nixpkgs.legacyPackages.${system};
 
         rustVersion = (pkgs.lib.importTOML ./Cargo.toml).workspace.package.rust-version;
         rustBin = rust-overlay.lib.mkRustBin { } pkgs;
@@ -81,7 +78,10 @@
                 cargo = rustToolchain;
                 clippy = rustToolchain;
               };
-              settings.extraArgs = "--locked --all-targets --all-features";
+              settings = {
+                denyWarnings = false;
+                extraArgs = "--locked --all-targets --all-features";
+              };
             };
 
             prettier.enable = true;
