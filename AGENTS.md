@@ -115,20 +115,15 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 
 ## Coding Conventions
 
+Load the shared [Rust skill](https://github.com/hakula139/plugins/blob/main/plugins/hakula-languages/skills/rust/SKILL.md) when writing or reviewing Rust sources or Cargo manifests. Apply [code-layout](https://github.com/hakula139/plugins/blob/main/plugins/hakula-workflow/skills/code-layout/SKILL.md) alongside it. The rules below preserve kiln's project-specific contracts.
+
 ### Error Handling
 
 - Application code: `anyhow::Result` with `.context()` for actionable messages.
-- Library error types: `thiserror::Error` derive for errors that callers need to match on.
 - Avoid `unwrap()` / `expect()` in production code. Reserve them for cases with a clear invariant comment.
-
-### Discarding Results
-
-- Use `_ = expr` (no `let`) to discard a result, typically an infallible `write!` / `writeln!` against a `String`.
 
 ### Lint Suppression
 
-- Use `#[expect(lint)]` instead of `#[allow(lint)]`. `#[expect]` warns when the suppressed lint is no longer triggered, preventing stale suppressions from accumulating.
-- `#[expect]` reason strings must describe the current state, not future plans.
 - For complexity / size lints (`clippy::too_many_lines`, `clippy::cognitive_complexity`, etc.), the default response is to **extract a helper**. Reach for `#[expect]` only when the function is irreducibly cohesive. Say so in the reason string.
 
 ### Comments
@@ -141,7 +136,6 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 ### Section Dividers
 
 - Use `// ── Section Name ──` for section dividers in code (box-drawing character `─`, U+2500).
-- In tests, use `// ── function_name ──` as section headers grouping tests by the function they cover.
 
 ### Blank Lines
 
@@ -151,26 +145,18 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 
 ### Module Organization
 
-- New-style module paths: `foo.rs` alongside `foo/` directory, not `foo/mod.rs`.
 - Keep files focused: one primary type or concern per file. Split proactively when files grow large.
 - Place functions and types in the module that reflects their conceptual domain. A cross-module trait belongs where the **contract** lives, not the first implementation. Create new modules when needed for clean organization.
 - Avoid `pub use` re-exports that obscure where items are defined. If some items are re-exported, re-export all related items so callers never mix paths.
 - Order helper functions after their caller (top-down reading order).
 
-### Visibility
-
-- Default to the smallest visibility needed: private → `pub(crate)` → `pub`.
-- `pub` items form the crate's API surface. Use `pub(crate)` for items shared across modules but not intended for external use.
-
 ### Imports
 
-- Group `use` statements in three blocks separated by blank lines: std → external crates → internal modules.
 - Within each block, sort alphabetically. For internal imports, `rustfmt` orders by locality: `self` → `super` → `crate`.
 
 ### String Literals
 
-- Prefer raw strings (`r"..."`) when the string contains characters that would need escaping. Always use the minimum delimiter level needed (`r"..."` → `r#"..."#` → `r##"..."##`).
-- Use `indoc!` / `formatdoc!` for multiline string content so the literal can be indented with surrounding code. Inline at the call site when the string is used once. Use a named constant only when it is shared or very large. Avoid `\n` escapes and `\x20` workarounds for multiline content.
+- Inline a string at the call site when it is used once. Use a named constant only when it is shared or very large.
 
 ### Enum String Mappings
 
@@ -179,7 +165,6 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 
 ### Dependencies
 
-- Versions centralized in `[workspace.dependencies]` in the root `Cargo.toml`. Member crates reference them with `dep.workspace = true`.
 - Only add dependencies to the workspace when a PR first needs them.
 - Prefer crates with minimal transitive dependencies.
 
@@ -195,7 +180,6 @@ Use the `git-workflow` skill for Git authorization and conventions, with these r
 - Unit tests in the same file as the code they test (`#[cfg(test)]` module).
 - Integration tests for cross-module behavior are modules of the single `tests/integration/` binary, so the library links once. Set up sites with its `support::TestSite`.
 - Group tests by function under `// ── function_name ──` section headers, following production function order. When several sections cover one function, qualify each with a topic after a colon, as in `// ── build: listings ──`. Within each section, place portable tests before platform-specific tests, ordering each group as happy path → variants → edge / error cases.
-- Use `indoc!` for multi-line test inputs.
 
 ### Documentation Maintenance
 
