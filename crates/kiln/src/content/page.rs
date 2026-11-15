@@ -266,7 +266,13 @@ mod tests {
         assert_eq!(page.frontmatter.title, "Hello");
         assert_eq!(
             page.body,
-            "Summary here.\n\n<!--more-->\n\nFull content here.\n"
+            indoc! {"
+                Summary here.
+
+                <!--more-->
+
+                Full content here.
+            "}
         );
         assert_eq!(page.summary.as_deref(), Some("Summary here."));
         assert_eq!(
