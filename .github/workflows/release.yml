@@ -282,15 +282,22 @@ jobs:
           permission-actions: write
 
       - name: Notify tap workflow
+        uses: actions/github-script@v9
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           RELEASE_TAG: ${{ github.ref_name }}
-        run: |
-          gh workflow run update.yml \
-            --repo hakula139/homebrew-tap \
-            --ref main \
-            --field formula=kiln \
-            --field "tag=$RELEASE_TAG"
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: 'hakula139',
+              repo: 'homebrew-tap',
+              workflow_id: 'update.yml',
+              ref: 'main',
+              inputs: {
+                formula: 'kiln',
+                tag: process.env.RELEASE_TAG,
+              },
+            });
 
   pin:
     needs: publish
