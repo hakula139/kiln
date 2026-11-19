@@ -46,6 +46,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Set up Nix
         uses: hakula139/devkit/.github/actions/setup-nix@v3
@@ -56,6 +58,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           cmd-format: nix develop -c {0}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Run base clippy
         run: |
@@ -92,6 +95,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Set up AVIF
         if: matrix.variant == 'extended'
@@ -112,6 +117,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.variant }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Run clippy
         run: |
@@ -153,6 +159,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Set up Nix
         uses: hakula139/devkit/.github/actions/setup-nix@v3
