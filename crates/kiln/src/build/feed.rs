@@ -1,8 +1,7 @@
 use std::path::Path;
 
 use indoc::indoc;
-use jiff::Timestamp;
-use jiff::tz::TimeZone;
+use jiff::{Timestamp, tz::TimeZone};
 
 use super::BuildContext;
 use super::listing::{PreparedPage, newest};
@@ -97,7 +96,7 @@ fn generate_rss(channel: &Channel<'_>, pages: &[&PreparedPage]) -> String {
 
 /// Formats a `Timestamp` as RFC 2822 (e.g., `Mon, 02 Jan 2006 15:04:05 +0000`).
 fn format_rfc2822(ts: Timestamp) -> String {
-    ts.to_zoned(TimeZone::UTC)
+    ts.to_zoned_datetime(TimeZone::UTC)
         .strftime("%a, %d %b %Y %H:%M:%S %z")
         .to_string()
 }
