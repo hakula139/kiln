@@ -331,7 +331,6 @@ fn normalize_source(source: &Path) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use std::fs;
-    #[cfg(unix)]
     use std::os::unix::fs::symlink;
 
     use indoc::indoc;
@@ -520,18 +519,16 @@ mod tests {
                 .to_string();
 
         assert!(
-            err.contains(&format!(
-                "{} and {} publish /assets/images/Logo.png and /assets/images/logo.png",
-                native_path("themes/example/assets/images/Logo.png"),
-                native_path("static/assets/images/logo.png"),
-            )),
+            err.contains(
+                "themes/example/assets/images/Logo.png and static/assets/images/logo.png publish \
+                 /assets/images/Logo.png and /assets/images/logo.png"
+            ),
             "got: {err}"
         );
     }
 
     // ── PublishedAssets::resolve ──
 
-    #[cfg(unix)]
     #[test]
     fn respects_filesystem_parent_traversal_through_symlinks() {
         let root = tempfile::tempdir().unwrap();
@@ -569,7 +566,6 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn preserves_aliases_and_owning_page_scope() {
         let root = tempfile::tempdir().unwrap();
@@ -734,10 +730,8 @@ mod tests {
                 .to_string();
 
             assert!(
-                err.contains(&format!(
-                    "{} publishes {output} under its source name",
-                    native_path(file)
-                )) && err.contains(hint),
+                err.contains(&format!("{file} publishes {output} under its source name"))
+                    && err.contains(hint),
                 "got: {err}"
             );
         }
@@ -745,7 +739,6 @@ mod tests {
 
     // ── OutputFiles::record ──
 
-    #[cfg(unix)]
     #[test]
     fn rejects_outputs_naming_one_file() {
         let root = tempfile::tempdir().unwrap();
@@ -791,11 +784,6 @@ mod tests {
             ),
             "got: {err}"
         );
-    }
-
-    /// Converts a `/`-separated relative path to the platform's separators, as errors display it.
-    fn native_path(path: &str) -> String {
-        path.replace('/', std::path::MAIN_SEPARATOR_STR)
     }
 
     fn publish_files(root: &Path, files: &[&str]) -> PublishedAssets {

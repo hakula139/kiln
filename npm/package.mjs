@@ -13,7 +13,6 @@ const platforms = [
     cpu: 'x64',
     libc: ['glibc'],
   },
-  { name: 'win32-x64-msvc', target: 'x86_64-pc-windows-msvc', os: 'win32', cpu: 'x64' },
 ];
 
 const [, , input, output] = process.argv;
@@ -39,11 +38,7 @@ for (const variant of ['kiln', 'kiln-extended']) {
     const binaryDirectory = join(directory, 'bin');
     mkdirSync(binaryDirectory, { recursive: true });
     const archive = join(archives, `${variant}-${platform.target}`);
-    if (platform.os === 'win32') {
-      execFileSync('unzip', ['-q', `${archive}.zip`, '-d', binaryDirectory]);
-    } else {
-      execFileSync('tar', ['-xzf', `${archive}.tar.gz`, '-C', binaryDirectory]);
-    }
+    execFileSync('tar', ['-xzf', `${archive}.tar.gz`, '-C', binaryDirectory]);
     packPackage(directory, {
       ...metadata,
       name,
@@ -63,6 +58,7 @@ for (const variant of ['kiln', 'kiln-extended']) {
     ...metadata,
     name: `@kiln-ssg/${variant}`,
     description: `kiln static site generator${variant === 'kiln-extended' ? ' with AVIF placeholders' : ''}`,
+    os: platforms.map((platform) => platform.os),
     bin: { kiln: 'launcher.cjs' },
     files: ['launcher.cjs'],
     engines: { node: '>=20' },

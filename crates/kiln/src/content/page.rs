@@ -217,9 +217,7 @@ mod tests {
     use indoc::indoc;
 
     use super::*;
-    #[cfg(unix)]
-    use crate::test_utils::PermissionGuard;
-    use crate::test_utils::write_test_file;
+    use crate::test_utils::{PermissionGuard, write_test_file};
 
     const MINIMAL: &str = indoc! {r#"
         +++
@@ -335,7 +333,6 @@ mod tests {
         }
     }
 
-    #[cfg(unix)]
     #[test]
     fn skips_private_and_nested_bundle_symlinks() {
         let root = tempfile::tempdir().unwrap();
@@ -351,7 +348,6 @@ mod tests {
         assert_eq!(page.assets, [bundle.join("visible.txt")]);
     }
 
-    #[cfg(unix)]
     #[test]
     fn reports_non_utf8_section() {
         use std::ffi::OsStr;
@@ -371,7 +367,6 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn reports_unreadable_bundle() {
         for unreadable in ["", "broken"] {
@@ -398,7 +393,6 @@ mod tests {
         }
     }
 
-    #[cfg(unix)]
     #[test]
     fn reports_broken_and_cyclic_asset_symlinks() {
         for cycle in [false, true] {
@@ -500,7 +494,6 @@ mod tests {
         }
     }
 
-    #[cfg(unix)]
     #[test]
     fn rejects_non_utf8_section() {
         use std::ffi::OsStr;

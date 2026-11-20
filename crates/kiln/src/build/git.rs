@@ -172,7 +172,6 @@ mod tests {
         assert!(GitInfo::new(&copy, &copy.join("content")).is_none());
     }
 
-    #[cfg(unix)]
     #[test]
     fn reads_site_with_leading_colon() {
         let dir = repo();

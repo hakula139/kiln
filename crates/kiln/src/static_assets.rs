@@ -271,7 +271,6 @@ fn content_fingerprint(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
 
     use super::*;
@@ -289,7 +288,6 @@ mod tests {
                 "space%20%25%20%23%20%E4%B8%96%E7%95%8C",
             ),
             ("literal%20name.css", "literal%2520name"),
-            #[cfg(unix)]
             ("question?.css", "question%3F"),
         ] {
             let path = Path::new(name);
@@ -335,30 +333,6 @@ mod tests {
         );
     }
 
-    // macOS APFS rejects non-UTF-8 filenames, while Linux ext4 and btrfs accept them.
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn rejects_non_utf8_stem() {
-        use std::ffi::OsStr;
-        use std::os::unix::ffi::OsStrExt;
-
-        let dir = tempfile::tempdir().unwrap();
-        let path = Path::new(OsStr::from_bytes(b"\xff\xfe.css"));
-        fs::write(dir.path().join(path), "abc").unwrap();
-
-        let err = StaticAssetManifest::default()
-            .fingerprint(dir.path(), path)
-            .unwrap_err()
-            .to_string();
-
-        assert!(
-            err.contains("static asset has no UTF-8 file stem"),
-            "got: {err}"
-        );
-        assert_eq!(fs::read(dir.path().join(path)).unwrap(), b"abc");
-    }
-
-    #[cfg(unix)]
     #[test]
     fn reports_read_only_parent() {
         let dir = tempfile::tempdir().unwrap();
@@ -381,6 +355,29 @@ mod tests {
             "got: {err}"
         );
         assert_eq!(fs::read_to_string(css.join("site.css")).unwrap(), "abc");
+    }
+
+    // macOS APFS rejects non-UTF-8 filenames, while Linux ext4 and btrfs accept them.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn rejects_non_utf8_stem() {
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = Path::new(OsStr::from_bytes(b"\xff\xfe.css"));
+        fs::write(dir.path().join(path), "abc").unwrap();
+
+        let err = StaticAssetManifest::default()
+            .fingerprint(dir.path(), path)
+            .unwrap_err()
+            .to_string();
+
+        assert!(
+            err.contains("static asset has no UTF-8 file stem"),
+            "got: {err}"
+        );
+        assert_eq!(fs::read(dir.path().join(path)).unwrap(), b"abc");
     }
 
     // ── StaticAssetManifest::asset_url ──

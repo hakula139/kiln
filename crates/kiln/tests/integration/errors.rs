@@ -4,7 +4,6 @@ use indoc::{formatdoc, indoc};
 
 use kiln::build::BuildOptions;
 
-#[cfg(unix)]
 use super::fixtures::PermissionGuard;
 use super::support::TestSite;
 
@@ -260,7 +259,6 @@ fn build_search_requires_pagefind_only_when_enabled() {
     }
 }
 
-#[cfg(unix)]
 #[test]
 fn build_staging_permission_denied_preserves_output_returns_error() {
     let site = TestSite::new("");
@@ -277,7 +275,6 @@ fn build_staging_permission_denied_preserves_output_returns_error() {
     assert_eq!(site.read("posts/hello/index.html"), previous);
 }
 
-#[cfg(unix)]
 #[test]
 fn build_asset_copy_permission_denied_returns_error() {
     let site = TestSite::new("");

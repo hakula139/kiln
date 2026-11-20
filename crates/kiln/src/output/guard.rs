@@ -290,7 +290,6 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn rejects_symlink_to_root_or_ancestor() {
         let outer = tempfile::tempdir().unwrap();
@@ -309,7 +308,6 @@ mod tests {
         }
     }
 
-    #[cfg(unix)]
     #[test]
     fn rejects_output_behind_input_symlinks() {
         let root = tempfile::tempdir().unwrap();
@@ -340,7 +338,6 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn linked_theme_protects_inputs_and_metadata() {
         use std::os::unix::fs::symlink;

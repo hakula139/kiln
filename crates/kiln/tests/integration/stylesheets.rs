@@ -1,5 +1,4 @@
 use std::fs;
-#[cfg(unix)]
 use std::os::unix::fs::symlink;
 
 use indoc::indoc;
@@ -268,7 +267,6 @@ fn build_with_invalid_tailwind_utility_returns_error() {
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn build_compiles_tailwind_imports_from_static_symlinks() {
     let site = TestSite::new(indoc! {r#"
@@ -296,7 +294,6 @@ fn build_compiles_tailwind_imports_from_static_symlinks() {
     assert_eq!(site.read("shared/image.svg"), "external image");
 }
 
-#[cfg(unix)]
 #[test]
 fn build_compiles_tailwind_imports_through_public_bundle_aliases() {
     let site = TestSite::new(indoc! {r#"

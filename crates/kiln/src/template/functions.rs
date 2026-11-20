@@ -18,8 +18,8 @@ pub(super) fn tpl_now() -> String {
 
 // ── File IO ──
 
-/// Reads a file relative to the directive page's source directory. Rejects `..`, absolute, and
-/// rooted path components. Symlinks may refer to files outside the source directory.
+/// Reads a file relative to the directive page's source directory. Rejects `..` and absolute
+/// paths. Symlinks may refer to files outside the source directory.
 pub(super) fn tpl_read_file(state: &State, filename: &str) -> Result<String, Error> {
     let source_dir = lookup_defined(state, "__source_dir")
         .ok_or_else(|| invalid("read_file is only callable from directive templates"))?;
@@ -28,12 +28,10 @@ pub(super) fn tpl_read_file(state: &State, filename: &str) -> Result<String, Err
         .ok_or_else(|| invalid("__source_dir must be a string"))?;
 
     let rel = Path::new(filename);
-    if rel.components().any(|component| {
-        matches!(
-            component,
-            Component::ParentDir | Component::RootDir | Component::Prefix(..)
-        )
-    }) {
+    if rel
+        .components()
+        .any(|component| matches!(component, Component::ParentDir | Component::RootDir))
+    {
         return Err(invalid(format!("path traversal not allowed: {filename}")));
     }
 
@@ -255,7 +253,6 @@ mod tests {
         }
     }
 
-    #[cfg(unix)]
     #[test]
     fn follows_external_symlink() {
         let source = tempfile::tempdir().unwrap();

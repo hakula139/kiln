@@ -1,3 +1,6 @@
+#[cfg(not(unix))]
+compile_error!("kiln only supports Unix platforms.");
+
 mod attrs;
 pub mod build;
 pub mod config;

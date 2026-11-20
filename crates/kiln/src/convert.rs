@@ -513,7 +513,6 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn reports_unreadable_assets() {
         use crate::test_utils::PermissionGuard;

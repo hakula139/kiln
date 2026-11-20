@@ -1,5 +1,4 @@
 use std::fs;
-#[cfg(unix)]
 use std::os::unix::fs::symlink;
 
 use indoc::indoc;
@@ -153,7 +152,6 @@ fn convert_malformed_frontmatter_without_output_file_returns_error() {
     }
 }
 
-#[cfg(unix)]
 #[test]
 fn convert_source_symlinks_copy_contents() {
     let site = TestSite::empty();
@@ -182,7 +180,6 @@ fn convert_source_symlinks_copy_contents() {
     }
 }
 
-#[cfg(unix)]
 #[test]
 fn convert_invalid_source_links_return_error() {
     for (link, target, expected) in [
@@ -209,7 +206,6 @@ fn convert_invalid_source_links_return_error() {
     }
 }
 
-#[cfg(unix)]
 #[test]
 fn convert_destination_symlink_escape_returns_error() {
     for directory in ["content", "content/sub"] {
