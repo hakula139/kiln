@@ -127,6 +127,21 @@ jobs:
           path: release-assets
           merge-multiple: true
 
+      - name: Verify release assets
+        run: |
+          for asset in \
+            kiln-aarch64-apple-darwin.tar.gz \
+            kiln-aarch64-apple-darwin.sha256 \
+            kiln-x86_64-unknown-linux-gnu.tar.gz \
+            kiln-x86_64-unknown-linux-gnu.sha256 \
+            kiln-extended-aarch64-apple-darwin.tar.gz \
+            kiln-extended-aarch64-apple-darwin.sha256 \
+            kiln-extended-x86_64-unknown-linux-gnu.tar.gz \
+            kiln-extended-x86_64-unknown-linux-gnu.sha256; do
+            test -f "release-assets/$asset"
+          done
+          (cd release-assets && sha256sum -c ./*.sha256)
+
       - name: Pack npm packages
         id: package
         run: |
@@ -217,13 +232,13 @@ jobs:
         with:
           assets: |
             release-assets/kiln-aarch64-apple-darwin.tar.gz
-            release-assets/kiln-aarch64-apple-darwin.tar.gz.sha256
+            release-assets/kiln-aarch64-apple-darwin.sha256
             release-assets/kiln-x86_64-unknown-linux-gnu.tar.gz
-            release-assets/kiln-x86_64-unknown-linux-gnu.tar.gz.sha256
+            release-assets/kiln-x86_64-unknown-linux-gnu.sha256
             release-assets/kiln-extended-aarch64-apple-darwin.tar.gz
-            release-assets/kiln-extended-aarch64-apple-darwin.tar.gz.sha256
+            release-assets/kiln-extended-aarch64-apple-darwin.sha256
             release-assets/kiln-extended-x86_64-unknown-linux-gnu.tar.gz
-            release-assets/kiln-extended-x86_64-unknown-linux-gnu.tar.gz.sha256
+            release-assets/kiln-extended-x86_64-unknown-linux-gnu.sha256
 
   publish-npm:
     name: Publish npm
