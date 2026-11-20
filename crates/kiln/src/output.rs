@@ -176,11 +176,9 @@ fn create_parent(path: &Path) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(unix)]
     use std::os::unix::fs::symlink;
 
     use super::*;
-    #[cfg(unix)]
     use crate::test_utils::PermissionGuard;
 
     // ── OutputTransaction ──
@@ -299,7 +297,6 @@ mod tests {
         assert!(!dest.exists());
     }
 
-    #[cfg(unix)]
     #[test]
     fn materializes_external_symlinks() {
         let dir = tempfile::tempdir().unwrap();
@@ -342,7 +339,6 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn follows_symlinked_root() {
         let dir = tempfile::tempdir().unwrap();
@@ -361,26 +357,6 @@ mod tests {
         assert!(fs::symlink_metadata(&dest).unwrap().is_dir());
     }
 
-    // macOS APFS rejects non-UTF-8 filenames, while Linux ext4 and btrfs accept them.
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn copies_files_with_non_utf8_names() {
-        use std::ffi::OsStr;
-        use std::os::unix::ffi::OsStrExt;
-
-        let dir = tempfile::tempdir().unwrap();
-        let src = dir.path().join("static");
-        let dest = dir.path().join("public");
-        fs::create_dir_all(&src).unwrap();
-        let name = OsStr::from_bytes(&[0xff, 0xfe]);
-        fs::write(src.join(name), "binary").unwrap();
-
-        copy_directory(&src, &dest, |_| true).unwrap();
-
-        assert_eq!(fs::read(dest.join(name)).unwrap(), b"binary");
-    }
-
-    #[cfg(unix)]
     #[test]
     fn excludes_invalid_links_and_preserves_public_errors() {
         let dir = tempfile::tempdir().unwrap();
@@ -409,7 +385,6 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn reports_unreadable_subdir() {
         let dir = tempfile::tempdir().unwrap();
@@ -431,7 +406,6 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn reports_broken_symlinks() {
         for root_link in [false, true] {
@@ -452,7 +426,6 @@ mod tests {
         }
     }
 
-    #[cfg(unix)]
     #[test]
     fn reports_symlink_cycle() {
         let dir = tempfile::tempdir().unwrap();
@@ -465,7 +438,6 @@ mod tests {
         assert!(format!("{err:#}").contains("loop"));
     }
 
-    #[cfg(unix)]
     #[test]
     fn rejects_symlink_overlapping_destination() {
         for target_is_ancestor in [false, true] {
@@ -493,7 +465,6 @@ mod tests {
         }
     }
 
-    #[cfg(unix)]
     #[test]
     fn reports_unwritable_destination() {
         let dir = tempfile::tempdir().unwrap();
@@ -514,9 +485,27 @@ mod tests {
         );
     }
 
+    // macOS APFS rejects non-UTF-8 filenames, while Linux ext4 and btrfs accept them.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn copies_files_with_non_utf8_names() {
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("static");
+        let dest = dir.path().join("public");
+        fs::create_dir_all(&src).unwrap();
+        let name = OsStr::from_bytes(&[0xff, 0xfe]);
+        fs::write(src.join(name), "binary").unwrap();
+
+        copy_directory(&src, &dest, |_| true).unwrap();
+
+        assert_eq!(fs::read(dest.join(name)).unwrap(), b"binary");
+    }
+
     // ── validate_source_link ──
 
-    #[cfg(unix)]
     #[test]
     fn reports_broken_link_target() {
         let dir = tempfile::tempdir().unwrap();
@@ -574,7 +563,6 @@ mod tests {
         }
     }
 
-    #[cfg(unix)]
     #[test]
     fn preserves_permissions() {
         use std::os::unix::fs::PermissionsExt;
@@ -610,7 +598,6 @@ mod tests {
         assert_eq!(fs::read_to_string(&path).unwrap(), "second");
     }
 
-    #[cfg(unix)]
     #[test]
     fn reports_denied_parent_creation() {
         let dir = tempfile::tempdir().unwrap();
@@ -627,7 +614,6 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn reports_denied_write() {
         let dir = tempfile::tempdir().unwrap();

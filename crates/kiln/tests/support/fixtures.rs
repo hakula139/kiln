@@ -1,5 +1,4 @@
 use std::fs;
-#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
@@ -26,13 +25,11 @@ pub fn template_dir() -> PathBuf {
 
 /// RAII guard that restores filesystem permissions on drop. Prevents `TempDir::drop` failures
 /// from leftover restricted permissions when the test panics.
-#[cfg(unix)]
 pub struct PermissionGuard {
     path: PathBuf,
     mode: u32,
 }
 
-#[cfg(unix)]
 impl PermissionGuard {
     pub fn restrict(path: &Path, mode: u32) -> Self {
         let original = fs::metadata(path).unwrap().permissions().mode() & 0o7777;
@@ -44,7 +41,6 @@ impl PermissionGuard {
     }
 }
 
-#[cfg(unix)]
 impl Drop for PermissionGuard {
     fn drop(&mut self) {
         _ = fs::set_permissions(&self.path, fs::Permissions::from_mode(self.mode));

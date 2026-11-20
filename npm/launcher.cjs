@@ -8,16 +8,17 @@ const prefix = `${name}-${target}`;
 const platformPackage = Object.keys(optionalDependencies).find(
   (dependency) => dependency === prefix || dependency.startsWith(`${prefix}-`),
 );
-const unsupported = (detail) =>
-  `Unsupported platform: ${detail}. See https://github.com/hakula139/kiln#from-source`;
+const unsupported = (detail) => {
+  const section =
+    process.platform === 'darwin' || process.platform === 'linux' ? 'from-source' : 'installation';
+  return `Unsupported platform: ${detail}. See https://github.com/hakula139/kiln#${section}`;
+};
 
 try {
   if (!platformPackage) {
     throw new Error(unsupported(target));
   }
-  const binary = require.resolve(
-    `${platformPackage}/bin/kiln${process.platform === 'win32' ? '.exe' : ''}`,
-  );
+  const binary = require.resolve(`${platformPackage}/bin/kiln`);
   const result = spawnSync(binary, process.argv.slice(2), { stdio: 'inherit' });
   if (result.error) {
     throw result.error;

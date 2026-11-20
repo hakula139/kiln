@@ -50,7 +50,7 @@ npm install -g @kiln-ssg/kiln@latest
 
 Choose `@kiln-ssg/kiln-extended@latest` for AVIF loading placeholders. It has the same [dav1d requirements](#prebuilt-binary) as the extended archive. Both variants install `kiln`, so uninstall the current variant before switching.
 
-Prereleases use the `next` npm tag. Supported platforms are Linux x86_64 (glibc), Apple Silicon and Windows x86_64.
+Prereleases use the `next` npm tag. Supported platforms are Linux x86_64 (glibc) and Apple Silicon.
 
 Add optional tools to the same installation command when your site needs them:
 
@@ -73,14 +73,7 @@ sudo mv kiln /usr/local/bin/
 # macOS aarch64 (Apple Silicon)
 curl -fsSL https://github.com/hakula139/kiln/releases/latest/download/kiln-aarch64-apple-darwin.tar.gz | tar -xz
 sudo mv kiln /usr/local/bin/
-
-# Windows x86_64 (Git Bash / MSYS / WSL)
-curl -fsSLO https://github.com/hakula139/kiln/releases/latest/download/kiln-x86_64-pc-windows-msvc.zip
-unzip kiln-x86_64-pc-windows-msvc.zip
-./kiln.exe --version
 ```
-
-On Windows, move `kiln.exe` into a directory on your `PATH` to run `kiln` from any directory.
 
 Choose the default `kiln-<target>` archive or `kiln-extended-<target>` for AVIF loading placeholders. Only extended binaries need dav1d:
 
@@ -88,7 +81,6 @@ Choose the default `kiln-<target>` archive or `kiln-extended-<target>` for AVIF 
 | -------- | ---------------------------- |
 | Linux    | System `libdav1d` package    |
 | macOS    | `brew install dav1d`         |
-| Windows  | Included in the binary       |
 
 ### From source
 
@@ -179,7 +171,7 @@ enabled = true
 
 ## Building from Source
 
-Requires [Rust](https://www.rust-lang.org/tools/install) 1.89 or newer and a C toolchain.
+Requires Linux or macOS (including WSL on Windows), [Rust](https://www.rust-lang.org/tools/install) 1.89 or newer, and a C toolchain.
 
 ```bash
 cargo build --release  # Binary at target/release/kiln
@@ -200,7 +192,7 @@ Then enable the feature:
 cargo build --release --features avif
 ```
 
-On macOS and Linux, the resulting binary needs dav1d at runtime, like the [extended archives](#prebuilt-binary).
+The resulting binary needs dav1d at runtime, like the [extended archives](#prebuilt-binary).
 
 ### Reproducible dev shell (Nix)
 

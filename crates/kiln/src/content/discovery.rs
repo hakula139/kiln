@@ -79,7 +79,6 @@ pub fn discover_content(root: &Path) -> Result<ContentSet> {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(unix)]
     use std::os::unix::fs::symlink;
 
     use indoc::{formatdoc, indoc};
@@ -231,7 +230,6 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn follows_symlinks() {
         let root = tempfile::tempdir().unwrap();
@@ -276,7 +274,6 @@ mod tests {
         assert_eq!(set.pages[0].assets, [posts.join("bundle/image.png")]);
     }
 
-    #[cfg(unix)]
     #[test]
     fn reports_broken_symlink() {
         let root = tempfile::tempdir().unwrap();

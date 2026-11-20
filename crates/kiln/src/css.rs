@@ -24,12 +24,6 @@ use crate::url::path_url;
 
 pub(crate) const ENTRY: &str = "assets/css/_src/style.css";
 
-const TAILWIND_BINARY: &str = if cfg!(windows) {
-    "kiln-tailwindcss.cmd"
-} else {
-    "kiln-tailwindcss"
-};
-
 struct Stylesheet {
     source: PathBuf,
     page: Option<PathBuf>,
@@ -199,7 +193,7 @@ impl TailwindRun {
         style: &Stylesheet,
     ) -> Result<Self> {
         let workspace = tempfile::tempdir().context("failed to create CSS compiler workspace")?;
-        let input = dunce::canonicalize(workspace.path())?.join("input.css");
+        let input = fs::canonicalize(workspace.path())?.join("input.css");
         let mut source = String::new();
         if style.page.is_some()
             && let Some(shared) = shared
@@ -215,7 +209,7 @@ impl TailwindRun {
             _ = writeln!(source, "@source {};", tailwind_path(&dir)?);
         }
         fs::write(&input, source)?;
-        let child = Command::new(TAILWIND_BINARY)
+        let child = Command::new("kiln-tailwindcss")
             .arg(&input)
             .current_dir(root)
             .stdin(Stdio::null())
@@ -262,11 +256,8 @@ impl TailwindRun {
 }
 
 fn tailwind_path(path: &Path) -> Result<String> {
-    let path = dunce::canonicalize(path)?;
-    let path = path.to_string_lossy();
-    #[cfg(windows)]
-    let path = path.replace('\\', "/");
-    css_string(&path)
+    let path = fs::canonicalize(path)?;
+    css_string(&path.to_string_lossy())
 }
 
 struct CssProvider(FileProvider);
@@ -495,7 +486,6 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn preserves_static_symlink_paths() {
         let root = tempfile::tempdir().unwrap();

@@ -170,7 +170,6 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn reports_unwritable_root() {
         use crate::test_utils::PermissionGuard;

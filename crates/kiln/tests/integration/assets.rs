@@ -1,6 +1,4 @@
-#[cfg(unix)]
 use std::fs;
-#[cfg(unix)]
 use std::os::unix::fs::symlink;
 use std::path::Path;
 
@@ -352,7 +350,6 @@ fn build_reads_image_dimensions_from_published_theme_and_site_assets() {
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn build_materializes_external_bundle_symlinks() {
     let site = TestSite::new("");

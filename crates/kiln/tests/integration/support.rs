@@ -1,5 +1,4 @@
 use std::fs;
-#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
@@ -88,7 +87,6 @@ impl TestSite {
     }
 
     /// Writes an executable script and returns its absolute path.
-    #[cfg(unix)]
     pub(super) fn write_executable(&self, rel_path: &str, content: &str) -> PathBuf {
         self.write(rel_path, content);
         let path = self.path(rel_path);

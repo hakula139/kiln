@@ -4,33 +4,24 @@ use std::process::Command;
 use anyhow::{Context, Result, bail};
 use indoc::formatdoc;
 
-const DEFAULT_BINARY: &str = "pagefind";
-
 /// Indexes built site HTML in `output_dir`, writing search assets to `output_dir/pagefind/`.
 pub(crate) fn run_pagefind(output_dir: &Path, binary: Option<&str>) -> Result<()> {
-    let command = binary.unwrap_or(DEFAULT_BINARY);
-    let run = |program: &str| Command::new(program).arg("--site").arg(output_dir).output();
+    let command = binary.unwrap_or("pagefind");
+    let output = Command::new(command)
+        .arg("--site")
+        .arg(output_dir)
+        .output()
+        .with_context(|| {
+            formatdoc! {"
+                failed to run `{command}`. Is Pagefind installed?
 
-    let output = run(command);
-    #[cfg(windows)]
-    let output = output.or_else(|error| {
-        if binary.is_none() && error.kind() == std::io::ErrorKind::NotFound {
-            run("pagefind.cmd")
-        } else {
-            Err(error)
-        }
-    });
-    let output = output.with_context(|| {
-        formatdoc! {"
-            failed to run `{command}`. Is Pagefind installed?
+                Install with one of:
 
-            Install with one of:
+                  npm install -g pagefind
+                  cargo install pagefind --features extended
 
-              npm install -g pagefind
-              cargo install pagefind --features extended
-
-            See https://pagefind.app/docs/installation/ for details."}
-    })?;
+                See https://pagefind.app/docs/installation/ for details."}
+        })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -102,7 +93,6 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn succeeds_with_and_without_output() {
         let dir = tempfile::tempdir().unwrap();
@@ -111,7 +101,6 @@ mod tests {
         }
     }
 
-    #[cfg(unix)]
     #[test]
     fn reports_non_zero_exit() {
         let dir = tempfile::tempdir().unwrap();

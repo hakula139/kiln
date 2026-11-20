@@ -18,9 +18,7 @@ mod fixtures;
 #[path = "../tests/support/git.rs"]
 mod git;
 
-#[cfg(unix)]
-pub(crate) use fixtures::PermissionGuard;
-pub(crate) use fixtures::{copy_templates, template_dir, write_test_file};
+pub(crate) use fixtures::{PermissionGuard, copy_templates, template_dir, write_test_file};
 pub(crate) use git::{git, git_commit};
 
 /// Creates a `TemplateEngine` using embedded test templates.

@@ -117,7 +117,6 @@
               git-cliff
               pagefind
               pkg-config
-              unzip
             ])
             ++ pkgs.lib.optional pkgs.stdenv.isDarwin pkgs.libiconv;
 

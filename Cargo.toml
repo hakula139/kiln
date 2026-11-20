@@ -29,7 +29,6 @@ base64 = "0.23"
 clap = { version = "4", features = ["derive", "env"] }
 criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support"] }
 csv = "1"
-dunce = "1"
 futures-util = { version = "0.3", default-features = false }
 gh-emoji = "1"
 hex = "0.4"

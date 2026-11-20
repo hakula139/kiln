@@ -76,10 +76,11 @@ The engine supplies content and template contracts. [IgnIt](https://github.com/h
 - Builds prepare output separately and publish it after rendering and optional search indexing succeed, preserving the previous output when a build fails.
 - `kiln serve` provides local preview, directory redirects, a custom 404 response and browser live reload after successful rebuilds. Preview builds use the local server URL and skip minification.
 - Rust unit / integration tests cover rendering and build behavior. [Benchmarks](benchmarks.md) cover rendering, shortcode, image, stylesheet and full-build workloads.
-- Cargo, Nix and npm installation paths. Nix provides the engine, Pagefind and the Tailwind processor. npm distributes base / extended variants for Linux x86_64, Apple Silicon and Windows x86_64.
+- Cargo, Homebrew, Nix and npm installation paths. Nix provides the engine, Pagefind and the Tailwind processor. npm distributes base / extended variants for Linux x86_64 and Apple Silicon.
 
 Constraints:
 
+- Supports Unix platforms (Linux and macOS, including WSL on Windows). Native Windows builds are unsupported.
 - Search requires the external Pagefind executable when enabled.
 - Builds regenerate the whole site.
 - Live reload watches source directories present at startup. New top-level source directories, theme or output-directory changes and imports outside watched trees require a restart.

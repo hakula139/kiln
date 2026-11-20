@@ -78,7 +78,6 @@ fn build_summary_skips_missing_templates_and_disabled_search_with_minify() {
     assert!(site.output("posts/topic/a/index.html").exists());
 }
 
-#[cfg(unix)]
 #[test]
 fn build_summary_counts_generated_pages_and_includes_search_time() {
     let site = summary_site();
@@ -148,7 +147,6 @@ fn build_summary_counts_generated_pages_and_includes_search_time() {
     }
 }
 
-#[cfg(unix)]
 #[test]
 fn build_search_passes_output_dir_as_single_argument() {
     let site = search_site(indoc! {r#"
@@ -183,7 +181,6 @@ fn build_search_passes_output_dir_as_single_argument() {
     assert!(site.output("posts/hello/index.html").is_file());
 }
 
-#[cfg(unix)]
 #[test]
 fn build_search_failure_preserves_output_returns_error() {
     let site = search_site(indoc! {r"
@@ -216,7 +213,6 @@ fn build_search_failure_preserves_output_returns_error() {
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn build_tailwind_failure_waits_for_all_compilers_returns_error() {
     let site = TestSite::new(indoc! {r#"
@@ -310,7 +306,6 @@ fn summary_site() -> TestSite {
 
 /// Creates a site under a root path containing spaces, with one post and search indexing by
 /// a fake Pagefind running `script`.
-#[cfg(unix)]
 fn search_site(script: &str) -> TestSite {
     let site = TestSite::with_prefix("kiln cli ");
     site.write("config.toml", r#"base_url = "https://example.com""#)
@@ -329,7 +324,6 @@ fn search_site(script: &str) -> TestSite {
 }
 
 /// Appends a `[search]` table to `config.toml` that runs `script` as Pagefind.
-#[cfg(unix)]
 fn enable_search(site: &TestSite, script: &str) {
     let binary = site.write_executable("pagefind", script);
     let config = fs::read_to_string(site.path("config.toml")).unwrap();

@@ -11,6 +11,7 @@ on:
       - Cargo.toml
       - crates/kiln/Cargo.toml
       - npm/**
+      - rust-toolchain.toml
   workflow_dispatch:
 
 permissions:
@@ -22,6 +23,10 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+
+defaults:
+  run:
+    shell: bash
 
 jobs:
   tagged-ci:
@@ -56,9 +61,6 @@ jobs:
           - runner: macos-latest
             target: aarch64-apple-darwin
             package: darwin-arm64
-          - runner: windows-latest
-            target: x86_64-pc-windows-msvc
-            package: win32-x64-msvc
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -70,9 +72,7 @@ jobs:
         uses: ./.github/actions/setup-avif
 
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.platform.target }}
+        run: rustup toolchain install
 
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
@@ -88,7 +88,6 @@ jobs:
           features: ${{ matrix.variant.features }}
           target: ${{ matrix.platform.target }}
           tar: unix
-          zip: windows
           checksum: sha256
           locked: true
           dry-run: true
@@ -100,7 +99,6 @@ jobs:
           name: ${{ matrix.variant.archive }}-${{ matrix.platform.target }}
           path: |
             ${{ steps.binary.outputs.tar }}
-            ${{ steps.binary.outputs.zip }}
             ${{ steps.binary.outputs.sha256 }}
           if-no-files-found: error
           overwrite: true
@@ -172,7 +170,6 @@ jobs:
           node-version: ${{ matrix.node }}
 
       - name: Set up AVIF
-        if: runner.os != 'Windows'
         uses: ./.github/actions/setup-avif
 
       - name: Download npm packages
@@ -182,7 +179,6 @@ jobs:
           path: npm-packages
 
       - name: Install and run both variants
-        shell: bash
         run: |
           for variant in kiln kiln-extended; do
             npm install --prefix "npm-$variant" --offline --ignore-scripts --no-audit --no-fund \
@@ -219,7 +215,15 @@ jobs:
       - name: Publish release
         uses: hakula139/devkit/.github/actions/publish-release@v3
         with:
-          assets: release-assets/*
+          assets: |
+            release-assets/kiln-aarch64-apple-darwin.tar.gz
+            release-assets/kiln-aarch64-apple-darwin.tar.gz.sha256
+            release-assets/kiln-x86_64-unknown-linux-gnu.tar.gz
+            release-assets/kiln-x86_64-unknown-linux-gnu.tar.gz.sha256
+            release-assets/kiln-extended-aarch64-apple-darwin.tar.gz
+            release-assets/kiln-extended-aarch64-apple-darwin.tar.gz.sha256
+            release-assets/kiln-extended-x86_64-unknown-linux-gnu.tar.gz
+            release-assets/kiln-extended-x86_64-unknown-linux-gnu.tar.gz.sha256
 
   publish-npm:
     name: Publish npm
@@ -259,7 +263,7 @@ jobs:
             npm publish "$1" --tag "$tag"
           }
 
-          for package in ./npm-packages/*-{darwin-arm64,linux-x64-gnu,win32-x64-msvc}-*.tgz; do
+          for package in ./npm-packages/*-{darwin-arm64,linux-x64-gnu}-*.tgz; do
             publish "$package"
           done
 
