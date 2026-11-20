@@ -2,7 +2,7 @@
   "dependencies": [
     {
       "name": "dav1d",
-      "version>=": "1.5.4#1"
+      "version>=": "1.5.5"
     }
   ]
 }
