@@ -13,7 +13,7 @@ use crate::static_assets::{StaticAssetManifest, is_passthrough};
 
 /// Returns the current local timestamp as an ISO 8601 string.
 pub(super) fn tpl_now() -> String {
-    jiff::Zoned::now().to_string()
+    jiff::ZonedDateTime::now().to_string()
 }
 
 // ── File IO ──
@@ -196,7 +196,7 @@ mod tests {
         let result = render("{{ now() }}", ()).unwrap();
         let after = jiff::Timestamp::now();
 
-        let timestamp = result.parse::<jiff::Zoned>().unwrap().timestamp();
+        let timestamp = result.parse::<jiff::ZonedDateTime>().unwrap().timestamp();
         assert!(timestamp >= before && timestamp <= after, "{result}");
     }
 
