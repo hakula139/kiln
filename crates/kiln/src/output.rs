@@ -443,15 +443,12 @@ mod tests {
         for target_is_ancestor in [false, true] {
             let dir = tempfile::tempdir().unwrap();
             let src = dir.path().join("static");
-            let dest = dir.path().join("public");
+            let output = dir.path().join("output");
+            let dest = output.join("public");
             fs::create_dir(&src).unwrap();
-            fs::create_dir(&dest).unwrap();
+            fs::create_dir_all(&dest).unwrap();
             fs::write(dest.join("sentinel.txt"), "unchanged").unwrap();
-            let target = if target_is_ancestor {
-                dir.path()
-            } else {
-                &dest
-            };
+            let target = if target_is_ancestor { &output } else { &dest };
             symlink(target, src.join("linked")).unwrap();
 
             let err = copy_directory(&src, &dest, |_| true).unwrap_err();
