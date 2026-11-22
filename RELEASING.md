@@ -1,10 +1,10 @@
 # Releasing
 
-Use the [release skill](https://github.com/hakula139/plugins/blob/main/plugins/hakula-workflow/skills/release/SKILL.md) and [devkit's release guide](https://github.com/hakula139/devkit/blob/v3/docs/releasing.md) for the shared release procedure. This document defines kiln's release contract.
+Use the [release skill](https://github.com/hakula139/plugins/blob/main/plugins/hakula-workflow/skills/release/SKILL.md) and [devkit's release guide](https://github.com/hakulab/devkit/blob/v3/docs/releasing.md) for the shared release procedure. This document defines kiln's release contract.
 
 ## Release preparation
 
-Update `workspace.package.version` in `Cargo.toml` and run `cargo build` to refresh `Cargo.lock`. Draft `CHANGELOG.md` with [devkit's changelog procedure](https://github.com/hakula139/devkit/blob/v3/docs/releasing.md#draft-a-changelog).
+Update `workspace.package.version` in `Cargo.toml` and run `cargo build` to refresh `Cargo.lock`. Draft `CHANGELOG.md` with [devkit's changelog procedure](https://github.com/hakulab/devkit/blob/v3/docs/releasing.md#draft-a-changelog).
 
 When npm publication is enabled with `NPM_PUBLISH_ENABLED=true`, confirm that both launchers and their four platform packages trust GitHub Actions for `hakula139/kiln` through `release.yml`. Checking with `npm trust list @kiln-ssg/<package>` requires a local npm login. Add a missing publisher through the package's npm settings or with:
 

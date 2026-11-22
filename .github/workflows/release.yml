@@ -39,7 +39,7 @@ jobs:
       contents: read
     steps:
       - name: Wait for CI
-        uses: hakula139/devkit/.github/actions/tagged-ci@v3
+        uses: hakulab/devkit/.github/actions/tagged-ci@v3
 
   build:
     name: Build (${{ matrix.platform.target }}, ${{ matrix.variant.name }})
@@ -228,7 +228,7 @@ jobs:
           merge-multiple: true
 
       - name: Publish release
-        uses: hakula139/devkit/.github/actions/publish-release@v3
+        uses: hakulab/devkit/.github/actions/publish-release@v3
         with:
           assets: |
             release-assets/kiln-aarch64-apple-darwin.tar.gz
@@ -295,7 +295,7 @@ jobs:
         && needs.publish.result == 'success'
         && (needs.publish-npm.result == 'success' || needs.publish-npm.result == 'skipped')
       }}
-    uses: hakula139/devkit/.github/workflows/homebrew.yml@v3
+    uses: hakulab/devkit/.github/workflows/homebrew.yml@v3
     with:
       formula: kiln
       tap-repository: homebrew-tap
@@ -305,6 +305,6 @@ jobs:
 
   pin:
     needs: publish
-    uses: hakula139/devkit/.github/workflows/nix-cache.yml@v3
+    uses: hakulab/devkit/.github/workflows/nix-cache.yml@v3
     secrets:
       CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
