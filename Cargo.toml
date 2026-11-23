@@ -60,17 +60,17 @@ serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
 sha2 = "0.11"
 strum = { version = "0.28", features = ["derive"] }
-swc_common = "27"
-swc_ecma_ast = "30"
-swc_ecma_codegen = "33"
-swc_ecma_minifier = "64"
-swc_ecma_parser = "47"
-swc_ecma_transforms_base = "51"
-swc_ecma_visit = "30"
-swc_html_ast = "27"
-swc_html_codegen = "28"
-swc_html_minifier = { version = "64", default-features = false, features = ["custom-css-minifier"] }
-swc_html_parser = "27"
+swc_common = "28"
+swc_ecma_ast = "31"
+swc_ecma_codegen = "34"
+swc_ecma_minifier = "65"
+swc_ecma_parser = "48"
+swc_ecma_transforms_base = "52"
+swc_ecma_visit = "31"
+swc_html_ast = "28"
+swc_html_codegen = "29"
+swc_html_minifier = { version = "65", default-features = false, features = ["custom-css-minifier"] }
+swc_html_parser = "28"
 syntect = { version = "5", default-features = false, features = ["html", "regex-onig"] }
 tempfile = "3"
 tokio = { version = "1", features = ["fs", "macros", "rt-multi-thread", "signal", "sync", "time"] }
