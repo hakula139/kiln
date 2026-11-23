@@ -7,14 +7,14 @@ Themes provide templates, stylesheet sources, public assets and default paramete
 Add a theme to an initialized site repository and select its directory name in `config.toml`:
 
 ```bash
-git submodule add https://github.com/hakula139/IgnIt.git themes/IgnIt
+git submodule add https://github.com/hakulab/IgnIt.git themes/IgnIt
 ```
 
 ```toml
 theme = "IgnIt"
 ```
 
-A theme can declare a minimum kiln version and a stylesheet processor. Check its README for installation requirements and supported `[params]` settings. [IgnIt](https://github.com/hakula139/IgnIt) uses Tailwind, whose processor is covered in [Installation](../README.md#installation).
+A theme can declare a minimum kiln version and a stylesheet processor. Check its README for installation requirements and supported `[params]` settings. [IgnIt](https://github.com/hakulab/IgnIt) uses Tailwind, whose processor is covered in [Installation](../README.md#installation).
 
 ## Site Configuration
 

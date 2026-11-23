@@ -52,7 +52,7 @@ rustPlatform.buildRustPackage {
 
   meta = {
     description = "Custom static site generator powering hakula.xyz";
-    homepage = "https://github.com/hakula139/kiln";
+    homepage = "https://github.com/hakulab/kiln";
     license = lib.licenses.mit;
     mainProgram = "kiln";
   };

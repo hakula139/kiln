@@ -1,7 +1,7 @@
 # kiln
 
-[![CI](https://github.com/hakula139/kiln/actions/workflows/ci.yml/badge.svg)](https://github.com/hakula139/kiln/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/hakula139/kiln/graph/badge.svg)](https://codecov.io/gh/hakula139/kiln)
+[![CI](https://github.com/hakulab/kiln/actions/workflows/ci.yml/badge.svg)](https://github.com/hakulab/kiln/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/hakulab/kiln/graph/badge.svg)](https://codecov.io/gh/hakulab/kiln)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![WakaTime coding time for kiln](https://wakatime.com/badge/user/f4a35a1f-0e29-4093-a647-e66aad164737/project/f00a4cb5-df90-47ef-82e5-ebc9432a2b05.svg)
 
@@ -13,7 +13,7 @@ A static site generator written in Rust for [hakula.xyz](https://hakula.xyz), wi
 - Custom content components through nested `:::` directives and theme templates
 - Page bundles that keep writing, images and page-specific styles together
 - Full-text search via [Pagefind](https://pagefind.app), with archives and feeds for finding and following posts
-- [IgnIt](https://github.com/hakula139/IgnIt) theme with responsive layouts and dark mode, customizable through site overrides
+- [IgnIt](https://github.com/hakulab/IgnIt) theme with responsive layouts and dark mode, customizable through site overrides
 - Local preview with live reload, plus optimized stylesheets and image loading placeholders for publication
 
 ## Documentation
@@ -34,7 +34,7 @@ A static site generator written in Rust for [hakula.xyz](https://hakula.xyz), wi
 On Apple Silicon macOS and x86_64 Linux, install with Homebrew:
 
 ```bash
-brew install hakula139/tap/kiln
+brew install hakulab/tap/kiln
 ```
 
 Homebrew installs the extended build with AVIF support.
@@ -63,15 +63,15 @@ npm install -g @kiln-ssg/kiln@latest @kiln-ssg/tailwindcss@0.1.7 pagefind@1.5.2
 
 ### Prebuilt binary
 
-Download the latest release for your platform from [Releases](https://github.com/hakula139/kiln/releases/latest):
+Download the latest release for your platform from [Releases](https://github.com/hakulab/kiln/releases/latest):
 
 ```bash
 # Linux x86_64
-curl -fsSL https://github.com/hakula139/kiln/releases/latest/download/kiln-x86_64-unknown-linux-gnu.tar.gz | tar -xz
+curl -fsSL https://github.com/hakulab/kiln/releases/latest/download/kiln-x86_64-unknown-linux-gnu.tar.gz | tar -xz
 sudo mv kiln /usr/local/bin/
 
 # macOS aarch64 (Apple Silicon)
-curl -fsSL https://github.com/hakula139/kiln/releases/latest/download/kiln-aarch64-apple-darwin.tar.gz | tar -xz
+curl -fsSL https://github.com/hakulab/kiln/releases/latest/download/kiln-aarch64-apple-darwin.tar.gz | tar -xz
 sudo mv kiln /usr/local/bin/
 ```
 
@@ -85,20 +85,20 @@ Choose the default `kiln-<target>` archive or `kiln-extended-<target>` for AVIF 
 ### From source
 
 ```bash
-cargo install --git https://github.com/hakula139/kiln --locked
+cargo install --git https://github.com/hakulab/kiln --locked
 ```
 
 To generate loading placeholders for AVIF images, install the [native dependencies](#building-from-source) and enable the feature:
 
 ```bash
-cargo install --git https://github.com/hakula139/kiln --locked --features avif
+cargo install --git https://github.com/hakulab/kiln --locked --features avif
 ```
 
 ### Via Nix
 
 ```bash
-nix run github:hakula139/kiln -- build     # one-shot
-nix profile install github:hakula139/kiln  # install to user profile
+nix run github:hakulab/kiln -- build     # one-shot
+nix profile install github:hakulab/kiln  # install to user profile
 ```
 
 The flake offers the `hakula` Cachix cache for prebuilt packages. Nix prompts for trust interactively. For noninteractive use, verify the cache key before passing `--accept-flake-config`.
@@ -108,7 +108,7 @@ To use this cache from another flake, configure it in that flake or your Nix ins
 To use kiln in another flake, add this input:
 
 ```nix
-inputs.kiln.url = "github:hakula139/kiln";
+inputs.kiln.url = "github:hakulab/kiln";
 # Outputs: packages.${system}.{default,kiln}
 ```
 
@@ -116,12 +116,12 @@ The Nix package puts the Tailwind compiler and Pagefind on kiln's `PATH`, so sty
 
 ## First Site
 
-Create a site with [IgnIt](https://github.com/hakula139/IgnIt), using a kiln version meeting the theme's `min_kiln_version`. IgnIt requires the [Tailwind processor](#via-npm), which is included in kiln's Nix package.
+Create a site with [IgnIt](https://github.com/hakulab/IgnIt), using a kiln version meeting the theme's `min_kiln_version`. IgnIt requires the [Tailwind processor](#via-npm), which is included in kiln's Nix package.
 
 ```bash
 git init my-site
 cd my-site
-git submodule add https://github.com/hakula139/IgnIt.git themes/IgnIt
+git submodule add https://github.com/hakulab/IgnIt.git themes/IgnIt
 mkdir -p content/posts/hello
 
 cat > config.toml <<'CONFIG'

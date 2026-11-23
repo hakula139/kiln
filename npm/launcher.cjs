@@ -11,7 +11,7 @@ const platformPackage = Object.keys(optionalDependencies).find(
 const unsupported = (detail) => {
   const section =
     process.platform === 'darwin' || process.platform === 'linux' ? 'from-source' : 'installation';
-  return `Unsupported platform: ${detail}. See https://github.com/hakula139/kiln#${section}`;
+  return `Unsupported platform: ${detail}. See https://github.com/hakulab/kiln#${section}`;
 };
 
 try {
