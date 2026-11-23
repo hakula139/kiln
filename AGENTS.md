@@ -115,7 +115,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 
 ## Coding Conventions
 
-Load the shared [Rust skill](https://github.com/hakula139/plugins/blob/main/plugins/hakula-languages/skills/rust/SKILL.md) when writing or reviewing Rust sources or Cargo manifests. Apply [code-layout](https://github.com/hakula139/plugins/blob/main/plugins/hakula-workflow/skills/code-layout/SKILL.md) alongside it. The rules below preserve kiln's project-specific contracts.
+Load the shared [Rust skill](https://github.com/hakulab/plugins/blob/main/plugins/hakula-languages/skills/rust/SKILL.md) when writing or reviewing Rust sources or Cargo manifests. Apply [code-layout](https://github.com/hakulab/plugins/blob/main/plugins/hakula-workflow/skills/code-layout/SKILL.md) alongside it. The rules below preserve kiln's project-specific contracts.
 
 ### Error Handling
 

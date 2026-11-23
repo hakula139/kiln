@@ -66,7 +66,7 @@ See [Assets and Stylesheets](assets.md) and [Image Rendering](themes.md#image-re
 - Flat TOML translation files with site active language → theme active language → theme English fallback, named placeholder interpolation and literal-label fallback for missing keys.
 - `kiln init-theme` scaffolding for templates, a stylesheet entry and English / Simplified Chinese translation files.
 
-The engine supplies content and template contracts. [IgnIt](https://github.com/hakula139/IgnIt) owns reader-facing layouts, dark mode, search interaction, comments and other presentation behavior. A theme shipping translations must include `en.toml`. Localization selects one language for theme strings and does not create separate per-language content trees. See [Themes](themes.md).
+The engine supplies content and template contracts. [IgnIt](https://github.com/hakulab/IgnIt) owns reader-facing layouts, dark mode, search interaction, comments and other presentation behavior. A theme shipping translations must include `en.toml`. Localization selects one language for theme strings and does not create separate per-language content trees. See [Themes](themes.md).
 
 ### Builds and Development
 

@@ -24,9 +24,9 @@ const version = cargo.match(/\[workspace\.package\][\s\S]*?^version = "([^"]+)"/
 const metadata = {
   version,
   license: 'MIT',
-  repository: { type: 'git', url: 'https://github.com/hakula139/kiln.git' },
-  homepage: 'https://github.com/hakula139/kiln',
-  bugs: { url: 'https://github.com/hakula139/kiln/issues' },
+  repository: { type: 'git', url: 'https://github.com/hakulab/kiln.git' },
+  homepage: 'https://github.com/hakulab/kiln',
+  bugs: { url: 'https://github.com/hakulab/kiln/issues' },
   publishConfig: { access: 'public' },
 };
 

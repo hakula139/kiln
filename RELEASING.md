@@ -1,15 +1,15 @@
 # Releasing
 
-Use the [release skill](https://github.com/hakula139/plugins/blob/main/plugins/hakula-workflow/skills/release/SKILL.md) and [devkit's release guide](https://github.com/hakulab/devkit/blob/v3/docs/releasing.md) for the shared release procedure. This document defines kiln's release contract.
+Use the [release skill](https://github.com/hakulab/plugins/blob/main/plugins/hakula-workflow/skills/release/SKILL.md) and [devkit's release guide](https://github.com/hakulab/devkit/blob/v3/docs/releasing.md) for the shared release procedure. This document defines kiln's release contract.
 
 ## Release preparation
 
 Update `workspace.package.version` in `Cargo.toml` and run `cargo build` to refresh `Cargo.lock`. Draft `CHANGELOG.md` with [devkit's changelog procedure](https://github.com/hakulab/devkit/blob/v3/docs/releasing.md#draft-a-changelog).
 
-When npm publication is enabled with `NPM_PUBLISH_ENABLED=true`, confirm that both launchers and their four platform packages trust GitHub Actions for `hakula139/kiln` through `release.yml`. Checking with `npm trust list @kiln-ssg/<package>` requires a local npm login. Add a missing publisher through the package's npm settings or with:
+When npm publication is enabled with `NPM_PUBLISH_ENABLED=true`, confirm that both launchers and their four platform packages trust GitHub Actions for `hakulab/kiln` through `release.yml`. Checking with `npm trust list @kiln-ssg/<package>` requires a local npm login. Add a missing publisher through the package's npm settings or with:
 
 ```bash
-npm trust github @kiln-ssg/<package> --repo hakula139/kiln --file release.yml
+npm trust github @kiln-ssg/<package> --repo hakulab/kiln --file release.yml
 ```
 
 ## Verify publication
@@ -24,7 +24,7 @@ Inspect npm provenance and confirm the attestation identifies this repository's 
 npm view @kiln-ssg/kiln@X.Y.Z dist.attestations
 ```
 
-Successful publication notifies the [Homebrew tap](https://github.com/hakula139/homebrew-tap#maintain-formulae). Check its formula update PR.
+Successful publication notifies the [Homebrew tap](https://github.com/hakulab/homebrew-tap#maintain-formulae). Check its formula update PR.
 
 ## Recovery
 
