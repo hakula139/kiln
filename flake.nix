@@ -27,7 +27,7 @@
     };
 
     kiln-tailwindcss = {
-      url = "github:hakula139/kiln-tailwindcss/v0.1.6";
+      url = "github:hakulab/kiln-tailwindcss/v0.1.7";
       inputs = {
         devkit.follows = "devkit";
         nixpkgs.follows = "nixpkgs";
