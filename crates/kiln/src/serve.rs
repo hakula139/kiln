@@ -1,5 +1,7 @@
 //! Dev server with file watching, auto-rebuild, and live reload.
 
+mod watcher;
+
 use std::future::Future;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
@@ -14,13 +16,14 @@ use axum::http::{Method, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use itertools::Itertools;
-use notify::{EventKind, RecursiveMode, Watcher};
+use notify::Event;
 use tokio::sync::{mpsc, watch};
 use tower::ServiceExt;
 use tower::util::MapRequest;
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::set_status::SetStatus;
 
+use self::watcher::InputWatcher;
 use crate::build::{BuildOptions, build};
 use crate::config::{self, Config};
 use crate::output::guard::resolve_output_dir;
@@ -81,17 +84,23 @@ async fn serve_until(
 
     let inputs = watch_paths(root, &config);
     let (event_tx, event_rx) = mpsc::unbounded_channel();
-    // Watcher must stay alive for the duration of the server, since dropping it stops watching.
-    let _watcher = setup_watcher(&inputs, event_tx)?;
+    let watch_inputs = inputs.clone();
+    let setup = tokio::task::spawn_blocking(move || InputWatcher::new(&watch_inputs, event_tx));
+    tokio::pin!(shutdown);
+    let watcher = tokio::select! {
+        result = setup => result.context("file watcher setup panicked")??,
+        () = &mut shutdown => return Ok(()),
+    };
 
     let (reload_tx, _) = watch::channel(());
-    tokio::spawn(watch_loop(
-        root.to_owned(),
-        base_url.clone(),
-        output_dir.clone(),
+    let watching = watch_loop(
+        root,
+        &base_url,
+        &output_dir,
+        watcher,
         event_rx,
         reload_tx.clone(),
-    ));
+    );
 
     let app = build_router(&output_dir, reload_tx);
 
@@ -114,55 +123,12 @@ async fn serve_until(
         result = axum::serve(listener, app).into_future() => {
             result.context("server error")?;
         }
+        result = watching => result?,
         () = shutdown => {}
     }
 
     eprintln!("\nShutting down.");
     Ok(())
-}
-
-/// Initializes a file watcher on `inputs`.
-///
-/// Input files are watched through their parent directory because Linux file watches track the
-/// original file, which atomic saves replace.
-fn setup_watcher(
-    inputs: &[PathBuf],
-    event_tx: mpsc::UnboundedSender<()>,
-) -> Result<notify::RecommendedWatcher> {
-    let inputs = inputs
-        .iter()
-        .map(|path| {
-            path.canonicalize()
-                .with_context(|| format!("failed to resolve watch path {}", path.display()))
-        })
-        .collect::<Result<Vec<_>>>()?;
-
-    let filter = inputs.clone();
-    let mut watcher =
-        notify::recommended_watcher(move |res: notify::Result<notify::Event>| match res {
-            Ok(event) if is_input_change(&event, &filter) => _ = event_tx.send(()),
-            Ok(_) => {}
-            Err(e) => tracing::warn!("file watcher error: {e}"),
-        })
-        .context("failed to initialize file watcher")?;
-
-    for input in &inputs {
-        let (path, mode) = match input.parent() {
-            Some(parent) if input.is_file() => {
-                // A second watch on the same path replaces the recursive mode in notify 9.
-                if inputs.iter().any(|input| input == parent) {
-                    continue;
-                }
-                (parent, RecursiveMode::NonRecursive)
-            }
-            _ => (input.as_path(), RecursiveMode::Recursive),
-        };
-        watcher
-            .watch(path, mode)
-            .with_context(|| format!("failed to watch {}", path.display()))?;
-    }
-
-    Ok(watcher)
 }
 
 /// Returns the existing site and theme build inputs.
@@ -177,34 +143,37 @@ fn watch_paths(root: &Path, config: &Config) -> Vec<PathBuf> {
     site.chain(theme).filter(|path| path.exists()).collect()
 }
 
-/// Requests a rebuild for lost events or changes to watched inputs, ignoring ordinary sibling events.
-fn is_input_change(event: &notify::Event, inputs: &[PathBuf]) -> bool {
-    event.need_rescan()
-        || (matches!(
-            event.kind,
-            EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_)
-        ) && event
-            .paths
-            .iter()
-            .any(|path| inputs.iter().any(|input| path.starts_with(input))))
-}
-
 /// Debounced rebuild loop: waits for watcher events, rebuilds, and notifies WebSocket clients.
 async fn watch_loop(
-    root: PathBuf,
-    base_url: String,
-    output_dir: PathBuf,
-    mut event_rx: mpsc::UnboundedReceiver<()>,
+    root: &Path,
+    base_url: &str,
+    output_dir: &Path,
+    mut watcher: InputWatcher,
+    mut event_rx: mpsc::UnboundedReceiver<notify::Result<Event>>,
     reload_tx: watch::Sender<()>,
-) {
-    while event_rx.recv().await.is_some() {
+) -> Result<()> {
+    while let Some(event) = event_rx.recv().await {
+        let Some(mut invalidated) = watch_change(&watcher, event) else {
+            continue;
+        };
         tokio::time::sleep(DEBOUNCE).await;
-        while event_rx.try_recv().is_ok() {}
+        for _ in 0..event_rx.len() {
+            let Ok(event) = event_rx.try_recv() else {
+                break;
+            };
+            invalidated |= watch_change(&watcher, event).unwrap_or_default();
+        }
+        watcher = tokio::task::spawn_blocking(move || {
+            watcher.refresh(invalidated);
+            watcher
+        })
+        .await
+        .context("file watcher refresh panicked")?;
 
         eprintln!("\nRebuilding...");
-        let root = root.clone();
-        let base_url = base_url.clone();
-        let output_dir = output_dir.clone();
+        let root = root.to_owned();
+        let base_url = base_url.to_owned();
+        let output_dir = output_dir.to_owned();
         let result =
             tokio::task::spawn_blocking(move || rebuild(&root, &base_url, &output_dir)).await;
 
@@ -212,6 +181,18 @@ async fn watch_loop(
             Ok(Ok(())) => reload_tx.send_replace(()),
             Ok(Err(e)) => eprintln!("Rebuild failed: {e:?}"),
             Err(e) => eprintln!("Rebuild task panicked: {e}"),
+        }
+    }
+    anyhow::bail!("file watcher stopped delivering events")
+}
+
+/// Classifies a watcher event against the current watch plan, logging backend errors.
+fn watch_change(watcher: &InputWatcher, event: notify::Result<Event>) -> Option<bool> {
+    match event {
+        Ok(event) => watcher.change(&event),
+        Err(error) => {
+            tracing::warn!(%error, "file watcher error");
+            None
         }
     }
 }
@@ -337,6 +318,7 @@ fn inject_script(html: &str) -> String {
     }
 }
 
+/// Resolves when the process receives Ctrl+C.
 async fn shutdown_signal() {
     tokio::signal::ctrl_c()
         .await
@@ -350,10 +332,14 @@ mod tests {
     use axum::http::Request;
     use futures_util::{SinkExt, StreamExt};
     use indoc::indoc;
-    use notify::event::{CreateKind, Flag, ModifyKind, RenameMode};
+    use notify::EventKind;
+    use notify::event::Flag;
+    use tokio::sync::oneshot;
     use tokio::task::JoinHandle;
     use tokio_tungstenite::tungstenite::Message as WsMessage;
 
+    #[cfg(unix)]
+    use super::watcher::tests::replace_symlink;
     use super::*;
     use crate::test_utils::copy_templates;
 
@@ -390,9 +376,7 @@ mod tests {
         assert_eq!(css.status(), 200);
         assert_eq!(css.text().await.unwrap(), "body { color: red; }");
 
-        let ws = connect_reload(addr).await;
-        drop(ws);
-
+        let _ws = connect_reload(addr).await;
         stop_server(shutdown_tx, server).await;
     }
 
@@ -448,6 +432,29 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn rebuilds_after_nested_edits_in_recreated_directory() {
+        let root = tempfile::tempdir().unwrap();
+        setup_atomic_save_site(root.path());
+        let content = root.path().join("content");
+        let page = content.join("posts/hello/index.md");
+        let original = fs::read_to_string(&page).unwrap();
+
+        let (addr, shutdown_tx, mut server) = spawn_server(root.path()).await;
+        wait_for_server(addr, &mut server).await.unwrap();
+        let mut ws = connect_reload(addr).await;
+        fs::remove_dir_all(&content).unwrap();
+        fs::create_dir_all(page.parent().unwrap()).unwrap();
+        fs::write(&page, original.replace("Content A", "Content B")).unwrap();
+        wait_for_reload_output(addr, &mut ws, "Content B").await;
+
+        fs::write(&page, original.replace("Content A", "Content C")).unwrap();
+        wait_for_reload_output(addr, &mut ws, "Content C").await;
+
+        drop(ws);
+        stop_server(shutdown_tx, server).await;
+    }
+
+    #[tokio::test]
     async fn reports_server_startup_errors() {
         let root = tempfile::tempdir().unwrap();
         fs::write(root.path().join("config.toml"), "invalid = [").unwrap();
@@ -456,6 +463,47 @@ mod tests {
         let error = wait_for_server(addr, &mut server).await.unwrap_err();
 
         assert!(format!("{error:#}").contains("failed to load config"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn rebuilds_after_retargeting_symlinked_config() {
+        let root = tempfile::tempdir().unwrap();
+        setup_atomic_save_site(root.path());
+        let first = tempfile::tempdir().unwrap();
+        let second = tempfile::tempdir().unwrap();
+        let chain = tempfile::tempdir().unwrap();
+        let config = root.path().join("config.toml");
+        let first_target = first.path().join("site.toml");
+        let next_link = chain.path().join("next.toml");
+        let second_target = second.path().join("site.toml");
+        let original = fs::read_to_string(&config).unwrap();
+        fs::write(&first_target, original.replace("Title A", "Title B")).unwrap();
+        fs::write(&second_target, original.replace("Title A", "Title C")).unwrap();
+        std::os::unix::fs::symlink(&first_target, &next_link).unwrap();
+
+        let (addr, shutdown_tx, mut server) = spawn_server(root.path()).await;
+        wait_for_server(addr, &mut server).await.unwrap();
+        let mut ws = connect_reload(addr).await;
+        replace_symlink(&config, &next_link);
+        wait_for_reload_output(addr, &mut ws, "Title B").await;
+
+        replace_symlink(&next_link, &second_target);
+        wait_for_reload_output(addr, &mut ws, "Title C").await;
+
+        fs::remove_file(&first_target).unwrap();
+        let staged_target = second.path().join(".site.tmp");
+        fs::write(&staged_target, original.replace("Title A", "Title D")).unwrap();
+        fs::rename(&staged_target, &second_target).unwrap();
+        wait_for_reload_output(addr, &mut ws, "Title D").await;
+
+        let page = root.path().join("content/posts/hello/index.md");
+        let content = fs::read_to_string(&page).unwrap();
+        fs::write(&page, content.replace("Content A", "Content B")).unwrap();
+        wait_for_reload_output(addr, &mut ws, "Content B").await;
+
+        drop(ws);
+        stop_server(shutdown_tx, server).await;
     }
 
     fn setup_site(root: &Path) {
@@ -554,10 +602,7 @@ mod tests {
         .unwrap_or_else(|_| panic!("should serve {marker} after reloading"))
     }
 
-    async fn stop_server(
-        shutdown_tx: tokio::sync::oneshot::Sender<()>,
-        server: JoinHandle<Result<()>>,
-    ) {
+    async fn stop_server(shutdown_tx: oneshot::Sender<()>, server: JoinHandle<Result<()>>) {
         shutdown_tx.send(()).unwrap();
         tokio::time::timeout(Duration::from_secs(5), server)
             .await
@@ -568,20 +613,13 @@ mod tests {
 
     async fn spawn_server(
         root: &Path,
-    ) -> (
-        SocketAddr,
-        tokio::sync::oneshot::Sender<()>,
-        JoinHandle<Result<()>>,
-    ) {
+    ) -> (SocketAddr, oneshot::Sender<()>, JoinHandle<Result<()>>) {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
-        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+        let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
         let root = root.to_owned();
         let server = tokio::spawn(async move {
-            serve_until(&root, listener, false, async {
-                _ = shutdown_rx.await;
-            })
-            .await
+            serve_until(&root, listener, false, async { _ = shutdown_rx.await }).await
         });
         (addr, shutdown_tx, server)
     }
@@ -604,33 +642,6 @@ mod tests {
                     tokio::time::sleep(Duration::from_millis(100)).await;
                 }
             }) => result.context("server did not start within 5 seconds"),
-        }
-    }
-
-    // ── setup_watcher ──
-
-    #[test]
-    fn keeps_directory_watch_recursive_when_a_file_shares_it() {
-        let root = tempfile::tempdir().unwrap();
-        let assets = root.path().canonicalize().unwrap().join("assets");
-        fs::create_dir(&assets).unwrap();
-        let config = assets.join("site.toml");
-        fs::write(&config, "").unwrap();
-
-        for inputs in [
-            [assets.clone(), config.clone()],
-            [config.clone(), assets.clone()],
-        ] {
-            let (event_tx, _event_rx) = mpsc::unbounded_channel();
-            let watcher = setup_watcher(&inputs, event_tx).unwrap();
-
-            assert_eq!(
-                watcher.watched_paths().unwrap(),
-                [notify::WatchedPath::new(
-                    assets.clone(),
-                    RecursiveMode::Recursive
-                )]
-            );
         }
     }
 
@@ -701,82 +712,7 @@ mod tests {
         }
     }
 
-    // ── is_input_change ──
-
-    #[test]
-    fn matches_inputs_and_their_descendants() {
-        let root = Path::new("/site");
-        let inputs = [root.join("config.toml"), root.join("content")];
-        let modify = EventKind::Modify(ModifyKind::Any);
-        for (kind, paths, expected) in [
-            (modify, &["config.toml"][..], true),
-            (modify, &["content/posts/hello/index.md"], true),
-            (
-                EventKind::Create(CreateKind::File),
-                &["content/new.md"],
-                true,
-            ),
-            (
-                EventKind::Modify(ModifyKind::Name(RenameMode::Both)),
-                &["config.toml.tmp", "config.toml"],
-                true,
-            ),
-            (modify, &["config.toml.swp"], false),
-            (modify, &["public/index.html"], false),
-            (
-                EventKind::Create(CreateKind::Folder),
-                &[".kiln-build-abc123/output"],
-                false,
-            ),
-            (
-                EventKind::Access(notify::event::AccessKind::Any),
-                &["config.toml"],
-                false,
-            ),
-            (EventKind::Other, &[], false),
-            (EventKind::Other, &["config.toml"], false),
-            (modify, &[], false),
-            (modify, &["../outside.md"], false),
-        ] {
-            let event = paths.iter().fold(notify::Event::new(kind), |event, path| {
-                event.add_path(root.join(path))
-            });
-            let changed = is_input_change(&event, &inputs);
-
-            assert_eq!(changed, expected, "{event:?}");
-        }
-    }
-
-    #[test]
-    fn accepts_rescan_regardless_of_paths() {
-        let inputs = [PathBuf::from("/site/content")];
-        for paths in [&[][..], &["/site/public/output.html"], &["/outside.md"]] {
-            let event = paths.iter().fold(
-                notify::Event::new(EventKind::Other).set_flag(Flag::Rescan),
-                |event, path| event.add_path(PathBuf::from(path)),
-            );
-
-            let changed = is_input_change(&event, &inputs);
-
-            assert!(changed, "{event:?}");
-        }
-    }
-
     // ── watch_loop ──
-
-    #[tokio::test]
-    async fn stops_when_sender_dropped() {
-        let root = tempfile::tempdir().unwrap();
-        setup_site(root.path());
-        let (event_tx, _, handle) = spawn_watch_loop(root.path());
-
-        drop(event_tx);
-
-        tokio::time::timeout(Duration::from_secs(2), handle)
-            .await
-            .expect("watch_loop should exit when event sender is dropped")
-            .expect("watch_loop should exit without panicking");
-    }
 
     #[tokio::test]
     async fn skips_reload_on_failure() {
@@ -787,39 +723,37 @@ mod tests {
             "{% invalid %}",
         )
         .unwrap();
-        let (event_tx, reload_rx, handle) = spawn_watch_loop(root.path());
+        let (event_tx, event_rx) = mpsc::unbounded_channel();
+        let (unused_tx, _unused_rx) = mpsc::unbounded_channel();
+        let (reload_tx, reload_rx) = watch::channel(());
+        let watcher = InputWatcher::new(&[], unused_tx).unwrap();
 
-        event_tx.send(()).unwrap();
+        event_tx
+            .send(Ok(Event::new(EventKind::Other).set_flag(Flag::Rescan)))
+            .unwrap();
         drop(event_tx);
-        tokio::time::timeout(Duration::from_secs(5), handle)
-            .await
-            .expect("watch_loop should finish the failed rebuild within timeout")
-            .expect("watch_loop should exit without panicking");
+        let result = tokio::time::timeout(
+            Duration::from_secs(5),
+            watch_loop(
+                root.path(),
+                "http://localhost:0",
+                &root.path().join("public"),
+                watcher,
+                event_rx,
+                reload_tx,
+            ),
+        )
+        .await
+        .unwrap();
 
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "file watcher stopped delivering events"
+        );
         assert!(
             !reload_rx.borrow().has_changed(),
             "should not send reload on failed rebuild"
         );
-    }
-
-    /// Spawns `watch_loop` over `root`, returning its event sender, a reload receiver and handle.
-    fn spawn_watch_loop(
-        root: &Path,
-    ) -> (
-        mpsc::UnboundedSender<()>,
-        watch::Receiver<()>,
-        tokio::task::JoinHandle<()>,
-    ) {
-        let (event_tx, event_rx) = mpsc::unbounded_channel();
-        let (reload_tx, reload_rx) = watch::channel(());
-        let handle = tokio::spawn(watch_loop(
-            root.to_owned(),
-            "http://localhost:0".to_owned(),
-            root.join("public"),
-            event_rx,
-            reload_tx,
-        ));
-        (event_tx, reload_rx, handle)
     }
 
     // ── rebuild ──
