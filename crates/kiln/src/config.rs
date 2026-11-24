@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::content::{is_single_component, read_optional};
 use crate::i18n::Language;
-use crate::url::BaseUrl;
+pub use crate::url::BaseUrl;
 
 /// Default port for `kiln serve` (KILN on a phone keypad: K=5 I=4 L=5 N=6).
 pub const DEFAULT_PORT: u16 = 5456;
@@ -41,8 +41,7 @@ pub struct Config {
 
     pub language: Language,
 
-    /// Time zone for rendered dates: an IANA name such as `Asia/Shanghai`, a fixed offset such as
-    /// `+08:00`, or a POSIX TZ string.
+    /// Time zone for rendered dates: an IANA name, a fixed UTC offset, or a POSIX TZ string.
     #[serde(with = "jiff::fmt::serde::tz::required")]
     pub timezone: TimeZone,
 
@@ -65,8 +64,8 @@ pub struct Config {
 
     pub css: Css,
 
-    /// Named menu groups (e.g., `[[menu.main]]`, `[[menu.social]]`). Themes choose which groups
-    /// to render and where. kiln has no opinion about group names.
+    /// Named menu groups. Themes choose which groups to render and where, and kiln imposes no
+    /// fixed group names.
     pub menu: BTreeMap<String, Vec<MenuItem>>,
 
     pub author: Author,
@@ -99,7 +98,7 @@ pub struct Search {
 
 /// CSS compilation settings inherited from the active theme.
 #[derive(Debug, Default, Deserialize, Serialize)]
-#[serde(default, deny_unknown_fields)]
+#[serde(deny_unknown_fields)]
 pub struct Css {
     /// Unset selects plain CSS after theme defaults have been applied.
     pub processor: Option<CssProcessor>,
@@ -228,7 +227,7 @@ impl Config {
             validate_theme_name(theme_name)?;
             let theme = ThemeMeta::load(&root.join("themes").join(theme_name).join("theme.toml"))?;
             theme.check_min_kiln_version(theme_name)?;
-            tracing::info!("using theme: {theme_name}");
+            tracing::info!(theme = %theme_name, "using theme");
             merge_params(&mut config.params, theme.params, "")?;
             config.css.processor = config.css.processor.or(theme.css.processor);
         }
@@ -268,7 +267,7 @@ impl Paginate {
         }
 
         #[derive(Default, Deserialize)]
-        #[serde(default, expecting = "a table with an optional `paginate` key")]
+        #[serde(expecting = "a table with an optional `paginate` key")]
         struct ListingParams {
             paginate: Option<NonZeroUsize>,
         }

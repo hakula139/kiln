@@ -11,10 +11,6 @@ use crate::config::{Config, SITE_INPUTS, THEME_INPUTS};
 /// Resolves the build output directory, rejecting overlaps with project inputs and metadata.
 ///
 /// `override_dir` replaces `config.output_dir`. Relative paths resolve against `root`.
-///
-/// # Errors
-///
-/// Returns an error if the path is empty, cannot be resolved, or would overwrite project inputs.
 pub(crate) fn resolve_output_dir(
     root: &Path,
     config: &Config,

@@ -135,8 +135,7 @@ impl I18n {
         if !warned.insert((key.to_owned(), warning.map(str::to_owned))) {
             return;
         }
-        // Drop the guard before calling into `tracing`, since the subscriber may run arbitrary code
-        // and holding the lock across it risks a re-entrant deadlock.
+        // Release the lock before calling `tracing` to avoid re-entrant deadlock in subscribers.
         drop(warned);
         match warning {
             Warning::MissingPlaceholder(name) => {

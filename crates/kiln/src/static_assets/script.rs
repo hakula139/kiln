@@ -28,10 +28,6 @@ enum ScriptImports {
 ///
 /// Module specifiers resolve by URL, so renaming an importer or an import target would break the
 /// import. A computed `import()` may load any script, so it keeps every script's source name.
-///
-/// # Errors
-///
-/// Returns an error if a script cannot be read or renamed.
 pub(crate) fn fingerprint_scripts<'a>(
     manifest: &mut StaticAssetManifest,
     scripts: impl IntoIterator<Item = (&'a Path, Naming)>,

@@ -87,11 +87,6 @@ fn convert_tree(source: &Path, dest: &Path, markdown: bool) -> Result<()> {
 
 /// Pairs each file under `source`, following symlinks, with its destination under `dest`, in
 /// file name order.
-///
-/// # Errors
-///
-/// Returns an error if the walk fails, a source link overlaps `resolved_dest`, or two indexes
-/// convert to the same destination.
 fn plan_tree(
     source: &Path,
     dest: &Path,

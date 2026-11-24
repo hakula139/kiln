@@ -5,7 +5,7 @@ use anyhow::{Context, ensure};
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use serde::{Deserialize, Serialize, Serializer};
 
-// Keeps exactly what `encodeURIComponent` keeps, since Workers Static Assets redirects other forms.
+// Matches `encodeURIComponent` because Workers Static Assets redirects other encodings.
 const COMPONENT_ENCODE_SET: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'!')
     .remove(b'\'')
@@ -23,7 +23,7 @@ const COMPONENT_ENCODE_SET: &AsciiSet = &NON_ALPHANUMERIC
 pub struct BaseUrl(url::Url);
 
 impl BaseUrl {
-    /// Path the site is deployed under, such as `/` or `/blog/`.
+    /// Deployment path prefix ending in `/`.
     #[must_use]
     pub fn prefix(&self) -> &str {
         self.0.path()

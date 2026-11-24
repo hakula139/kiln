@@ -58,7 +58,7 @@ impl OutputTransaction {
             return Err(error).context("failed to publish output directory");
         }
         if let Err(error) = self.directory.close() {
-            tracing::warn!("failed to remove previous build: {error}");
+            tracing::warn!(%error, "failed to remove previous build");
         }
         Ok(())
     }

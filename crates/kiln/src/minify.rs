@@ -15,8 +15,8 @@ use anyhow::{Context, Result};
 use lightningcss::stylesheet::{
     MinifyOptions, ParserOptions, PrinterOptions, StyleAttribute, StyleSheet,
 };
-use rayon::ThreadPoolBuilder;
 use rayon::prelude::*;
+use rayon::{ThreadPool, ThreadPoolBuildError, ThreadPoolBuilder};
 use regex::{Captures, Regex};
 use swc_common::sync::Lrc;
 use swc_common::{FileName, GLOBALS, Globals, Mark, SourceMap};
@@ -42,6 +42,12 @@ use walkdir::WalkDir;
 /// swc recurses once per level of nested expressions or elements, so worker threads need far more
 /// than rayon's default 2 MiB stack.
 const WORKER_STACK_SIZE: usize = 64 << 20;
+
+static WORKER_POOL: LazyLock<Result<ThreadPool, ThreadPoolBuildError>> = LazyLock::new(|| {
+    ThreadPoolBuilder::new()
+        .stack_size(WORKER_STACK_SIZE)
+        .build()
+});
 
 static RAW_TEXT_END_TAG_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)</(script|style)([\t\n\x0C\r />])")
@@ -135,10 +141,13 @@ fn minify_matching(output_dir: &Path, include: impl Fn(AssetKind) -> bool) -> Re
         files.push((entry.into_path(), kind));
     }
 
-    let pool = ThreadPoolBuilder::new()
-        .stack_size(WORKER_STACK_SIZE)
-        .build()
-        .context("failed to start minification threads")?;
+    if files.is_empty() {
+        return Ok(MinifyStats::default());
+    }
+
+    let pool = WORKER_POOL
+        .as_ref()
+        .map_err(|error| anyhow::anyhow!("failed to start minification threads: {error}"))?;
     let results: Vec<Result<MinifyStats>> = pool.install(|| {
         files
             .par_iter()
@@ -156,10 +165,7 @@ fn minify_matching(output_dir: &Path, include: impl Fn(AssetKind) -> bool) -> Re
         })
 }
 
-/// Returns the minifier to use for `path`, or `None` if the file should be skipped.
-///
-/// Matching is case-insensitive so files with uppercase extensions (e.g., `INDEX.HTML` from a
-/// migrated Hugo / legacy site) are still handled.
+/// Returns the minifier to use for `path` case-insensitively, or `None` if it should be skipped.
 fn classify(path: &Path) -> Option<AssetKind> {
     let name = path.file_name()?.to_str()?.to_ascii_lowercase();
     if name.ends_with(".min.css") || name.ends_with(".min.js") {
@@ -207,8 +213,9 @@ fn minify_file(path: &Path, kind: AssetKind) -> Result<MinifyStats> {
 /// Decodes UTF-8 input, or warns and returns `None`.
 fn decode_utf8<'a>(input: &'a [u8], path: &Path, kind: &str) -> Option<&'a str> {
     std::str::from_utf8(input)
-        .inspect_err(|e| {
-            tracing::warn!("skipping {} ({kind}): invalid UTF-8: {e}", path.display());
+        .inspect_err(|error| {
+            let path = path.display();
+            tracing::warn!(%path, kind, %error, "skipping file with invalid UTF-8");
         })
         .ok()
 }
@@ -224,12 +231,10 @@ fn minify_html_bytes(input: &[u8], path: &Path) -> Option<Vec<u8>> {
             ..ParserConfig::default()
         };
         let mut document = parse_file_as_document(&fm, parser_config, &mut Vec::new())
-            .inspect_err(|e| {
-                tracing::warn!(
-                    "skipping {} (HTML parse failed): {}",
-                    path.display(),
-                    e.message()
-                );
+            .inspect_err(|error| {
+                let path = path.display();
+                let error = error.message();
+                tracing::warn!(%path, %error, "skipping HTML file after parse failure");
             })
             .ok()?;
 
@@ -293,10 +298,9 @@ impl MinifyCss for LightningCss {
 
 /// Escapes text that would close its `<script>` or `<style>` element by writing `</` as `<\/`.
 ///
-/// swc and lightningcss unescape such sequences inside string literals (for example
-/// `"<\/SCRIPT>"` or `"\3c /style>"`), which would otherwise end the element early. Like the HTML
-/// tokenizer, matching ignores case and requires whitespace, `/` or `>` after the tag name. `\/`
-/// reads as `/` in both JS and CSS strings.
+/// swc and lightningcss unescape `</script>` and `</style>` inside string literals, which would
+/// otherwise end the element early. Like the HTML tokenizer, matching ignores case and requires
+/// whitespace, `/` or `>` after the tag name. `\/` reads as `/` in both JS and CSS strings.
 fn escape_raw_text_end_tags(document: &mut Document) {
     let mut pending = vec![&mut document.children];
     while let Some(children) = pending.pop() {
@@ -329,7 +333,7 @@ fn escape_raw_text_end_tags(document: &mut Document) {
     }
 }
 
-/// Mirrors `swc_html_minifier`'s choice of `<script>` and `<style>` elements whose text it rewrites.
+/// Mirrors `swc_html_minifier`'s selection of `<script>` and `<style>` elements to rewrite.
 ///
 /// Text left untouched is exactly what the author wrote, which already parsed as one element.
 fn has_minified_raw_text(element: &Element) -> bool {
@@ -390,8 +394,9 @@ fn is_javascript_mime_type(value: &str) -> bool {
 fn minify_css_bytes(input: &[u8], path: &Path) -> Option<Vec<u8>> {
     let source = decode_utf8(input, path, "CSS")?;
     let stylesheet = StyleSheet::parse(source, ParserOptions::default())
-        .inspect_err(|e| {
-            tracing::warn!("skipping {} (CSS parse failed): {e}", path.display());
+        .inspect_err(|error| {
+            let path = path.display();
+            tracing::warn!(%path, %error, "skipping CSS file after parse failure");
         })
         .ok()?;
     print_minified_stylesheet(stylesheet).map(String::into_bytes)
@@ -417,8 +422,9 @@ fn minify_js_bytes(input: &[u8], path: &Path, is_module: bool) -> Option<Vec<u8>
     GLOBALS.set(&Globals::new(), || {
         let cm = Lrc::new(SourceMap::default());
         let program = parse_js(&cm, source, is_module)
-            .map_err(|message| {
-                tracing::warn!("skipping {} (JS parse failed): {message}", path.display());
+            .inspect_err(|error| {
+                let path = path.display();
+                tracing::warn!(%path, %error, "skipping JS file after parse failure");
             })
             .ok()?;
         let is_module = matches!(program, Program::Module(_));
@@ -512,8 +518,6 @@ fn u64_to_f64(value: u64) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
     use indoc::indoc;
 
     use super::*;
@@ -556,50 +560,36 @@ mod tests {
         );
     }
 
-    // ── minify_static_assets ──
+    // ── minify_static_assets / minify_html ──
 
     #[test]
-    fn skips_html() {
-        let dir = tempfile::tempdir().unwrap();
+    fn separates_static_assets_from_html() {
         let html = "<html>  <body>  text  </body>  </html>";
         let css = ".foo { color: #ff0000; margin: 0px; }\n";
-        fs::write(dir.path().join("index.html"), html).unwrap();
-        fs::write(dir.path().join("style.css"), css).unwrap();
+        for (run_html, expected_html, expected_css) in [
+            (false, html, ".foo{color:red;margin:0}"),
+            (true, "text", css),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            fs::write(dir.path().join("index.html"), html).unwrap();
+            fs::write(dir.path().join("style.css"), css).unwrap();
 
-        let stats = minify_static_assets(dir.path()).unwrap();
+            let stats = if run_html {
+                minify_html(dir.path()).unwrap()
+            } else {
+                minify_static_assets(dir.path()).unwrap()
+            };
 
-        assert_eq!(stats.files_processed, 1);
-        assert_eq!(
-            fs::read_to_string(dir.path().join("index.html")).unwrap(),
-            html
-        );
-        assert_eq!(
-            fs::read_to_string(dir.path().join("style.css")).unwrap(),
-            ".foo{color:red;margin:0}"
-        );
-    }
-
-    // ── minify_html ──
-
-    #[test]
-    fn skips_css_and_js() {
-        let dir = tempfile::tempdir().unwrap();
-        let html = "<html>  <body>  text  </body>  </html>";
-        let css = ".foo { color: #ff0000; margin: 0px; }\n";
-        fs::write(dir.path().join("index.html"), html).unwrap();
-        fs::write(dir.path().join("style.css"), css).unwrap();
-
-        let stats = minify_html(dir.path()).unwrap();
-
-        assert_eq!(stats.files_processed, 1);
-        assert_eq!(
-            fs::read_to_string(dir.path().join("index.html")).unwrap(),
-            "text"
-        );
-        assert_eq!(
-            fs::read_to_string(dir.path().join("style.css")).unwrap(),
-            css
-        );
+            assert_eq!(stats.files_processed, 1);
+            assert_eq!(
+                fs::read_to_string(dir.path().join("index.html")).unwrap(),
+                expected_html
+            );
+            assert_eq!(
+                fs::read_to_string(dir.path().join("style.css")).unwrap(),
+                expected_css
+            );
+        }
     }
 
     // ── minify_matching ──
@@ -954,16 +944,11 @@ mod tests {
     // ── minify_css_bytes ──
 
     #[test]
-    fn skips_invalid_utf8_css() {
-        let path = PathBuf::from("broken.css");
-        assert_eq!(minify_css_bytes(&[0xff, 0xfe, 0xfd], &path), None);
-    }
-
-    #[test]
-    fn skips_unparsable_css() {
-        let path = PathBuf::from("broken.css");
+    fn skips_invalid_css() {
+        let path = Path::new("broken.css");
+        assert_eq!(minify_css_bytes(&[0xff, 0xfe, 0xfd], path), None);
         // `@@@` is lexically invalid, and lightningcss fails with an unexpected-end-of-input error.
-        assert_eq!(minify_css_bytes(b"@@@", &path), None);
+        assert_eq!(minify_css_bytes(b"@@@", path), None);
     }
 
     // ── minify_js_bytes ──
@@ -1013,15 +998,10 @@ mod tests {
     }
 
     #[test]
-    fn skips_invalid_utf8_js() {
-        let path = PathBuf::from("broken.js");
-        assert_eq!(minify_js_bytes(&[0xff, 0xfe, 0xfd], &path, false), None);
-    }
-
-    #[test]
-    fn skips_unparsable_js() {
-        let path = PathBuf::from("broken.js");
-        assert_eq!(minify_js_bytes(b"function () { ]]]", &path, false), None);
+    fn skips_invalid_js() {
+        let path = Path::new("broken.js");
+        assert_eq!(minify_js_bytes(&[0xff, 0xfe, 0xfd], path, false), None);
+        assert_eq!(minify_js_bytes(b"function () { ]]]", path, false), None);
     }
 
     // ── format_bytes ──

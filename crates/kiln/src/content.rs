@@ -15,7 +15,7 @@ pub(crate) fn is_private(name: &OsStr) -> bool {
     name.as_encoded_bytes().starts_with(b"_")
 }
 
-/// Whether a source path is public, which holds for paths without a final name such as `/`.
+/// Whether a source path is public, including paths with no final component.
 pub(crate) fn is_public(path: &Path) -> bool {
     path.file_name().is_none_or(|name| !is_private(name))
 }
@@ -26,8 +26,7 @@ pub(crate) fn is_markdown(path: &Path) -> bool {
         .is_some_and(|extension| extension.eq_ignore_ascii_case("md"))
 }
 
-/// Whether an authored name is one normal path component on every platform, such as a slug or
-/// theme directory name.
+/// Whether an authored name is a single normal path component without separators or colons.
 pub(crate) fn is_single_component(name: &str) -> bool {
     let mut components = Path::new(name).components();
     matches!(components.next(), Some(Component::Normal(_)))

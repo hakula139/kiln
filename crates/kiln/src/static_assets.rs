@@ -16,7 +16,7 @@ use crate::url::{join_site_url, path_url};
 
 const FINGERPRINT_LENGTH: usize = 12;
 
-/// Origin that relative page URLs resolve against, since URL joining needs an absolute base.
+/// Base origin used to resolve relative page URLs.
 static PLACEHOLDER_BASE: LazyLock<Url> =
     LazyLock::new(|| Url::parse("https://kiln.invalid/").expect("placeholder base URL is valid"));
 
@@ -70,10 +70,6 @@ impl StaticAssetManifest {
     }
 
     /// Renames a generated file to its content-addressed name and records its URL.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the file cannot be read or renamed.
     pub(crate) fn fingerprint(&mut self, output_dir: &Path, path: &Path) -> Result<()> {
         let published = rename_fingerprinted(output_dir, path)?;
         self.paths.insert(site_path(path), published);
@@ -81,10 +77,6 @@ impl StaticAssetManifest {
     }
 
     /// Returns the public URL of the file published for an encoded source-named site path.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if no file was published for `path`.
     pub(crate) fn asset_url(&self, path: &str) -> Result<String> {
         self.paths
             .get(path)
@@ -97,10 +89,6 @@ impl StaticAssetManifest {
     ///
     /// Root-relative URLs start with the configured `base_url` path, whichever base URL the build
     /// publishes under.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error for a site URL without a published file.
     pub(crate) fn resolve_local(
         &self,
         url: &str,
@@ -110,10 +98,6 @@ impl StaticAssetManifest {
     }
 
     /// Resolves a template asset URL, where root-relative paths omit the base URL path.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error for a site URL without a published file.
     pub(crate) fn resolve_template_url(
         &self,
         url: &str,
@@ -124,10 +108,6 @@ impl StaticAssetManifest {
 
     /// Returns the published path of an authored root-relative URL path, or `None` when it is
     /// outside the configured `base_url` path.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error for a site path without a published file.
     pub(crate) fn published_path(&self, path: &str) -> Result<Option<&Path>> {
         self.lookup(path, "/", &self.authored_prefix)
     }
@@ -195,7 +175,7 @@ fn site_key(path: &str, page_url: &str, prefix: &str) -> Result<Option<String>, 
     Ok(Some(site_path(Path::new(decoded.trim_start_matches('/')))))
 }
 
-fn site_path(path: &Path) -> String {
+pub(crate) fn site_path(path: &Path) -> String {
     format!("/{}", path_url(path))
 }
 

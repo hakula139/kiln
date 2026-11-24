@@ -85,8 +85,7 @@ fn main() -> Result<()> {
             minify,
         } => {
             let root = canonicalize(&root)?;
-            // An empty `KILN_BASE_URL` env var (e.g., from a workflow input left unset) should fall
-            // through to config.toml, not blank out every URL.
+            // Treat an empty `KILN_BASE_URL` as unset so it falls through to config.toml.
             let base_url = base_url.filter(|s| !s.is_empty());
             build(
                 &root,
