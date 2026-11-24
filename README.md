@@ -41,7 +41,7 @@ Homebrew installs the extended build with AVIF support.
 
 ### Via npm
 
-Install Node.js 20 or newer, for example with [fnm](https://github.com/Schniz/fnm), then choose one kiln variant:
+Install Node.js 20 or newer (below with [fnm](https://github.com/Schniz/fnm)), then choose one kiln variant:
 
 ```bash
 fnm install --latest --use
