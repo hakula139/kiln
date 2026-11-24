@@ -20,10 +20,6 @@ pub(crate) struct Callout<'a> {
 
 impl<'a> Callout<'a> {
     /// Reads `type` (default `note`), a non-empty `title` and `open` (default `true`).
-    ///
-    /// # Errors
-    ///
-    /// Returns an error for an unknown type or an `open` value other than `true` / `false`.
     pub(crate) fn from_args(named: &'a BTreeMap<String, String>) -> Result<Self> {
         let kind = match named.get("type") {
             Some(value) => find_type(value).with_context(|| {

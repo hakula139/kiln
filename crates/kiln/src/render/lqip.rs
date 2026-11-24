@@ -114,7 +114,7 @@ fn encode_lqip(path: &Path, size: u32, quality: u8) -> Option<String> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use std::fs;
 
     use tempfile::tempdir;
@@ -127,7 +127,7 @@ mod tests {
     fn reads_dimensions_and_caches_placeholder() {
         let dir = tempdir().unwrap();
         let bundle = dir.path().join("bundle");
-        write_tiny_png(&bundle.join("img.png"));
+        write_tiny_png(&bundle.join("img.png"), 2, 2);
 
         let r = ImageResolver::new(dir.path(), ImageConfig::default());
         let meta = r.resolve_published(Path::new("bundle/img.png")).unwrap();
@@ -214,7 +214,7 @@ mod tests {
     #[test]
     fn retains_dimensions_on_encoding_failure() {
         let dir = tempdir().unwrap();
-        write_tiny_png(&dir.path().join("photo one.png"));
+        write_tiny_png(&dir.path().join("photo one.png"), 2, 2);
         let resolver = ImageResolver::new(
             dir.path(),
             ImageConfig {
@@ -288,9 +288,9 @@ mod tests {
             .to_rgb8()
     }
 
-    fn write_tiny_png(path: &Path) {
+    pub(in crate::render) fn write_tiny_png(path: &Path, width: u32, height: u32) {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
-        let img = image::RgbaImage::from_pixel(2, 2, image::Rgba([200, 100, 50, 255]));
+        let img = image::RgbaImage::from_pixel(width, height, image::Rgba([200, 100, 50, 255]));
         img.save_with_format(path, image::ImageFormat::Png).unwrap();
     }
 }

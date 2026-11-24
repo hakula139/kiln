@@ -1,6 +1,9 @@
 use std::ops::RangeInclusive;
 
+use indoc::formatdoc;
+
 use crate::attrs::{Identity, parse_pandoc_attrs};
+use crate::html::escape;
 
 /// Attributes extracted from a fenced code block's info string.
 #[derive(Debug, Default)]
@@ -99,8 +102,21 @@ fn parse_highlight_ranges(input: &str) -> Vec<RangeInclusive<usize>> {
         .collect()
 }
 
+/// Wraps a Mermaid diagram source in a `<pre class="mermaid">` block for mermaid.js.
+///
+/// The escaped source appears both as inner text, where mermaid.js reads it, and in `data-source`,
+/// so a theme toggle can restore it after mermaid replaces the content with `<svg>`.
+pub(super) fn render_mermaid(source: &str) -> String {
+    let escaped = escape(source);
+    formatdoc! {r#"
+        <pre class="mermaid" data-source="{escaped}">{escaped}</pre>
+    "#}
+}
+
 #[cfg(test)]
 mod tests {
+    use indoc::indoc;
+
     use super::*;
 
     // ── is_mermaid ──
@@ -216,5 +232,46 @@ mod tests {
         for (input, expected) in [("1,bad,x-2,2-x,3", vec![1..=1, 3..=3]), ("", vec![])] {
             assert_eq!(parse_highlight_ranges(input), expected, "{input}");
         }
+    }
+
+    // ── render_mermaid ──
+
+    #[test]
+    fn wraps_source_in_pre_with_class() {
+        let source = indoc! {"
+            graph TD
+                A --> B
+        "};
+        let html = render_mermaid(source);
+        let expected = indoc! {r#"
+            <pre class="mermaid" data-source="graph TD
+                A --&gt; B
+            ">graph TD
+                A --&gt; B
+            </pre>
+        "#};
+        assert_eq!(html, expected);
+    }
+
+    #[test]
+    fn escapes_html_special_chars() {
+        let html = render_mermaid(r#"A["<b>&"]"#);
+        assert_eq!(
+            html,
+            indoc! {r#"
+                <pre class="mermaid" data-source="A[&quot;&lt;b&gt;&amp;&quot;]">A[&quot;&lt;b&gt;&amp;&quot;]</pre>
+            "#},
+        );
+    }
+
+    #[test]
+    fn empty_source_renders_empty_pre() {
+        let html = render_mermaid("");
+        assert_eq!(
+            html,
+            indoc! {r#"
+                <pre class="mermaid" data-source=""></pre>
+            "#},
+        );
     }
 }

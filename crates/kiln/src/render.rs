@@ -1,17 +1,15 @@
 pub mod assets;
 mod code_block;
 mod document;
-mod emoji;
 mod footnote;
 mod heading;
 mod highlight;
-mod icon;
 mod image;
 mod image_attrs;
 pub mod lqip;
-mod mermaid;
 mod page_ids;
 pub mod pipeline;
+mod shortcode;
 mod table;
 mod toc;
 
@@ -40,20 +38,12 @@ pub struct PageResources<'a> {
 
 impl PageResources<'_> {
     /// Resolves an authored image to its public URL and the published file's metadata.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error for a site image without a published file.
     pub(crate) fn resolve_image(&self, src: &str) -> Result<(String, Option<Arc<ImageMeta>>)> {
         let asset = self.assets.resolve_local(src, self.page_url)?;
         Ok(self.image(src, asset))
     }
 
     /// Resolves an image whose root-relative paths omit the base URL path.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error for a site image without a published file.
     pub(crate) fn resolve_site_image(&self, src: &str) -> Result<(String, Option<Arc<ImageMeta>>)> {
         let asset = self.assets.resolve_template_url(src, self.page_url)?;
         Ok(self.image(src, asset))
@@ -87,7 +77,7 @@ pub struct RenderOptions {
     /// In terminal columns.
     pub table_nowrap_width: Option<usize>,
     #[serde(skip)]
-    pub copy_button: CopyButton,
+    pub(crate) copy_button: CopyButton,
 }
 
 impl RenderOptions {
@@ -112,7 +102,7 @@ fn deserialize_line_limit<'de, D: Deserializer<'de>>(
 
 /// Localized labels of the code-block copy button.
 #[derive(Debug, Default)]
-pub struct CopyButton {
+pub(crate) struct CopyButton {
     pub text: String,
     pub aria_label: String,
 }

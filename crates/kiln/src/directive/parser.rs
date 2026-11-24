@@ -81,10 +81,7 @@ pub(crate) fn parse_directives(content: &str) -> Vec<DirectiveNode> {
     blocks
 }
 
-/// Returns the number of leading `:` characters if there are at least 3.
-///
-/// Only matches column-0 directives. Indented lines are intentionally ignored since directives
-/// are top-level constructs.
+/// Returns the number of leading `:` characters at column 0 if there are at least 3.
 fn count_leading_colons(line: &str) -> Option<usize> {
     let count = line.bytes().take_while(|&b| b == b':').count();
     (count >= 3).then_some(count)

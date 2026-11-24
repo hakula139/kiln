@@ -204,7 +204,6 @@ fn display_label(lang: &str) -> String {
     let mapped: &str = match lang {
         _ if is_plain_text(lang) => "Plain Text",
 
-        // Short alias → canonical name (sorted by output).
         "js" | "jsx" => "JavaScript",
         "kt" | "kts" => "Kotlin",
         "latex" | "tex" => "LaTeX",
@@ -217,16 +216,13 @@ fn display_label(lang: &str) -> String {
         "bash" | "fish" | "sh" | "zsh" => "Shell",
         "ts" | "tsx" => "TypeScript",
 
-        // Special punctuation in the canonical name (sorted by output).
         "cs" | "csharp" => "C#",
         "c++" | "cc" | "cpp" | "cxx" | "h++" | "hpp" => "C++",
         "fs" | "fsharp" => "F#",
 
-        // Mixed-case brand names (sorted by output).
         "gql" | "graphql" => "GraphQL",
         "sass" => "Sass",
 
-        // ALL-CAPS acronyms, where output is just the input uppercased.
         "asm" | "css" | "csv" | "html" | "http" | "ini" | "json" | "php" | "scss" | "sql"
         | "toml" | "tsv" | "wasm" | "xml" | "yaml" | "yml" => return lang.to_uppercase(),
 

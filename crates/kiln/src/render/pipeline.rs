@@ -9,9 +9,8 @@ use super::page_ids::PageIds;
 use super::toc::render_toc_html;
 use super::{PageResources, RenderOptions};
 use crate::directive::callout::Callout;
-use crate::directive::div::render_div;
 use crate::directive::parser::{DirectiveNode, parse_directives};
-use crate::directive::{DirectiveBlock, DirectiveContext};
+use crate::directive::{DirectiveBlock, DirectiveContext, render_div};
 use crate::template::TemplateEngine;
 
 /// The fully rendered output of a single page.
@@ -69,6 +68,12 @@ pub fn render_page(
     })
 }
 
+struct PreparedDocument {
+    scope: usize,
+    markdown: MarkdownDocument,
+    directives: Vec<(DirectiveBlock, PreparedDocument)>,
+}
+
 /// Inputs shared by the page body and every directive body rendered for one page.
 struct PageRenderer<'a> {
     engine: &'a TemplateEngine,
@@ -76,12 +81,6 @@ struct PageRenderer<'a> {
     resources: &'a PageResources<'a>,
     assets: AssetsHandle,
     placeholder_prefix: &'a str,
-}
-
-struct PreparedDocument {
-    scope: usize,
-    markdown: MarkdownDocument,
-    directives: Vec<(DirectiveBlock, PreparedDocument)>,
 }
 
 impl PreparedDocument {

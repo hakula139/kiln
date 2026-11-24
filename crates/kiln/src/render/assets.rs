@@ -14,8 +14,7 @@ use strum::{AsRefStr, EnumString};
 /// [`PostTemplateVars`]: crate::template::vars::PostTemplateVars
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct PageAssets {
-    /// Scripts in registration order. Order matters for dependency chains (e.g., a library script
-    /// must be registered before its consumer).
+    /// Scripts in registration order, preserving dependency chains.
     scripts: Vec<ScriptTag>,
 
     /// Features auto-detected during render (math expressions, mermaid fences).
@@ -77,16 +76,12 @@ impl PageAssets {
 ///
 /// The mutex satisfies `MiniJinja`'s `Object: Send + Sync` requirement.
 #[derive(Debug, Default, Clone)]
-pub struct AssetsHandle {
+pub(crate) struct AssetsHandle {
     inner: Arc<Mutex<PageAssets>>,
 }
 
 impl AssetsHandle {
     /// Locks the underlying assets for direct mutation by the render pipeline.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the underlying mutex is poisoned.
     pub(crate) fn lock(&self) -> MutexGuard<'_, PageAssets> {
         self.inner.lock().expect("PageAssets mutex poisoned")
     }
