@@ -93,12 +93,14 @@ pub(super) fn tpl_asset_url(
     if is_passthrough(url) {
         return Ok(url.to_owned());
     }
-    let page_url = state.lookup("__page_url");
-    let page_url = page_url.as_ref().and_then(Value::as_str);
+    let page_url = lookup_defined(state, "__page_url");
     let base = if url.starts_with('/') {
         "/"
     } else {
-        page_url.ok_or_else(|| invalid("relative asset paths require a page URL"))?
+        page_url
+            .as_ref()
+            .and_then(Value::as_str)
+            .ok_or_else(|| invalid("relative asset paths require a page URL"))?
     };
     manifest
         .resolve_template_url(url, base)

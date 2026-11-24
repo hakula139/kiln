@@ -1,5 +1,5 @@
 mod functions;
-pub mod vars;
+pub(crate) mod vars;
 
 use std::borrow::Cow;
 use std::path::Path;
@@ -15,7 +15,6 @@ use serde::Serialize;
 use self::functions::{
     tpl_asset_url, tpl_now, tpl_parse_csv, tpl_read_file, tpl_register_script, tpl_t,
 };
-use self::vars::{ArchivePageVars, HomePageVars, OverviewPageVars, PageMetadata, PostTemplateVars};
 use crate::config::Config;
 use crate::directive::DirectiveContext;
 use crate::html;
@@ -112,49 +111,34 @@ impl TemplateEngine {
         Ok(Self { env })
     }
 
-    /// Renders a post or standalone page using the `post.html` template.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the template is missing or rendering fails.
-    pub fn render_post(&self, vars: &PostTemplateVars<'_>, assets: &PageAssets) -> Result<String> {
-        self.render_page_template("post.html", vars, vars.metadata.url, assets)
+    /// Renders a whole page, exposing `assets` and the page URL that `asset_url()` resolves
+    /// relative paths against.
+    pub(crate) fn render_page_template(
+        &self,
+        name: &str,
+        vars: impl Serialize,
+        page_url: &str,
+        assets: &PageAssets,
+    ) -> Result<String> {
+        let context = merge_maps([
+            Value::from(Serde(vars)),
+            minijinja::context! { __page_url => page_url, assets => Serde(assets) },
+        ]);
+        self.env
+            .get_template(name)
+            .with_context(|| format!("failed to load {name} template"))?
+            .render(context)
+            .with_context(|| format!("failed to render {name} template"))
     }
 
-    /// Renders the home page using the `home.html` template.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the template is missing or rendering fails.
-    pub fn render_home(&self, vars: &HomePageVars<'_>) -> Result<String> {
-        self.render_generated("home.html", vars, vars.metadata.url)
-    }
-
-    /// Renders an archive page using the `archive.html` template.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the template is missing or rendering fails.
-    pub fn render_archive(&self, vars: &ArchivePageVars<'_>) -> Result<String> {
-        self.render_generated("archive.html", vars, vars.metadata.url)
-    }
-
-    /// Renders a bucket overview page (e.g., `/tags/`, `/sections/`).
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the template is missing or rendering fails.
-    pub fn render_overview(&self, vars: &OverviewPageVars<'_>) -> Result<String> {
-        self.render_generated("overview.html", vars, vars.metadata.url)
-    }
-
-    /// Renders the 404 error page using the `404.html` template.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the template is missing or rendering fails.
-    pub fn render_404(&self, vars: &PageMetadata<'_>) -> Result<String> {
-        self.render_generated("404.html", vars, vars.url)
+    /// Renders a generated page, whose lack of Markdown content leaves no assets to register.
+    pub(crate) fn render_generated(
+        &self,
+        name: &str,
+        vars: impl Serialize,
+        page_url: &str,
+    ) -> Result<String> {
+        self.render_page_template(name, vars, page_url, &PageAssets::default())
     }
 
     /// Tries to render a directive using `directives/<name>.html`.
@@ -188,38 +172,13 @@ impl TemplateEngine {
 
     /// Returns `true` if a template with the given name exists.
     ///
-    /// A broken template (e.g., syntax error) counts as existing, so the caller's render call will
-    /// surface the parse error rather than silently skipping the output.
-    pub fn has_template(&self, name: &str) -> bool {
+    /// A template with a parse error still counts as existing so the caller's render call surfaces
+    /// the error when it loads the template.
+    pub(crate) fn has_template(&self, name: &str) -> bool {
         match self.env.get_template(name) {
             Ok(_) => true,
             Err(e) => e.kind() != minijinja::ErrorKind::TemplateNotFound,
         }
-    }
-
-    /// Renders a generated page, whose lack of Markdown content leaves no assets to register.
-    fn render_generated(&self, name: &str, vars: impl Serialize, page_url: &str) -> Result<String> {
-        self.render_page_template(name, vars, page_url, &PageAssets::default())
-    }
-
-    /// Renders a whole page, exposing `assets` and the page URL that `asset_url()` resolves
-    /// relative paths against.
-    fn render_page_template(
-        &self,
-        name: &str,
-        vars: impl Serialize,
-        page_url: &str,
-        assets: &PageAssets,
-    ) -> Result<String> {
-        let context = merge_maps([
-            Value::from(Serde(vars)),
-            minijinja::context! { __page_url => page_url, assets => Serde(assets) },
-        ]);
-        self.env
-            .get_template(name)
-            .with_context(|| format!("failed to load {name} template"))?
-            .render(context)
-            .with_context(|| format!("failed to render {name} template"))
     }
 }
 
@@ -241,7 +200,8 @@ fn format_value(
     state: &mut State,
     value: &Value,
 ) -> Result<(), minijinja::Error> {
-    if ![HTML, AutoEscape::Html].contains(state.auto_escape()) || value.is_safe() {
+    let escape = state.auto_escape();
+    if (*escape != HTML && *escape != AutoEscape::Html) || value.is_safe() {
         return escape_formatter(out, state, value);
     }
     let text = value
@@ -263,7 +223,10 @@ mod tests {
     use crate::directive::DirectiveArgs;
     use crate::pagination::PaginationVars;
     use crate::render::assets::{Feature, LoadStrategy, ScriptTag};
-    use crate::template::vars::{BucketSummary, LinkedTerm, PageGroup, PageSummary};
+    use crate::template::vars::{
+        ArchivePageVars, BucketSummary, HomePageVars, LinkedTerm, OverviewPageVars, PageGroup,
+        PageMetadata, PageSummary, PostTemplateVars,
+    };
     use crate::test_utils::{
         fingerprinted_manifest, test_engine, test_engine_with, test_i18n, test_resources,
         test_site_engine,
@@ -395,7 +358,7 @@ mod tests {
         );
     }
 
-    // ── render_post ──
+    // ── render_page_template ──
 
     #[test]
     fn post_exposes_context() {
@@ -434,7 +397,9 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            engine.render_post(&vars, &assets).unwrap(),
+            engine
+                .render_page_template("post.html", &vars, vars.metadata.url, &assets)
+                .unwrap(),
             "Post A|Description|https://example.com/post-a/|2026-01-01T12:34:56Z|2026-02-01T12:34:56Z|/image.webp|/page.css|My Site|All Posts|True|/script.js|CC0-1.0|Tag A|Section A"
         );
     }
@@ -451,12 +416,71 @@ mod tests {
         vars.toc = "<nav>Contents</nav>";
 
         assert_eq!(
-            engine.render_post(&vars, &PageAssets::default()).unwrap(),
+            engine
+                .render_page_template(
+                    "post.html",
+                    &vars,
+                    vars.metadata.url,
+                    &PageAssets::default()
+                )
+                .unwrap(),
             "&lt;title&gt;|&lt;strong&gt;Body&lt;/strong&gt;|<strong>Body</strong>|<nav>Contents</nav>"
         );
     }
 
-    // ── render_home ──
+    #[test]
+    fn keeps_internal_values_over_vars() {
+        let engine = engine_with_template(
+            "post.html",
+            "{{ __page_url }}|{{ assets.features | length }}",
+        );
+        let html = engine
+            .render_page_template(
+                "post.html",
+                minijinja::context! { __page_url => "/vars/", assets => "vars" },
+                "/page/",
+                &PageAssets::default(),
+            )
+            .unwrap();
+        assert_eq!(html, "/page/|0");
+    }
+
+    #[test]
+    fn reports_page_template_failure() {
+        let name = "post.html";
+        for (source, kind, phase) in [
+            (None, minijinja::ErrorKind::TemplateNotFound, "load"),
+            (
+                Some("{% invalid %}"),
+                minijinja::ErrorKind::SyntaxError,
+                "load",
+            ),
+            (
+                Some("{{ missing_function() }}"),
+                minijinja::ErrorKind::UnknownFunction,
+                "render",
+            ),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            if let Some(source) = source {
+                fs::write(dir.path().join(name), source).unwrap();
+            }
+            let engine = test_site_engine(dir.path());
+            let error = engine
+                .render_page_template(name, (), "/", &PageAssets::default())
+                .unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                format!("failed to {phase} {name} template")
+            );
+            assert_eq!(
+                error.downcast_ref::<minijinja::Error>().unwrap().kind(),
+                kind
+            );
+        }
+    }
+
+    // ── render_generated ──
 
     #[test]
     fn home_exposes_pages_and_pagination() {
@@ -476,12 +500,12 @@ mod tests {
         };
 
         assert_eq!(
-            engine.render_home(&vars).unwrap(),
+            engine
+                .render_generated("home.html", &vars, vars.metadata.url)
+                .unwrap(),
             "Home|Latest pages|https://example.com/page/2/|Post A:/post-a/|2/3|0"
         );
     }
-
-    // ── render_archive ──
 
     #[test]
     fn archive_exposes_groups_and_pagination() {
@@ -505,12 +529,12 @@ mod tests {
         };
 
         assert_eq!(
-            engine.render_archive(&vars).unwrap(),
+            engine
+                .render_generated("archive.html", &vars, vars.metadata.url)
+                .unwrap(),
             "Rust|Description|https://example.com/tags/rust/page/2/|tag|2026:Post A:/post-a/|2/3|0"
         );
     }
-
-    // ── render_overview ──
 
     #[test]
     fn overview_exposes_buckets() {
@@ -541,12 +565,12 @@ mod tests {
         };
 
         assert_eq!(
-            engine.render_overview(&vars).unwrap(),
+            engine
+                .render_generated("overview.html", &vars, vars.metadata.url)
+                .unwrap(),
             "All Tags|Description|https://example.com/tags/|tag|Rust:/tags/rust/:Post A:/post-a/|Empty:/tags/empty/:|0"
         );
     }
-
-    // ── render_404 ──
 
     #[test]
     fn not_found_exposes_metadata_and_resolves_relative_assets() {
@@ -576,7 +600,9 @@ mod tests {
             url: "https://example.com/404.html",
         };
         assert_eq!(
-            engine.render_404(&vars).unwrap(),
+            engine
+                .render_generated("404.html", &vars, vars.url)
+                .unwrap(),
             "Not Found|Description|https://example.com/404.html|/bg.8f8cbb7dcf46.png|0"
         );
     }
@@ -701,60 +727,6 @@ mod tests {
     fn misses_absent_template() {
         let engine = test_engine();
         assert!(!engine.has_template("nonexistent.html"));
-    }
-
-    // ── render_page_template ──
-
-    #[test]
-    fn keeps_internal_values_over_vars() {
-        let engine = engine_with_template(
-            "post.html",
-            "{{ __page_url }}|{{ assets.features | length }}",
-        );
-        let html = engine
-            .render_page_template(
-                "post.html",
-                minijinja::context! { __page_url => "/vars/", assets => "vars" },
-                "/page/",
-                &PageAssets::default(),
-            )
-            .unwrap();
-        assert_eq!(html, "/page/|0");
-    }
-
-    #[test]
-    fn reports_page_template_failure() {
-        let name = "post.html";
-        for (source, kind, phase) in [
-            (None, minijinja::ErrorKind::TemplateNotFound, "load"),
-            (
-                Some("{% invalid %}"),
-                minijinja::ErrorKind::SyntaxError,
-                "load",
-            ),
-            (
-                Some("{{ missing_function() }}"),
-                minijinja::ErrorKind::UnknownFunction,
-                "render",
-            ),
-        ] {
-            let dir = tempfile::tempdir().unwrap();
-            if let Some(source) = source {
-                fs::write(dir.path().join(name), source).unwrap();
-            }
-            let engine = test_site_engine(dir.path());
-            let error = engine
-                .render_page_template(name, (), "/", &PageAssets::default())
-                .unwrap_err();
-            assert_eq!(
-                error.to_string(),
-                format!("failed to {phase} {name} template")
-            );
-            assert_eq!(
-                error.downcast_ref::<minijinja::Error>().unwrap().kind(),
-                kind
-            );
-        }
     }
 
     // ── format_value ──
