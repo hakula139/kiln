@@ -4,11 +4,11 @@
 
 ## Public Files
 
-| Source              | Output           | Use                                                                             |
-| ------------------- | ---------------- | ------------------------------------------------------------------------------- |
-| `assets/`           | `public/assets/` | Shared images, fonts, JavaScript and other assets                               |
-| `static/`           | `public/`        | Files with fixed URLs, such as favicons, manifests, `_headers` and `_redirects` |
-| `content/<bundle>/` | `public/<page>/` | Co-located page assets                                                          |
+| Source              | Output           | Use                                                                   |
+| ------------------- | ---------------- | --------------------------------------------------------------------- |
+| `assets/`           | `public/assets/` | Shared images, fonts, JavaScript and other assets                     |
+| `static/`           | `public/`        | Files with fixed URLs (favicons, manifests, `_headers`, `_redirects`) |
+| `content/<bundle>/` | `public/<page>/` | Co-located page assets                                                |
 
 Raster images and fonts from `assets/` and page bundles are published only under [content-hashed names](#fingerprints-and-minification). `static/` files always keep their names.
 
@@ -28,7 +28,7 @@ Use `asset_url(path)` in templates, including directives, to resolve published f
 | Compiled CSS `url(...)` | Relative to the stylesheet source declaring it | Path starting with the configured `base_url` path |
 | Compiled CSS `@import`  | Bundled into the stylesheet                    | Path starting with the configured `base_url` path |
 
-For a site whose `base_url` ends in `/blog/`, `asset_url('/images/photo.png')` and Markdown `![Photo](/blog/images/photo.png)` select the same published file. Authored root-relative paths follow the configured `base_url` even when `kiln serve` or `kiln build --base-url` publishes under another path, and kiln rewrites them to that path. Bundle-relative references such as `assets/photo.png` resolve from the page's output location, including when its slug differs from its source directory. Image dimensions and placeholders use that same published file.
+For a site whose `base_url` ends in `/blog/`, `asset_url('/images/photo.png')` and Markdown `![Photo](/blog/images/photo.png)` select the same published file. Authored root-relative paths follow the configured `base_url` even when `kiln serve` or `kiln build --base-url` publishes under another path, and kiln rewrites them to that path. Bundle-relative references (`assets/photo.png`) resolve from the page's output location, including when its slug differs from its source directory. Image dimensions and placeholders use that same published file.
 
 Encode filename components, using `%20` for a space and `%25` for a literal percent sign. Queries and fragments are preserved, and external URLs pass through unchanged.
 
@@ -85,18 +85,18 @@ Link the shared stylesheet in the base template and page CSS in the post templat
 
 kiln publishes a file under a content-addressed name, `<stem>.<hash>.<ext>` beside its source path, when that name can be derived from the file's final bytes, including every URL the file references. The hashed file is the only copy published, and every reference kiln resolves points at it.
 
-| Files                                                                                                                        | Published name                                                          |
-| ---------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| Raster images (AVIF, BMP, GIF, ICO, JPEG, PNG and WebP) and fonts (OTF, TTF, WOFF and WOFF2) from `assets/` and page bundles | `<stem>.<hash>.<ext>`, such as `/assets/images/cover.1cabe42ce865.webp` |
-| Compiled stylesheets                                                                                                         | `assets/css/site.<hash>.css` and `<page>/assets/css/page.<hash>.css`    |
-| Scripts (`.js` and `.mjs`) from `assets/` and page bundles that neither import nor are imported                              | `<stem>.<hash>.<ext>`, such as `/assets/js/search.3f2a9c41d0be.js`      |
-| All `static/` files, importing or imported scripts, SVG, other CSS and remaining files                                       | Source name                                                             |
+| Files                                                                                                                        | Published name                                                       |
+| ---------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| Raster images (AVIF, BMP, GIF, ICO, JPEG, PNG and WebP) and fonts (OTF, TTF, WOFF and WOFF2) from `assets/` and page bundles | `<stem>.<hash>.<ext>` (`/assets/images/cover.1cabe42ce865.webp`)     |
+| Compiled stylesheets                                                                                                         | `assets/css/site.<hash>.css` and `<page>/assets/css/page.<hash>.css` |
+| Scripts (`.js` and `.mjs`) from `assets/` and page bundles that neither import nor are imported                              | `<stem>.<hash>.<ext>` (`/assets/js/search.3f2a9c41d0be.js`)          |
+| All `static/` files, importing or imported scripts, SVG, other CSS and remaining files                                       | Source name                                                          |
 
 Images and fonts reference no other files, so their fingerprints cover their bytes alone and do not depend on image decoding or AVIF support. Compiled stylesheets are fingerprinted after their `url(...)` references are rewritten and the output is minified, so a changed image or font from `assets/` or a page bundle also changes the stylesheet URL. A `static/` file keeps its source name, so changing it leaves the stylesheet URL unchanged.
 
 Scripts are fingerprinted after minification. Module specifiers resolve by URL, and kiln does not rewrite them, so a script keeps its source name when it has a static `import`, `export ... from` or `import()`, or when another published script imports it. A computed `import()` expression could load any script, so one anywhere in the output keeps every script under its source name. Scripts that kiln cannot parse also keep their source names.
 
-kiln does not rewrite references inside JavaScript, SVG, plain public CSS, raw HTML or other file contents. A fixed URL in such a file cannot reach a content-hashed file, including string URLs such as `new Worker("worker.js")`, `importScripts()` and `fetch()`. Place files that need a stable URL, such as hotlinked images, images listed in JSON or worker scripts, in `static/`, and import CSS that references shared images or fonts from a stylesheet entry.
+kiln does not rewrite references inside JavaScript, SVG, plain public CSS, raw HTML or other file contents, so fixed URLs in those files (including `new Worker("worker.js")`, `importScripts()` and `fetch()`) cannot reach content-hashed outputs. Place files that need a stable URL (hotlinked images, JSON-referenced images, worker scripts) in `static/`, and import CSS that references shared images or fonts from a stylesheet entry.
 
 Templates receive the same URLs. `asset_url()` returns the hashed URL of a content-addressed file and the plain URL of a source-named file.
 
@@ -109,7 +109,7 @@ Content-addressed files can be cached immutably, while every other file needs re
 | Images, fonts and scripts | `/*.:hash.<ext>` for each extension listed above                                           |
 | Compiled stylesheets      | `/assets/css/site.:hash.css`, `/assets/css/page.:hash.css`, `/*/assets/css/page.:hash.css` |
 
-A vendor file such as `static/vendor.min.js` therefore needs a stem without dots, such as `vendor-min.js`, or a place under `assets/` where it can take a content-addressed name. Pagefind's generated scripts have no dots in their stems, and its stylesheets live outside `assets/css/`, so these patterns do not match them.
+Rename a dotted static vendor file like `static/vendor.min.js` to remove the dot (`vendor-min.js`), or move it under `assets/` so it receives a content-addressed name. Pagefind's generated scripts have no dots in their stems, and its stylesheets live outside `assets/css/`, so these patterns do not match them.
 
 A Cloudflare `_headers` placeholder matches characters within one path segment, and `!` removes a header inherited from the catch-all rule:
 

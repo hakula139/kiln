@@ -109,7 +109,7 @@ Use the shared [asset contract](assets.md) for publication precedence, styleshee
 
 ### Internationalization
 
-The active language is `config.language`. Translation filenames use language tags such as `en`, `zh-Hans` or `ja`.
+The active language is `config.language`. Name each translation file after its language tag:
 
 ```text
 themes/my-theme/i18n/
@@ -162,7 +162,7 @@ themes/my-theme/
 Every selected theme must have `theme.toml`, even if empty. Its supported settings are:
 
 ```toml
-min_kiln_version = "0.5.0-alpha.2"
+min_kiln_version = "1.0.0"
 
 [css]
 processor = "plain"
@@ -171,13 +171,13 @@ processor = "plain"
 emojis = true
 ```
 
-`min_kiln_version` is a minimum semantic version. Other theme metadata, such as a name, license or author, can describe the theme but is not consumed by kiln.
+`min_kiln_version` is a minimum semantic version. Other descriptive metadata in `theme.toml` is ignored by kiln.
 
 ### Template Variables
 
 Every page template receives `title`, `description`, canonical `url` and [`assets`](#page-assets). Every template, including partials and directives, can read the site configuration as `config`. The derived `config.base_path` exposes the deployment path with leading and trailing slashes (`/` or `/docs/`) for origin-relative URLs.
 
-kiln auto-escapes strings in `.html`, `.htm` and `.xml` templates, encoding `&`, `<`, `>`, `"` and `'` while leaving `/` intact, so URLs need no `| safe`. Apply `| safe` to generated HTML such as `content`, `toc` and `body_html`. Dates are ISO 8601 timestamps with an offset in the configured time zone. Templates may use `date[:10]` when only the date is wanted.
+kiln auto-escapes strings in `.html`, `.htm` and `.xml` templates, encoding `&`, `<`, `>`, `"` and `'` while leaving `/` intact, so URLs need no `| safe`. Apply `| safe` to generated HTML (`content`, `toc` and `body_html`). Dates are ISO 8601 timestamps with an offset in the configured time zone. Templates may use `date[:10]` when only the date is wanted.
 
 #### Post Templates (`post.html`)
 
@@ -322,7 +322,7 @@ Registers a script for the current page and returns an empty string. `url` resol
 
 Repeated identical declarations produce one script in registration order. Conflicting attributes for the same URL fail the build.
 
-`load` accepts `"defer"`, `"async"` or `"sync"`. Module scripts (`module=true`) support `"defer"` or `"async"`, since they cannot execute synchronously. The theme renders the corresponding script attributes.
+`load` accepts `"defer"`, `"async"` or `"sync"`, while module scripts (`module=true`) accept `"defer"` or `"async"`. The theme renders the corresponding script attributes.
 
 ## Rendered Content
 

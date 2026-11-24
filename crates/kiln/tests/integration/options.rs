@@ -100,21 +100,48 @@ fn build_output_dir_override_preserves_configured_output() {
 
 #[test]
 fn build_base_url_override() {
-    let site = TestSite::new(r#"base_url = "https://example.com""#);
-    site.write(
-        "templates/post.html",
-        r#"<a href="{{ config.base_url }}/">Home</a><link rel="canonical" href="{{ url }}">"#,
-    )
-    .titled_page("posts/hello", "Hello");
+    for (base_url, expected_base_path, expected_base_url, expected_home, expected_post) in [
+        (
+            "http://localhost:5456/",
+            "/",
+            "http://localhost:5456",
+            "http://localhost:5456/",
+            "http://localhost:5456/posts/hello/",
+        ),
+        (
+            "https://preview.example.com/docs/",
+            "/docs/",
+            "https://preview.example.com/docs",
+            "https://preview.example.com/docs/",
+            "https://preview.example.com/docs/posts/hello/",
+        ),
+    ] {
+        let site = TestSite::new(r#"base_url = "https://example.com/original/""#);
+        for template in ["home.html", "post.html"] {
+            site.write(
+                &format!("templates/{template}"),
+                r#"{{ config.base_path }}|<a href="{{ config.base_url }}/">Home</a><link rel="canonical" href="{{ url }}">"#,
+            );
+        }
+        site.titled_page("posts/hello", "Hello");
 
-    site.build_with(&BuildOptions {
-        base_url_override: Some("http://localhost:5456/"),
-        ..Default::default()
-    })
-    .unwrap();
+        site.build_with(&BuildOptions {
+            base_url_override: Some(base_url),
+            ..Default::default()
+        })
+        .unwrap();
 
-    assert_eq!(
-        site.read("posts/hello/index.html"),
-        r#"<a href="http://localhost:5456/">Home</a><link rel="canonical" href="http://localhost:5456/posts/hello/">"#
-    );
+        for (output, canonical) in [
+            ("index.html", expected_home),
+            ("posts/hello/index.html", expected_post),
+        ] {
+            assert_eq!(
+                site.read(output),
+                format!(
+                    r#"{expected_base_path}|<a href="{expected_base_url}/">Home</a><link rel="canonical" href="{canonical}">"#
+                ),
+                "{base_url}: {output}"
+            );
+        }
+    }
 }

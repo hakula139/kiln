@@ -47,22 +47,25 @@ pub(crate) fn test_engine_with(
     .unwrap()
 }
 
-/// Creates a minimal `I18n` seeded with English strings so build-level tests render
+/// Returns a cached minimal `I18n` seeded with English strings so build-level tests render
 /// deterministic output.
 pub(crate) fn test_i18n() -> I18n {
-    let dir = tempfile::tempdir().unwrap();
-    fs::create_dir_all(dir.path().join("i18n")).unwrap();
-    fs::write(
-        dir.path().join("i18n").join("en.toml"),
-        r#"all_posts = "All Posts""#,
-    )
-    .unwrap();
-    I18n::load(
-        Path::new("/nonexistent-site"),
-        Some(dir.path()),
-        &Language::default(),
-    )
-    .unwrap()
+    static I18N: LazyLock<I18n> = LazyLock::new(|| {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("i18n")).unwrap();
+        fs::write(
+            dir.path().join("i18n").join("en.toml"),
+            r#"all_posts = "All Posts""#,
+        )
+        .unwrap();
+        I18n::load(
+            Path::new("/nonexistent-site"),
+            Some(dir.path()),
+            &Language::default(),
+        )
+        .unwrap()
+    });
+    I18N.clone()
 }
 
 /// Creates `PageResources` for `/` with no published assets and no resolvable images.
