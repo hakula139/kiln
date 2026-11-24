@@ -58,6 +58,7 @@ tmpl
 tungstenite
 tzdata
 tzdir
+unwatch
 unwritable
 wakatime
 webp
