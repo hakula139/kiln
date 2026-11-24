@@ -94,7 +94,7 @@ fn generate_rss(channel: &Channel<'_>, pages: &[&PreparedPage]) -> String {
     xml
 }
 
-/// Formats a `Timestamp` as RFC 2822 (e.g., `Mon, 02 Jan 2006 15:04:05 +0000`).
+/// Formats a `Timestamp` as an RFC 2822 UTC date string.
 fn format_rfc2822(ts: Timestamp) -> String {
     ts.to_zoned_datetime(TimeZone::UTC)
         .strftime("%a, %d %b %Y %H:%M:%S %z")

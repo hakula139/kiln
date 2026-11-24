@@ -8,14 +8,18 @@ use jiff::Timestamp;
 use strum::IntoEnumIterator;
 
 use super::bucket::{BucketKind, Listing, Listings};
-use super::listing::{PreparedPage, newest};
+use super::listing::{PreparedPage, format_page_date, group_by_year, newest};
 use super::sitemap::SitemapEntry;
-use super::{BuildContext, archive, error, feed, home, overview, page, sitemap};
+use super::{BuildContext, feed, sitemap};
 use crate::output::write_output;
 use crate::pagination::{PaginationVars, page_dir, paginate};
+use crate::render::pipeline::render_page;
+use crate::template::vars::{
+    ArchivePageVars, HomePageVars, OverviewPageVars, PageMetadata, PostTemplateVars,
+};
 use crate::url::{BaseUrl, directory_url, join_site_url, page_url};
 
-pub(super) enum Route<'a> {
+enum Route<'a> {
     Content(&'a PreparedPage<'a>),
     Home(ListingPage<'a>),
     Archive(&'a Listing<'a>, ListingPage<'a>),
@@ -60,12 +64,12 @@ impl Route<'_> {
     }
 }
 
-pub(super) struct ListingPage<'a> {
+struct ListingPage<'a> {
     /// Listing directory relative to the output root.
     base: PathBuf,
     number: usize,
     total: usize,
-    pub(super) pages: &'a [&'a PreparedPage<'a>],
+    pages: &'a [&'a PreparedPage<'a>],
     /// Newest modification across the whole listing, shared by every page.
     lastmod: Option<Timestamp>,
 }
@@ -75,7 +79,7 @@ impl ListingPage<'_> {
         page_dir(&self.base, self.number).join("index.html")
     }
 
-    pub(super) fn pagination(&self, prefix: &str) -> PaginationVars {
+    fn pagination(&self, prefix: &str) -> PaginationVars {
         let listing_url = join_site_url(prefix, &directory_url(&self.base));
         PaginationVars::new(&listing_url, self.number, self.total)
     }
@@ -242,13 +246,13 @@ impl<'a> RoutePlan<'a> {
     ) -> Result<Option<String>> {
         let base_url = &ctx.config.base_url;
         let content = match route {
-            Route::Content(prepared) => page::render(ctx, prepared)?,
-            Route::Home(page) => home::render(ctx, page, &page_url(base_url, path))?,
+            Route::Content(prepared) => render_content(ctx, prepared)?,
+            Route::Home(page) => render_home(ctx, page, &page_url(base_url, path))?,
             Route::Archive(bucket, page) => {
-                archive::render(ctx, bucket, page, &page_url(base_url, path))?
+                render_archive(ctx, bucket, page, &page_url(base_url, path))?
             }
             Route::Overview(kind, terms) => {
-                overview::render(ctx, *kind, terms, &page_url(base_url, path))?
+                render_overview(ctx, *kind, terms, &page_url(base_url, path))?
             }
             Route::SiteFeed(posts) => {
                 feed::render(ctx, &ctx.config.title, Path::new(""), &posts.pages)
@@ -259,7 +263,7 @@ impl<'a> RoutePlan<'a> {
             }
             Route::Sitemap => sitemap::render_sitemap(&self.sitemap_entries(base_url)),
             Route::Robots => sitemap::render_robots(base_url),
-            Route::NotFound => error::render(ctx, &page_url(base_url, path))?,
+            Route::NotFound => render_not_found(ctx, &page_url(base_url, path))?,
             Route::SearchIndex => return Ok(None),
         };
         Ok(Some(content))
@@ -283,6 +287,126 @@ impl<'a> RoutePlan<'a> {
             })
             .collect()
     }
+}
+
+/// Renders a post or standalone page with its template.
+fn render_content(ctx: &BuildContext, prepared: &PreparedPage) -> Result<String> {
+    let page = prepared.page;
+    let rendered = render_page(
+        &page.body,
+        &ctx.template_engine,
+        &ctx.render_options,
+        &ctx.page_resources(page, &prepared.summary.url),
+        page.frontmatter.heading_numbering,
+    )
+    .with_context(|| format!("failed to render {}", page.source_path.display()))?;
+
+    let page_css = ctx.stylesheets.page_css_url(&ctx.static_assets, page)?;
+    let vars = PostTemplateVars {
+        metadata: PageMetadata {
+            title: &prepared.summary.title,
+            description: &prepared.summary.description,
+            url: &prepared.summary.url,
+        },
+        featured_image: prepared.summary.featured_image.as_ref(),
+        license: page.frontmatter.license.as_deref(),
+        page_css,
+        date: prepared.summary.date.as_deref(),
+        updated: prepared
+            .updated
+            .map(|date| format_page_date(date, &ctx.config.timezone)),
+        tags: &prepared.summary.tags,
+        section: prepared.summary.section.as_ref(),
+        content: &rendered.content_html,
+        toc: &rendered.toc_html,
+    };
+
+    ctx.template_engine
+        .render_page_template("post.html", &vars, vars.metadata.url, &rendered.assets)
+        .with_context(|| format!("failed to render {}", page.source_path.display()))
+}
+
+/// Renders one page of the home listing.
+fn render_home(ctx: &BuildContext, page: &ListingPage<'_>, url: &str) -> Result<String> {
+    let vars = HomePageVars {
+        metadata: PageMetadata {
+            title: &ctx.config.title,
+            description: &ctx.config.description,
+            url,
+        },
+        pages: page.pages.iter().map(|page| &page.summary).collect(),
+        pagination: page.pagination(ctx.config.base_url.prefix()),
+    };
+    ctx.template_engine
+        .render_generated("home.html", &vars, url)
+        .context("failed to render home page")
+}
+
+/// Renders one page of the archive of `bucket`.
+fn render_archive(
+    ctx: &BuildContext,
+    bucket: &Listing<'_>,
+    page: &ListingPage<'_>,
+    url: &str,
+) -> Result<String> {
+    let vars = ArchivePageVars {
+        metadata: PageMetadata {
+            title: &bucket.name,
+            description: &ctx.config.description,
+            url,
+        },
+        kind: bucket.kind.as_ref(),
+        page_groups: group_by_year(page.pages),
+        pagination: page.pagination(ctx.config.base_url.prefix()),
+    };
+    ctx.template_engine
+        .render_generated("archive.html", &vars, url)
+        .with_context(|| {
+            format!(
+                "failed to render archive {}/{}",
+                bucket.kind.plural(),
+                bucket.slug,
+            )
+        })
+}
+
+/// Renders the overview of every bucket of `kind`.
+fn render_overview(
+    ctx: &BuildContext,
+    kind: BucketKind,
+    buckets: &[Listing<'_>],
+    url: &str,
+) -> Result<String> {
+    let title = ctx.i18n.t(&format!("all_{}", kind.plural()));
+    let vars = OverviewPageVars {
+        metadata: PageMetadata {
+            title: &title,
+            description: &ctx.config.description,
+            url,
+        },
+        kind: kind.as_ref(),
+        buckets: buckets
+            .iter()
+            .filter(|bucket| bucket.kind == kind)
+            .map(|bucket| bucket.summary(&ctx.config.base_url))
+            .collect(),
+    };
+    ctx.template_engine
+        .render_generated("overview.html", &vars, url)
+        .with_context(|| format!("failed to render {} overview", kind.plural()))
+}
+
+/// Renders the 404 page.
+fn render_not_found(ctx: &BuildContext, url: &str) -> Result<String> {
+    let title = ctx.i18n.t("error_404_title");
+    let vars = PageMetadata {
+        title: &title,
+        description: &ctx.config.description,
+        url,
+    };
+    ctx.template_engine
+        .render_generated("404.html", &vars, url)
+        .context("failed to render 404 page")
 }
 
 #[cfg(test)]

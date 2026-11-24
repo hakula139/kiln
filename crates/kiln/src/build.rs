@@ -1,12 +1,7 @@
-mod archive;
 mod bucket;
-mod error;
 mod feed;
 mod git;
-mod home;
 mod listing;
-mod overview;
-mod page;
 mod routes;
 mod sitemap;
 

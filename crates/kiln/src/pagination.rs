@@ -25,22 +25,22 @@ pub(crate) fn page_dir(base: &Path, number: usize) -> PathBuf {
 
 /// Template-friendly pagination metadata.
 #[derive(Debug, Serialize)]
-pub struct PaginationVars {
-    pub current_page: usize,
-    pub total_pages: usize,
-    /// Listing URL path without its trailing slash (e.g., `/tags/rust`), for page-jump controls.
-    /// Page 1 lives at `{base_path}/` and page N at `{base_path}/page/{n}/`.
-    pub base_path: String,
-    pub prev_url: Option<String>,
-    pub next_url: Option<String>,
+pub(crate) struct PaginationVars {
+    pub(crate) current_page: usize,
+    pub(crate) total_pages: usize,
+    /// Listing URL path without its trailing slash, for page-jump controls. Page 1 lives at
+    /// `{base_path}/` and page N at `{base_path}/page/{n}/`.
+    pub(crate) base_path: String,
+    pub(crate) prev_url: Option<String>,
+    pub(crate) next_url: Option<String>,
     /// The first and last pages and those within two of the current one, with gaps between.
-    pub items: Vec<PaginationItem>,
+    pub(crate) items: Vec<PaginationItem>,
 }
 
 /// One entry of the numbered page navigation.
 #[derive(Debug, PartialEq, Eq, Serialize)]
 #[serde(untagged)]
-pub enum PaginationItem {
+pub(crate) enum PaginationItem {
     Page {
         number: usize,
         url: String,

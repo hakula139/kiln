@@ -8,10 +8,8 @@ use strum::{AsRefStr, EnumString};
 
 /// Per-page collection of asset declarations gathered during render.
 ///
-/// Surfaced on [`PostTemplateVars`] so themes can iterate `assets.scripts` and `assets.features`
+/// Surfaced to page templates so themes can iterate `assets.scripts` and `assets.features`
 /// without per-feature frontmatter flags.
-///
-/// [`PostTemplateVars`]: crate::template::vars::PostTemplateVars
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct PageAssets {
     /// Scripts in registration order. Order matters for dependency chains (e.g., a library script

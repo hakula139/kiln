@@ -161,7 +161,7 @@ impl Taxonomy {
     /// fall back to their titlecased slug and tags to their first-seen spelling.
     ///
     /// Fails if a nonempty tag has no alphanumeric characters, or if tags differing beyond case
-    /// share a slug, since one archive URL cannot serve both.
+    /// share a slug.
     pub(super) fn collect(
         pages: &[Page],
         content_dir: &Path,

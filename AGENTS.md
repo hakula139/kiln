@@ -39,16 +39,11 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 ├── attrs.rs             # Pandoc-style `{#id .class key=value}` attribute parser and shared id / class identity
 ├── build.rs             # BuildContext, build orchestration and asset publication order
 ├── build/               # Listing pipeline and output generator submodules
-│   ├── archive.rs       # Year-grouped archive page rendering (/posts/, /posts/<section>/, /tags/<slug>/)
 │   ├── bucket.rs        # Listing buckets (all posts, sections, tags): membership, _index.md names, URL layout
-│   ├── error.rs         # 404 error page rendering
 │   ├── feed.rs          # RSS 2.0 feeds (site, all-posts, section and tag feeds)
 │   ├── git.rs           # Optional content-file commit timestamps for post templates
-│   ├── home.rs          # Home page rendering
 │   ├── listing.rs       # Prepared page metadata, date ordering and year grouping
-│   ├── overview.rs      # Bucket overview page rendering (/sections/, /tags/)
-│   ├── page.rs          # Post and standalone page rendering
-│   ├── routes.rs        # Route plan: every output path, collision validation, sitemap entries and render dispatch
+│   ├── routes.rs        # Route plan: every output path, collision validation, sitemap entries and route rendering
 │   └── sitemap.rs       # sitemap.xml + robots.txt generation
 ├── config.rs            # Strict TOML site configuration (validated base URL, time zone, image options, page sizes), theme resolution, param merging
 ├── content.rs           # Content submodule declarations and shared source name / file helpers
@@ -105,7 +100,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 ├── static_assets/
 │   ├── publication.rs   # Static / bundle asset publication and source → output paths
 │   └── script.rs        # Module import analysis and content-addressed script names
-├── template.rs          # MiniJinja layered template engine, directive / archive / overview / error rendering
+├── template.rs          # MiniJinja layered template engine, page and directive rendering
 ├── template/            # Template submodules
 │   ├── functions.rs     # MiniJinja template functions (now, read_file, parse_csv, t, asset_url, register_script)
 │   └── vars.rs          # Template variables structs (PostTemplateVars, PageSummary, etc.)
