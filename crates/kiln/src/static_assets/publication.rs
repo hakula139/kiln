@@ -55,11 +55,6 @@ impl PublishedAssets {
     /// Copies theme, site, and page assets and records their paths relative to `output_dir`.
     ///
     /// Media from `assets/` and page bundles are published only under content-addressed names.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if an asset cannot be copied or renamed, if its source or output path
-    /// cannot be resolved, or if two differently named outputs are one file on the filesystem.
     pub(crate) fn publish(
         root: &Path,
         theme_dir: Option<&Path>,
@@ -117,10 +112,6 @@ impl PublishedAssets {
     /// explicit aliases.
     ///
     /// Returns `None` when the source is outside the page's and site's published files.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the source path cannot be resolved.
     pub(crate) fn resolve(&self, page: Option<&Path>, source: &Path) -> Result<Option<&Path>> {
         let source = normalize_source(source)?;
         if let Some(files) = page.and_then(|page| self.pages.get(page))
@@ -151,10 +142,6 @@ impl PublishedAssets {
     ///
     /// A source-named image, font or script must not have a dotted stem, and a dotted `site` or
     /// `page` stylesheet under `assets/css/` is reserved for compiled stylesheets.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error naming the first such file's source.
     pub(crate) fn ensure_unaddressed_names(&self, manifest: &StaticAssetManifest) -> Result<()> {
         for (path, file) in &self.files {
             let source_named = manifest
@@ -213,11 +200,6 @@ fn reserved_name_hint(path: &Path, naming: Naming) -> Option<&'static str> {
 
 impl OutputFiles<'_> {
     /// Records published files over the files they overlay.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if an output file cannot be resolved, or if it is also an earlier output
-    /// recorded under a different name.
     fn record(&mut self, files: &PublishedFiles, naming: Naming) -> Result<()> {
         for (source, output) in &files.paths {
             let source = source.strip_prefix(self.root).unwrap_or(source).to_owned();

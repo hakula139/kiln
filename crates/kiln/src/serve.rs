@@ -338,7 +338,6 @@ mod tests {
     use tokio::task::JoinHandle;
     use tokio_tungstenite::tungstenite::Message as WsMessage;
 
-    #[cfg(unix)]
     use super::watcher::tests::replace_symlink;
     use super::*;
     use crate::test_utils::copy_templates;
@@ -455,18 +454,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn reports_server_startup_errors() {
-        let root = tempfile::tempdir().unwrap();
-        fs::write(root.path().join("config.toml"), "invalid = [").unwrap();
-
-        let (addr, _shutdown_tx, mut server) = spawn_server(root.path()).await;
-        let error = wait_for_server(addr, &mut server).await.unwrap_err();
-
-        assert!(format!("{error:#}").contains("failed to load config"));
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
     async fn rebuilds_after_retargeting_symlinked_config() {
         let root = tempfile::tempdir().unwrap();
         setup_atomic_save_site(root.path());
@@ -504,6 +491,17 @@ mod tests {
 
         drop(ws);
         stop_server(shutdown_tx, server).await;
+    }
+
+    #[tokio::test]
+    async fn reports_server_startup_errors() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("config.toml"), "invalid = [").unwrap();
+
+        let (addr, _shutdown_tx, mut server) = spawn_server(root.path()).await;
+        let error = wait_for_server(addr, &mut server).await.unwrap_err();
+
+        assert!(format!("{error:#}").contains("failed to load config"));
     }
 
     fn setup_site(root: &Path) {

@@ -193,8 +193,7 @@ impl WatchPlan {
             let mut components = pending.components();
             while let Some(component) = components.next() {
                 match component {
-                    Component::Prefix(_) | Component::RootDir => path.push(component),
-                    Component::CurDir => {}
+                    Component::RootDir => path.push(component),
                     Component::ParentDir => _ = path.pop(),
                     Component::Normal(name) => {
                         path.push(name);
@@ -230,6 +229,7 @@ impl WatchPlan {
                             Err(error) => return Err(error),
                         }
                     }
+                    _ => {}
                 }
             }
             if path.parent().is_some() {
@@ -301,7 +301,7 @@ fn canonical_parent(path: &Path) -> io::Result<PathBuf> {
     }
 }
 
-/// Reports whether `path` is a direct child of the filesystem root (such as `/var` or `/tmp`).
+/// Reports whether `path` is a direct child of the filesystem root.
 fn is_root_child(path: &Path) -> bool {
     path.parent()
         .is_some_and(|parent| parent.parent().is_none())
@@ -374,7 +374,6 @@ pub(super) mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn does_not_watch_root_for_input_under_symlinked_parent() {
         let temp = tempfile::tempdir().unwrap();
@@ -385,7 +384,7 @@ pub(super) mod tests {
         fs::create_dir(&external).unwrap();
         let external_config = external.join("site.toml");
         fs::write(&external_config, "").unwrap();
-        // Keep `temp` non-canonical so root-level symlinks such as `/var` on macOS are exercised.
+        // Keep `temp` non-canonical to exercise root-level symlinks on macOS.
         std::os::unix::fs::symlink(&external_config, site.join("config.toml")).unwrap();
         let linked_parent = temp.path().join("linked");
         std::os::unix::fs::symlink(&real_parent, &linked_parent).unwrap();
@@ -417,7 +416,6 @@ pub(super) mod tests {
 
     // ── InputWatcher::refresh ──
 
-    #[cfg(unix)]
     #[test]
     fn replaces_external_target_parent_without_retaining_old_registration() {
         let temp = tempfile::tempdir().unwrap();
@@ -452,7 +450,6 @@ pub(super) mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn advances_through_missing_components_and_tracks_directory_symlinks() {
         let temp = tempfile::tempdir().unwrap();
@@ -519,7 +516,6 @@ pub(super) mod tests {
 
     // ── WatchPlan::new ──
 
-    #[cfg(unix)]
     #[test]
     fn keeps_parent_watch_for_missing_symlink_destination() {
         let root = tempfile::tempdir().unwrap();
@@ -542,7 +538,6 @@ pub(super) mod tests {
         assert_eq!(original.registrations, missing.registrations);
     }
 
-    #[cfg(unix)]
     #[test]
     fn handles_not_a_directory_symlink_target_without_dropping_other_inputs() {
         let temp = tempfile::tempdir().unwrap();
@@ -568,7 +563,6 @@ pub(super) mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn keeps_healthy_inputs_when_another_input_loops() {
         let temp = tempfile::tempdir().unwrap();
@@ -591,7 +585,6 @@ pub(super) mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn skips_root_watch_for_dangling_root_child_target() {
         let temp = tempfile::tempdir().unwrap();
@@ -609,7 +602,6 @@ pub(super) mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn skips_root_watch_for_symlink_to_root() {
         let temp = tempfile::tempdir().unwrap();
@@ -700,7 +692,6 @@ pub(super) mod tests {
         }
     }
 
-    #[cfg(unix)]
     pub(in crate::serve) fn replace_symlink(link: &Path, target: &Path) {
         let staged = link.with_extension("tmp");
         std::os::unix::fs::symlink(target, &staged).unwrap();

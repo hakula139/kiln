@@ -15,9 +15,9 @@ const SUMMARY_SEPARATOR: &str = "<!--more-->";
 /// Distinguishes blog posts (under `content/posts/`) from standalone pages.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PageKind {
-    /// A blog post, optionally belonging to a named section (e.g., "note").
+    /// A blog post, optionally belonging to a named section.
     Post { section: Option<String> },
-    /// A standalone page (e.g., about-me, about-site).
+    /// A standalone page.
     Page,
 }
 
@@ -39,11 +39,6 @@ pub struct Page {
 impl Page {
     /// Loads the page whose source at `path` under `content_dir` holds `content`, deriving its
     /// kind, output directory and summary and discovering its bundle assets on disk.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the frontmatter or slug is invalid, a section name is not UTF-8, or
-    /// bundle assets cannot be read.
     pub(super) fn load(content: &str, path: &Path, content_dir: &Path) -> Result<Self> {
         let relative = path
             .strip_prefix(content_dir)

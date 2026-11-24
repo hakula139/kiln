@@ -23,7 +23,7 @@ pub struct ContentSet {
 /// Excludes:
 /// - Files and directories whose names start with `_`
 /// - Non-markdown files
-/// - Markdown files without `+++` frontmatter (e.g., CLAUDE.md, README.md)
+/// - Markdown files without `+++` frontmatter
 /// - Pages with `draft = true` in frontmatter
 ///
 /// # Errors
@@ -65,8 +65,7 @@ pub fn discover_content(root: &Path) -> Result<ContentSet> {
         }
     }
 
-    // Undated pages sort last because `None < Some`. The source-path tiebreak keeps output
-    // deterministic across platforms.
+    // Undated pages sort last because `None < Some`, and source paths keep ties deterministic.
     pages.sort_by(|a, b| {
         b.frontmatter
             .date

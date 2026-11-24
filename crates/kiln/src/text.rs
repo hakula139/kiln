@@ -1,8 +1,6 @@
 use itertools::Itertools;
 
-/// Non-alphanumeric characters kept literally, because they carry meaning in technology names
-/// (`C++`, `.NET`) and stay safe unescaped in a URL path. `#` cannot join them since it delimits
-/// a URL fragment.
+/// Non-alphanumeric characters kept unescaped in slugs (`#` is excluded as the fragment delimiter).
 const PRESERVED_CHARS: [char; 4] = ['+', '.', '_', '~'];
 
 /// Converts text into a URL-safe slug.
@@ -52,7 +50,7 @@ pub(crate) fn slugify_or(text: &str, fallback: &str) -> String {
     }
 }
 
-/// Converts a hyphenated slug to titlecase (e.g., "hello-world" → "Hello World").
+/// Converts a hyphenated slug to space-separated titlecase.
 pub(crate) fn titlecase(s: &str) -> String {
     s.split('-').map(capitalize).join(" ")
 }

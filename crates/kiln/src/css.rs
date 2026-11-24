@@ -19,7 +19,7 @@ use crate::config::CssProcessor;
 use crate::content::page::Page;
 use crate::output::write_output;
 use crate::static_assets::publication::PublishedAssets;
-use crate::static_assets::{StaticAssetManifest, is_passthrough, split_suffix};
+use crate::static_assets::{StaticAssetManifest, is_passthrough, site_path, split_suffix};
 use crate::url::path_url;
 
 pub(crate) const ENTRY: &str = "assets/css/_src/style.css";
@@ -72,10 +72,6 @@ impl Stylesheets {
     }
 
     /// Compiles private sources into the build output, preserving published asset references.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error for invalid sources, unpublished assets, or compiler and output failures.
     pub(crate) fn compile(
         &self,
         root: &Path,
@@ -112,10 +108,6 @@ impl Stylesheets {
     }
 
     /// Publishes compiled stylesheets under content-addressed names.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if a compiled stylesheet cannot be read or renamed.
     pub(crate) fn fingerprint(
         &self,
         manifest: &mut StaticAssetManifest,
@@ -130,10 +122,6 @@ impl Stylesheets {
     /// Returns the owning page's fingerprinted stylesheet URL, including the site's base path.
     ///
     /// Returns `None` when the page has no owning stylesheet.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error for a missing compiled stylesheet.
     pub(crate) fn page_css_url(
         &self,
         manifest: &StaticAssetManifest,
@@ -141,7 +129,7 @@ impl Stylesheets {
     ) -> Result<Option<String>> {
         self.pages
             .get(&page.source_path)
-            .map(|style| manifest.asset_url(&format!("/{}", path_url(&style.output))))
+            .map(|style| manifest.asset_url(&site_path(&style.output)))
             .transpose()
     }
 }

@@ -40,7 +40,7 @@ pub(crate) fn run_pagefind(output_dir: &Path, binary: Option<&str>) -> Result<()
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     if !stdout.is_empty() {
-        tracing::debug!("{stdout}");
+        tracing::debug!(%stdout, "pagefind output");
     }
 
     let stderr = String::from_utf8_lossy(&output.stderr);

@@ -76,11 +76,11 @@ impl Frontmatter {
 pub struct FeaturedImage {
     pub src: String,
 
-    /// CSS `background-position` (e.g., `"top"`, `"30% 20%"`), which templates default to `center`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// CSS `background-position`, which templates default to `center`.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub position: Option<String>,
 
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub credit: Option<ImageCredit>,
 
     #[serde(skip_deserializing, skip_serializing_if = "Option::is_none")]
@@ -100,7 +100,7 @@ impl FeaturedImage {
 
 /// Attribution metadata for a featured image.
 #[derive(Debug, Default, Clone, PartialEq, Deserialize, Serialize)]
-#[serde(default, deny_unknown_fields)]
+#[serde(deny_unknown_fields)]
 pub struct ImageCredit {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
@@ -108,7 +108,7 @@ pub struct ImageCredit {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub author: Option<String>,
 
-    /// Link to the original work (e.g., a Pixiv artwork page).
+    /// Link to the original work.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
 }
@@ -178,10 +178,6 @@ mod timestamp_serde {
 }
 
 /// Parses a content file into its `Frontmatter` and body text.
-///
-/// # Errors
-///
-/// Returns an error if the frontmatter delimiters are missing or the TOML is invalid.
 pub(crate) fn parse(content: &str) -> Result<(Frontmatter, &str)> {
     let (raw_fm, body) = split_delimited_frontmatter(content, TOML_DELIMITER)?;
     let fm: Frontmatter = toml::from_str(raw_fm)?;
@@ -197,10 +193,6 @@ pub(crate) fn has_delimited_frontmatter(content: &str, delimiter: &str) -> bool 
 ///
 /// This line-level search cannot tell a real closing delimiter from one on its own line inside a
 /// multi-line string literal. Hugo and other delimiter-based parsers share this limitation.
-///
-/// # Errors
-///
-/// Returns an error if the delimiters are missing or malformed.
 pub(crate) fn split_delimited_frontmatter<'a>(
     content: &'a str,
     delimiter: &str,
