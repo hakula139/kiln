@@ -5,7 +5,7 @@ resolver = "3"
 [workspace.package]
 version = "1.0.0"
 edition = "2024"
-rust-version = "1.89"
+rust-version = "1.91"
 authors = ["Hakula <i@hakula.xyz>"]
 license = "MIT"
 
@@ -46,7 +46,7 @@ itertools = "0.15"
 jiff = { version = "1", features = ["serde"] }
 lightningcss = "1.0.0-alpha.72"
 minijinja = { version = "3", features = ["serde"] }
-notify = "8"
+notify = "9"
 open = "5"
 pathdiff = "0.2"
 percent-encoding = "2"

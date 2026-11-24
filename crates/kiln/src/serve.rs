@@ -148,7 +148,13 @@ fn setup_watcher(
 
     for input in &inputs {
         let (path, mode) = match input.parent() {
-            Some(parent) if input.is_file() => (parent, RecursiveMode::NonRecursive),
+            Some(parent) if input.is_file() => {
+                // A second watch on the same path replaces the recursive mode in notify 9.
+                if inputs.iter().any(|input| input == parent) {
+                    continue;
+                }
+                (parent, RecursiveMode::NonRecursive)
+            }
             _ => (input.as_path(), RecursiveMode::Recursive),
         };
         watcher
@@ -598,6 +604,33 @@ mod tests {
                     tokio::time::sleep(Duration::from_millis(100)).await;
                 }
             }) => result.context("server did not start within 5 seconds"),
+        }
+    }
+
+    // ── setup_watcher ──
+
+    #[test]
+    fn keeps_directory_watch_recursive_when_a_file_shares_it() {
+        let root = tempfile::tempdir().unwrap();
+        let assets = root.path().canonicalize().unwrap().join("assets");
+        fs::create_dir(&assets).unwrap();
+        let config = assets.join("site.toml");
+        fs::write(&config, "").unwrap();
+
+        for inputs in [
+            [assets.clone(), config.clone()],
+            [config.clone(), assets.clone()],
+        ] {
+            let (event_tx, _event_rx) = mpsc::unbounded_channel();
+            let watcher = setup_watcher(&inputs, event_tx).unwrap();
+
+            assert_eq!(
+                watcher.watched_paths().unwrap(),
+                [notify::WatchedPath::new(
+                    assets.clone(),
+                    RecursiveMode::Recursive
+                )]
+            );
         }
     }
 

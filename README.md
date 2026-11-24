@@ -171,7 +171,7 @@ enabled = true
 
 ## Building from Source
 
-Requires Linux or macOS (including WSL on Windows), [Rust](https://www.rust-lang.org/tools/install) 1.89 or newer, and a C toolchain.
+Requires Linux or macOS (including WSL on Windows), [Rust](https://www.rust-lang.org/tools/install) 1.91 or newer, and a C toolchain.
 
 ```bash
 cargo build --release  # Binary at target/release/kiln
