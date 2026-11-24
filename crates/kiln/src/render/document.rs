@@ -9,16 +9,14 @@ use itertools::Either;
 use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, LinkType, Parser, Tag, TagEnd};
 
 use super::assets::{Feature, PageAssets};
-use super::code_block::{CodeBlockSpec, parse_fence_info};
-use super::emoji::match_emoji;
+use super::code_block::{CodeBlockSpec, parse_fence_info, render_mermaid};
 use super::footnote::Notes;
 use super::heading::{NUMBERING_START, render_number};
 use super::highlight::highlight_code;
-use super::icon::match_icon;
 use super::image::{render_block_image, render_inline_image};
 use super::image_attrs::{ImageAttrs, extract_image_attrs};
 use super::lqip::ImageMeta;
-use super::mermaid::render_mermaid;
+use super::shortcode::{match_emoji, match_icon};
 use super::table::stamp_nowrap;
 use super::toc::TocEntry;
 use super::{PageResources, RenderOptions, Spanned};
@@ -70,10 +68,6 @@ type ResolvedImages = HashMap<usize, ResolvedImage>;
 
 /// Renders a document with allocated IDs to HTML, adding auto-detected features (math, mermaid)
 /// to `assets`.
-///
-/// # Errors
-///
-/// Returns an error for a site image without a published file.
 pub(super) fn render_document(
     document: MarkdownDocument,
     resources: &PageResources<'_>,
@@ -444,6 +438,7 @@ mod tests {
 
     use crate::config::ImageConfig;
     use crate::render::lqip::ImageResolver;
+    use crate::render::lqip::tests::write_tiny_png;
     use crate::render::pipeline::{RenderedPage, render_page};
     use crate::render::{PageResources, RenderOptions};
     use crate::test_utils::{
@@ -949,120 +944,97 @@ mod tests {
     // ── render_document: images ──
 
     #[test]
-    fn renders_block_image() {
-        let md = "![A photo](https://example.com/img.png)\n";
-        let out = render(md);
-        assert!(
-            out.content_html.contains("<figure>"),
-            "should become a figure, html:\n{}",
-            out.content_html
-        );
-        assert!(
-            out.content_html.contains(r#"alt="A photo""#),
-            "should have alt attribute, html:\n{}",
-            out.content_html
-        );
-        assert!(
-            out.content_html
-                .contains("<figcaption>A photo</figcaption>"),
-            "should have figcaption with alt text, html:\n{}",
-            out.content_html
-        );
+    fn renders_block_images() {
+        for (md, expected_alt, expected_title) in [
+            ("![A photo](https://example.com/img.png)\n", "A photo", None),
+            (
+                r#"![alt text](https://example.com/img.png "My Title")"#,
+                "alt text",
+                Some("My Title"),
+            ),
+            (
+                "![*bold* alt](https://example.com/img.png)\n",
+                "bold alt",
+                None,
+            ),
+            (
+                indoc! {"
+                    ![line1
+                    line2](https://example.com/img.png)
+                "},
+                "line1 line2",
+                None,
+            ),
+        ] {
+            let out = render(md);
+            assert!(
+                out.content_html.contains("<figure>"),
+                "{md}: {}",
+                out.content_html
+            );
+            assert!(
+                out.content_html
+                    .contains(&format!(r#"alt="{expected_alt}""#)),
+                "{md}: {}",
+                out.content_html
+            );
+            assert!(
+                out.content_html
+                    .contains(&format!("<figcaption>{expected_alt}</figcaption>")),
+                "{md}: {}",
+                out.content_html
+            );
+            if let Some(title) = expected_title {
+                assert!(
+                    out.content_html.contains(&format!(r#"title="{title}""#)),
+                    "{md}: {}",
+                    out.content_html
+                );
+            } else {
+                assert!(
+                    !out.content_html.contains("title="),
+                    "{md}: {}",
+                    out.content_html
+                );
+            }
+        }
     }
 
     #[test]
-    fn block_image_keeps_title_and_captions_alt() {
-        let md = "![alt text](https://example.com/img.png \"My Title\")\n";
-        let out = render(md);
-        assert!(
-            out.content_html.contains("<figure>"),
-            "should become a figure, html:\n{}",
-            out.content_html
-        );
-        assert!(
-            out.content_html.contains(r#"alt="alt text""#),
-            "should have alt attribute, html:\n{}",
-            out.content_html
-        );
-        assert!(
-            out.content_html.contains(r#"title="My Title""#),
-            "should have title attribute, html:\n{}",
-            out.content_html
-        );
-        assert!(
-            out.content_html
-                .contains("<figcaption>alt text</figcaption>"),
-            "should have figcaption with alt text, html:\n{}",
-            out.content_html
-        );
-    }
-
-    #[test]
-    fn block_image_flattens_formatted_alt() {
-        let md = "![*bold* alt](https://example.com/img.png)\n";
-        let out = render(md);
-        assert!(
-            out.content_html.contains("<figure>"),
-            "should become a figure, html:\n{}",
-            out.content_html
-        );
-        assert!(
-            out.content_html.contains(r#"alt="bold alt""#),
-            "should have plain-text alt attribute, html:\n{}",
-            out.content_html
-        );
-        assert!(
-            out.content_html
-                .contains("<figcaption>bold alt</figcaption>"),
-            "should have figcaption with plain text from formatted alt, html:\n{}",
-            out.content_html
-        );
-    }
-
-    #[test]
-    fn block_image_turns_alt_soft_breaks_into_spaces() {
-        let md = indoc! {"
-            ![line1
-            line2](https://example.com/img.png)
-        "};
-        let out = render(md);
-        assert!(
-            out.content_html.contains("<figure>"),
-            "should become a figure, html:\n{}",
-            out.content_html
-        );
-        assert!(
-            out.content_html.contains(r#"alt="line1 line2""#),
-            "soft break in alt attribute should become a space, html:\n{}",
-            out.content_html
-        );
-        assert!(
-            out.content_html
-                .contains("<figcaption>line1 line2</figcaption>"),
-            "soft break in figcaption should become a space, html:\n{}",
-            out.content_html
-        );
-    }
-
-    #[test]
-    fn renders_inline_image() {
-        let md = "Text ![icon](https://example.com/icon.png) more text\n";
-        let out = render(md);
-        assert!(
-            !out.content_html.contains("<figure>"),
-            "should not become a figure, html:\n{}",
-            out.content_html
-        );
-        assert!(
-            out.content_html.contains("<img "),
-            "should have img tag, html:\n{}",
-            out.content_html
-        );
-        assert!(
-            out.content_html.contains(r#"alt="icon""#),
-            "should have alt attribute, html:\n{}",
-            out.content_html
-        );
+    fn renders_inline_images() {
+        for (md, expected_alts) in [
+            (
+                "Text ![icon](https://example.com/icon.png) more text\n",
+                &["icon"][..],
+            ),
+            (
+                "![icon](https://example.com/icon.png) followed by text\n",
+                &["icon"][..],
+            ),
+            (
+                "![a](https://example.com/a.png) ![b](https://example.com/b.png)\n",
+                &["a", "b"][..],
+            ),
+        ] {
+            let out = render(md);
+            assert!(
+                !out.content_html.contains("<figure>"),
+                "{md}: {}",
+                out.content_html
+            );
+            assert!(
+                out.content_html.contains("<img "),
+                "{md}: {}",
+                out.content_html
+            );
+            for alt in expected_alts {
+                assert!(
+                    out.content_html.contains(&format!(r#"alt="{alt}""#)),
+                    "{md}: {}",
+                    out.content_html
+                );
+            }
+        }
     }
 
     #[test]
@@ -1079,49 +1051,12 @@ mod tests {
         );
     }
 
-    #[test]
-    fn image_with_trailing_text_stays_inline() {
-        let md = "![icon](https://example.com/icon.png) followed by text\n";
-        let out = render(md);
-        assert!(
-            !out.content_html.contains("<figure>"),
-            "image with trailing text should not become a figure, html:\n{}",
-            out.content_html
-        );
-        assert!(
-            out.content_html.contains("<img "),
-            "should have img tag, html:\n{}",
-            out.content_html
-        );
-    }
-
-    #[test]
-    fn multiple_images_stay_inline() {
-        let md = "![a](https://example.com/a.png) ![b](https://example.com/b.png)\n";
-        let out = render(md);
-        assert!(
-            !out.content_html.contains("<figure>"),
-            "multiple images should not become figures, html:\n{}",
-            out.content_html
-        );
-        assert!(
-            out.content_html.contains(r#"alt="a""#),
-            "first image should be present, html:\n{}",
-            out.content_html
-        );
-        assert!(
-            out.content_html.contains(r#"alt="b""#),
-            "second image should be present, html:\n{}",
-            out.content_html
-        );
-    }
-
     // ── render_document: image resolution ──
 
     #[test]
     fn resolver_stamps_dimensions_and_lqip_on_block_image() {
         let dir = tempfile::tempdir().unwrap();
-        write_tiny_png(&dir.path().join("img.png"));
+        write_tiny_png(&dir.path().join("img.png"), 8, 4);
 
         let resolver = ImageResolver::new(dir.path(), ImageConfig::default());
         let out = render_with_resolver("![alt](img.png)\n", &resolver, dir.path());
@@ -1137,8 +1072,6 @@ mod tests {
             out.content_html
         );
 
-        // Pin the nesting order so a transposition (e.g. wrapper outside the
-        // figure, or img outside the wrapper) trips the test.
         let figure = out.content_html.find("<figure>").expect("figure opens");
         let wrapper = out
             .content_html
@@ -1160,7 +1093,7 @@ mod tests {
     #[test]
     fn resolver_merges_with_authored_attrs_on_inline_image() {
         let dir = tempfile::tempdir().unwrap();
-        write_tiny_png(&dir.path().join("img.png"));
+        write_tiny_png(&dir.path().join("img.png"), 8, 4);
 
         let resolver = ImageResolver::new(dir.path(), ImageConfig::default());
         let out = render_with_resolver(
@@ -1295,11 +1228,5 @@ mod tests {
             false,
         )
         .unwrap()
-    }
-
-    fn write_tiny_png(path: &Path) {
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        let img = image::RgbaImage::from_pixel(8, 4, image::Rgba([200, 100, 50, 255]));
-        img.save_with_format(path, image::ImageFormat::Png).unwrap();
     }
 }

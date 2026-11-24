@@ -11,11 +11,9 @@ use super::fixtures::RenderFixture;
 pub(super) fn benchmarks(criterion: &mut Criterion) {
     let fixture = RenderFixture::new();
     let engine = fixture.engine();
-    let options = RenderOptions {
-        emojis: true,
-        fontawesome: true,
-        ..RenderOptions::default()
-    };
+    let mut options = RenderOptions::default();
+    options.emojis = true;
+    options.fontawesome = true;
     let resources = fixture.resources();
     let mut group = criterion.benchmark_group("shortcodes");
     for (name, prefix) in [

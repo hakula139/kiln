@@ -38,8 +38,8 @@ pub(super) fn render_toc_html(entries: &[TocEntry]) -> String {
             writeln_indented!(&mut html, depth * 2, "</li>");
         }
 
-        // When skipping heading levels (e.g., H2 → H4), emit wrapper <li> elements at intermediate
-        // depths so that nested <ul> elements always appear inside a <li> (required by HTML spec).
+        // Emit wrapper <li> elements for skipped heading levels so nested <ul> elements always
+        // appear inside a <li>, as required by the HTML spec.
         while depth < target {
             writeln_indented!(&mut html, depth * 2 + 1, "<ul>");
             depth += 1;

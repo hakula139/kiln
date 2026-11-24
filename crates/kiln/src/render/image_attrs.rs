@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 use pulldown_cmark::{Event, Parser, Tag};
@@ -20,8 +21,11 @@ impl ImageAttrs {
 }
 
 /// Removes image attribute blocks, keyed by image offset in the cleaned Markdown.
-pub(super) fn extract_image_attrs(input: &str) -> (String, HashMap<usize, ImageAttrs>) {
-    let mut output = String::with_capacity(input.len());
+pub(super) fn extract_image_attrs(input: &str) -> (Cow<'_, str>, HashMap<usize, ImageAttrs>) {
+    if !input.contains('{') {
+        return (Cow::Borrowed(input), HashMap::new());
+    }
+    let mut output = String::new();
     let mut attrs_map = HashMap::new();
     let mut copied = 0;
     for (event, range) in Parser::new_ext(input, markdown_options()).into_offset_iter() {
@@ -35,6 +39,9 @@ pub(super) fn extract_image_attrs(input: &str) -> (String, HashMap<usize, ImageA
         else {
             continue;
         };
+        if output.is_empty() {
+            output.reserve(input.len());
+        }
         let image_offset = output.len() + range.start - copied;
         output.push_str(&input[copied..range.end]);
         let attrs = parse_image_attrs(&input[range.end + 1..brace_end]);
@@ -43,8 +50,11 @@ pub(super) fn extract_image_attrs(input: &str) -> (String, HashMap<usize, ImageA
         }
         copied = brace_end + 1;
     }
+    if copied == 0 {
+        return (Cow::Borrowed(input), attrs_map);
+    }
     output.push_str(&input[copied..]);
-    (output, attrs_map)
+    (Cow::Owned(output), attrs_map)
 }
 
 fn find_brace_end(s: &str, start: usize) -> Option<usize> {
@@ -138,7 +148,8 @@ mod tests {
                 ![Alt
                 text](photo.png)"},
         ] {
-            let (cleaned, attrs) = extract_image_attrs(&format!("{image}{{width=80}}"));
+            let input = format!("{image}{{width=80}}");
+            let (cleaned, attrs) = extract_image_attrs(&input);
             assert_eq!(cleaned, image);
             assert_eq!(attrs[&0].width.as_deref(), Some("80"));
         }
@@ -225,6 +236,7 @@ mod tests {
             "},
         ] {
             let (cleaned, attrs) = extract_image_attrs(input);
+            assert!(matches!(cleaned, Cow::Borrowed(_)), "{input}");
             assert_eq!(cleaned, input);
             assert!(attrs.is_empty(), "{input}");
         }
@@ -246,6 +258,7 @@ mod tests {
             "![no close paren or bracket",
         ] {
             let (output, attrs) = extract_image_attrs(input);
+            assert!(matches!(output, Cow::Borrowed(_)), "{input}");
             assert_eq!(output, input);
             assert!(attrs.is_empty(), "{input}");
         }

@@ -34,7 +34,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 
 ### Crate Structure (`crates/kiln/src/`)
 
-````text
+```text
 .
 ├── attrs.rs             # Pandoc-style `{#id .class key=value}` attribute parser and shared id / class identity
 ├── build.rs             # BuildContext, build orchestration and asset publication order
@@ -57,10 +57,9 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 │   ├── frontmatter.rs   # YAML → TOML frontmatter round-trip, Hugo featured image normalization
 │   └── shortcode.rs     # Hugo shortcode → kiln directive conversion
 ├── css.rs               # Shared / page CSS discovery, compilation, and published asset URL resolution
-├── directive.rs         # Directive block, owned arguments and template context types
+├── directive.rs         # Directive block, owned arguments, template context types, and `<div>` fallback
 ├── directive/           # :::-fenced directive parsing + rendering submodules
 │   ├── callout.rs       # Callout types and option validation for the theme's callout template
-│   ├── div.rs           # `<div>` fallback for anonymous and template-less directives
 │   └── parser.rs        # Nested directive tree with source ranges and parsed attributes
 ├── html.rs              # Shared HTML utilities (escape, indent, writeln_indented)
 ├── i18n.rs              # Layered i18n resolver (site → theme lang → theme English), t() with placeholder interpolation
@@ -76,19 +75,17 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 ├── render.rs            # RenderOptions, CopyButton, PageResources (page image / asset resolution) + render submodule declarations
 ├── render/              # Markdown rendering pipeline submodules
 │   ├── assets.rs        # PageAssets registry: scripts + auto-detected Feature flags (Math, Mermaid)
-│   ├── code_block.rs    # Fence info-string parsing → CodeBlockSpec (lang, title, highlights, collapse / expand)
+│   ├── code_block.rs    # Fence info-string parsing → CodeBlockSpec (lang, title, highlights, collapse / expand) + Mermaid `<pre>` emit
 │   ├── document.rs      # Parsed Markdown fragments, shortcode expansion, headings, KaTeX, block / inline images
-│   ├── emoji.rs         # GitHub-style :shortcode: → Unicode emoji lookup
 │   ├── footnote.rs      # Footnote relocation into an end-of-document list with per-reference backlinks
 │   ├── heading.rs       # Hierarchical heading numbering and shared number markup
 │   ├── highlight.rs     # syntect + two-face CSS-class highlighting with line numbers, header (lang or title)
-│   ├── icon.rs          # :(class): → <i> FontAwesome icon shortcode matching
 │   ├── image.rs         # Block (<figure>) and inline (<img>) image rendering, lazy loading, <span class="lqip"> wrapper emission
 │   ├── image_attrs.rs   # Pandoc-style {#id .class width=N} extraction for images
 │   ├── lqip.rs          # ImageResolver: on-disk dimension reads + base64 WebP placeholder encoding (consumed via the .lqip wrapper)
-│   ├── mermaid.rs       # `<pre class="mermaid">` emit for `` ```mermaid `` fences (with data-source mirror)
 │   ├── page_ids.rs      # Shared page-wide ID allocation for headings and footnotes
 │   ├── pipeline.rs      # Full pipeline: directives → page-wide IDs → Markdown → ToC
+│   ├── shortcode.rs     # GitHub-style `:shortcode:` emoji and `:(class):` FontAwesome icon matching
 │   ├── table.rs         # `nowrap` class on cells of short table columns
 │   └── toc.rs           # TocEntry struct, nested <nav> table of contents generation
 ├── search.rs            # Pagefind search indexing (external binary invocation)
@@ -107,7 +104,7 @@ Both `kiln build` and `kiln serve` run Pagefind search indexing automatically wh
 ├── test_utils.rs        # Shared test infrastructure (templates, helpers, Page factory)
 ├── text.rs              # Shared format-agnostic text utilities (slugify, titlecase)
 └── url.rs               # BaseUrl (deployment prefix + site URLs), encoded filesystem paths, canonical page URLs
-````
+```
 
 ## Coding Conventions
 
