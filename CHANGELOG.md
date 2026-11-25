@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-11-25
+
+### Fixed
+
+- _(serve)_ Reconcile live-reload file watches in place when watched inputs are atomically replaced, deleted and recreated, or redirected through symlinks. ([#321](https://github.com/hakulab/kiln/pull/321))
+
+### Changed
+
+- _(css)_ Update `kiln-tailwindcss` to `v0.1.7`. ([#314](https://github.com/hakulab/kiln/pull/314))
+- _(deps)_ Update `notify` to v9 and raise the minimum supported Rust version for source builds from 1.89 to 1.91. ([#320](https://github.com/hakulab/kiln/pull/320))
+
+[1.0.1]: https://github.com/hakulab/kiln/compare/v1.0.0...v1.0.1
+
 ## [1.0.0] - 2026-11-20
 
 ### Breaking changes
