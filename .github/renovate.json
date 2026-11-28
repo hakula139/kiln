@@ -3,6 +3,10 @@
   "extends": ["github>hakulab/devkit#v3"],
   "packageRules": [
     {
+      "matchManagers": ["rust-toolchain"],
+      "enabled": false
+    },
+    {
       "matchPackageNames": ["/^swc_/"],
       "groupName": "swc",
       "separateMajorMinor": false
