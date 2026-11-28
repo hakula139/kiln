@@ -2,6 +2,15 @@
 
 Use the [release skill](https://github.com/hakulab/plugins/blob/main/plugins/hakula-workflow/skills/release/SKILL.md) and [devkit's release guide](https://github.com/hakulab/devkit/blob/v3/docs/releasing.md) for the shared release procedure. This document defines kiln's release contract.
 
+## Rust toolchain maintenance
+
+The Nix package uses the Rust compiler from the locked nixpkgs input. The development shell and release workflow use `rust-toolchain.toml`. Update that pin manually so its compiler and the locked `rust-overlay` stay in sync.
+
+1. Refresh the `rust-overlay` input with `nix flake update rust-overlay`.
+2. Choose a newer stable version available in the updated overlay and set `channel` in `rust-toolchain.toml` to that version.
+3. Confirm `nix develop -c rustc --version` prints the chosen version and run `nix develop -c cargo check --locked --all-targets --all-features`.
+4. Open one PR with the `rust-toolchain.toml` change. If the refresh changes `flake.lock`, commit both files together.
+
 ## Release preparation
 
 Update `workspace.package.version` in `Cargo.toml` and run `cargo build` to refresh `Cargo.lock`. Draft `CHANGELOG.md` with [devkit's changelog procedure](https://github.com/hakulab/devkit/blob/v3/docs/releasing.md#draft-a-changelog).

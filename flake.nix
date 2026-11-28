@@ -59,10 +59,6 @@
 
         kiln = pkgs.callPackage ./package.nix {
           inherit cssCompiler;
-          rustPlatform = pkgs.makeRustPlatform {
-            cargo = rustToolchain;
-            rustc = rustToolchain;
-          };
         };
 
         # ------------------------------------------------------------------------------------------
