@@ -77,6 +77,7 @@
               settings.extraArgs = "--locked --all-targets --all-features";
             };
 
+            markdownlint-cli2.settings.configPath = ".markdownlint-cli2.jsonc";
             prettier.enable = true;
 
             rustfmt = {
